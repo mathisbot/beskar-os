@@ -1,0 +1,10 @@
+# Build directory
+/target
+# EFI disk image (for testing)
+/efi_disk
+
+# OVMF firmware
+/edk2-x86_64-code.fd
+
+# Forgotten backup files
+/*.bak

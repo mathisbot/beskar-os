@@ -1,0 +1,23 @@
+[package]
+name = "beskar-os"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[workspace]
+members = ["bootloader", "kernel"]
+
+[workspace.dependencies]
+bootloader = { path = "bootloader" }
+x86_64 = { version = "0.15.2", default-features = false, features = ["instructions","abi_x86_interrupt"] }
+
+[build-dependencies]
+bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }
+kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

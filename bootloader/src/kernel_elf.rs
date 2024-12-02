@@ -1,0 +1,635 @@
+use x86_64::structures::paging::{
+    mapper::{MappedFrame, TranslateResult},
+    FrameAllocator, Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB, Translate,
+};
+use x86_64::{PhysAddr, VirtAddr};
+use xmas_elf::{
+    dynamic::Tag,
+    header,
+    program::{self, ProgramHeader, Type},
+    sections::Rela,
+    ElfFile,
+};
+
+use crate::info::TlsTemplate;
+use crate::mem::{EarlyFrameAllocator, Level4Entries};
+
+pub struct KernelLoadingUtils<'a> {
+    kernel: &'a ElfFile<'a>,
+    level_4_entries: &'a mut Level4Entries,
+    page_table: &'a mut x86_64::structures::paging::OffsetPageTable<'static>,
+    frame_allocator: &'a mut EarlyFrameAllocator,
+}
+
+impl<'a> KernelLoadingUtils<'a> {
+    pub fn new(
+        kernel: &'a ElfFile<'a>,
+        level_4_entries: &'a mut Level4Entries,
+        page_table: &'a mut x86_64::structures::paging::OffsetPageTable<'static>,
+        frame_allocator: &'a mut EarlyFrameAllocator,
+    ) -> Self {
+        Self {
+            kernel,
+            level_4_entries,
+            page_table,
+            frame_allocator,
+        }
+    }
+}
+
+pub fn load_kernel_elf(mut klu: KernelLoadingUtils) -> KernelInfo {
+    // Assert that the kernel is page aligned
+    assert!(
+        PhysAddr::new(core::ptr::from_ref::<u8>(&klu.kernel.input[0]) as u64)
+            .is_aligned(Size4KiB::SIZE),
+        "Kernel is not page aligned"
+    );
+
+    // Make sure that the ELF file is valid
+    header::sanity_check(klu.kernel).expect("ELF header is invalid");
+    klu.kernel.program_iter().for_each(|program_header| {
+        program::sanity_check(program_header, klu.kernel).expect("Program header is invalid");
+    });
+
+    // Make sure it is suitable to run on x86_64
+    assert_eq!(
+        klu.kernel.header.pt1.class(),
+        header::Class::SixtyFour,
+        "Kernel is unexpectedly not 64-bit."
+    );
+    assert_eq!(
+        klu.kernel.header.pt2.machine().as_machine(),
+        header::Machine::X86_64,
+        "Kernel is unexpectedly not x86_64."
+    );
+
+    // Get the offset of the kernel image in the virtual address space
+    let virtual_address_offset = match klu.kernel.header.pt2.type_().as_type() {
+        header::Type::Executable => {
+            // Kernel built by cargo should always be shared object (of the workspace)
+            log::warn!("Kernel is unexpectedly an executable.");
+            0
+        }
+        header::Type::SharedObject => {
+            let (min_addr, max_addr) = klu
+                .kernel
+                .program_iter()
+                .filter_map(|header| {
+                    if header.get_type() == Ok(xmas_elf::program::Type::Load) {
+                        Some((
+                            header.virtual_addr(),
+                            header.virtual_addr() + header.mem_size(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .fold((u64::MAX, 0), |(min, max), (start, end)| {
+                    (min.min(start), max.max(end))
+                });
+
+            assert!(min_addr <= max_addr, "No loadable segments");
+
+            let size = max_addr - min_addr;
+            let offset = klu.level_4_entries.get_free_address(size).as_u64();
+
+            offset - min_addr
+        }
+        _ => panic!("Unsupported ELF file type"),
+    };
+
+    klu.level_4_entries
+        .mark_segments(klu.kernel.program_iter(), virtual_address_offset);
+
+    let lsi = load_segments(&mut klu, virtual_address_offset);
+
+    KernelInfo {
+        entry_point: VirtAddr::new(virtual_address_offset + klu.kernel.header.pt2.entry_point()),
+        image_offset: VirtAddr::new(virtual_address_offset),
+        tls_template: lsi.tls,
+    }
+}
+
+struct LoadedSegmentsInfo {
+    tls: Option<TlsTemplate>,
+}
+
+fn load_segments(klu: &mut KernelLoadingUtils, vao: u64) -> LoadedSegmentsInfo {
+    let mut tls = None;
+
+    for program_header in klu.kernel.program_iter() {
+        match program_header.get_type().unwrap() {
+            Type::Load => {
+                handle_segment_load(program_header, klu, vao);
+            }
+            Type::Tls => {
+                let old = tls.replace(TlsTemplate {
+                    start_addr: vao + program_header.virtual_addr(),
+                    file_size: program_header.file_size(),
+                    mem_size: program_header.mem_size(),
+                });
+                assert_eq!(old, None, "Multiple TLS segments");
+            }
+            Type::Interp => {
+                panic!("Found unexpected interpreter segment");
+            }
+            _ => {}
+        }
+    }
+
+    // Relocate memory addresses
+    for program_header in klu.kernel.program_iter() {
+        if program_header.get_type().unwrap() == Type::Dynamic {
+            handle_segment_dynamic(program_header, klu, vao);
+        }
+    }
+
+    // Mark memory as read-only after relocation
+    for program_header in klu.kernel.program_iter() {
+        if program_header.get_type().unwrap() == Type::GnuRelro {
+            handle_segment_gnurelro(program_header, klu, vao);
+        }
+    }
+
+    // Remove PageTableFlag::BIT_9 from the kernel page table
+    // so that kernel can use it for other purposes.
+    // It is currently use to help managing bss section.
+    for program_header in klu.kernel.program_iter() {
+        if program_header.get_type().unwrap() == Type::Load {
+            let start = VirtAddr::new(vao + program_header.virtual_addr());
+            let end =
+                VirtAddr::new(vao + program_header.virtual_addr() + program_header.mem_size());
+
+            let start_page = Page::<Size4KiB>::containing_address(start);
+            let end_page = Page::<Size4KiB>::containing_address(end - 1);
+
+            for page in Page::range_inclusive(start_page, end_page) {
+                let TranslateResult::Mapped {
+                    frame: _,
+                    flags,
+                    offset: _,
+                } = klu.page_table.translate(page.start_address())
+                else {
+                    panic!("Last page of segment is not mapped");
+                };
+
+                if flags.contains(PageTableFlags::BIT_9) {
+                    let new_flags = flags.difference(PageTableFlags::BIT_9);
+                    unsafe {
+                        klu.page_table
+                            .update_flags(page, new_flags)
+                            .unwrap()
+                            .ignore();
+                    }
+                }
+            }
+        }
+    }
+
+    LoadedSegmentsInfo { tls }
+}
+
+fn handle_segment_load(load_segment: ProgramHeader, klu: &mut KernelLoadingUtils, vao: u64) {
+    let phys_start = PhysAddr::new(core::ptr::from_ref::<u8>(&klu.kernel.input[0]) as u64)
+        + load_segment.offset();
+
+    let start_frame = PhysFrame::<Size4KiB>::containing_address(phys_start);
+    let end_frame =
+        PhysFrame::<Size4KiB>::containing_address(phys_start + load_segment.file_size() - 1);
+
+    let virt_start = VirtAddr::new(vao + load_segment.virtual_addr());
+    let start_page = Page::<Size4KiB>::containing_address(virt_start);
+
+    let mut segment_flags = PageTableFlags::PRESENT;
+    segment_flags.set(
+        PageTableFlags::NO_EXECUTE,
+        !load_segment.flags().is_execute(),
+    );
+    segment_flags.set(PageTableFlags::WRITABLE, load_segment.flags().is_write());
+
+    for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
+        let page = start_page + (frame - start_frame);
+
+        unsafe {
+            klu.page_table.map_to_with_table_flags(
+                page,
+                frame,
+                segment_flags,
+                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                klu.frame_allocator,
+            )
+        }
+        .expect("Failed to map load segment")
+        .ignore();
+    }
+
+    // Map a zeroed-out section for the BSS segment
+    if load_segment.mem_size() > load_segment.file_size() {
+        zero_bss(virt_start, load_segment, klu);
+    }
+}
+
+fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelLoadingUtils) {
+    let zero_start = virt_start + load_segment.file_size();
+    let zero_end = virt_start + load_segment.mem_size();
+
+    // Zeroing whole areas of memory is slow, so we use a trick to zero aligned pages
+
+    // First, handle unaligned start
+    let before_aligned = zero_start.as_u64() % Size4KiB::SIZE;
+    if before_aligned != 0 {
+        let last_page = Page::<Size4KiB>::containing_address(zero_start - 1);
+
+        let new_frame = {
+            let TranslateResult::Mapped {
+                frame: MappedFrame::Size4KiB(frame),
+                flags,
+                offset: _,
+            } = klu.page_table.translate(last_page.start_address())
+            else {
+                panic!("Last page of segment is not mapped to a 4KiB frame");
+            };
+
+            // Use bit 9 to mark already kernel-space-mapped pages
+            if flags.contains(PageTableFlags::BIT_9) {
+                frame
+            } else {
+                let new_frame = klu
+                    .frame_allocator
+                    .allocate_frame()
+                    .expect("Failed to allocate frame");
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        frame.start_address().as_u64() as *const u8,
+                        new_frame.start_address().as_u64() as *mut u8,
+                        usize::try_from(Size4KiB::SIZE).unwrap(),
+                    );
+                }
+
+                klu.page_table.unmap(last_page).unwrap().1.ignore();
+
+                unsafe {
+                    klu.page_table
+                        .map_to(
+                            last_page,
+                            new_frame,
+                            flags.union(PageTableFlags::BIT_9),
+                            klu.frame_allocator,
+                        )
+                        .expect("Failed to map zero page")
+                        .ignore();
+                }
+
+                new_frame
+            }
+        };
+
+        unsafe {
+            core::ptr::write_bytes(
+                (new_frame.start_address().as_u64() as *mut u8)
+                    .add(usize::try_from(before_aligned).unwrap()),
+                0,
+                usize::try_from(Size4KiB::SIZE - before_aligned).unwrap(),
+            );
+        }
+    }
+
+    let mut segment_flags = PageTableFlags::PRESENT;
+    segment_flags.set(
+        PageTableFlags::NO_EXECUTE,
+        !load_segment.flags().is_execute(),
+    );
+    segment_flags.set(PageTableFlags::WRITABLE, load_segment.flags().is_write());
+
+    let start_page = Page::<Size4KiB>::containing_address(zero_start.align_up(Size4KiB::SIZE));
+    let end_page = Page::containing_address(zero_end - 1);
+
+    // Then zero aligned pages
+    for page in Page::range_inclusive(start_page, end_page) {
+        let frame = klu
+            .frame_allocator
+            .allocate_frame()
+            .expect("Failed to allocate frame");
+
+        #[allow(clippy::cast_possible_truncation)]
+        let frame_ptr = frame.start_address().as_u64()
+            as *mut [u64; Size4KiB::SIZE as usize / size_of::<u64>()];
+        unsafe {
+            #[allow(clippy::cast_possible_truncation)]
+            frame_ptr.write([0_u64; Size4KiB::SIZE as usize / size_of::<u64>()]);
+        }
+
+        unsafe {
+            klu.page_table.map_to_with_table_flags(
+                page,
+                frame,
+                segment_flags,
+                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                klu.frame_allocator,
+            )
+        }
+        .expect("Failed to map zero page")
+        .ignore();
+    }
+}
+
+fn handle_segment_dynamic(dynamic_segment: ProgramHeader, klu: &mut KernelLoadingUtils, vao: u64) {
+    let xmas_elf::program::SegmentData::Dynamic64(data) =
+        dynamic_segment.get_data(klu.kernel).unwrap()
+    else {
+        panic!("Failed to get dynamic segment data");
+    };
+
+    // Locate the RELA table
+    let mut rela = None;
+    let mut relasz = None;
+    let mut relaent = None;
+    for rel in data {
+        match rel.get_tag().unwrap() {
+            Tag::Rela => {
+                let ptr = rel.get_ptr().unwrap();
+                let prev = rela.replace(ptr);
+                assert!(prev.is_none(), "Multiple RELA entries");
+            }
+            Tag::RelaSize => {
+                let value = rel.get_val().unwrap();
+                let prev = relasz.replace(value);
+                assert!(prev.is_none(), "Multiple RELASZ entries");
+            }
+            Tag::RelaEnt => {
+                let value = rel.get_val().unwrap();
+                let prev = relaent.replace(value);
+                assert!(prev.is_none(), "Multiple RELAENT entries");
+            }
+            _ => {}
+        }
+    }
+
+    let Some(relocation_table_offset) = rela else {
+        assert!(
+            relasz.is_none() && relaent.is_none(),
+            "Missing RELA entry but RELASIZE or RELAENT is present"
+        );
+        // No relocation needed, job is done
+        return;
+    };
+
+    let total_size = relasz.expect("Missing RELASIZE entry");
+    let entry_size = relaent.expect("Missing RELAENT entry");
+
+    assert_eq!(entry_size, size_of::<Rela<u64>>() as u64);
+
+    let num_entries = total_size / entry_size;
+    for i in 0..num_entries {
+        let rela = {
+            let offset = relocation_table_offset + size_of::<Rela<u64>>() as u64 * i;
+            let value = vao + offset;
+            let addr = VirtAddr::try_new(value)
+                .expect("Invalid address: outside of virtual address space");
+
+            let mut buf = [0; size_of::<Rela<u64>>()];
+            copy_from_krnlspc(klu, addr, &mut buf);
+
+            unsafe { buf.as_ptr().cast::<Rela<u64>>().read_unaligned() }
+        };
+
+        assert_eq!(
+            rela.get_symbol_table_index(),
+            0,
+            "Unexpected non-null symbol index"
+        );
+        assert_eq!(rela.get_type(), 8, "Unexpected relocation type");
+
+        // Make sure segment is loaded
+        assert!(
+            klu.kernel.program_iter().any(|ph| {
+                ph.get_type().unwrap() == Type::Load
+                    && ph.virtual_addr() <= rela.get_offset()
+                    && rela.get_offset() < ph.virtual_addr() + ph.mem_size()
+            }),
+            "Address is not loaded"
+        );
+
+        let addr = VirtAddr::new(vao + rela.get_offset());
+        let value = vao + rela.get_addend();
+
+        copy_to_krnlspc(klu, addr, &value.to_ne_bytes());
+    }
+}
+
+// Kernel space doesn't exactly map to the physical address space
+// so the process of copying arrays of data is not trivial.
+fn copy_from_krnlspc(klu: &KernelLoadingUtils, addr: VirtAddr, buf: &mut [u8]) {
+    // FIXME: Use `Step` once it has been stabilized
+    // let end_addr = core::iter::Step::forward_checked(addr, buf.len() - 1)
+    //     .expect("Address overflow");
+    let end_addr = {
+        let offset = u64::try_from(buf.len() - 1).unwrap();
+        // FIXME: Match the `Step` implementation of `VirtAddr` from `x86_64`
+        assert!(
+            offset < 0x1_0000_0000_0000,
+            "Outside of virtual address space"
+        );
+
+        let mut addr = addr.as_u64().checked_add(offset).expect("Address overflow");
+
+        match addr >> 47 {
+            0x1 => {
+                addr |= 0x1FFFF << 47;
+            }
+            0x2 => {
+                panic!("Address overflow");
+            }
+            _ => {}
+        }
+
+        unsafe { VirtAddr::new_unsafe(addr) }
+    };
+
+    let start_page = Page::<Size4KiB>::containing_address(addr);
+    let end_page = Page::<Size4KiB>::containing_address(end_addr);
+
+    for page in Page::range_inclusive(start_page, end_page) {
+        let phys_addr = klu
+            .page_table
+            .translate_page(page)
+            .expect("Page is not mapped");
+
+        // Find the address range to copy
+        let page_start = page.start_address();
+        let page_end = page.start_address() + Size4KiB::SIZE - 1;
+
+        // Special case of first and last pages
+        let start_copy = page_start.max(addr);
+        let end_copy = page_end.min(end_addr);
+
+        let start_offset_in_frame = start_copy - page_start;
+
+        let copy_len = usize::try_from(end_copy - start_copy + 1).unwrap();
+
+        let start_paddr = phys_addr.start_address() + start_offset_in_frame;
+
+        // FIXME: Use `Step` once it has been stabilized
+        // let start_offset_buffer = core::iter::Step::steps_between(&addr, &start_copy);
+        let start_offset_buffer = {
+            let mut steps = start_copy.as_u64().checked_sub(addr.as_u64()).unwrap();
+            steps &= 0xffff_ffff_ffff;
+            usize::try_from(steps).unwrap()
+        };
+
+        let src =
+            unsafe { core::slice::from_raw_parts(start_paddr.as_u64() as *const u8, copy_len) };
+
+        let dest = &mut buf[start_offset_buffer..][..copy_len];
+
+        dest.copy_from_slice(src);
+    }
+}
+
+// Kernel space doesn't exactly map to the physical address space
+// so the process of copying arrays of data is not trivial.
+fn copy_to_krnlspc(klu: &mut KernelLoadingUtils, addr: VirtAddr, buf: &[u8]) {
+    // FIXME: Use `Step` once it has been stabilized
+    // let end_addr = core::iter::Step::forward_checked(addr, buf.len() - 1)
+    //     .expect("Address overflow");
+    let end_addr = {
+        let offset = u64::try_from(buf.len() - 1).unwrap();
+        // FIXME: Match the `Step` implementation of `VirtAddr` from `x86_64`
+        assert!(
+            offset < 0x1_0000_0000_0000,
+            "Outside of virtual address space"
+        );
+
+        let mut addr = addr.as_u64().checked_add(offset).expect("Address overflow");
+
+        match addr >> 47 {
+            0x1 => {
+                addr |= 0x1FFFF << 47;
+            }
+            0x2 => {
+                panic!("Address overflow");
+            }
+            _ => {}
+        }
+
+        unsafe { VirtAddr::new_unsafe(addr) }
+    };
+
+    let start_page = Page::<Size4KiB>::containing_address(addr);
+    let end_page = Page::<Size4KiB>::containing_address(end_addr);
+
+    for page in Page::range_inclusive(start_page, end_page) {
+        let phys_addr = {
+            let TranslateResult::Mapped {
+                frame: MappedFrame::Size4KiB(frame),
+                flags,
+                offset: _,
+            } = klu.page_table.translate(page.start_address())
+            else {
+                panic!("Last page of segment is not mapped to a 4KiB frame");
+            };
+
+            if flags.contains(PageTableFlags::BIT_9) {
+                frame
+            } else {
+                let new_frame = klu
+                    .frame_allocator
+                    .allocate_frame()
+                    .expect("Failed to allocate frame");
+
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        frame.start_address().as_u64() as *const u8,
+                        new_frame.start_address().as_u64() as *mut u8,
+                        usize::try_from(Size4KiB::SIZE).unwrap(),
+                    );
+                }
+
+                klu.page_table.unmap(page).unwrap().1.ignore();
+
+                unsafe {
+                    klu.page_table
+                        .map_to(
+                            page,
+                            new_frame,
+                            flags.union(PageTableFlags::BIT_9),
+                            klu.frame_allocator,
+                        )
+                        .expect("Failed to map zero page")
+                        .ignore();
+                }
+
+                new_frame
+            }
+        };
+
+        // Find the address range to copy
+        let page_start = page.start_address();
+        let page_end = page.start_address() + Size4KiB::SIZE - 1;
+
+        // Special case of first and last pages
+        let start_copy = page_start.max(addr);
+        let end_copy = page_end.min(end_addr);
+
+        let start_offset_in_frame = start_copy - page_start;
+
+        let copy_len = usize::try_from(end_copy - start_copy + 1).unwrap();
+
+        let start_paddr = phys_addr.start_address() + start_offset_in_frame;
+
+        // FIXME: Use `Step` once it has been stabilized
+        // let start_offset_buffer = core::iter::Step::steps_between(&addr, &start_copy);
+        let start_offset_buffer = {
+            let mut steps = start_copy.as_u64().checked_sub(addr.as_u64()).unwrap();
+            steps &= 0xffff_ffff_ffff;
+            usize::try_from(steps).unwrap()
+        };
+
+        let dest =
+            unsafe { core::slice::from_raw_parts_mut(start_paddr.as_u64() as *mut u8, copy_len) };
+
+        let src = &buf[start_offset_buffer..][..copy_len];
+
+        dest.copy_from_slice(src);
+    }
+}
+
+fn handle_segment_gnurelro(
+    gnurelro_segment: ProgramHeader,
+    klu: &mut KernelLoadingUtils,
+    vao: u64,
+) {
+    let start = VirtAddr::new(vao + gnurelro_segment.virtual_addr());
+    let end = VirtAddr::new(vao + gnurelro_segment.virtual_addr() + gnurelro_segment.mem_size());
+
+    let start_page = Page::<Size4KiB>::containing_address(start);
+    let end_page = Page::<Size4KiB>::containing_address(end - 1);
+
+    for page in Page::range_inclusive(start_page, end_page) {
+        let TranslateResult::Mapped {
+            frame: _,
+            flags,
+            offset: _,
+        } = klu.page_table.translate(page.start_address())
+        else {
+            panic!("Last page of segment is not mapped");
+        };
+
+        if flags.contains(PageTableFlags::WRITABLE) {
+            let new_flags = flags.difference(PageTableFlags::WRITABLE);
+            unsafe {
+                klu.page_table
+                    .update_flags(page, new_flags)
+                    .unwrap()
+                    .ignore();
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct KernelInfo {
+    pub entry_point: VirtAddr,
+    pub image_offset: VirtAddr,
+    pub tls_template: Option<TlsTemplate>,
+}

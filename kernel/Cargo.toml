@@ -1,0 +1,13 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bootloader = { workspace = true }
+linked_list_allocator = { version = "0.10.5", default-features = false }
+log = "0.4.22"
+noto-sans-mono-bitmap = { version = "0.3.0", features = ["size_20"] }
+spin = { version = "0.9.8", default-features = false, features = ["once","spin_mutex"] }
+uart_16550 = "0.3.2"
+x86_64 = { workspace = true }
