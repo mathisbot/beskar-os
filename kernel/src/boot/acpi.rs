@@ -5,12 +5,9 @@ use core::sync::atomic::AtomicU8;
 use spin::Once;
 use x86_64::PhysAddr;
 
-mod hpet;
-mod pmap;
-
 mod rsdp;
 use rsdp::Rsdp;
-mod sdt;
+pub mod sdt;
 use sdt::Rsdt;
 
 static ACPI_REVISION: AcpiRevisionStorage = AcpiRevisionStorage::uninit();
@@ -58,7 +55,7 @@ impl Acpi {
         let fadt = sdt::fadt::Fadt::load(fadt_paddr).parse();
         let hpet = hpet_paddr.map(|paddr| sdt::hpet_table::HpetTable::load(paddr).parse());
         if let Some(hpet_info) = hpet {
-            hpet::init(hpet_info);
+            crate::cpu::hpet::init(hpet_info);
         }
 
         Self {

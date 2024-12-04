@@ -6,7 +6,6 @@
 #[cfg(not(target_arch = "x86_64"))]
 compile_error!("BeskarOS kernel only supports x86_64 architecture");
 
-mod acpi;
 pub mod boot;
 mod cpu;
 pub mod locals;

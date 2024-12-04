@@ -103,8 +103,6 @@ impl Gdt {
 }
 
 #[derive(Debug)]
-// `MaybeUninit` doesn't drop its inner value on drop, fortunately nothing
-// needs to be dropped here (everything is `Copy`).
 struct InnerGdt {
     gdt: MaybeUninit<GlobalDescriptorTable>,
     tss: MaybeUninit<TaskStateSegment>,

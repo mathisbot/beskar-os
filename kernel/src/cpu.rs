@@ -2,6 +2,7 @@ use x86_64::registers::rflags;
 
 pub mod apic;
 pub mod gdt;
+pub mod hpet;
 pub mod interrupts;
 
 pub fn check_cpuid() {

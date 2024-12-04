@@ -1,7 +1,6 @@
 use core::sync::atomic::AtomicU8;
 
 use crate::{
-    acpi,
     cpu::{apic, interrupts},
     pci, screen, serdebug, serial, serinfo,
 };
@@ -9,6 +8,8 @@ use bootloader::BootInfo;
 use x86_64::PhysAddr;
 
 use crate::{locals, logging, mem, time};
+
+pub mod acpi;
 
 /// Static reference to the kernel main function
 ///

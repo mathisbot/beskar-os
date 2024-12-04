@@ -84,6 +84,7 @@ stack_lookup:
 
 section .data
 
+; Minimal GDT (overwritten later on)
 gdt:
 .null equ $ - gdt
     dq 0
@@ -99,7 +100,6 @@ gdt:
     ; 44: Code/data segment
     ; 41: Writable
     dq 0x0000920000000000
-; TODO: User mode
 .end equ $ - gdt
 ALIGN 4, db 0
 gdtr:

@@ -108,40 +108,26 @@ pub struct McsGuard<'node, 'lock, T> {
     node: &'node McsNode,
 }
 
-impl<T> McsGuard<'_, '_, T> {
-    #[must_use]
-    #[inline]
-    /// Returns a reference to the locked data.
-    pub fn get(&self) -> &T {
-        unsafe { &*self.lock.data.get() }
-    }
-
-    #[must_use]
-    #[inline]
-    /// Returns a mutable reference to the locked data.
-    pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.lock.data.get() }
-    }
-}
-
 impl<T> Deref for McsGuard<'_, '_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.get()
+        unsafe { &*self.lock.data.get() }
     }
 }
 
 impl<T> DerefMut for McsGuard<'_, '_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.get_mut()
+        unsafe { &mut *self.lock.data.get() }
     }
 }
 
 impl<T> Drop for McsGuard<'_, '_, T> {
     fn drop(&mut self) {
         unsafe {
+            // Check if the node is at the front of the queue
             if self.node.next.get().read().is_null() {
+                // Atomically set the tail to null
                 if self
                     .lock
                     .tail
@@ -155,11 +141,13 @@ impl<T> Drop for McsGuard<'_, '_, T> {
                 {
                     return;
                 }
-                // FIXME:
+                // If setting the tail to null fails, it means a new node it being added.
+                // In such a case, wait until it is completely added (should be fast).
                 while self.node.next.get().read().is_null() {
                     core::hint::spin_loop();
                 }
             }
+            // Unlock the next node
             (*self.node.next.get().read())
                 .locked
                 .store(false, Ordering::Release);
@@ -170,7 +158,6 @@ impl<T> Drop for McsGuard<'_, '_, T> {
 /// Maybe Uninit MCS Lock.
 ///
 /// This is a wrapper around a MCS lock that allows to lock a `MaybeUninit` value.
-/// It is a kind of equivalent of a `OnceLock`.
 ///
 /// ## Example
 ///
@@ -192,8 +179,6 @@ impl<T> Drop for McsGuard<'_, '_, T> {
 /// }
 /// ```
 pub struct MUMcsLock<T> {
-    // FIXME: Raw pointer instead of `MaybeUninit`?
-    // As `MaybeUninit<T>` does not drop `T` when it goes out of scope.
     inner_lock: McsLock<MaybeUninit<T>>,
     is_init: AtomicBool,
 }
@@ -208,6 +193,12 @@ impl<T> Drop for MUMcsLock<T> {
             // This shouldn't happen if the lock is being dropped.
             unsafe { self.inner_lock.data.get_mut().assume_init_drop() };
         }
+    }
+}
+
+impl<T> Default for MUMcsLock<T> {
+    fn default() -> Self {
+        Self::uninit()
     }
 }
 
@@ -228,8 +219,11 @@ impl<T> MUMcsLock<T> {
     pub fn init(&self, value: T) {
         let node = McsNode::new();
         let mut inner_self = self.inner_lock.lock(&node);
+
         let previous_init_value = self.is_init.swap(true, Ordering::AcqRel);
         assert!(!previous_init_value, "MUMcsLock already initialized");
+        // Note that, because the inner `McsLock` is locked, it is safe to only check the initialized
+        // state once, as no other thread can access the lock until it is unlocked.
         inner_self.write(value);
     }
 
@@ -253,10 +247,7 @@ impl<T> MUMcsLock<T> {
         let guard = self.inner_lock.lock(node);
         // If de-initialization is implemented, this line should be uncommented.
         // It can cause poisoning in the very specific case mentioned above.
-        // assert!(
-        //     self.is_initialized(),
-        //     "MUMcsLock not initialized"
-        // );
+        // assert!(self.is_initialized(), "MUMcsLock not initialized");
         MUMcsGuard { inner_guard: guard }
     }
 
@@ -300,13 +291,13 @@ impl<T> Deref for MUMcsGuard<'_, '_, T> {
 
     fn deref(&self) -> &Self::Target {
         // Safety: The lock is initialized if the guard exists.
-        unsafe { self.inner_guard.get().assume_init_ref() }
+        unsafe { self.inner_guard.assume_init_ref() }
     }
 }
 
 impl<T> DerefMut for MUMcsGuard<'_, '_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // Safety: The lock is initialized if the guard exists.
-        unsafe { self.inner_guard.get_mut().assume_init_mut() }
+        unsafe { self.inner_guard.assume_init_mut() }
     }
 }

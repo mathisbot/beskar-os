@@ -1,6 +1,7 @@
 use core::mem::offset_of;
 
-use super::{pmap, AcpiRevision};
+use super::AcpiRevision;
+use crate::mem::page_alloc::pmap::PhysicalMapping;
 use x86_64::{PhysAddr, VirtAddr};
 
 #[derive(Clone, Copy, Debug)]
@@ -35,7 +36,7 @@ struct Xsdp2 {
 pub struct Rsdp {
     start_vaddr: VirtAddr,
     revision: AcpiRevision,
-    _physical_mapping: pmap::PhysicalMapping,
+    _physical_mapping: PhysicalMapping,
 }
 
 impl Rsdp {
@@ -45,7 +46,7 @@ impl Rsdp {
     pub fn load(rsdp_paddr: PhysAddr) -> Self {
         // First, we need to map the RSDP address to read the data.
         // Otherwise, a nice page fault will occur.
-        let physical_mapping = pmap::PhysicalMapping::new(rsdp_paddr, size_of::<Xsdp2>());
+        let physical_mapping = PhysicalMapping::new(rsdp_paddr, size_of::<Xsdp2>(), false);
 
         let rsdp_vaddr = physical_mapping.translate(rsdp_paddr).unwrap();
 

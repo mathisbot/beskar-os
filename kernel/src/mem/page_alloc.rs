@@ -13,6 +13,8 @@ use crate::{
 
 use super::ranges::MemoryRanges;
 
+pub mod pmap;
+
 static KPAGE_ALLOC: MUMcsLock<PageAllocator> = MUMcsLock::uninit();
 
 /// This is the maximum valid address that 4 level paging can map.

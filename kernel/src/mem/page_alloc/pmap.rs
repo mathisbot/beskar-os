@@ -11,6 +11,9 @@ use crate::mem::{frame_alloc, page_alloc, page_table};
 
 #[derive(Debug)]
 /// Physical Mapping structure
+///
+/// Be careful to only used the original mapped length, as accessing outside
+/// could result in undefined behavior if the memory is used by another mapping.
 pub struct PhysicalMapping {
     start_frame: PhysFrame<Size4KiB>,
     start_page: Page<Size4KiB>,
@@ -20,7 +23,7 @@ pub struct PhysicalMapping {
 impl PhysicalMapping {
     /// Creates a new physical mapping.
     #[must_use]
-    pub fn new(start_paddr: PhysAddr, required_length: usize) -> Self {
+    pub fn new(start_paddr: PhysAddr, required_length: usize, writable: bool) -> Self {
         let end_paddr = start_paddr + u64::try_from(required_length).unwrap();
 
         let start_frame = PhysFrame::<Size4KiB>::containing_address(start_paddr);
@@ -37,13 +40,17 @@ impl PhysicalMapping {
         frame_alloc::with_frame_allocator(|frame_allocator| {
             page_table::with_page_table(|page_table| {
                 for (frame, page) in frame_range.zip(page_range) {
+                    let mut flags = PageTableFlags::PRESENT
+                        | PageTableFlags::NO_CACHE
+                        | PageTableFlags::NO_EXECUTE;
+                    if writable {
+                        flags |= PageTableFlags::WRITABLE;
+                    }
                     unsafe {
                         page_table.map_to_with_table_flags(
                             page,
                             frame,
-                            PageTableFlags::PRESENT
-                                | PageTableFlags::NO_CACHE
-                                | PageTableFlags::NO_EXECUTE,
+                            flags,
                             PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
                             &mut *frame_allocator,
                         )
@@ -79,6 +86,7 @@ impl Drop for PhysicalMapping {
     fn drop(&mut self) {
         // TODO: Is it possible to add frames to the frame allocator pool at some point?
         // We don't need to keep memory reserved for ACPI once we've read the tables.
+        // Be careful as the frame could be used by another mapping.
         page_table::with_page_table(|page_table| {
             for i in 0..self.count {
                 let page = self.start_page + i;

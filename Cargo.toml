@@ -10,7 +10,7 @@ members = ["bootloader", "kernel"]
 
 [workspace.dependencies]
 bootloader = { path = "bootloader" }
-x86_64 = { version = "0.15.2", default-features = false, features = ["instructions","abi_x86_interrupt"] }
+x86_64 = { version = "0.15.2", default-features = false, features = ["abi_x86_interrupt","instructions"] }
 
 [build-dependencies]
 bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }

@@ -9,6 +9,8 @@ fn rdrand(dst: &mut u64) {
     fn check_support() -> bool {
         let res = unsafe { core::arch::x86_64::__cpuid(1) };
         let is_supported = (res.ecx >> 30) & 1 == 1;
+        // We could use compare_exchange here, but it is not a problem to set the value multiple times
+        // as it won't change (support for RDRAND won't magically appear or disappear)
         IS_SUPPORTED.store(
             u8::from(is_supported),
             core::sync::atomic::Ordering::Relaxed,

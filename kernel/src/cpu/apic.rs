@@ -30,7 +30,7 @@ pub fn init() {
 
     // FIXME: If ACPI MADT isn't available, we should use the APIC MSR to get the base address.
     // Here, the kernel would panic during ACPI loading.
-    let apic = crate::acpi::ACPI.get().map_or_else(
+    let apic = crate::boot::acpi::ACPI.get().map_or_else(
         || {
             let apic_msr = x86_64::registers::model_specific::Msr::new(0x1B);
             Apic::from_msr(&apic_msr)

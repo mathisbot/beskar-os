@@ -2,10 +2,8 @@ use core::mem::offset_of;
 
 use x86_64::{PhysAddr, VirtAddr};
 
-use super::{
-    pmap::{self, PhysicalMapping},
-    AcpiRevision,
-};
+use super::AcpiRevision;
+use crate::mem::page_alloc::pmap::PhysicalMapping;
 
 pub mod fadt;
 pub mod hpet_table;
@@ -136,7 +134,7 @@ unsafe impl Sdt for Rsdt {
 
 impl Rsdt {
     pub fn load(rsdt_paddr: PhysAddr) -> Self {
-        let physical_mapping = pmap::PhysicalMapping::new(rsdt_paddr, size_of::<SdtHeader>());
+        let physical_mapping = PhysicalMapping::new(rsdt_paddr, size_of::<SdtHeader>(), false);
         let rsdt_vaddr = physical_mapping.translate(rsdt_paddr).unwrap();
 
         let rsdt = Self {
@@ -159,7 +157,7 @@ impl Rsdt {
 
         drop(rsdt);
 
-        let table_mapping = pmap::PhysicalMapping::new(rsdt_paddr, rsdt_length);
+        let table_mapping = PhysicalMapping::new(rsdt_paddr, rsdt_length, false);
         let rsdt_vaddr = table_mapping.translate(rsdt_paddr).unwrap();
 
         let rsdt = Self {
@@ -202,7 +200,7 @@ impl Rsdt {
         for i in 0..self.sdt_table_length() {
             let paddr = unsafe { start_ptr.add(i).read_unaligned() };
 
-            let physical_mapping = pmap::PhysicalMapping::new(paddr, size_of::<SdtHeader>());
+            let physical_mapping = PhysicalMapping::new(paddr, size_of::<SdtHeader>(), false);
             let table_vaddr = physical_mapping.translate(paddr).unwrap();
             let header = unsafe { &*table_vaddr.as_ptr::<SdtHeader>() };
 
@@ -239,7 +237,7 @@ impl From<Signature> for &'static [u8; 4] {
 ///
 /// The provided physical address must point to a potentially valid SDT.
 pub unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
-    let header_mapping = PhysicalMapping::new(phys_addr, core::mem::size_of::<SdtHeader>());
+    let header_mapping = PhysicalMapping::new(phys_addr, core::mem::size_of::<SdtHeader>(), false);
     let header_vaddr = header_mapping.translate(phys_addr).unwrap();
 
     let table_length = unsafe {
@@ -251,7 +249,7 @@ pub unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
 
     drop(header_mapping);
 
-    PhysicalMapping::new(phys_addr, usize::try_from(table_length).unwrap())
+    PhysicalMapping::new(phys_addr, usize::try_from(table_length).unwrap(), false)
 }
 
 #[macro_export]
@@ -264,10 +262,10 @@ macro_rules! impl_sdt {
         #[derive(Debug)]
         pub struct $name {
             start_vaddr: x86_64::VirtAddr,
-            _physical_mapping: $crate::acpi::pmap::PhysicalMapping,
+            _physical_mapping: $crate::mem::page_alloc::pmap::PhysicalMapping,
         }
 
-        unsafe impl $crate::acpi::sdt::Sdt for $name {
+        unsafe impl $crate::boot::acpi::sdt::Sdt for $name {
             fn start(&self) -> *const u8 {
                 self.start_vaddr.as_ptr()
             }
@@ -275,9 +273,9 @@ macro_rules! impl_sdt {
 
         impl $name {
             pub fn load(paddr: x86_64::PhysAddr) -> Self {
-                use $crate::acpi::sdt::Sdt;
+                use $crate::boot::acpi::sdt::Sdt;
 
-                let mapping = unsafe { $crate::acpi::sdt::map(paddr) };
+                let mapping = unsafe { $crate::boot::acpi::sdt::map(paddr) };
                 let vaddr = mapping
                     .translate(paddr)
                     .expect("Failed to translate physical address");
@@ -355,6 +353,18 @@ impl GenericAddress {
     #[inline]
     pub const fn address(&self) -> u64 {
         self.address
+    }
+
+    #[must_use]
+    #[inline]
+    pub const unsafe fn add(&self, offset: u64) -> Self {
+        Self {
+            address: self.address + offset,
+            address_space: self.address_space,
+            bit_width: self.bit_width,
+            bit_offset: self.bit_offset,
+            access_size: self.access_size,
+        }
     }
 }
 

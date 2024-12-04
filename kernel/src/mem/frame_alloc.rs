@@ -10,7 +10,6 @@ use bootloader::info::{MemoryRegion, MemoryRegionUsage};
 use x86_64::{
     structures::paging::{
         page::PageRangeInclusive, Mapper, PageSize, PageTableFlags, PhysFrame, RecursivePageTable,
-        Size1GiB, Size2MiB, Size4KiB,
     },
     PhysAddr,
 };
@@ -120,19 +119,9 @@ impl FrameAllocator {
     }
 }
 
-unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for FrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
-        self.alloc::<Size4KiB>()
-    }
-}
-unsafe impl x86_64::structures::paging::FrameAllocator<Size2MiB> for FrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<Size2MiB>> {
-        self.alloc::<Size2MiB>()
-    }
-}
-unsafe impl x86_64::structures::paging::FrameAllocator<Size1GiB> for FrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<Size1GiB>> {
-        self.alloc::<Size1GiB>()
+unsafe impl<S: PageSize> x86_64::structures::paging::FrameAllocator<S> for FrameAllocator {
+    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
+        self.alloc::<S>()
     }
 }
 
