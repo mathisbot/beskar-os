@@ -40,7 +40,7 @@ struct EntryHeader {
 struct Lapic {
     header: EntryHeader,
     acpi_id: u8,
-    apic_id: u8,
+    id: u8,
     flags: u32,
 }
 
@@ -49,9 +49,9 @@ struct Lapic {
 /// MADT Entry type 1: I/O APIC
 struct IoApic {
     header: EntryHeader,
-    io_apic_id: u8,
+    id: u8,
     _reserved: u8,
-    io_apic_addr: u32,
+    addr: u32,
     gsi_base: u32,
 }
 
@@ -116,15 +116,27 @@ struct LapicAddressOverride {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C, packed)]
+/// MADT Entry type 6: I/O SAPIC
+struct IoSapic {
+    header: EntryHeader,
+    id: u8,
+    _reserved: u8,
+    gsi_base: u32,
+    addr: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
 /// MADT Entry type 9: Processor Local x2APIC
 struct X2Apic {
     header: EntryHeader,
     _reserved: u16,
-    x2apic_id: u32,
+    id: u32,
     flags: u32,
     acpi_id: u32,
 }
 
+// See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt>
 impl Madt {
     #[must_use]
     pub fn parse(&self) -> ParsedMadt {
@@ -158,25 +170,20 @@ impl Madt {
                 1 => {
                     assert_eq!(usize::from(entry_header.length), size_of::<IoApic>());
 
-                    let io_apic = unsafe {
-                        entry_start
-                            .byte_add(offset)
-                            .cast::<IoApic>()
-                            .read_unaligned()
-                    };
+                    let io_apic = unsafe { entry_start.cast::<IoApic>().read_unaligned() };
 
-                    assert!(
-                        io_apic_id.replace(io_apic.io_apic_id).is_none(),
-                        "Multiple I/O APICs found."
-                    );
-                    assert!(
-                        io_apic_addr.replace(io_apic.io_apic_addr).is_none(),
-                        "Multiple I/O APICs found."
-                    );
-                    assert!(
-                        gsi_base.replace(io_apic.gsi_base).is_none(),
-                        "Multiple I/O APICs found."
-                    );
+                    let old_io_apic_id = io_apic_id.replace(io_apic.id);
+                    let old_io_apic_addr = io_apic_addr.replace(io_apic.addr);
+                    let old_gsi_base = gsi_base.replace(io_apic.gsi_base);
+                    if old_io_apic_id.is_some()
+                        || old_io_apic_addr.is_some()
+                        || old_gsi_base.is_some()
+                    {
+                        log::warn!("Multiple I/O APICs are not supported YET. Using first found.");
+                        io_apic_id = old_io_apic_id;
+                        io_apic_addr = old_io_apic_addr;
+                        gsi_base = old_gsi_base;
+                    }
                 }
                 2 => {
                     assert_eq!(
@@ -186,58 +193,74 @@ impl Madt {
 
                     let interrupt_source_override = unsafe {
                         entry_start
-                            .byte_add(offset)
                             .cast::<InterruptSourceOverride>()
                             .read_unaligned()
                     };
+
                     // TODO: Understand what this entry type does.
                     log::warn!(
                         "I/O APIC Interrupt Source Override entry type found but not implemented."
+                    );
+
+                    assert_eq!(
+                        interrupt_source_override.bus_source, 0,
+                        "ISO bus source must be 0."
+                    );
+
+                    // Mandatory to unwrap because struct is unaligned.
+                    let irq_source = interrupt_source_override.irq_source;
+                    let gsi = interrupt_source_override.gsi;
+                    let flags = interrupt_source_override.flags;
+
+                    log::warn!(
+                        "irq_source: {}, gsi: {}, flags: {:?}",
+                        irq_source,
+                        gsi,
+                        flags
                     );
                 }
                 3 => {
                     assert_eq!(usize::from(entry_header.length), size_of::<IoNmiSource>());
 
-                    let nmi_sources = unsafe {
-                        entry_start
-                            .byte_add(offset)
-                            .cast::<IoNmiSource>()
-                            .read_unaligned()
-                    };
+                    let nmi_sources = unsafe { entry_start.cast::<IoNmiSource>().read_unaligned() };
                     // TODO: Handle NMI sources.
                 }
                 4 => {
                     assert_eq!(usize::from(entry_header.length), size_of::<LocalNmi>());
 
-                    let local_nmi = unsafe {
-                        entry_start
-                            .byte_add(offset)
-                            .cast::<LocalNmi>()
-                            .read_unaligned()
-                    };
+                    let local_nmi = unsafe { entry_start.cast::<LocalNmi>().read_unaligned() };
                     // TODO: Handle Local NMI.
                 }
                 5 => {
                     assert_eq!(
                         usize::from(entry_header.length),
-                        size_of::<LapicAddressOverride>()
+                        size_of::<LapicAddressOverride>(),
+                        "Invalid MADT entry length for Local APIC Address Override."
                     );
 
-                    let lapic_override = unsafe {
-                        entry_start
-                            .byte_add(offset)
-                            .cast::<LapicAddressOverride>()
-                            .read_unaligned()
-                    };
+                    let lapic_override =
+                        unsafe { entry_start.cast::<LapicAddressOverride>().read_unaligned() };
                     lapic_paddr = PhysAddr::new(lapic_override.address);
                 }
+                6 => {
+                    assert_eq!(
+                        usize::from(entry_header.length),
+                        size_of::<IoSapic>(),
+                        "Invalid MADT entry length for I/O SAPIC."
+                    );
+                    // TODO: I/O SAPIC, overrides the I/O APIC
+                }
                 9 => {
-                    assert_eq!(usize::from(entry_header.length), size_of::<X2Apic>());
+                    assert_eq!(
+                        usize::from(entry_header.length),
+                        size_of::<X2Apic>(),
+                        "Invalid MADT entry length for Processor Local x2APIC."
+                    );
                     // Local x2APIC
                     // Same as Local APIC
                 }
                 _ => {
-                    // Panicking is not a great idea, in case other entry types are added in the future.
+                    // We shouldn't panic here
                     log::warn!(
                         "Unknown MADT entry type: {}, skipping.",
                         entry_header.entry_type

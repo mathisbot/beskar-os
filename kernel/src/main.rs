@@ -5,7 +5,7 @@
 #[cfg(not(target_arch = "x86_64"))]
 compile_error!("BeskarOS kernel only supports x86_64 architecture");
 
-use kernel::{locals, sererror};
+use kernel::locals;
 use x86_64::instructions::hlt;
 
 kernel::kernel_main!(kmain);
@@ -14,7 +14,7 @@ kernel::kernel_main!(kmain);
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     x86_64::instructions::interrupts::disable();
 
-    sererror!("[PANIC]: {}", panic_info);
+    kernel::sererror!("[PANIC]: {}", panic_info);
     log::error!("[PANIC]: {}", panic_info.message());
     #[cfg(debug_assertions)]
     if let Some(location) = panic_info.location() {

@@ -86,6 +86,7 @@ impl From<u8> for PageProtection {
 }
 
 impl HpetTable {
+    #[must_use]
     pub fn parse(&self) -> ParsedHpetTable {
         assert_eq!(
             usize::try_from(self.length()).unwrap(),

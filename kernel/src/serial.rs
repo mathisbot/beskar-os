@@ -27,7 +27,7 @@ pub fn init() {
 #[cfg_attr(not(debug_assertions), allow(unused_variables))]
 pub fn serial_print(args: core::fmt::Arguments) {
     #[cfg(debug_assertions)]
-    SERIAL_PORT.with_locked(|serial| {
+    SERIAL_PORT.try_with_locked(|serial| {
         serial.write_fmt(args).unwrap();
     });
 }
@@ -35,16 +35,9 @@ pub fn serial_print(args: core::fmt::Arguments) {
 #[macro_export]
 macro_rules! serprint {
     ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
         $crate::serial::serial_print(format_args!($($arg)*));
     };
-}
-
-#[macro_export]
-macro_rules! serprintln {
-    () => ($crate::serial_print!("\n"));
-    ($fmt:expr) => ($crate::serprint!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => ($crate::serprint!(
-        concat!($fmt, "\n"), $($arg)*));
 }
 
 #[macro_export]
@@ -73,4 +66,11 @@ macro_rules! serdebug {
     ($fmt:expr) => ($crate::serprint!(concat!("[DEBUG] ", $fmt, "\n")));
     ($fmt:expr, $($arg:tt)*) => ($crate::serprint!(
         concat!("[DEBUG] ", $fmt, "\n"), $($arg)*));
+}
+
+#[macro_export]
+macro_rules! sertrace {
+    ($fmt:expr) => ($crate::serprint!(concat!("[TRACE] ", $fmt, "\n")));
+    ($fmt:expr, $($arg:tt)*) => ($crate::serprint!(
+        concat!("[TRACE] ", $fmt, "\n"), $($arg)*));
 }

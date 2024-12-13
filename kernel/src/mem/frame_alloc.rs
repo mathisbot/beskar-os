@@ -21,7 +21,7 @@ use crate::{
 
 use super::page_table;
 
-const MAX_MEMORY_REGIONS: usize = 256;
+const MAX_MEMORY_REGIONS: usize = 1024;
 
 static KFRAME_ALLOC: MUMcsLock<FrameAllocator> = MUMcsLock::uninit();
 
@@ -69,9 +69,9 @@ impl FrameAllocator {
 
     #[must_use]
     #[inline]
-    pub fn alloc_request<S: PageSize>(
+    pub fn alloc_request<S: PageSize, const M: usize>(
         &mut self,
-        req_range: &MemoryRangeRequest<MAX_MEMORY_REGIONS>,
+        req_range: &MemoryRangeRequest<M>,
     ) -> Option<PhysFrame<S>> {
         let size = S::SIZE;
         let alignment = S::SIZE;

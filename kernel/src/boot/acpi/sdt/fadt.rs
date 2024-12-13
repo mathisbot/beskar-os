@@ -80,6 +80,7 @@ struct FullFadt {
 }
 
 impl Fadt {
+    #[must_use]
     pub fn parse(&self) -> ParsedFadt {
         // Do NOT read any field in the FADT before validating the revision.
         // We can only be sure that the table is mapped up to `self.length()` bytes.

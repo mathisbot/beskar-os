@@ -63,6 +63,7 @@ Please refer to their READMEs for more information.
 
 - ACPI [WIP]
 - PCI [WIP]
+- USB
 - Optimizations
 - Stabilization
 - Inputs

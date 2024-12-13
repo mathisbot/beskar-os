@@ -39,13 +39,12 @@ impl PhysicalMapping {
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             page_table::with_page_table(|page_table| {
+                let mut flags =
+                    PageTableFlags::PRESENT | PageTableFlags::NO_CACHE | PageTableFlags::NO_EXECUTE;
+                if writable {
+                    flags |= PageTableFlags::WRITABLE;
+                }
                 for (frame, page) in frame_range.zip(page_range) {
-                    let mut flags = PageTableFlags::PRESENT
-                        | PageTableFlags::NO_CACHE
-                        | PageTableFlags::NO_EXECUTE;
-                    if writable {
-                        flags |= PageTableFlags::WRITABLE;
-                    }
                     unsafe {
                         page_table.map_to_with_table_flags(
                             page,
@@ -87,16 +86,16 @@ impl Drop for PhysicalMapping {
         // TODO: Is it possible to add frames to the frame allocator pool at some point?
         // We don't need to keep memory reserved for ACPI once we've read the tables.
         // Be careful as the frame could be used by another mapping.
+        let page_range =
+            Page::<Size4KiB>::range_inclusive(self.start_page, self.start_page + self.count - 1);
+
         page_table::with_page_table(|page_table| {
-            for i in 0..self.count {
-                let page = self.start_page + i;
+            for page in page_range {
                 let (_frame, tlb) = page_table.unmap(page).unwrap();
                 tlb.flush();
             }
         });
 
-        let page_range =
-            Page::<Size4KiB>::range_inclusive(self.start_page, self.start_page + self.count - 1);
         page_alloc::with_page_allocator(|page_allocator| {
             page_allocator.free_pages(page_range);
         });

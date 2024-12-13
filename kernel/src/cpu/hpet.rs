@@ -1,4 +1,5 @@
-// FIXME: Support for multiple HPET blocks?
+#![allow(dead_code)] // TODO: Remove
+                     // FIXME: Support for multiple HPET blocks?
 
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -82,7 +83,7 @@ impl GeneralCapabilities {
     #[must_use]
     #[inline]
     /// The period of the HPET in femtoseconds.
-    pub fn period(&self) -> u32 {
+    pub fn period(self) -> u32 {
         let period = self.0 >> 32;
         assert!(period <= 0x05F5_E100);
         assert_ne!(period, 0);
@@ -91,17 +92,17 @@ impl GeneralCapabilities {
 
     #[must_use]
     #[inline]
-    pub fn num_timers(&self) -> u8 {
+    pub fn num_timers(self) -> u8 {
         u8::try_from((self.0 >> 8) & 0b1_1111).unwrap()
     }
 
     #[must_use]
     #[inline]
-    pub fn count_size_capable(&self) -> bool {
+    pub const fn count_size_capable(self) -> bool {
         (self.0 >> 13) & 1 == 1
     }
 
-    fn validate(&self, hpet_info: &ParsedHpetTable) {
+    fn validate(self, hpet_info: &ParsedHpetTable) {
         assert_eq!(
             hpet_info.comparator_count(),
             self.num_timers(),
@@ -212,12 +213,12 @@ impl TimerConfigCap {
     #[inline]
     /// ## WARNING
     ///
-    /// According the OSDev wiki, this field can be little bit misleading :
+    /// According the `OSDev` wiki, this field can be little bit misleading :
     ///
     /// "Keep in mind that allowed interrupt routing may be insane. Namely,
     /// you probably want to use some of ISA interrupts - or, at very least,
     /// be able to use them at one point unambiguously.
-    /// Last time I checked VirtualBox allowed mappings for HPET,
+    /// Last time I checked `VirtualBox` allowed mappings for HPET,
     /// it allowed every timer to be routed to any of 32 I/O APIC inputs present on the system.
     /// Knowing how buggy hardware can be,
     /// I wouldn't be too surprised if there exists a PC with HPET claiming that input #31 is allowed,
@@ -343,7 +344,7 @@ impl TimerConfigCap {
     }
 
     #[inline]
-    pub fn set_int_type(&mut self, int_type: InterruptTriggerType) {
+    pub fn set_int_type(&mut self, int_type: &InterruptTriggerType) {
         let ptr = self.as_mut();
         match int_type {
             InterruptTriggerType::Edge => *ptr &= !(1 << 1),
@@ -384,7 +385,7 @@ impl TimerCompValue {
         *self.as_mut() = value;
     }
 
-    fn validate(&self) {}
+    const fn validate(&self) {}
 }
 
 pub fn init(hpet_info: ParsedHpetTable) {

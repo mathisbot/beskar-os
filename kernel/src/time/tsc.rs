@@ -2,6 +2,8 @@ use core::sync::atomic::AtomicU64;
 
 use x86_64::instructions::port::{Port, PortWriteOnly};
 
+use crate::cpu::cpuid;
+
 /// The TSC value at startup, when the TSC has been calibrated.
 static STARTUP_TIME: AtomicU64 = AtomicU64::new(0);
 
@@ -53,17 +55,12 @@ fn calibration_tick() -> f64 {
 }
 
 pub fn calibrate() {
-    // Make sure TSC exists
-    let cpuid_res = unsafe { core::arch::x86_64::__cpuid(0x1) };
-    // FIXME: Find a way to handle this without panicking
-    assert_eq!((cpuid_res.edx >> 4) & 1, 1, "TSC not supported");
-
     STARTUP_TIME.store(read_tsc(), core::sync::atomic::Ordering::Relaxed);
 
     // If CPU supports it, use the RDTSC calibration (Intel only apparently)
-    let (highest_leaf, _) = unsafe { core::arch::x86_64::__get_cpuid_max(0) };
+    let highest_leaf = cpuid::get_highest_supported_leaf();
     if highest_leaf >= 0x15 {
-        let cpuid_res = unsafe { core::arch::x86_64::__cpuid(0x15) };
+        let cpuid_res = cpuid::cpuid(0x15);
         if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
             let thc_hz =
                 u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);

@@ -1,3 +1,5 @@
+//! Advanced Programmable Interrupt Controller (APIC) driver.
+
 use core::num::NonZeroU64;
 
 use x86_64::{
@@ -7,6 +9,7 @@ use x86_64::{
 };
 
 use crate::{
+    cpu::cpuid,
     locals,
     mem::{frame_alloc, page_alloc, page_table},
 };
@@ -14,32 +17,24 @@ use crate::{
 pub mod ap;
 
 pub fn apic_id() -> u8 {
-    let cpuid_res = unsafe { core::arch::x86_64::__cpuid(1) };
+    let cpuid_res = cpuid::cpuid(1);
     u8::try_from((cpuid_res.ebx >> 24) & 0xFF).unwrap()
 }
 
 pub fn init() {
-    let cpuid_res = unsafe { core::arch::x86_64::__cpuid(1) };
-    // assert_eq!((cpuid_res.edx >> 5) & 1, 1, "MSR not supported");
-    assert_eq!((cpuid_res.edx >> 9) & 1, 1, "APIC not supported");
-    if (cpuid_res.ecx >> 21) & 1 == 0 {
+    let x2apic_supported = cpuid::check_feature(cpuid::CpuFeature::X2APIC);
+    if !x2apic_supported {
         log::warn!("X2APIC not supported");
     }
 
+    let lapic_paddr = crate::boot::acpi::ACPI.get().map_or_else(
+        Apic::get_paddr_from_msr,
+        crate::boot::acpi::Acpi::lapic_paddr,
+    );
+
     ensure_pic_disabled();
 
-    // FIXME: If ACPI MADT isn't available, we should use the APIC MSR to get the base address.
-    // Here, the kernel would panic during ACPI loading.
-    let apic = crate::boot::acpi::ACPI.get().map_or_else(
-        || {
-            let apic_msr = x86_64::registers::model_specific::Msr::new(0x1B);
-            Apic::from_msr(&apic_msr)
-        },
-        |acpi| {
-            let lapic_paddr = acpi.lapic_paddr();
-            Apic::from_paddr(lapic_paddr)
-        },
-    );
+    let apic = Apic::from_paddr(lapic_paddr);
 
     // TODO: Calibrate APIC timer when Timer is implemented
 
@@ -52,7 +47,8 @@ pub struct Apic {
 }
 
 impl Apic {
-    pub fn from_msr(msr: &x86_64::registers::model_specific::Msr) -> Self {
+    fn get_paddr_from_msr() -> PhysAddr {
+        let msr = x86_64::registers::model_specific::Msr::new(0x1B);
         let base = NonZeroU64::new(unsafe { msr.read() }).unwrap();
 
         assert!((base.get() >> 11) & 1 == 1, "APIC not enabled");
@@ -64,7 +60,7 @@ impl Apic {
 
         let base_addr = (base.get()) & 0xF_FFFF_F000;
 
-        Self::from_paddr(PhysAddr::new(base_addr))
+        PhysAddr::new(base_addr)
     }
 
     pub fn from_paddr(paddr: PhysAddr) -> Self {
@@ -99,6 +95,7 @@ impl Apic {
         }
     }
 
+    // TODO: Refactor sending IPIs
     /// Sends IPI to all APs, depending on the `sipi` parameter.
     ///
     /// If `sipi` is `None`, the APs will be sent an INIT.

@@ -15,5 +15,6 @@ fn main() {
     // TODO: Build FAT image for USB stick
     // For compatibility, image should be FAT32 (so at least 32MiB)
 
-    println!("cargo:rerun-if-changed=../");
+    println!("cargo:rerun-if-changed=./bootloader");
+    println!("cargo:rerun-if-changed=./kernel");
 }

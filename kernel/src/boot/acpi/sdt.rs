@@ -236,7 +236,7 @@ impl From<Signature> for &'static [u8; 4] {
 /// ## Safety
 ///
 /// The provided physical address must point to a potentially valid SDT.
-pub unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
+unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
     let header_mapping = PhysicalMapping::new(phys_addr, core::mem::size_of::<SdtHeader>(), false);
     let header_vaddr = header_mapping.translate(phys_addr).unwrap();
 
@@ -272,13 +272,12 @@ macro_rules! impl_sdt {
         }
 
         impl $name {
+            #[must_use]
             pub fn load(paddr: x86_64::PhysAddr) -> Self {
                 use $crate::boot::acpi::sdt::Sdt;
 
                 let mapping = unsafe { $crate::boot::acpi::sdt::map(paddr) };
-                let vaddr = mapping
-                    .translate(paddr)
-                    .expect("Failed to translate physical address");
+                let vaddr = mapping.translate(paddr).unwrap();
 
                 let table = Self {
                     start_vaddr: vaddr,
@@ -357,6 +356,11 @@ impl GenericAddress {
 
     #[must_use]
     #[inline]
+    /// Adds an offset to the address.
+    ///
+    /// ## Safety
+    ///
+    /// The new address must be valid.
     pub const unsafe fn add(&self, offset: u64) -> Self {
         Self {
             address: self.address + offset,

@@ -2,20 +2,22 @@
 
 use core::sync::atomic::AtomicU8;
 
+use crate::cpu::cpuid;
+
+/// "Safe" wrapper around the RDRAND instruction
 fn rdrand(dst: &mut u64) {
     static IS_SUPPORTED: AtomicU8 = AtomicU8::new(2); // 2 = Uninitialized
 
     #[cold]
     fn check_support() -> bool {
-        let res = unsafe { core::arch::x86_64::__cpuid(1) };
-        let is_supported = (res.ecx >> 30) & 1 == 1;
+        let rdrand_supported = cpuid::check_feature(cpuid::CpuFeature::RDRAND);
         // We could use compare_exchange here, but it is not a problem to set the value multiple times
         // as it won't change (support for RDRAND won't magically appear or disappear)
         IS_SUPPORTED.store(
-            u8::from(is_supported),
+            u8::from(rdrand_supported),
             core::sync::atomic::Ordering::Relaxed,
         );
-        is_supported
+        rdrand_supported
     }
 
     let is_supported = {

@@ -145,7 +145,7 @@ impl Screen {
                 // The page is mapped to a frame and we made sure the window fits in a page.
                 let raw_buffer = unsafe {
                     core::slice::from_raw_parts_mut(
-                        pages.start.start_address().as_u64() as *mut u8,
+                        pages.start.start_address().as_mut_ptr::<u8>(),
                         width * height * self.info.bytes_per_pixel,
                     )
                 };
@@ -171,6 +171,10 @@ impl Screen {
         None
     }
 
+    // FIXME: If window's raw buffer is locked, there's a deadlocks.
+    /// Present a window on the screen.
+    ///
+    /// The window's buffer must NOT be locked when calling this function.
     pub fn present_window(&self, window: &Window) {
         assert!(window.index < MAX_WINDOWS, "Invalid window index");
 
@@ -179,16 +183,26 @@ impl Screen {
         let Some(&window_info) = &windows[window.index].as_ref() else {
             panic!("Window not found");
         };
+        // Row by row copy
+        let line_length = window.width * window.bytes_per_pixel;
         for h in 0..window.height {
-            let offset = (window_info.y + h) * self.info.stride * self.info.bytes_per_pixel
-                + window_info.x * self.info.bytes_per_pixel;
+            let offset_in_screen = (
+                // Position in window
+                (window_info.y + h) * self.info.stride
+                + window_info.x
+            )
+            // Convert to bytes
+            * self.info.bytes_per_pixel;
 
+            let offset_in_window = h * window.width * window.bytes_per_pixel;
+
+            // Safety:
+            // The window is locked and the part of the buffer accessed is reserved for the window.
             let raw_buffer = unsafe { &mut *self.raw_buffer.get() };
 
             // Copy the window's buffer to the screen's buffer
-            raw_buffer[offset..offset + window.width * self.info.bytes_per_pixel].copy_from_slice(
-                &window.raw_buffer.lock(&node)[h * window.width * self.info.bytes_per_pixel
-                    ..(h + 1) * window.width * self.info.bytes_per_pixel],
+            raw_buffer[offset_in_screen..offset_in_screen + line_length].copy_from_slice(
+                &window.raw_buffer.lock(&node)[offset_in_window..offset_in_window + line_length],
             );
         }
         // windows should be locked until the current window is presented
@@ -209,6 +223,7 @@ impl Screen {
 
         assert!(windows[window.index].is_some(), "Window not found");
 
+        // TODO: Should the window be cleared before being destroyed?
         windows[window.index] = None;
     }
 }
@@ -252,8 +267,7 @@ impl Drop for Window {
     fn drop(&mut self) {
         let (start_vaddr, end_vaddr) = self.raw_buffer.with_locked(|raw_buffer| {
             let start_vaddr = VirtAddr::new(raw_buffer.as_ptr() as u64);
-            let end_vaddr =
-                start_vaddr + u64::try_from(raw_buffer.len() * size_of::<u8>()).unwrap();
+            let end_vaddr = start_vaddr + u64::try_from(size_of_val(*raw_buffer)).unwrap();
 
             (start_vaddr, end_vaddr)
         });

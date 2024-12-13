@@ -26,11 +26,15 @@ impl MemoryRange {
 
     #[must_use]
     pub fn overlaps(&self, other: &Self) -> Option<Self> {
+        // 0-sized overlaps are useless
         if self.start >= other.end || self.end <= other.start {
             None
         } else {
-            // We have self.start >= other.end >= other.start >= self.end
-            // so the assumption that start <= end is valid
+            // The assumption that start <= end is valid:
+            // - self.end >= self.start
+            // - other.end >= other.start
+            // - self.end > other.start (from the if condition)
+            // - other.end > self.start (from the if condition)
             Some(Self {
                 start: self.start.max(other.start),
                 end: self.end.min(other.end),
@@ -40,6 +44,7 @@ impl MemoryRange {
 
     #[must_use]
     #[inline]
+    /// Returns true if the range is inside the other range.
     pub const fn is_inside(&self, other: &Self) -> bool {
         self.start >= other.start && self.end <= other.end
     }
@@ -130,6 +135,10 @@ impl<const N: usize> MemoryRanges<N> {
     }
 
     pub fn insert(&mut self, mut range: MemoryRange) {
+        if range.end == range.start {
+            return;
+        }
+
         assert!(
             self.used < u16::try_from(N).unwrap(),
             "MemoryRanges is full"
@@ -151,6 +160,7 @@ impl<const N: usize> MemoryRanges<N> {
                 }
             }
 
+            // If merge occured, another merge may be possible
             if !merged {
                 break;
             }
@@ -238,11 +248,11 @@ impl<const N: usize> MemoryRanges<N> {
 
     #[must_use]
     #[inline]
-    pub fn allocate(
+    pub fn allocate<const M: usize>(
         &mut self,
         size: u64,
         alignment: u64,
-        request: &MemoryRangeRequest<N>,
+        request: &MemoryRangeRequest<M>,
     ) -> Option<usize> {
         // 0-sized allocations are not allowed,
         // and alignment must be a power of 2 because of memory constraints

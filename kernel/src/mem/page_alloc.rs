@@ -20,7 +20,7 @@ static KPAGE_ALLOC: MUMcsLock<PageAllocator> = MUMcsLock::uninit();
 /// This is the maximum valid address that 4 level paging can map.
 const MAX_VALID_VADDR: u64 = 0xFFFF_FFFF_FFFF; // 256 TiB
 
-const MAX_VRANGES: usize = 256;
+const MAX_VRANGES: usize = 128;
 
 pub fn init(recursive_index: u16) {
     fn remove_mapping(
@@ -128,7 +128,7 @@ pub struct PageAllocator {
 
 impl PageAllocator {
     pub fn allocate_pages<S: PageSize>(&mut self, count: u64) -> Option<PageRangeInclusive<S>> {
-        let start_vaddr = self.vranges.allocate(
+        let start_vaddr = self.vranges.allocate::<1>(
             S::SIZE * count,
             S::SIZE,
             &super::ranges::MemoryRangeRequest::DontCare,
@@ -168,7 +168,7 @@ impl PageAllocator {
         let alignment = S::SIZE;
 
         let mut start_vaddr = VirtAddr::new(
-            u64::try_from(self.vranges.allocate(
+            u64::try_from(self.vranges.allocate::<1>(
                 size,
                 alignment,
                 &super::ranges::MemoryRangeRequest::DontCare,

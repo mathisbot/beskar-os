@@ -1,7 +1,7 @@
 use core::sync::atomic::AtomicU8;
 
 use crate::{
-    cpu::{apic, interrupts},
+    cpu::{self, apic, interrupts},
     pci, screen, serdebug, serial, serinfo,
 };
 use bootloader::BootInfo;
@@ -15,6 +15,8 @@ pub mod acpi;
 ///
 /// This variable should be initialized by the BSP once the kernel is initialized.
 /// It will be used by each core to start the kernel.
+///
+/// This function should never be called directly, but only by the `enter_kmain` function.
 static mut KERNEL_MAIN: fn() -> ! = || loop {
     x86_64::instructions::hlt();
 };
@@ -23,11 +25,12 @@ static mut KERNEL_MAIN: fn() -> ! = || loop {
 static KERNEL_MAIN_FENCE: AtomicU8 = AtomicU8::new(0);
 
 /// This function is the proper entry point called by the bootloader.
+///
 /// It should only be the entry for the BSP.
 pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> ! {
     // Safety:
-    // This line is only executed on the BSP,
-    // and no other core is currently running.
+    // This line is only executed once on the BSP,
+    // when no other core is currently running.
     unsafe { KERNEL_MAIN = kernel_main };
 
     let core_count = boot_info.cpu_count;
@@ -43,7 +46,7 @@ pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> !
     enter_kmain()
 }
 
-pub fn bsp_init(boot_info: &'static mut BootInfo) {
+fn bsp_init(boot_info: &'static mut BootInfo) {
     let BootInfo {
         framebuffer,
         recursive_index,
@@ -52,12 +55,10 @@ pub fn bsp_init(boot_info: &'static mut BootInfo) {
         ..
     } = boot_info;
 
-    // Init one-time stuff
-
-    crate::cpu::check_cpuid();
-
     // FIXME: Serial log everything?
     serial::init();
+
+    cpu::init();
 
     serinfo!("BeskarOS kernel starting...");
 
@@ -93,19 +94,11 @@ pub fn bsp_init(boot_info: &'static mut BootInfo) {
     // TODO: PCI ?
 }
 
-pub fn ap_init() {
-    crate::cpu::check_cpuid();
-
-    locals::init();
-
-    locals!().gdt().init_load();
-
-    interrupts::init();
-
-    apic::init();
-}
-
-pub fn enter_kmain() -> ! {
+/// This function is called by each core once they're ready to start the kernel.
+///
+/// It will wait for all cores to be ready before starting the kernel,
+/// i.e. entering `KERNEL_MAIN`.
+pub(crate) fn enter_kmain() -> ! {
     KERNEL_MAIN_FENCE.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
 
     while KERNEL_MAIN_FENCE.load(core::sync::atomic::Ordering::SeqCst)
@@ -118,6 +111,9 @@ pub fn enter_kmain() -> ! {
 }
 
 #[macro_export]
+/// Macro to define the kernel main function.
+///
+/// It should only be used once.
 macro_rules! kernel_main {
     ($path:path) => {
         /// Entry of the kernel called by the bootloader.

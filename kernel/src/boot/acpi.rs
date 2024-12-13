@@ -32,9 +32,6 @@ pub struct Acpi {
 impl Acpi {
     #[must_use]
     pub fn from_rsdp_paddr(rsdp_paddr: PhysAddr) -> Self {
-        let cpuid_res = unsafe { core::arch::x86_64::__cpuid(1) };
-        assert_eq!((cpuid_res.edx >> 22) & 1, 1, "CPU does not support ACPI");
-
         let rsdt_paddr = Rsdp::load(rsdp_paddr).rsdt_paddr();
         let rsdt = Rsdt::load(rsdt_paddr);
 
@@ -88,12 +85,14 @@ impl From<AcpiRevision> for u8 {
     }
 }
 
-impl From<u8> for AcpiRevision {
-    fn from(revision: u8) -> Self {
+impl TryFrom<u8> for AcpiRevision {
+    type Error = ();
+
+    fn try_from(revision: u8) -> Result<Self, Self::Error> {
         match revision {
-            1 => Self::V1,
-            2 => Self::V2,
-            x => unreachable!("Unknown ACPI revision: {}", x),
+            1 => Ok(Self::V1),
+            2 => Ok(Self::V2),
+            _ => Err(()),
         }
     }
 }
@@ -101,6 +100,8 @@ impl From<u8> for AcpiRevision {
 pub struct AcpiRevisionStorage(AtomicU8);
 
 impl AcpiRevisionStorage {
+    #[must_use]
+    #[inline]
     pub const fn uninit() -> Self {
         Self(AtomicU8::new(0))
     }
@@ -110,7 +111,8 @@ impl AcpiRevisionStorage {
             .store(u8::from(revision), core::sync::atomic::Ordering::Relaxed);
     }
 
+    #[must_use]
     pub fn load(&self) -> AcpiRevision {
-        AcpiRevision::from(self.0.load(core::sync::atomic::Ordering::Relaxed))
+        AcpiRevision::try_from(self.0.load(core::sync::atomic::Ordering::Relaxed)).unwrap()
     }
 }

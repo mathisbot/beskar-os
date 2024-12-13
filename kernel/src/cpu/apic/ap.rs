@@ -1,5 +1,5 @@
 use crate::{
-    locals,
+    cpu, locals,
     mem::{
         frame_alloc,
         page_alloc::{self, PageAllocator},
@@ -8,7 +8,7 @@ use crate::{
     },
 };
 
-use core::sync::atomic::{AtomicBool, AtomicU64};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use x86_64::{
     registers::control::{Cr0, Cr3, Cr4, Efer},
@@ -44,27 +44,28 @@ pub fn start_up_aps(core_count: u8) {
     // Store the current state of the BSP
     BSP_CR0.store(
         x86_64::registers::control::Cr0::read_raw(),
-        core::sync::atomic::Ordering::Release,
+        Ordering::Release,
     );
     BSP_CR4.store(
         x86_64::registers::control::Cr4::read_raw(),
-        core::sync::atomic::Ordering::Release,
+        Ordering::Release,
     );
     BSP_EFER.store(
         x86_64::registers::model_specific::Efer::read_raw(),
-        core::sync::atomic::Ordering::Release,
+        Ordering::Release,
     );
 
-    // Identity-map AP trampoline code
+    // Identity-map AP trampoline code, as paging isn't enabled on APs yet.
+    // Everything should still be accessible with the same address when paging is enabled.
 
     // It is easier to allocate frame and page at the beginning of memory initialization,
     // because we are sure that the needed region is available.
     assert!(
-        AP_FRAME_ALLOCATED.load(core::sync::atomic::Ordering::Acquire),
+        AP_FRAME_ALLOCATED.load(Ordering::Acquire),
         "AP frame not allocated"
     );
     assert!(
-        AP_PAGE_ALLOCATED.load(core::sync::atomic::Ordering::Acquire),
+        AP_PAGE_ALLOCATED.load(Ordering::Acquire),
         "AP page not allocated"
     );
 
@@ -91,7 +92,7 @@ pub fn start_up_aps(core_count: u8) {
     // Load code
     assert!(
         AP_TRAMPOLINE_CODE.len() <= usize::try_from(Size4KiB::SIZE).unwrap(),
-        "AP trampoline code too big"
+        "AP trampoline code is too big"
     );
     unsafe {
         core::ptr::copy_nonoverlapping(
@@ -175,13 +176,13 @@ fn allocate_stack() {
     let stack_top = (stack_pages.end.start_address() + Size4KiB::SIZE - 1).align_down(16_u64);
 
     let previous_ap_stack =
-        AP_STACK_TOP_ADDR.swap(stack_top.as_u64(), core::sync::atomic::Ordering::SeqCst);
+        AP_STACK_TOP_ADDR.swap(stack_top.as_u64(), Ordering::SeqCst);
     assert_eq!(previous_ap_stack, 0, "AP stack allocated twice");
 }
 
 pub fn reserve_frame(allocator: &mut crate::mem::frame_alloc::FrameAllocator) {
     assert!(
-        !AP_FRAME_ALLOCATED.load(core::sync::atomic::Ordering::Acquire),
+        !AP_FRAME_ALLOCATED.load(Ordering::Acquire),
         "AP frame already allocated"
     );
 
@@ -192,15 +193,15 @@ pub fn reserve_frame(allocator: &mut crate::mem::frame_alloc::FrameAllocator) {
     ));
 
     let _frame = allocator
-        .alloc_request::<Size4KiB>(&MemoryRangeRequest::MustBeWithin(&req_range))
+        .alloc_request::<Size4KiB, 1>(&MemoryRangeRequest::MustBeWithin(&req_range))
         .expect("Failed to allocate AP frame");
 
-    AP_FRAME_ALLOCATED.store(true, core::sync::atomic::Ordering::Release);
+    AP_FRAME_ALLOCATED.store(true, Ordering::Release);
 }
 
 pub fn reserve_pages(allocator: &mut PageAllocator) {
     assert!(
-        !AP_PAGE_ALLOCATED.load(core::sync::atomic::Ordering::Acquire),
+        !AP_PAGE_ALLOCATED.load(Ordering::Acquire),
         "AP page already allocated"
     );
 
@@ -213,23 +214,38 @@ pub fn reserve_pages(allocator: &mut PageAllocator) {
         "Failed to allocate AP page"
     );
 
-    AP_PAGE_ALLOCATED.store(true, core::sync::atomic::Ordering::Release);
+    AP_PAGE_ALLOCATED.store(true, Ordering::Release);
 }
 
 extern "C" fn kap_entry() -> ! {
+    // Safety:
+    // Values are coming from the BSP, so they are safe to use.
     unsafe {
-        Cr0::write_raw(BSP_CR0.load(core::sync::atomic::Ordering::Acquire));
-        Cr4::write_raw(BSP_CR4.load(core::sync::atomic::Ordering::Acquire));
-        Efer::write_raw(BSP_EFER.load(core::sync::atomic::Ordering::Acquire));
+        Cr0::write_raw(BSP_CR0.load(Ordering::Acquire));
+        Cr4::write_raw(BSP_CR4.load(Ordering::Acquire));
+        Efer::write_raw(BSP_EFER.load(Ordering::Acquire));
     }
 
     // Tell the BSP we are out of the trampoline spin lock,
     // allowing others to get their stack
     crate::locals::core_jumped();
 
-    crate::boot::ap_init();
+    ap_init();
 
     log::debug!("Core {} ready!", locals!().core_id());
 
     crate::boot::enter_kmain()
+}
+
+fn ap_init() {
+    // Just in case APs are not the same as BSP
+    cpu::init();
+
+    locals::init();
+
+    locals!().gdt().init_load();
+
+    crate::cpu::interrupts::init();
+
+    crate::cpu::apic::init();
 }

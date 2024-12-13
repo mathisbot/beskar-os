@@ -280,6 +280,16 @@ impl<T> MUMcsLock<T> {
         let mut guard = self.lock(&node);
         f(&mut guard)
     }
+
+    #[inline]
+    /// Try to lock the lock and call the closure with the guard if possible.
+    pub fn try_with_locked<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let node = McsNode::new();
+        self.lock_if_init(&node).map(|mut guard| f(&mut guard))
+    }
 }
 
 pub struct MUMcsGuard<'node, 'lock, T> {

@@ -25,6 +25,7 @@ pub fn init() {
     let core_id = CORE_ID.fetch_add(1, core::sync::atomic::Ordering::AcqRel);
     let apic_id = crate::cpu::apic::apic_id();
 
+    // Size is too random to manually map it
     let mut core_locals = Box::new(CoreLocalsInfo {
         core_id,
         apic_id,
@@ -40,12 +41,6 @@ pub fn init() {
     }
 
     unsafe {
-        // Check if the CPU supports the FSGSBASE feature
-        // On old CPUs, the FSGSBASE feature may not be supported.
-        // This feature is required for TLS support.
-        let cpuid_res = core::arch::x86_64::__cpuid(0x7);
-        assert!(cpuid_res.ebx & 1 != 0, "CPU does not support FSGSBASE");
-
         x86_64::registers::control::Cr4::update(|cr4| {
             cr4.insert(x86_64::registers::control::Cr4Flags::FSGSBASE);
         });

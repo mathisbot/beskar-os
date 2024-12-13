@@ -27,8 +27,6 @@ impl Gdt {
             inner: UnsafeCell::new(InnerGdt {
                 gdt: MaybeUninit::uninit(),
                 tss: MaybeUninit::uninit(),
-                // code_selector: MaybeUninit::uninit(),
-                // tss_selector: MaybeUninit::uninit(),
             }),
         }
     }
@@ -42,16 +40,23 @@ impl Gdt {
 
         let (gdt, segments) = {
             let mut gdt = GlobalDescriptorTable::new();
-            let code_selector =
+
+            let kernel_code_selector =
                 gdt.append(x86_64::structures::gdt::Descriptor::kernel_code_segment());
+            let _kernel_data_selector =
+                gdt.append(x86_64::structures::gdt::Descriptor::kernel_data_segment());
+
+            let _user_code_selector =
+                gdt.append(x86_64::structures::gdt::Descriptor::user_code_segment());
+            let _user_data_selector =
+                gdt.append(x86_64::structures::gdt::Descriptor::user_data_segment());
+
             let tss_selector = gdt.append(x86_64::structures::gdt::Descriptor::tss_segment(tss));
-            (gdt, (code_selector, tss_selector))
+
+            (gdt, (kernel_code_selector, tss_selector))
         };
 
         let gdt = inner.gdt.write(gdt);
-        // let code_selecor = inner.code_selector.write(segments.0);
-        // let tss_selector = inner.tss_selector.write(segments.1);
-
         gdt.load();
 
         unsafe {
@@ -106,6 +111,4 @@ impl Gdt {
 struct InnerGdt {
     gdt: MaybeUninit<GlobalDescriptorTable>,
     tss: MaybeUninit<TaskStateSegment>,
-    // code_selector: MaybeUninit<SegmentSelector>,
-    // tss_selector: MaybeUninit<SegmentSelector>,
 }
