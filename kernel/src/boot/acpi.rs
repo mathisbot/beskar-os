@@ -6,7 +6,6 @@ use crate::utils::once::Once;
 use x86_64::PhysAddr;
 
 mod rsdp;
-use rsdp::Rsdp;
 pub mod sdt;
 use sdt::{fadt::ParsedFadt, hpet_table::ParsedHpetTable, madt::ParsedMadt, Rsdt};
 
@@ -30,7 +29,7 @@ pub struct Acpi {
 impl Acpi {
     #[must_use]
     pub fn from_rsdp_paddr(rsdp_paddr: PhysAddr) -> Self {
-        let rsdt_paddr = Rsdp::load(rsdp_paddr).rsdt_paddr();
+        let rsdt_paddr = rsdp::Rsdp::load(rsdp_paddr).rsdt_paddr();
         let rsdt = Rsdt::load(rsdt_paddr);
 
         let madt_paddr = rsdt
@@ -57,12 +56,6 @@ impl Acpi {
             fadt,
             hpet,
         }
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn lapic_paddr(&self) -> PhysAddr {
-        self.madt.lapic_paddr()
     }
 
     #[must_use]

@@ -91,7 +91,8 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     rsdp_addr.map(|rsdp_addr| acpi::init(PhysAddr::new(rsdp_addr)));
     time::hpet::init();
 
-    apic::init();
+    apic::init_lapic();
+    apic::init_ioapic();
 
     pci::init();
 }

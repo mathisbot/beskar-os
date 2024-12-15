@@ -2,7 +2,7 @@
 
 use x86_64::{
     instructions::port::Port,
-    structures::paging::{Mapper, PageTableFlags, PhysFrame, Size4KiB},
+    structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
     PhysAddr, VirtAddr,
 };
 
@@ -19,18 +19,20 @@ pub fn apic_id() -> u8 {
     u8::try_from((cpuid_res.ebx >> 24) & 0xFF).unwrap()
 }
 
-pub fn init() {
+/// Initializes the Local APIC.
+///
+/// This function must be called on each core.
+pub fn init_lapic() {
     let x2apic_supported = cpuid::check_feature(cpuid::CpuFeature::X2APIC);
-    if !x2apic_supported {
+    if locals!().core_id() == 0 && !x2apic_supported {
         log::warn!("X2APIC not supported");
     }
 
-    // LAPIC
-
-    let lapic_paddr = crate::boot::acpi::ACPI.get().map_or_else(
-        LocalApic::get_paddr_from_msr,
-        crate::boot::acpi::Acpi::lapic_paddr,
-    );
+    let lapic_paddr = crate::boot::acpi::ACPI
+        .get()
+        .map_or_else(LocalApic::get_paddr_from_msr, |acpi| {
+            acpi.madt().lapic_paddr()
+        });
 
     ensure_pic_disabled();
 
@@ -39,8 +41,18 @@ pub fn init() {
     // TODO: Calibrate APIC timer when Timer is implemented
 
     locals!().lapic().init(lapic);
+}
 
-    // IOAPIC
+/// Initializes the IO APICs.
+///
+/// This function must only be called once by the BSP.
+pub fn init_ioapic() {
+    crate::boot::acpi::ACPI.get().map(|acpi| {
+        for io_apic in acpi.madt().io_apics() {
+            let io_apic = IoApic::new(io_apic.addr(), io_apic.gsi_base());
+            io_apic.init();
+        }
+    });
 
     // TODO: Implement IOAPIC
 }
@@ -66,7 +78,7 @@ impl LocalApic {
     }
 
     pub fn from_paddr(paddr: PhysAddr) -> Self {
-        let phys_frame = PhysFrame::<Size4KiB>::from_start_address(paddr).unwrap();
+        let frame = PhysFrame::<Size4KiB>::from_start_address(paddr).unwrap();
 
         let apic_flags = PageTableFlags::PRESENT
             | PageTableFlags::WRITABLE
@@ -79,7 +91,7 @@ impl LocalApic {
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             page_table::with_page_table(|page_table| {
-                unsafe { page_table.map_to(page, phys_frame, apic_flags, &mut *frame_allocator) }
+                unsafe { page_table.map_to(page, frame, apic_flags, &mut *frame_allocator) }
                     .unwrap()
                     .flush();
             });
@@ -173,20 +185,82 @@ fn ensure_pic_disabled() {
     };
 }
 
+/// I/O APIC
+///
+/// See <https://pdos.csail.mit.edu/6.828/2016/readings/ia32/ioapic.pdf>
 pub struct IoApic {
     base: VirtAddr,
+    gsi_base: u32,
 }
 
 impl IoApic {
+    pub fn new(base: PhysAddr, gsi_base: u32) -> Self {
+        let frame = PhysFrame::<Size4KiB>::containing_address(base);
+
+        let frame_end_addr = frame.start_address() + (Size4KiB::SIZE - 1);
+        assert!(
+            base + u64::try_from(size_of::<u64>()).unwrap() <= frame_end_addr,
+            "IOAPIC frame must not cross a 4KiB boundary"
+        );
+
+        let apic_flags = PageTableFlags::PRESENT
+            | PageTableFlags::WRITABLE
+            | PageTableFlags::NO_EXECUTE
+            | PageTableFlags::NO_CACHE;
+
+        // FIXME: I don't quite like that each IOAPIC gets its own page
+        // Apparently, IOAPICs only live in Physical 0xFEC0..00, so one page per 16 IOAPICs?
+        // Or maybe keep track of mapped pages and check if the page is already mapped?
+        let page = page_alloc::with_page_allocator(|page_allocator| {
+            page_allocator.allocate_pages::<Size4KiB>(1)
+        })
+        .unwrap()
+        .start;
+
+        frame_alloc::with_frame_allocator(|frame_allocator| {
+            page_table::with_page_table(|page_table| {
+                // Safety:
+                // The frame is reserved by the UEFI, so it is already allocated.
+                unsafe { page_table.map_to(page, frame, apic_flags, frame_allocator) }
+                    .unwrap()
+                    .flush();
+            });
+        });
+
+        Self {
+            base: page.start_address() + (base - frame.start_address()),
+            gsi_base,
+        }
+    }
+
+    pub fn init(&self) {
+        // TODO: Initialize IOAPIC
+
+        let io_apic_ver = unsafe { self.read_reg_idx(1) };
+
+        let ver = io_apic_ver & 0xFF;
+        let max_red_ent = (io_apic_ver >> 16) & 0xFF;
+
+        log::debug!("IOAPIC version: {}", ver);
+        log::debug!("IOAPIC max redir entries: {}", max_red_ent);
+    }
+
+    // Safety:
+    // The index must be a valid register index.
+    unsafe fn read_reg_idx(&self, idx: u32) -> u32 {
+        unsafe { self.reg_select().write_volatile(idx) };
+        unsafe { self.reg_window().read() }
+    }
+
     #[must_use]
     #[inline]
-    pub const fn reg_select(&self) -> *mut u32 {
+    const fn reg_select(&self) -> *mut u32 {
         self.base.as_mut_ptr::<u32>()
     }
 
     #[must_use]
     #[inline]
-    pub const fn reg_window(&self) -> *mut u32 {
-        unsafe { self.reg_select().add(1) }
+    const fn reg_window(&self) -> *mut u32 {
+        unsafe { self.reg_select().byte_add(0x10) }
     }
 }

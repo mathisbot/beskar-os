@@ -1,5 +1,5 @@
 [unstable]
-# This feature allow building different packages of the workspace for different targets
+# This feature allows building different packages of the workspace for different targets
 bindeps = true
 
 [build]

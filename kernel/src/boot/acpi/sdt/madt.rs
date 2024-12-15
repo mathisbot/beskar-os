@@ -81,16 +81,16 @@ impl InterruptFlags {
     #[inline]
     pub fn active_low(self) -> bool {
         // Polarity flag is 2-bit wide, but only 01 (high) and 11 (low) are handled.
-        assert_eq!(self.0 & 1, 1, "Unexpected polarity flag.");
-        self.0 & 2 != 0
+        assert_eq!(self.0 & 0b01, 1, "Unexpected polarity flag.");
+        self.0 & 0b10 != 0
     }
 
     #[must_use]
     #[inline]
     pub fn level_triggered(self) -> bool {
         // Trigger mode flag is 2-bit wide, but only 01 (edge) and 11 (level) are handled.
-        assert_eq!(self.0 & 4, 4, "Unexpected polarity flag.");
-        self.0 & 8 != 0
+        assert_eq!(self.0 & 0b0100, 4, "Unexpected polarity flag.");
+        self.0 & 0b1000 != 0
     }
 }
 
@@ -182,7 +182,7 @@ impl Madt {
         let mut io_nmi_sources = Vec::<ParsedIoNmiSource>::new();
         let mut io_iso = Vec::<ParsedIoIso>::new();
 
-        let entry_start = unsafe {
+        let madt_header_end = unsafe {
             self.start_vaddr
                 .as_ptr::<EntryHeader>()
                 .byte_add(size_of::<MadtHeader>())
@@ -191,7 +191,8 @@ impl Madt {
         while offset + size_of::<MadtHeader>() + size_of::<EntryHeader>()
             <= usize::try_from(self.length()).unwrap()
         {
-            let entry_header = unsafe { entry_start.byte_add(offset).read_unaligned() };
+            let entry_start = unsafe { madt_header_end.byte_add(offset) };
+            let entry_header = unsafe { entry_start.read_unaligned() };
 
             match entry_header.entry_type {
                 0 => {
@@ -204,6 +205,7 @@ impl Madt {
 
                     let io_apic = unsafe { entry_start.cast::<IoApic>().read_unaligned() };
 
+                    // Unpack packed fields
                     let id = io_apic.id;
                     let addr = PhysAddr::new(u64::from(io_apic.addr));
                     let gsi_base = io_apic.gsi_base;
@@ -223,6 +225,7 @@ impl Madt {
                     };
                     assert_eq!(iso.bus_source, 0, "ISO bus source must be 0.");
 
+                    // Unpack packed fields
                     let irq_source = iso.irq_source;
                     let gsi = iso.gsi;
                     let flags = iso.flags;
@@ -238,6 +241,7 @@ impl Madt {
 
                     let nmi_sources = unsafe { entry_start.cast::<IoNmiSource>().read_unaligned() };
 
+                    // Unpack packed fields
                     let flags = nmi_sources.flags;
                     let gsi = nmi_sources.gsi;
 
@@ -302,6 +306,7 @@ impl Madt {
 
         io_apics.shrink_to_fit();
         io_nmi_sources.shrink_to_fit();
+        io_iso.shrink_to_fit();
 
         ParsedMadt {
             lapic_paddr,
@@ -323,5 +328,37 @@ impl ParsedMadt {
     #[inline]
     pub fn io_apics(&self) -> &[ParsedIoApic] {
         &self.io_apics
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn io_nmi_sources(&self) -> &[ParsedIoNmiSource] {
+        &self.io_nmi_sources
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn io_iso(&self) -> &[ParsedIoIso] {
+        &self.io_iso
+    }
+}
+
+impl ParsedIoApic {
+    #[must_use]
+    #[inline]
+    pub const fn id(&self) -> u8 {
+        self.id
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn addr(&self) -> PhysAddr {
+        self.addr
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn gsi_base(&self) -> u32 {
+        self.gsi_base
     }
 }

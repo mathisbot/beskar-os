@@ -1,6 +1,6 @@
 {
     // These settings are mandatory when working in `no_std` environments.
-    // Otherwide, rust-analyzer will panic trying to find the standard library
+    // Otherwise, rust-analyzer will panic trying to find the standard library
     "rust-analyzer.check.allTargets": false,
     "rust-analyzer.check.targets": [
         "x86_64-unknown-none",

@@ -240,5 +240,5 @@ fn ap_init() {
 
     crate::cpu::interrupts::init();
 
-    crate::cpu::apic::init();
+    crate::cpu::apic::init_lapic();
 }

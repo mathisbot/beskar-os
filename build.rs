@@ -5,7 +5,6 @@ fn main() {
     let kernel_path = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
 
     fs::create_dir_all("efi_disk/efi/boot").expect("Failed to create efi_disk/efi/boot directory");
-    fs::create_dir_all("efi_disk/efi").expect("Failed to create efi_disk/efi directory");
 
     // Copy the bootloader and kernel binaries to the efi_disk directory
     fs::copy(&bootloader_path, "efi_disk/efi/boot/bootx64.efi")
