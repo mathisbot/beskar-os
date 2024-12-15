@@ -51,7 +51,7 @@ pub fn init(regions: &[MemoryRegion]) {
     };
 
     // Make sure physical frame for the AP trampoline code is reserved
-    crate::cpu::apic::ap::reserve_frame(&mut phys_allocator);
+    crate::cpu::apic::ap::reserve_tramp_frame(&mut phys_allocator);
 
     KFRAME_ALLOC.init(phys_allocator);
 }

@@ -52,14 +52,11 @@ impl<T> McsLock<T> {
         // Place the node at the end of the queue
         let prev = self
             .tail
-            .swap(core::ptr::from_ref(node).cast_mut(), Ordering::AcqRel);
+            .swap(ptr::from_ref(node).cast_mut(), Ordering::AcqRel);
 
         if !prev.is_null() {
             unsafe {
-                (*prev)
-                    .next
-                    .get()
-                    .write(core::ptr::from_ref(node).cast_mut());
+                (*prev).next.get().write(ptr::from_ref(node).cast_mut());
             };
 
             // Wait until the node is at the front of the queue
@@ -132,7 +129,7 @@ impl<T> Drop for McsGuard<'_, '_, T> {
                     .lock
                     .tail
                     .compare_exchange(
-                        core::ptr::from_ref(self.node).cast_mut(),
+                        ptr::from_ref(self.node).cast_mut(),
                         ptr::null_mut(),
                         Ordering::Release,
                         Ordering::Relaxed,

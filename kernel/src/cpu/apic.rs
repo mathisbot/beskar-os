@@ -1,11 +1,9 @@
 //! Advanced Programmable Interrupt Controller (APIC) driver.
 
-use core::num::NonZeroU64;
-
 use x86_64::{
     instructions::port::Port,
     structures::paging::{Mapper, PageTableFlags, PhysFrame, Size4KiB},
-    PhysAddr,
+    PhysAddr, VirtAddr,
 };
 
 use crate::{
@@ -27,40 +25,44 @@ pub fn init() {
         log::warn!("X2APIC not supported");
     }
 
+    // LAPIC
+
     let lapic_paddr = crate::boot::acpi::ACPI.get().map_or_else(
-        Apic::get_paddr_from_msr,
+        LocalApic::get_paddr_from_msr,
         crate::boot::acpi::Acpi::lapic_paddr,
     );
 
     ensure_pic_disabled();
 
-    let apic = Apic::from_paddr(lapic_paddr);
+    let lapic = LocalApic::from_paddr(lapic_paddr);
 
     // TODO: Calibrate APIC timer when Timer is implemented
 
-    locals!().apic().init(apic);
+    locals!().lapic().init(lapic);
+
+    // IOAPIC
+
+    // TODO: Implement IOAPIC
 }
 
-pub struct Apic {
-    base: NonZeroU64,
-    // TODO: Timer?
+pub struct LocalApic {
+    base: VirtAddr,
+    // TODO: Timer? <https://wiki.osdev.org/APIC_Timer>
 }
 
-impl Apic {
+impl LocalApic {
     fn get_paddr_from_msr() -> PhysAddr {
         let msr = x86_64::registers::model_specific::Msr::new(0x1B);
-        let base = NonZeroU64::new(unsafe { msr.read() }).unwrap();
+        let base = unsafe { msr.read() };
 
-        assert!((base.get() >> 11) & 1 == 1, "APIC not enabled");
+        assert!((base >> 11) & 1 == 1, "APIC not enabled");
         assert_eq!(
-            (base.get() >> 8) & 1 == 1,
+            (base >> 8) & 1 == 1,
             locals!().core_id() == 0,
             "BSP incorrectly set"
         );
 
-        let base_addr = (base.get()) & 0xF_FFFF_F000;
-
-        PhysAddr::new(base_addr)
+        PhysAddr::new(base & 0xF_FFFF_F000)
     }
 
     pub fn from_paddr(paddr: PhysAddr) -> Self {
@@ -85,13 +87,13 @@ impl Apic {
 
         // Register spurious interrupt handler
         let base_ptr: *mut u32 = page.start_address().as_mut_ptr();
-        let apic_spurious = unsafe { &mut *base_ptr.add(0xF0 / size_of::<u32>()) };
+        let apic_spurious = unsafe { &mut *base_ptr.byte_add(0xF0) };
         *apic_spurious &= !0xFF; // Clear spurious handler index
-        *apic_spurious |= u32::from(super::interrupts::KernelInterrupts::Spurious as u8); // Set spurious handler index
+        *apic_spurious |= u32::from(super::interrupts::Irq::Spurious as u8); // Set spurious handler index
         *apic_spurious |= 0x100; // Enable spurious interrupt
 
         Self {
-            base: NonZeroU64::new(page.start_address().as_u64()).unwrap(),
+            base: page.start_address(),
         }
     }
 
@@ -101,7 +103,7 @@ impl Apic {
     /// If `sipi` is `None`, the APs will be sent an INIT.
     /// If `sipi` is `Some(payload)`, the APs will be sent a SIPI with `payload`.
     pub fn send_sipi(&self, sipi: Option<u8>) {
-        let icr_low = (self.base.get() + 0x300) as *mut u32;
+        let icr_low = unsafe { self.base.as_mut_ptr::<u32>().byte_add(0x300) };
 
         while (unsafe { icr_low.read() >> 12 } & 1) == 1 {
             core::hint::spin_loop();
@@ -169,4 +171,22 @@ fn ensure_pic_disabled() {
         data1.write(0xFF);
         data2.write(0xFF);
     };
+}
+
+pub struct IoApic {
+    base: VirtAddr,
+}
+
+impl IoApic {
+    #[must_use]
+    #[inline]
+    pub const fn reg_select(&self) -> *mut u32 {
+        self.base.as_mut_ptr::<u32>()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn reg_window(&self) -> *mut u32 {
+        unsafe { self.reg_select().add(1) }
+    }
 }

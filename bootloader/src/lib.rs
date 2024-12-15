@@ -115,7 +115,6 @@ unsafe fn chg_ctx(
     };
 }
 
-// TODO: Reduce line count
 #[allow(clippy::too_many_lines)]
 #[must_use]
 /// This function initializes the memory mappings.

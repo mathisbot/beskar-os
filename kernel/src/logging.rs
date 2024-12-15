@@ -3,8 +3,8 @@
 //! This logger is only intended to be used during the bootloader phase and will NOT be available
 //! after the jump to the kernel.
 
+use crate::utils::once::Once;
 use core::fmt::Write;
-use spin::once::Once;
 
 use crate::{
     screen::{self, Window},
@@ -15,7 +15,7 @@ use crate::{
 mod writer;
 
 /// The global logger instance used for the `log` crate.
-pub static LOGGER: Once<LockedLogger> = Once::new();
+pub static LOGGER: Once<LockedLogger> = Once::uninit();
 
 pub struct LockedLogger {
     window_writer: McsLock<writer::WindowWriter>,

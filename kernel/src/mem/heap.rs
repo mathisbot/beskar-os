@@ -1,18 +1,17 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
+    cell::UnsafeCell,
     ptr::NonNull,
 };
 
-use x86_64::structures::paging::{page::PageRangeInclusive, PageSize, PageTableFlags, Size4KiB};
+use x86_64::structures::paging::{page::PageRangeInclusive, PageSize, PageTableFlags, Size2MiB};
 
-use crate::{
-    mem::page_alloc,
-    utils::locks::{MUMcsLock, McsLock, McsNode},
-};
+use crate::{mem::page_alloc, utils::locks::MUMcsLock};
 
 use super::frame_alloc;
 
-const KERNEL_HEAP_PAGES: u64 = 256; // 1 MiB
+/// Number of 2 MiB pages to allocate for the kernel heap.
+const KERNEL_HEAP_PAGES: u64 = 4; // 8 MiB
 
 static KERNEL_HEAP: MUMcsLock<Heap> = MUMcsLock::uninit();
 
@@ -21,9 +20,7 @@ static GLOBAL_ALLOCATOR: HeapGA = HeapGA;
 
 pub fn init() {
     let page_range = page_alloc::with_page_allocator(|page_allocator| {
-        page_allocator
-            .allocate_pages::<Size4KiB>(KERNEL_HEAP_PAGES)
-            .unwrap()
+        page_allocator.allocate_pages(KERNEL_HEAP_PAGES).unwrap()
     });
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
@@ -36,37 +33,40 @@ pub fn init() {
     KERNEL_HEAP.init(Heap::new(page_range));
 }
 
-// FIXME: Having locks inside of the heap isn't needed,
-// as it is already locked by the global.
-pub struct Heap {
+struct Heap {
     // start: NonZeroU64,
     // end: NonZeroU64,
     // TODO: Add faster allocator
-    linked_list: McsLock<linked_list_allocator::Heap>,
+    linked_list: UnsafeCell<linked_list_allocator::Heap>,
 }
 
 impl Heap {
-    pub fn new(page_range: PageRangeInclusive<Size4KiB>) -> Self {
+    pub fn new(page_range: PageRangeInclusive<Size2MiB>) -> Self {
         let start_address = page_range.start.start_address().as_u64();
-        let end_address = page_range.end.start_address().as_u64() + (Size4KiB::SIZE - 1);
+        let end_address = page_range.end.start_address().as_u64() + (Size2MiB::SIZE - 1);
 
         let size = usize::try_from(end_address - start_address + 1).unwrap();
-        let linked_allocator = unsafe {
+        let linked_list = unsafe {
             linked_list_allocator::Heap::new(page_range.start.start_address().as_mut_ptr(), size)
         };
 
         Self {
             // start: start_address.try_into().unwrap(),
             // end: end_address.try_into().unwrap(),
-            linked_list: McsLock::new(linked_allocator),
+            linked_list: UnsafeCell::new(linked_list),
         }
     }
 
     pub fn alloc(&self, layout: Layout) -> *mut u8 {
         // According to the safety requirements of the `GlobalAlloc trait`, we need to ensure that
         // this function doesn't panic. Therefore, we need to return null if the allocation fails.
-        self.linked_list
-            .with_locked(|allocator| allocator.allocate_first_fit(layout))
+
+        // Safety:
+        // The heap is locked, so we can safely access its fields.
+        let linked_allocator = unsafe { &mut *self.linked_list.get() };
+
+        linked_allocator
+            .allocate_first_fit(layout)
             .ok()
             .map_or(core::ptr::null_mut(), core::ptr::NonNull::as_ptr)
     }
@@ -80,31 +80,28 @@ impl Heap {
         let non_null_ptr = NonNull::new(ptr).unwrap();
 
         // Safety:
+        // The heap is locked, so we can safely access its fields.
+        let linked_allocator = unsafe { &mut *self.linked_list.get() };
+
+        // Safety:
         // `GlobalAlloc` guarantees that the pointer is valid and the layout is correct.
-        self.linked_list
-            .with_locked(|allocator| unsafe { allocator.deallocate(non_null_ptr, layout) });
+        unsafe { linked_allocator.deallocate(non_null_ptr, layout) };
     }
 }
 
 /// A struct that is used as a global allocator.
 ///
 /// It uses the static kernel heap to allocate memory.
-pub struct HeapGA;
+struct HeapGA;
 
 unsafe impl GlobalAlloc for HeapGA {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
-        let node = McsNode::new();
-        // According to the `GlobalAlloc` trait, we need to ensure that this function doesn't panic.
-        let allocator = KERNEL_HEAP.lock_if_init(&node);
-        allocator.map_or(core::ptr::null_mut(), |heap| heap.alloc(layout))
+        KERNEL_HEAP
+            .try_with_locked(|heap| heap.alloc(layout))
+            .unwrap_or(core::ptr::null_mut())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        let node = McsNode::new();
-        // According to the `GlobalAlloc` trait, we need to ensure that this function doesn't panic.
-        let heap = KERNEL_HEAP.lock_if_init(&node);
-        if let Some(heap) = heap {
-            heap.dealloc(ptr, layout);
-        }
+        KERNEL_HEAP.try_with_locked(|heap| heap.dealloc(ptr, layout));
     }
 }

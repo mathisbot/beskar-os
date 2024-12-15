@@ -388,7 +388,7 @@ impl TimerCompValue {
     const fn validate(&self) {}
 }
 
-pub fn init(hpet_info: ParsedHpetTable) {
+pub fn init(hpet_info: &ParsedHpetTable) {
     assert_eq!(
         hpet_info.base_address().address_space(),
         crate::boot::acpi::sdt::AdressSpace::SystemMemory

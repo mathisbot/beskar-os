@@ -40,6 +40,16 @@ fn kmain() -> ! {
         log::info!("Welcome to BeskarOS kernel!");
     }
 
+    // Start user-space processes
+    // (GUI, ...)
+
+    // Scheduler: make this thread sleep
+
+    log::error!(
+        "Kernel main function reached the end on core {}",
+        locals!().core_id()
+    );
+
     loop {
         hlt();
     }

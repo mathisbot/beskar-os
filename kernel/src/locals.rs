@@ -5,7 +5,7 @@ use x86_64::registers::segmentation::Segment64;
 use alloc::boxed::Box;
 
 use crate::{
-    cpu::{apic::Apic, gdt::Gdt, interrupts::Interrupts},
+    cpu::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts},
     utils::locks::MUMcsLock,
 };
 
@@ -18,6 +18,8 @@ static CORE_READY: AtomicU8 = AtomicU8::new(0);
 /// Distributes core IDs
 static CORE_ID: AtomicU8 = AtomicU8::new(0);
 
+// FIXME: Find a way to support an arbitrary number of cores (using a `Vec` makes it harder
+// to correctly initialize without data races)
 /// This array holds the core locals for each core, so that it is accessible from any core.
 static mut ALL_CORE_LOCALS: [Option<NonNull<CoreLocalsInfo>>; 255] = [None; 255];
 
@@ -76,7 +78,7 @@ pub struct CoreLocalsInfo {
     apic_id: u8,
     gdt: Gdt,
     interrupts: Interrupts,
-    apic: MUMcsLock<Apic>,
+    lapic: MUMcsLock<LocalApic>,
 }
 
 impl CoreLocalsInfo {
@@ -88,7 +90,7 @@ impl CoreLocalsInfo {
             apic_id: 0,
             gdt: Gdt::uninit(),
             interrupts: Interrupts::new(),
-            apic: MUMcsLock::uninit(),
+            lapic: MUMcsLock::uninit(),
         }
     }
 
@@ -118,8 +120,8 @@ impl CoreLocalsInfo {
 
     #[must_use]
     #[inline]
-    pub const fn apic(&self) -> &MUMcsLock<Apic> {
-        &self.apic
+    pub const fn lapic(&self) -> &MUMcsLock<LocalApic> {
+        &self.lapic
     }
 }
 

@@ -2,7 +2,7 @@
 
 use core::cell::UnsafeCell;
 
-use spin::Once;
+use crate::utils::once::Once;
 use x86_64::{
     structures::paging::{Mapper, Page, PageSize, PageTableFlags, Size4KiB},
     VirtAddr,
@@ -16,7 +16,7 @@ use crate::{
 pub mod pixel;
 use pixel::PixelFormat;
 
-static SCREEN: Once<Screen> = Once::new();
+static SCREEN: Once<Screen> = Once::uninit();
 
 const MAX_WINDOWS: usize = 16;
 

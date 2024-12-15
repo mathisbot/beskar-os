@@ -1,23 +1,18 @@
 use crate::{
     cpu, locals,
     mem::{
-        frame_alloc,
-        page_alloc::{self, PageAllocator},
-        page_table,
+        frame_alloc, page_alloc, page_table,
         ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
     },
 };
 
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use x86_64::{
     registers::control::{Cr0, Cr3, Cr4, Efer},
     structures::paging::{Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB},
     PhysAddr, VirtAddr,
 };
-
-static AP_FRAME_ALLOCATED: AtomicBool = AtomicBool::new(false);
-static AP_PAGE_ALLOCATED: AtomicBool = AtomicBool::new(false);
 
 static AP_STACK_TOP_ADDR: AtomicU64 = AtomicU64::new(0);
 
@@ -57,17 +52,6 @@ pub fn start_up_aps(core_count: u8) {
 
     // Identity-map AP trampoline code, as paging isn't enabled on APs yet.
     // Everything should still be accessible with the same address when paging is enabled.
-
-    // It is easier to allocate frame and page at the beginning of memory initialization,
-    // because we are sure that the needed region is available.
-    assert!(
-        AP_FRAME_ALLOCATED.load(Ordering::Acquire),
-        "AP frame not allocated"
-    );
-    assert!(
-        AP_PAGE_ALLOCATED.load(Ordering::Acquire),
-        "AP page not allocated"
-    );
 
     let payload_paddr = PhysAddr::new(AP_TRAMPOLINE_PADDR);
     let frame = PhysFrame::<Size4KiB>::from_start_address(payload_paddr).unwrap();
@@ -124,7 +108,8 @@ pub fn start_up_aps(core_count: u8) {
 
     let sipi_payload = u8::try_from(payload_paddr.as_u64() >> 12).unwrap();
 
-    locals!().apic().with_locked(|apic| {
+    // Wake up APs
+    locals!().lapic().with_locked(|apic| {
         // FIXME: Decide if the following advised boot sequence is mandatory or if
         // this dumb code works just fine.
         // <https://wiki.osdev.org/Symmetric_Multiprocessing#Startup_Sequence>
@@ -144,6 +129,19 @@ pub fn start_up_aps(core_count: u8) {
             core::hint::spin_loop();
         }
     }
+
+    // Free trampoline code
+    frame_alloc::with_frame_allocator(|frame_allocator| {
+        page_table::with_page_table(|page_table| {
+            let (frame, tlb) = page_table.unmap(page).unwrap();
+            tlb.flush();
+            frame_allocator.free(frame);
+        });
+    });
+    page_alloc::with_page_allocator(|page_allocator| {
+        let page = Page::<Size4KiB>::from_start_address(payload_vaddr).unwrap();
+        page_allocator.free_pages(Page::range_inclusive(page, page));
+    });
 
     // Wait for APs to start
     while crate::locals::get_ready_core_count() != core_count {
@@ -175,17 +173,15 @@ fn allocate_stack() {
 
     let stack_top = (stack_pages.end.start_address() + Size4KiB::SIZE - 1).align_down(16_u64);
 
-    let previous_ap_stack =
-        AP_STACK_TOP_ADDR.swap(stack_top.as_u64(), Ordering::SeqCst);
+    let previous_ap_stack = AP_STACK_TOP_ADDR.swap(stack_top.as_u64(), Ordering::SeqCst);
     assert_eq!(previous_ap_stack, 0, "AP stack allocated twice");
 }
 
-pub fn reserve_frame(allocator: &mut crate::mem::frame_alloc::FrameAllocator) {
-    assert!(
-        !AP_FRAME_ALLOCATED.load(Ordering::Acquire),
-        "AP frame already allocated"
-    );
-
+/// Reserve a frame for the AP trampoline code
+///
+/// It is easier to allocate the frame at the beginning of memory initialization,
+/// because we are sure that the needed region is available.
+pub fn reserve_tramp_frame(allocator: &mut frame_alloc::FrameAllocator) {
     let mut req_range = MemoryRanges::new();
     req_range.insert(MemoryRange::new(
         AP_TRAMPOLINE_PADDR,
@@ -195,16 +191,13 @@ pub fn reserve_frame(allocator: &mut crate::mem::frame_alloc::FrameAllocator) {
     let _frame = allocator
         .alloc_request::<Size4KiB, 1>(&MemoryRangeRequest::MustBeWithin(&req_range))
         .expect("Failed to allocate AP frame");
-
-    AP_FRAME_ALLOCATED.store(true, Ordering::Release);
 }
 
-pub fn reserve_pages(allocator: &mut PageAllocator) {
-    assert!(
-        !AP_PAGE_ALLOCATED.load(Ordering::Acquire),
-        "AP page already allocated"
-    );
-
+/// Reserve a page for the AP trampoline code
+///
+/// It is easier to allocate the page at the beginning of memory initialization,
+/// because we are sure that the needed region is available.
+pub fn reserve_tramp_page(allocator: &mut page_alloc::PageAllocator) {
     let vaddr = VirtAddr::new(AP_TRAMPOLINE_PADDR);
 
     let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
@@ -213,10 +206,11 @@ pub fn reserve_pages(allocator: &mut PageAllocator) {
         allocator.allocate_specific_page(page).is_some(),
         "Failed to allocate AP page"
     );
-
-    AP_PAGE_ALLOCATED.store(true, Ordering::Release);
 }
 
+/// Rust entry point for APs
+///
+/// This function is called by the AP trampoline code.
 extern "C" fn kap_entry() -> ! {
     // Safety:
     // Values are coming from the BSP, so they are safe to use.
@@ -238,7 +232,6 @@ extern "C" fn kap_entry() -> ! {
 }
 
 fn ap_init() {
-    // Just in case APs are not the same as BSP
     cpu::init();
 
     locals::init();

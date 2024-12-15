@@ -159,8 +159,8 @@ const REQUIRED_FEATURES: [CpuFeature; 10] = [
     CpuFeature::PSE,
     CpuFeature::TSC, // TODO: Find away around TSC?
     CpuFeature::MSR,
-    CpuFeature::APIC, // TODO: Decide if support for non-APIC CPUs
-    CpuFeature::PAT,  // FIXME: Is it really mandatory?
+    CpuFeature::APIC,
+    CpuFeature::PAT, // FIXME: Is it really mandatory?
     CpuFeature::FXSR,
     CpuFeature::SSE,
     CpuFeature::SSE2,
@@ -168,6 +168,8 @@ const REQUIRED_FEATURES: [CpuFeature; 10] = [
     CpuFeature::FSGSBASE, // TLS support
 ];
 
+/// Routine to check if the CPU supports all required features,
+/// including the CPUID instruction
 pub fn check_cpuid() {
     assert!(cpuid_supported(), "CPUID instruction is not supported");
 
@@ -194,6 +196,7 @@ pub fn check_cpuid() {
     }
 }
 
+/// Check if the CPU supports the CPUID instruction
 fn cpuid_supported() -> bool {
     let mut rflags = rflags::read();
     let old_id_flag = rflags.intersection(rflags::RFlags::ID);
@@ -201,7 +204,7 @@ fn cpuid_supported() -> bool {
 
     // Depending on the CPU, this line can cause an invalid opcode exception, crashing the whole system.
     //
-    // This is not a real problem, as CPU that don't support CPUID don't support much required features,
+    // This is not a real problem, as CPUs that don't support CPUID don't support much required features,
     // so the kernel can't run on them anyway.
     unsafe { rflags::write(rflags) };
 

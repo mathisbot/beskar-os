@@ -9,11 +9,11 @@ use crate::{
 
 const LINE_SPACING: usize = 2;
 const LETTER_SPACING: usize = 0;
-const BORDER_PADDING: usize = 1;
+const BORDER_PADDING: usize = 3;
 
 const CHAR_HEIGHT: RasterHeight = RasterHeight::Size20;
 const CHAR_WIDTH: usize = get_raster_width(FontWeight::Regular, CHAR_HEIGHT);
-const BACKUP_CHAR: char = '�';
+const BACKUP_CHAR: char = '?';
 
 #[must_use]
 /// Returns the raster of the given char,
@@ -41,7 +41,11 @@ impl WindowWriter {
     #[must_use]
     #[inline]
     pub const fn new(window: Window) -> Self {
-        Self { window, x: 0, y: 0 }
+        Self {
+            window,
+            x: BORDER_PADDING,
+            y: BORDER_PADDING,
+        }
     }
 
     #[inline]

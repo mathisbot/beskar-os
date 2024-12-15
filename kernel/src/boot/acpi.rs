@@ -2,31 +2,29 @@
 
 use core::sync::atomic::AtomicU8;
 
-use spin::Once;
+use crate::utils::once::Once;
 use x86_64::PhysAddr;
 
 mod rsdp;
 use rsdp::Rsdp;
 pub mod sdt;
-use sdt::Rsdt;
+use sdt::{fadt::ParsedFadt, hpet_table::ParsedHpetTable, madt::ParsedMadt, Rsdt};
 
 static ACPI_REVISION: AcpiRevisionStorage = AcpiRevisionStorage::uninit();
 
-pub static ACPI: Once<Acpi> = Once::new();
+pub static ACPI: Once<Acpi> = Once::uninit();
 
 pub fn init(rsdp_paddr: PhysAddr) {
-    ACPI.call_once(|| Acpi::from_rsdp_paddr(rsdp_paddr));
+    let acpi = Acpi::from_rsdp_paddr(rsdp_paddr);
+    ACPI.call_once(|| acpi);
 }
 
 /// Advanced Configuration and Power Interface (ACPI) support.
 pub struct Acpi {
     revision: AcpiRevision,
-
-    // Related to MADT
-    lapic_paddr: PhysAddr,
-    io_apic_id: Option<u8>,
-    io_apic_addr: Option<u32>,
-    gsi_base: Option<u32>,
+    madt: ParsedMadt,
+    fadt: ParsedFadt,
+    hpet: Option<ParsedHpetTable>,
 }
 
 impl Acpi {
@@ -41,9 +39,10 @@ impl Acpi {
         let fadt_paddr = rsdt
             .locate_table(sdt::Signature::Fadt)
             .expect("FADT not found");
+        // TODO: Support multiple HPET blocks?
         let hpet_paddr = rsdt.locate_table(sdt::Signature::Hpet);
-        if hpet_paddr.is_some() {
-            log::debug!("HPET found");
+        if hpet_paddr.is_none() {
+            log::warn!("HPET table not found");
         }
 
         drop(rsdt);
@@ -51,24 +50,37 @@ impl Acpi {
         let madt = sdt::madt::Madt::load(madt_paddr).parse();
         let fadt = sdt::fadt::Fadt::load(fadt_paddr).parse();
         let hpet = hpet_paddr.map(|paddr| sdt::hpet_table::HpetTable::load(paddr).parse());
-        if let Some(hpet_info) = hpet {
-            crate::cpu::hpet::init(hpet_info);
-        }
 
         Self {
             revision: ACPI_REVISION.load(),
-
-            lapic_paddr: madt.lapic_paddr(),
-            io_apic_id: madt.io_apic_id(),
-            io_apic_addr: madt.io_apic_addr(),
-            gsi_base: madt.gsi_base(),
+            madt,
+            fadt,
+            hpet,
         }
     }
 
     #[must_use]
     #[inline]
     pub const fn lapic_paddr(&self) -> PhysAddr {
-        self.lapic_paddr
+        self.madt.lapic_paddr()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn madt(&self) -> &ParsedMadt {
+        &self.madt
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn fadt(&self) -> &ParsedFadt {
+        &self.fadt
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn hpet(&self) -> Option<&ParsedHpetTable> {
+        self.hpet.as_ref()
     }
 }
 

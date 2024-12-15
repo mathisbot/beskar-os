@@ -62,13 +62,13 @@ Please refer to their READMEs for more information.
 ## TO-DOs
 
 - ACPI [WIP]
-- PCI [WIP]
+- Process [WIP]
+- PCI
+- User mode
+- Storage
 - USB
 - Optimizations
 - Stabilization
-- Inputs
-- User mode
-- Processes
 - Graphics
 
 ## Sources and inspirations

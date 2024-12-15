@@ -1,25 +1,41 @@
-#![allow(dead_code, unused_variables)] // TODO: Remove
-
-use core::mem::offset_of;
-
+use alloc::vec::Vec;
 use x86_64::PhysAddr;
-
-use crate::impl_sdt;
 
 use super::{Sdt, SdtHeader};
 
-impl_sdt!(Madt);
+crate::impl_sdt!(Madt);
 
 pub struct ParsedMadt {
     // Related to Local APIC
     lapic_paddr: PhysAddr,
 
     // Related to I/O APIC
-    io_apic_id: Option<u8>,
-    io_apic_addr: Option<u32>,
-    gsi_base: Option<u32>,
+    io_apics: Vec<ParsedIoApic>,
+    io_nmi_sources: Vec<ParsedIoNmiSource>,
+    io_iso: Vec<ParsedIoIso>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParsedIoApic {
+    id: u8,
+    addr: PhysAddr,
+    gsi_base: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParsedIoNmiSource {
+    flags: InterruptFlags,
+    gsi: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParsedIoIso {
+    source: u8,
+    gsi: u32,
+    flags: InterruptFlags,
+}
+
+#[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 struct MadtHeader {
     sdt_header: SdtHeader,
@@ -52,6 +68,8 @@ struct IoApic {
     id: u8,
     _reserved: u8,
     addr: u32,
+    /// The global system interrupt number where this I/O APIC’s interrupt inputs start.
+    /// The number of interrupt inputs is determined by the I/O APIC’s Max Redir Entry register.
     gsi_base: u32,
 }
 
@@ -61,13 +79,17 @@ struct InterruptFlags(u16);
 impl InterruptFlags {
     #[must_use]
     #[inline]
-    pub const fn active_low(self) -> bool {
+    pub fn active_low(self) -> bool {
+        // Polarity flag is 2-bit wide, but only 01 (high) and 11 (low) are handled.
+        assert_eq!(self.0 & 1, 1, "Unexpected polarity flag.");
         self.0 & 2 != 0
     }
 
     #[must_use]
     #[inline]
-    pub const fn level_triggered(self) -> bool {
+    pub fn level_triggered(self) -> bool {
+        // Trigger mode flag is 2-bit wide, but only 01 (edge) and 11 (level) are handled.
+        assert_eq!(self.0 & 4, 4, "Unexpected polarity flag.");
         self.0 & 8 != 0
     }
 }
@@ -77,8 +99,11 @@ impl InterruptFlags {
 /// MADT Entry type 2: I/O APIC Interrupt Source Override
 struct InterruptSourceOverride {
     header: EntryHeader,
+    /// Should always be 0
     bus_source: u8,
+    /// Bus-relative IRQ source
     irq_source: u8,
+    /// The GSI that the IRQ source will signal
     gsi: u32,
     flags: InterruptFlags,
 }
@@ -86,11 +111,12 @@ struct InterruptSourceOverride {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C, packed)]
 /// MADT Entry type 3: I/O APIC Non-maskable interrupt source
+///
+/// This entry specifies which I/O APIC interrupt inputs should be enabled as non-maskable
 struct IoNmiSource {
     header: EntryHeader,
-    nmi_source: u8,
-    _reserved: u8,
     flags: InterruptFlags,
+    /// The GSI that the NMI source will signal
     gsi: u32,
 }
 
@@ -102,7 +128,8 @@ struct LocalNmi {
     /// 0xFF means all CPUs
     acpi_id: u8,
     flags: InterruptFlags,
-    lint: bool,
+    /// Local APIC interrupt input `LINTn` to which NMI is connected.
+    lint: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,17 +143,6 @@ struct LapicAddressOverride {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C, packed)]
-/// MADT Entry type 6: I/O SAPIC
-struct IoSapic {
-    header: EntryHeader,
-    id: u8,
-    _reserved: u8,
-    gsi_base: u32,
-    addr: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, packed)]
 /// MADT Entry type 9: Processor Local x2APIC
 struct X2Apic {
     header: EntryHeader,
@@ -136,6 +152,21 @@ struct X2Apic {
     acpi_id: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed)]
+/// MADT Entry type 10: Local x2APIC NMI Structure
+struct X2ApicNmi {
+    header: EntryHeader,
+    flags: InterruptFlags,
+    /// UID corresponding to the ID listed in the processor Device object.
+    /// A value of `0xFFFF_FFFF` signifies that this applies to all processors in the machine.
+    acpi_uid: u32,
+    /// Local x2APIC interrupt input `LINTn` to which NMI is connected.
+    lx2apic_lint: u8,
+    reserved: [u8; 3],
+}
+
+#[allow(clippy::too_many_lines)]
 // See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt>
 impl Madt {
     #[must_use]
@@ -143,12 +174,13 @@ impl Madt {
         let mut lapic_paddr = PhysAddr::new(u64::from(unsafe {
             self.start_vaddr
                 .as_ptr::<u32>()
-                .byte_add(offset_of!(MadtHeader, lapic_paddr))
+                .byte_add(core::mem::offset_of!(MadtHeader, lapic_paddr))
                 .read_unaligned()
         }));
-        let mut io_apic_id = None;
-        let mut io_apic_addr = None;
-        let mut gsi_base = None;
+
+        let mut io_apics = Vec::<ParsedIoApic>::new();
+        let mut io_nmi_sources = Vec::<ParsedIoNmiSource>::new();
+        let mut io_iso = Vec::<ParsedIoIso>::new();
 
         let entry_start = unsafe {
             self.start_vaddr
@@ -157,7 +189,7 @@ impl Madt {
         };
         let mut offset = 0;
         while offset + size_of::<MadtHeader>() + size_of::<EntryHeader>()
-            < usize::try_from(self.length()).unwrap()
+            <= usize::try_from(self.length()).unwrap()
         {
             let entry_header = unsafe { entry_start.byte_add(offset).read_unaligned() };
 
@@ -172,18 +204,11 @@ impl Madt {
 
                     let io_apic = unsafe { entry_start.cast::<IoApic>().read_unaligned() };
 
-                    let old_io_apic_id = io_apic_id.replace(io_apic.id);
-                    let old_io_apic_addr = io_apic_addr.replace(io_apic.addr);
-                    let old_gsi_base = gsi_base.replace(io_apic.gsi_base);
-                    if old_io_apic_id.is_some()
-                        || old_io_apic_addr.is_some()
-                        || old_gsi_base.is_some()
-                    {
-                        log::warn!("Multiple I/O APICs are not supported YET. Using first found.");
-                        io_apic_id = old_io_apic_id;
-                        io_apic_addr = old_io_apic_addr;
-                        gsi_base = old_gsi_base;
-                    }
+                    let id = io_apic.id;
+                    let addr = PhysAddr::new(u64::from(io_apic.addr));
+                    let gsi_base = io_apic.gsi_base;
+
+                    io_apics.push(ParsedIoApic { id, addr, gsi_base });
                 }
                 2 => {
                     assert_eq!(
@@ -191,39 +216,32 @@ impl Madt {
                         size_of::<InterruptSourceOverride>()
                     );
 
-                    let interrupt_source_override = unsafe {
+                    let iso = unsafe {
                         entry_start
                             .cast::<InterruptSourceOverride>()
                             .read_unaligned()
                     };
+                    assert_eq!(iso.bus_source, 0, "ISO bus source must be 0.");
 
-                    // TODO: Understand what this entry type does.
-                    log::warn!(
-                        "I/O APIC Interrupt Source Override entry type found but not implemented."
-                    );
+                    let irq_source = iso.irq_source;
+                    let gsi = iso.gsi;
+                    let flags = iso.flags;
 
-                    assert_eq!(
-                        interrupt_source_override.bus_source, 0,
-                        "ISO bus source must be 0."
-                    );
-
-                    // Mandatory to unwrap because struct is unaligned.
-                    let irq_source = interrupt_source_override.irq_source;
-                    let gsi = interrupt_source_override.gsi;
-                    let flags = interrupt_source_override.flags;
-
-                    log::warn!(
-                        "irq_source: {}, gsi: {}, flags: {:?}",
-                        irq_source,
+                    io_iso.push(ParsedIoIso {
+                        source: irq_source,
                         gsi,
-                        flags
-                    );
+                        flags,
+                    });
                 }
                 3 => {
                     assert_eq!(usize::from(entry_header.length), size_of::<IoNmiSource>());
 
                     let nmi_sources = unsafe { entry_start.cast::<IoNmiSource>().read_unaligned() };
-                    // TODO: Handle NMI sources.
+
+                    let flags = nmi_sources.flags;
+                    let gsi = nmi_sources.gsi;
+
+                    io_nmi_sources.push(ParsedIoNmiSource { flags, gsi });
                 }
                 4 => {
                     assert_eq!(usize::from(entry_header.length), size_of::<LocalNmi>());
@@ -242,13 +260,9 @@ impl Madt {
                         unsafe { entry_start.cast::<LapicAddressOverride>().read_unaligned() };
                     lapic_paddr = PhysAddr::new(lapic_override.address);
                 }
-                6 => {
-                    assert_eq!(
-                        usize::from(entry_header.length),
-                        size_of::<IoSapic>(),
-                        "Invalid MADT entry length for I/O SAPIC."
-                    );
-                    // TODO: I/O SAPIC, overrides the I/O APIC
+                // SAPIC related entries
+                x if (6..=8).contains(&x) => {
+                    unreachable!("PA-RISC architecture specific MADT entry found.")
                 }
                 9 => {
                     assert_eq!(
@@ -258,6 +272,21 @@ impl Madt {
                     );
                     // Local x2APIC
                     // Same as Local APIC
+                }
+                10 => {
+                    assert_eq!(
+                        usize::from(entry_header.length),
+                        size_of::<X2ApicNmi>(),
+                        "Invalid MADT entry length for Local x2APIC NMI Structure."
+                    );
+
+                    let x2apic_nmi = unsafe { entry_start.cast::<X2ApicNmi>().read_unaligned() };
+
+                    // TODO: Handle Local x2APIC NMI Structure.
+                }
+                // GIC related entries
+                x if (11..=15).contains(&x) => {
+                    unreachable!("ARM architecture specific MADT entry found.")
                 }
                 _ => {
                     // We shouldn't panic here
@@ -271,12 +300,14 @@ impl Madt {
             offset += usize::from(entry_header.length);
         }
 
+        io_apics.shrink_to_fit();
+        io_nmi_sources.shrink_to_fit();
+
         ParsedMadt {
             lapic_paddr,
-
-            io_apic_id,
-            io_apic_addr,
-            gsi_base,
+            io_apics,
+            io_nmi_sources,
+            io_iso,
         }
     }
 }
@@ -290,19 +321,7 @@ impl ParsedMadt {
 
     #[must_use]
     #[inline]
-    pub const fn io_apic_id(&self) -> Option<u8> {
-        self.io_apic_id
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn io_apic_addr(&self) -> Option<u32> {
-        self.io_apic_addr
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn gsi_base(&self) -> Option<u32> {
-        self.gsi_base
+    pub fn io_apics(&self) -> &[ParsedIoApic] {
+        &self.io_apics
     }
 }

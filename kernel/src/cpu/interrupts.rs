@@ -12,6 +12,8 @@ pub fn init() {
 
     let idt = unsafe { &mut *interrupts.idt.get() };
 
+    // Exceptions
+
     idt.divide_error.set_handler_fn(divide_error_handler);
     idt.debug.set_handler_fn(debug_handler);
     idt.non_maskable_interrupt
@@ -57,8 +59,10 @@ pub fn init() {
             .set_stack_index(PAGE_FAULT_IST)
     };
 
-    idt[KernelInterrupts::Timer as u8].set_handler_fn(timer_interrupt_handler);
-    idt[KernelInterrupts::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
+    // IRQs
+
+    idt[Irq::Timer as u8].set_handler_fn(timer_interrupt_handler);
+    idt[Irq::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
 
     idt.load();
 
@@ -172,8 +176,8 @@ info_isr!(spurious_interrupt_handler);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 /// Represents a programmable interrupt index
-pub enum KernelInterrupts {
-    // Because the 32 first interrupts are reserved by the CPU,
+pub enum Irq {
+    // Because the 32 first interrupts are reserved for exceptions,
     // all numbers defined here must be greater than or equal to 32.
     Timer = 32,
     Spurious = 33,

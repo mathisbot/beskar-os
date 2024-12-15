@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicU8;
 
 use crate::{
     cpu::{self, apic, interrupts},
-    pci, screen, serdebug, serial, serinfo,
+    pci, process, screen, serdebug, serial, serinfo,
 };
 use bootloader::BootInfo;
 use x86_64::PhysAddr;
@@ -83,15 +83,17 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     locals!().gdt().init_load();
 
+    process::init();
+
     interrupts::init();
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
     rsdp_addr.map(|rsdp_addr| acpi::init(PhysAddr::new(rsdp_addr)));
+    time::hpet::init();
 
     apic::init();
 
     pci::init();
-    // TODO: PCI ?
 }
 
 /// This function is called by each core once they're ready to start the kernel.
