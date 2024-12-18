@@ -59,6 +59,6 @@ impl core::ops::Deref for ProcessId {
 
 impl ProcessId {
     pub fn new() -> Self {
-        Self(PID_COUNTER.fetch_add(1, Ordering::AcqRel))
+        Self(PID_COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 }

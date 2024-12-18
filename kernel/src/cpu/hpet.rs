@@ -399,7 +399,7 @@ pub fn init(hpet_info: &ParsedHpetTable) {
 
     let general_capabilities =
         GeneralCapabilities::new(PhysAddr::new(hpet_info.general_capabilities().address()));
-    general_capabilities.validate(&hpet_info);
+    general_capabilities.validate(hpet_info);
     log::debug!("HPET period: {} ps", general_capabilities.period() / 1_000);
     if !hpet_info.count_size_capable() {
         log::warn!("HPET count size not capable");

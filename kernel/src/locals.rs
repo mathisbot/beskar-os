@@ -24,7 +24,7 @@ static CORE_ID: AtomicU8 = AtomicU8::new(0);
 static mut ALL_CORE_LOCALS: [Option<NonNull<CoreLocalsInfo>>; 255] = [None; 255];
 
 pub fn init() {
-    let core_id = CORE_ID.fetch_add(1, core::sync::atomic::Ordering::AcqRel);
+    let core_id = CORE_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     let apic_id = crate::cpu::apic::apic_id();
 
     // Size is too random to manually map it
@@ -57,20 +57,20 @@ pub fn init() {
     // Shouldn't be dropped
     core::mem::forget(core_locals);
 
-    let _ = CORE_READY.fetch_add(1, core::sync::atomic::Ordering::Release);
+    CORE_READY.fetch_add(1, core::sync::atomic::Ordering::Release);
 }
 
 pub fn get_ready_core_count() -> u8 {
-    CORE_READY.load(core::sync::atomic::Ordering::SeqCst)
+    CORE_READY.load(core::sync::atomic::Ordering::Relaxed)
 }
 
 pub fn get_jumped_core_count() -> u8 {
-    CORE_JUMPED.load(core::sync::atomic::Ordering::SeqCst)
+    CORE_JUMPED.load(core::sync::atomic::Ordering::Relaxed)
 }
 
 /// Increment the count of cores that jumped to Rust code
 pub fn core_jumped() {
-    let _ = CORE_JUMPED.fetch_add(1, core::sync::atomic::Ordering::Release);
+    CORE_JUMPED.fetch_add(1, core::sync::atomic::Ordering::Release);
 }
 
 pub struct CoreLocalsInfo {

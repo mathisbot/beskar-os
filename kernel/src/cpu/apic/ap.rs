@@ -1,5 +1,5 @@
 use crate::{
-    cpu, locals,
+    cpu::{self, apic::ipi::{self, Ipi}}, locals,
     mem::{
         frame_alloc, page_alloc, page_table,
         ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
@@ -39,15 +39,15 @@ pub fn start_up_aps(core_count: u8) {
     // Store the current state of the BSP
     BSP_CR0.store(
         x86_64::registers::control::Cr0::read_raw(),
-        Ordering::Release,
+        Ordering::Relaxed,
     );
     BSP_CR4.store(
         x86_64::registers::control::Cr4::read_raw(),
-        Ordering::Release,
+        Ordering::Relaxed,
     );
     BSP_EFER.store(
         x86_64::registers::model_specific::Efer::read_raw(),
-        Ordering::Release,
+        Ordering::Relaxed,
     );
 
     // Identity-map AP trampoline code, as paging isn't enabled on APs yet.
@@ -113,11 +113,11 @@ pub fn start_up_aps(core_count: u8) {
         // FIXME: Decide if the following advised boot sequence is mandatory or if
         // this dumb code works just fine.
         // <https://wiki.osdev.org/Symmetric_Multiprocessing#Startup_Sequence>
-        apic.send_sipi(None);
+        apic.send_ipi(Ipi::new(ipi::DeliveryMode::Init, ipi::Destination::AllExcludingSelf));
         // crate::time::tsc::wait_ms(10);
-        apic.send_sipi(Some(sipi_payload));
+        apic.send_ipi(Ipi::new(ipi::DeliveryMode::Sipi(sipi_payload), ipi::Destination::AllExcludingSelf));
         // crate::time::tsc::wait_ms(100);
-        // apic.send_sipi(Some(sipi_payload));
+        // apic.send_ipi(Ipi::new(ipi::DeliveryMode::Sipi(sipi_payload), ipi::Destination::AllExcludingSelf));
     });
 
     // Now, each AP will be waiting for a stack,

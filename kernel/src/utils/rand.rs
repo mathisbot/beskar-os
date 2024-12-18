@@ -1,32 +1,26 @@
 #![allow(dead_code)]
 
-use core::sync::atomic::AtomicU8;
+use core::{mem::MaybeUninit, sync::atomic::AtomicU8};
 
 use crate::cpu::cpuid;
+use core::sync::atomic::Ordering;
 
 /// "Safe" wrapper around the RDRAND instruction
 fn rdrand(dst: &mut u64) {
-    static IS_SUPPORTED: AtomicU8 = AtomicU8::new(2); // 2 = Uninitialized
+    static IS_SUPPORTED: AtomicU8 = AtomicU8::new(2); // 2 = Uninitialized, 1 = Supported, 0 = Not Supported
 
     #[cold]
     fn check_support() -> bool {
         let rdrand_supported = cpuid::check_feature(cpuid::CpuFeature::RDRAND);
-        // We could use compare_exchange here, but it is not a problem to set the value multiple times
-        // as it won't change (support for RDRAND won't magically appear or disappear)
-        IS_SUPPORTED.store(
-            u8::from(rdrand_supported),
-            core::sync::atomic::Ordering::Relaxed,
-        );
+        IS_SUPPORTED.store(u8::from(rdrand_supported), Ordering::Relaxed);
         rdrand_supported
     }
 
-    let is_supported = {
-        let val = IS_SUPPORTED.load(core::sync::atomic::Ordering::Relaxed);
-        if val == 2 {
-            check_support()
-        } else {
-            val == 1
-        }
+    let is_supported = match IS_SUPPORTED.load(Ordering::Acquire) {
+        0 => false,
+        1 => true,
+        2 => check_support(),
+        _ => unreachable!(),
     };
 
     assert!(is_supported, "RDRAND not supported");
@@ -40,36 +34,17 @@ fn rdrand(dst: &mut u64) {
 ///
 /// ## Safety
 ///
-/// Every random sequence must be a valid instance of the given type
+/// Every random sequence of bits must be a valid instance of the given type
 pub unsafe fn rand<T: Sized>() -> T {
-    let mut res = core::mem::MaybeUninit::<T>::uninit();
+    let mut res = MaybeUninit::<T>::uninit();
 
-    let total_size = size_of::<T>();
-    let full_rounds = total_size / size_of::<u64>();
-    let remaining_bytes = total_size % size_of::<u64>();
+    // Safety:
+    // `MaybeUninit` guarantees that the layout is the same as `T`
+    // so that the memory is valid for writes.
+    let slice =
+        unsafe { core::slice::from_raw_parts_mut(res.as_mut_ptr().cast::<u8>(), size_of::<T>()) };
 
-    if full_rounds > 0 {
-        // Safety:
-        // The size of the slice is smaller than the size of the given type
-        let dst_slice =
-            core::slice::from_raw_parts_mut(res.as_mut_ptr().cast::<u64>(), full_rounds);
-
-        for u in dst_slice {
-            rdrand(u);
-        }
-    }
-
-    if remaining_bytes > 0 {
-        let remaining_slice = core::slice::from_raw_parts_mut(
-            res.as_mut_ptr()
-                .cast::<u8>()
-                .add(total_size - remaining_bytes),
-            remaining_bytes,
-        );
-        let mut randomized = 0;
-        rdrand(&mut randomized);
-        remaining_slice.copy_from_slice(&randomized.to_ne_bytes()[..remaining_bytes]);
-    }
+    rand_bytes(slice);
 
     // Safety:
     // We just initialized the value and because of the function's safety guards,
@@ -77,15 +52,59 @@ pub unsafe fn rand<T: Sized>() -> T {
     unsafe { res.assume_init() }
 }
 
-/// Generates a random instance of the given type, filling its bytes with RDRAND
+/// Randomly fills memory with RDRAND.
+///
+/// This function is a shortcut for `core::slice::from_raw_parts_mut`
+/// followed by `rand_bytes`.
 ///
 /// ## Safety
 ///
-/// Every random sequence must be a valid instance of the given type
-pub unsafe fn randomize<'a, T: 'a + Sized>(iter: impl IntoIterator<Item = &'a mut T>) {
-    for elem in iter {
-        // Safety:
-        // Guaranteed by the function's safety guards
-        unsafe { *elem = rand() };
+/// Every random sequence of bits must be a valid instance of the given type
+/// and the given pointer and length must be valid
+///
+/// ## Example
+///
+/// Please note that in this example, it may be safer to use `rand_bytes` directly.
+/// This function could be used for complex structs that are not `Sized`.
+///
+/// ```rust,ignore
+/// use kernel::utils::rand_unsized;
+/// use alloc::vec::Vec;
+///
+/// let mut buffer = vec![0_u32; 256];
+///
+/// unsafe {
+///     rand_unsized(buffer.as_mut_ptr(), buffer.len());
+/// }
+/// ```
+pub unsafe fn rand_unsized<T>(ptr: *mut T, len: usize) {
+    let slice = unsafe { core::slice::from_raw_parts_mut(ptr.cast::<u8>(), len * size_of::<T>()) };
+
+    rand_bytes(slice);
+}
+
+/// Generates random bytes using RDRAND
+pub fn rand_bytes(bytes: &mut [u8]) {
+    // It is safe to cast 8 `u8`s to a `u64`
+    let (start_u8, middle_u64, end_u8) = unsafe { bytes.align_to_mut::<u64>() };
+
+    // Quickly fill the middle part of the slice with random u64s
+    for qword in middle_u64 {
+        rdrand(qword);
+    }
+
+    // Now fill the unaligned start and end of the slice
+    let mut randomized = 0;
+
+    if !start_u8.is_empty() {
+        // One call to `rdrand` is enough as `start_u8.len()` is less than 8
+        rdrand(&mut randomized);
+        start_u8.copy_from_slice(&randomized.to_ne_bytes()[..start_u8.len()]);
+    }
+
+    if !end_u8.is_empty() {
+        // One call to `rdrand` is enough as `end_u8.len()` is less than 8
+        rdrand(&mut randomized);
+        end_u8.copy_from_slice(&randomized.to_ne_bytes()[..end_u8.len()]);
     }
 }

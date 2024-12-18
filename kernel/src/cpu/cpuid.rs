@@ -37,7 +37,7 @@ enum CpuidReg {
 
 impl CpuidReg {
     #[must_use]
-    pub const fn extract(self, cpuid_res: CpuidResult) -> u32 {
+    pub const fn extract_from(self, cpuid_res: CpuidResult) -> u32 {
         match self {
             Self::Eax => cpuid_res.eax,
             Self::Ebx => cpuid_res.ebx,
@@ -177,7 +177,7 @@ pub fn check_cpuid() {
     let mut cpuid_res = cpuid(0);
 
     let highest_supported_leaf = cpuid_res.eax;
-    CPUID_MAX_LEAF.store(highest_supported_leaf, Ordering::Release);
+    CPUID_MAX_LEAF.store(highest_supported_leaf, Ordering::Relaxed);
 
     for feature in REQUIRED_FEATURES {
         // Avoid calling CPUID multiple times for the same leaf
@@ -185,7 +185,7 @@ pub fn check_cpuid() {
             cpuid_res = cpuid(feature.leaf);
             current_leaf = feature.leaf;
         }
-        let reg = feature.reg.extract(cpuid_res);
+        let reg = feature.reg.extract_from(cpuid_res);
 
         assert_eq!(
             (reg >> feature.bit) & 1,
@@ -196,6 +196,7 @@ pub fn check_cpuid() {
     }
 }
 
+#[must_use]
 /// Check if the CPU supports the CPUID instruction
 fn cpuid_supported() -> bool {
     let mut rflags = rflags::read();
@@ -245,7 +246,7 @@ pub fn check_feature(feature: CpuFeature) -> bool {
 
     let cpuid_res = cpuid(feature.leaf);
 
-    let reg = feature.reg.extract(cpuid_res);
+    let reg = feature.reg.extract_from(cpuid_res);
 
     (reg >> feature.bit) & 1 == 1
 }
@@ -253,5 +254,5 @@ pub fn check_feature(feature: CpuFeature) -> bool {
 #[must_use]
 #[inline]
 pub fn get_highest_supported_leaf() -> u32 {
-    CPUID_MAX_LEAF.load(Ordering::Acquire)
+    CPUID_MAX_LEAF.load(Ordering::Relaxed)
 }

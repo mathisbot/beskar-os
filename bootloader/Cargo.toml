@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.22"
-noto-sans-mono-bitmap = { version = "0.3.0", features = ["size_20"] }
+noto-sans-mono-bitmap = { version = "0.3.1", features = ["size_20"] }
 spin = { version = "0.9.8", default-features = false, features = ["once","spin_mutex"] }
 uefi = "0.33.0"
 x86_64 = { workspace = true }

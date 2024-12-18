@@ -102,9 +102,9 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 /// It will wait for all cores to be ready before starting the kernel,
 /// i.e. entering `KERNEL_MAIN`.
 pub(crate) fn enter_kmain() -> ! {
-    KERNEL_MAIN_FENCE.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+    KERNEL_MAIN_FENCE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 
-    while KERNEL_MAIN_FENCE.load(core::sync::atomic::Ordering::SeqCst)
+    while KERNEL_MAIN_FENCE.load(core::sync::atomic::Ordering::Acquire)
         != locals::get_ready_core_count()
     {
         core::hint::spin_loop();

@@ -61,12 +61,14 @@ Please refer to their READMEs for more information.
 
 ## TO-DOs
 
-- ACPI [WIP]
+- APIC [WIP]
+- HPET [WIP]
 - Process [WIP]
 - PCI
 - User mode
 - Storage
 - USB
+- FADT
 - Optimizations
 - Stabilization
 - Graphics

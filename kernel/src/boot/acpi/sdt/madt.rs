@@ -74,7 +74,7 @@ struct IoApic {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct InterruptFlags(u16);
+pub struct InterruptFlags(u16);
 
 impl InterruptFlags {
     #[must_use]
@@ -252,6 +252,7 @@ impl Madt {
 
                     let local_nmi = unsafe { entry_start.cast::<LocalNmi>().read_unaligned() };
                     // TODO: Handle Local NMI.
+                    log::warn!("Unhandled Local NMI entry: {:?}", local_nmi);
                 }
                 5 => {
                     assert_eq!(
@@ -285,8 +286,8 @@ impl Madt {
                     );
 
                     let x2apic_nmi = unsafe { entry_start.cast::<X2ApicNmi>().read_unaligned() };
-
                     // TODO: Handle Local x2APIC NMI Structure.
+                    log::warn!("Unhandled Local x2APIC NMI Structure entry: {:?}", x2apic_nmi);
                 }
                 // GIC related entries
                 x if (11..=15).contains(&x) => {
@@ -360,5 +361,39 @@ impl ParsedIoApic {
     #[inline]
     pub const fn gsi_base(&self) -> u32 {
         self.gsi_base
+    }
+}
+
+impl ParsedIoIso {
+    #[must_use]
+    #[inline]
+    pub const fn source(&self) -> u8 {
+        self.source
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn gsi(&self) -> u32 {
+        self.gsi
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn flags(&self) -> InterruptFlags {
+        self.flags
+    }
+}
+
+impl ParsedIoNmiSource {
+    #[must_use]
+    #[inline]
+    pub const fn flags(&self) -> InterruptFlags {
+        self.flags
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn gsi(&self) -> u32 {
+        self.gsi
     }
 }

@@ -1,5 +1,7 @@
 //! Advanced Programmable Interrupt Controller (APIC) driver.
 
+use core::sync::atomic::{AtomicU8, Ordering};
+
 use x86_64::{
     instructions::port::Port,
     structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
@@ -13,6 +15,7 @@ use crate::{
 };
 
 pub mod ap;
+pub mod ipi;
 
 pub fn apic_id() -> u8 {
     let cpuid_res = cpuid::cpuid(1);
@@ -47,14 +50,34 @@ pub fn init_lapic() {
 ///
 /// This function must only be called once by the BSP.
 pub fn init_ioapic() {
-    crate::boot::acpi::ACPI.get().map(|acpi| {
+    if let Some(acpi) = crate::boot::acpi::ACPI.get() {
         for io_apic in acpi.madt().io_apics() {
             let io_apic = IoApic::new(io_apic.addr(), io_apic.gsi_base());
             io_apic.init();
         }
-    });
+    }
+}
 
-    // TODO: Implement IOAPIC
+/// Enables/disables interrupts.
+///
+/// ## Panics
+///
+/// This function will panic if the APIC is not enabled.
+pub fn enable_disable_interrupts(enable: bool) {
+    let lapic = locals!().lapic();
+
+    lapic.with_locked(|lapic| {
+        let base = unsafe { lapic.base.as_mut_ptr::<u32>().byte_add(0xF0) };
+        let mut value = unsafe { base.read() };
+        if enable {
+            // Disable spurious interrupt
+            value &= !0x100;
+        } else {
+            // Enable spurious interrupt
+            value |= 0x100;
+        }
+        unsafe { base.write_volatile(value) };
+    });
 }
 
 pub struct LocalApic {
@@ -68,11 +91,6 @@ impl LocalApic {
         let base = unsafe { msr.read() };
 
         assert!((base >> 11) & 1 == 1, "APIC not enabled");
-        assert_eq!(
-            (base >> 8) & 1 == 1,
-            locals!().core_id() == 0,
-            "BSP incorrectly set"
-        );
 
         PhysAddr::new(base & 0xF_FFFF_F000)
     }
@@ -109,44 +127,15 @@ impl LocalApic {
         }
     }
 
-    // TODO: Refactor sending IPIs
-    /// Sends IPI to all APs, depending on the `sipi` parameter.
-    ///
-    /// If `sipi` is `None`, the APs will be sent an INIT.
-    /// If `sipi` is `Some(payload)`, the APs will be sent a SIPI with `payload`.
-    pub fn send_sipi(&self, sipi: Option<u8>) {
+    pub fn send_ipi(&self, ipi: ipi::Ipi) {
         let icr_low = unsafe { self.base.as_mut_ptr::<u32>().byte_add(0x300) };
-
-        while (unsafe { icr_low.read() >> 12 } & 1) == 1 {
-            core::hint::spin_loop();
-        }
-
-        let low = {
-            let mut low = 0;
-            low |= 1 << 14; // Assert IPI should always be 1
-
-            // If SIPI, set payload
-            if let Some(payload) = sipi {
-                low |= u32::from(payload);
-            }
-
-            // Set delivery mode
-            low |= match sipi {
-                Some(_) => 0b110, // SIPI
-                None => 0b101,    // INIT
-            } << 8;
-
-            // Set destination
-            low |= 0b11 << 18;
-
-            low
-        };
-
-        unsafe { icr_low.write(low) };
+        let icr_high = unsafe { self.base.as_mut_ptr::<u32>().byte_add(0x310) };
+        ipi.send(icr_low, icr_high);
     }
 }
 
 /// Ensures that PIC 8259 is disabled.
+/// 
 /// This a mandatory step before enabling the APIC.
 fn ensure_pic_disabled() {
     unsafe {
@@ -185,12 +174,100 @@ fn ensure_pic_disabled() {
     };
 }
 
+static IOAPICID_CNTER: AtomicU8 = AtomicU8::new(0);
+
 /// I/O APIC
 ///
 /// See <https://pdos.csail.mit.edu/6.828/2016/readings/ia32/ioapic.pdf>
 pub struct IoApic {
     base: VirtAddr,
     gsi_base: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IoApicReg {
+    Id,
+    Version,
+    Arbitration,
+    /// Index must be between 0 and 23 (inclusive)
+    ///
+    /// These registers are 64-bit, but must be accessed as two 32-bit registers
+    /// (obviously). They in fact have 2 indices :
+    /// `self.index()` and `self.index() + 1`.
+    Redirection(u8),
+}
+
+impl IoApicReg {
+    fn index(self) -> u32 {
+        match self {
+            Self::Id => 0,
+            Self::Version => 1,
+            Self::Arbitration => 2,
+            Self::Redirection(idx) => {
+                assert!(idx <= 23, "Redirection index must be less than 24");
+                // These registers are 64-bit
+                0x10 + 2 * u32::from(idx)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Destination {
+    /// Physical destination
+    ///
+    /// Number describes the APIC ID of the destination
+    /// and must be 4 bits long.
+    ///
+    /// Yes, this means that only 16 processors can be addressed.
+    Physical(u8),
+    /// Logical destination
+    ///
+    /// Number describes a set of processors
+    /// (specify the logical destination address)
+    Logical(u8),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerMode {
+    Edge = 0,
+    Level = 1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinPolarity {
+    High = 0,
+    Low = 1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeliveryMode {
+    Fixed = 0b000,
+    LowestPriority = 0b001,
+    Smi = 0b010,
+    // Reserved = 0b011,
+    Nmi = 0b100,
+    Init = 0b101,
+    // Reserved = 0b110,
+    ExtInt = 0b111,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Redirection {
+    destination: Destination,
+    /// Allows to mask the interrupt (except for NMIs !!!)
+    interrupt_mask: bool,
+    trigger_mode: TriggerMode,
+    // This bit is used for level triggered interrupts. Its meaning is undefined for
+    // edge triggered interrupts. For level triggered interrupts, this bit is set to 1 when local APIC(s)
+    // accept the level interrupt sent by the IOAPIC. The Remote IRR bit is set to 0 when an EOI
+    // message with a matching interrupt vector is received from a local APIC.
+    remote_irr: bool,
+    pin_polarity: PinPolarity,
+    delivery_mode: DeliveryMode,
+    /// The value of the interrupt vector must be
+    /// between 0x10 and 0xFE (inclusive)
+    int_vec: u8,
 }
 
 impl IoApic {
@@ -234,19 +311,162 @@ impl IoApic {
     }
 
     pub fn init(&self) {
-        // TODO: Initialize IOAPIC
+        enable_disable_interrupts(false);
 
-        let io_apic_ver = unsafe { self.read_reg_idx(1) };
+        let id = IOAPICID_CNTER.fetch_add(1, Ordering::Relaxed);
+        self.set_id(id);
 
-        let ver = io_apic_ver & 0xFF;
-        let max_red_ent = (io_apic_ver >> 16) & 0xFF;
+        // TODO: Setup redirection entries (See MADT)
+        let isos = crate::boot::acpi::ACPI.get().unwrap().madt().io_iso();
+        for iso in isos {
+            // TODO: Implement Redirection
+            // let red = Redirection {
+            //     // ???
+            // }
+            // self.set_redirection(iso.gsi(), iso.redirection());
+            log::warn!("Unhandled IOAPIC redirection: {:?}", iso);
+        }
 
-        log::debug!("IOAPIC version: {}", ver);
-        log::debug!("IOAPIC max redir entries: {}", max_red_ent);
+        enable_disable_interrupts(true);
+    }
+}
+
+// Safe register access
+impl IoApic {
+    /// Returns the ID of the IO APIC.
+    ///
+    /// This ID is NOT valid until the IO APIC has been initialized.
+    pub fn id(&self) -> u8 {
+        let id = self.read_reg(IoApicReg::Id);
+        u8::try_from(id >> 24 & 0xF).unwrap()
     }
 
-    // Safety:
-    // The index must be a valid register index.
+    fn set_id(&self, id: u8) {
+        assert!(id < 0xF, "IOAPIC ID must be less than 0xF");
+        // Safety:
+        // IOAPICID is read/write
+        unsafe { self.update_reg(IoApicReg::Id, u32::from(id), 4, 24) };
+    }
+
+    pub fn version(&self) -> u8 {
+        let ver = self.read_reg(IoApicReg::Version);
+        u8::try_from(ver & 0xFF).unwrap()
+    }
+
+    pub fn max_red_ent(&self) -> u8 {
+        let ver = self.read_reg(IoApicReg::Version);
+        u8::try_from(ver >> 16 & 0xFF).unwrap()
+    }
+
+    pub fn arbitration_id(&self) -> u8 {
+        let arb = self.read_reg(IoApicReg::Arbitration);
+        u8::try_from(arb >> 24 & 0xF).unwrap()
+    }
+
+    pub fn set_redirection(&self, index: u8, redirection: Redirection) {
+        assert!(
+            index < self.max_red_ent(),
+            "Redirection index must be less than the max redirection entries"
+        );
+
+        let nmi_sources = crate::boot::acpi::ACPI
+            .get()
+            .unwrap()
+            .madt()
+            .io_nmi_sources();
+        for _nmi_source in nmi_sources {
+            // TODO: Check if NMI source
+            // If NMI source, don't forget to use nmi_source.flags() to set the flags
+            // and to switch delivery mode to NMI
+        }
+
+        let reg = IoApicReg::Redirection(index);
+
+        let high_idx = reg.index();
+        let low_idx = high_idx + 1;
+
+        // High register
+
+        let mut high_value = 0;
+        // Destination
+        high_value |= match redirection.destination {
+            Destination::Physical(id) => {
+                assert!(id < 0xF, "Physical destination ID must be less than 0xF");
+                u32::from(id)
+            }
+            Destination::Logical(id) => u32::from(id),
+        };
+        unsafe { self.update_reg_idx(high_idx, high_value, 8, 24) };
+
+        // Low register
+
+        let mut low_value = 0;
+        low_value |= u32::from(redirection.interrupt_mask) << 16;
+        low_value |= (redirection.trigger_mode as u32) << 15;
+        low_value |=
+            u32::from(redirection.remote_irr && redirection.trigger_mode == TriggerMode::Level)
+                << 14;
+        low_value |= (redirection.pin_polarity as u32) << 13;
+        low_value |= match redirection.destination {
+            Destination::Physical(_) => 0,
+            Destination::Logical(_) => 1,
+        } << 11;
+        low_value |= (redirection.delivery_mode as u32) << 8;
+        low_value |= u32::from(redirection.int_vec);
+
+        // Note that bit 12 is read only and we are still writing to it.
+        // This is because writes to this bit are ignored.
+        unsafe { self.update_reg_idx(low_idx, low_value, 17, 0) };
+    }
+}
+
+// Raw register access
+impl IoApic {
+    /// Updates the value of a register.
+    ///
+    /// Specifically, it will update bits \[idx..idx+len\[ of the register `reg`
+    /// with bits \[0..len\[ of `value`.
+    ///
+    /// # Safety
+    ///
+    /// The index must be a valid writable register index.
+    unsafe fn update_reg(&self, reg: IoApicReg, value: u32, len: u8, bit: u8) {
+        unsafe { self.update_reg_idx(reg.index(), value, len, bit) };
+    }
+
+    unsafe fn update_reg_idx(&self, idx: u32, value: u32, len: u8, bit: u8) {
+        let old_value = unsafe { self.read_reg_idx(idx) };
+
+        let mask = ((1 << len) - 1) << bit;
+        let new_value = (old_value & !mask) | (value << bit & mask);
+
+        unsafe { self.write_reg_idx(idx, new_value) };
+    }
+
+    #[inline]
+    /// # Safety
+    ///
+    /// The index must be a valid writable register index.
+    unsafe fn write_reg(&self, reg: IoApicReg, value: u32) {
+        unsafe { self.write_reg_idx(reg.index(), value) }
+    }
+
+    /// # Safety
+    /// The index must be a valid writable register index.
+    unsafe fn write_reg_idx(&self, idx: u32, value: u32) {
+        unsafe { self.reg_select().write_volatile(idx) };
+        unsafe { self.reg_window().write(value) };
+    }
+
+    #[must_use]
+    #[inline]
+    fn read_reg(&self, reg: IoApicReg) -> u32 {
+        unsafe { self.read_reg_idx(reg.index()) }
+    }
+
+    #[must_use]
+    /// # Safety
+    /// The index must be a valid register index.
     unsafe fn read_reg_idx(&self, idx: u32) -> u32 {
         unsafe { self.reg_select().write_volatile(idx) };
         unsafe { self.reg_window().read() }

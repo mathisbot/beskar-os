@@ -65,9 +65,9 @@ checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
 name = "noto-sans-mono-bitmap"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9aa163ae3f5d28f11e4906fac432e39937daee74920caec72a4962810646e0fb"
+checksum = "1064d564ae026ae123bf5d607318b42a5b31d70a3c48e6ea7ee44cce4cdb095e"
 
 [[package]]
 name = "proc-macro2"
