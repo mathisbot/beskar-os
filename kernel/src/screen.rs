@@ -21,7 +21,8 @@ static SCREEN: Once<Screen> = Once::uninit();
 const MAX_WINDOWS: usize = 16;
 
 pub fn init(raw_buffer: &'static mut [u8], info: ScreenInfo) {
-    SCREEN.call_once(|| Screen::new(raw_buffer, info));
+    let screen = Screen::new(raw_buffer, info);
+    SCREEN.call_once(|| screen);
 }
 
 pub struct Screen {

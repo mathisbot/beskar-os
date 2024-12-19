@@ -61,7 +61,8 @@ pub fn init() {
         .unwrap();
     serdebug!("Logger window created");
 
-    let logger = LOGGER.call_once(|| LockedLogger::new(window));
+    let locked_logger = LockedLogger::new(window);
+    let logger = LOGGER.call_once(|| locked_logger);
 
     log::set_logger(logger).expect("Failed to set logger");
     log::set_max_level(if cfg!(debug_assertions) {

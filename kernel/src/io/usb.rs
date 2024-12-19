@@ -1,4 +1,4 @@
-use crate::pci::Class;
+use crate::pci::{Bar, Class};
 
 pub mod device;
 pub mod driver;
@@ -6,29 +6,29 @@ pub mod host;
 pub mod hub;
 
 pub fn init() {
-    let usb_device = crate::pci::with_pci_handler(|handler| {
-        let mut usb_device = None;
-        for device in handler.devices() {
-            if device.csp().class() == Class::SerialBus && device.csp().subclass() == 0x03 {
-                usb_device = Some(device);
-                break;
-            }
-        }
-        usb_device.cloned()
-    });
-
-    let Some(usb_device) = usb_device else {
-        log::warn!("No USB device found");
+    let Some(usb_device) = crate::pci::with_pci_handler(|handler| {
+        handler
+            .devices()
+            .iter()
+            .find(|device| {
+                device.csp().class() == Class::SerialBus && device.csp().subclass() == 0x03
+            })
+            .cloned()
+    }) else {
+        log::warn!("No USB controller found");
         return;
     };
 
     if usb_device.csp().prog_if() != 0x30 {
-        log::warn!("USB device is not an xHCI controller");
+        log::warn!("Non-xHCI USB devices are not supported yet, skipping");
         return;
     }
 
-    log::debug!("xHCI controller found: {:?}", usb_device);
+    // xHCI uses BAR0
+    let Some(Bar::Memory(usb_device_bar)) = usb_device.bar(0) else {
+        log::warn!("xHCI controller does not have a memory-mapped BAR0");
+        return;
+    };
 
-    let xhci_bar0 = usb_device.bar(0).unwrap();
-    log::debug!("xHCI BAR0: {:?}", xhci_bar0);
+    host::init(usb_device_bar.base_address());
 }

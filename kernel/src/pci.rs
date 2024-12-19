@@ -3,8 +3,9 @@
 use crate::utils::locks::McsLock;
 use alloc::vec::Vec;
 use x86_64::{
-    instructions::port::{Port, PortGeneric, WriteOnlyAccess},
-    structures::port::PortWrite, PhysAddr,
+    instructions::port::{Port, PortWriteOnly},
+    structures::port::PortWrite,
+    PhysAddr,
 };
 
 const CONFIG_ADDRESS: u16 = 0xCF8;
@@ -21,7 +22,11 @@ pub struct PciHandler {
 pub fn init() {
     PCI_HANDLER.with_locked(|handler| {
         handler.update_devices();
-        log::debug!("Found {} PCI devices", handler.devices.len());
+        if handler.devices.is_empty() {
+            log::warn!("No PCI devices found");
+        } else {
+            log::debug!("Found {} PCI devices", handler.devices.len());
+        }
     });
 }
 
@@ -45,40 +50,101 @@ impl PciHandler {
     pub fn update_devices(&mut self) {
         self.devices.clear();
 
-        let header_reg = ConfigAddressValue::new(0, 0, 0, RegisterOffset::HeaderType as u8);
-        if let Some(header) = self.read_u8(header_reg) {
-            match (header >> 7) & 1 {
-                0 => self.scan_bus(0),
-                1 => (0..=255).for_each(|bus| {
-                    let address =
-                        ConfigAddressValue::new(bus, 0, 0, RegisterOffset::VendorId as u8);
-                    if self.read_u16(address).is_some() {
-                        self.scan_bus(bus);
-                    }
-                }),
-                _ => unreachable!(),
+        // Brute-force scan
+        // FIXME: Way too slow (8192 iterations)
+        for bus in 0..=255 {
+            for device in 0..32 {
+                if let Some(device) = self.scan_device(ConfigAddressValue::new(
+                    bus,
+                    device,
+                    0,
+                    RegisterOffset::VendorId as u8,
+                )) {
+                    self.devices.push(device);
+                }
             }
-        } else {
-            log::warn!("PCI: No devices found");
         }
     }
 
-    fn scan_bus(&mut self, bus: u8) {
-        (0..32).for_each(|device| {
-            if let Some(device) =
-                Device::from_address(self, ConfigAddressValue::new(bus, device, 0, 0))
-            {
-                self.devices.push(device);
-            }
-        });
+    #[must_use]
+    fn scan_device(&mut self, address: ConfigAddressValue) -> Option<Device> {
+        let (device, vendor) = {
+            let vendor_reg = ConfigAddressValue {
+                register_offset: RegisterOffset::VendorId as u8,
+                ..address
+            };
+            let vendor = self.read_u32(vendor_reg)?;
+            (
+                u16::try_from(vendor >> 16).unwrap(),
+                u16::try_from(vendor & 0xFFFF).unwrap(),
+            )
+        };
+
+        let (class, subclass, prog_if, revision) = {
+            let class_reg = ConfigAddressValue {
+                register_offset: RegisterOffset::RevisionId as u8,
+                ..address
+            };
+            let class_reg_value = self.read_u32(class_reg)?;
+            (
+                Class::from(u8::try_from(class_reg_value >> 24).unwrap()),
+                u8::try_from((class_reg_value >> 16) & 0xFF).unwrap(),
+                u8::try_from((class_reg_value >> 8) & 0xFF).unwrap(),
+                u8::try_from(class_reg_value & 0xFF).unwrap(),
+            )
+        };
+
+        let functions = self.find_function_count(address);
+
+        Some(Device {
+            id: device,
+            vendor_id: vendor,
+            bdf: address.bdf,
+            functions,
+            csp: Csp {
+                class,
+                subclass,
+                prog_if,
+            },
+            revision,
+        })
+    }
+
+    #[must_use]
+    fn find_function_count(&mut self, address: ConfigAddressValue) -> u8 {
+        let header_reg = ConfigAddressValue {
+            register_offset: RegisterOffset::HeaderType as u8,
+            ..address
+        };
+        let header = self.read_u8(header_reg).unwrap();
+
+        // Check multi-function bit
+        if (header >> 7) == 0 {
+            return 1;
+        }
+
+        // Brute-force over functions
+        u8::try_from(
+            (1..8)
+                .take_while(|&func| {
+                    let vendor_reg = ConfigAddressValue {
+                        register_offset: RegisterOffset::VendorId as u8,
+                        bdf: BdfAddress::new(address.bdf.bus(), address.bdf.device(), func),
+                        ..address
+                    };
+                    self.read_u16(vendor_reg).is_some()
+                })
+                .count(),
+        )
+        .unwrap()
+            + 1
     }
 
     #[must_use]
     /// Read the raw value from the PCI configuration space
     ///
-    /// The register offset must be DWORD-aligned.
-    ///
-    /// This function should not be used directly.
+    /// This function should not be used directly as the value is not validated.
+    /// Instead, use the `read_u*` functions.
     unsafe fn read_raw(&mut self, address: ConfigAddressValue) -> u32 {
         let ConfigAddressValue {
             enable: _,
@@ -172,7 +238,7 @@ impl BdfAddress {
 /// Configuration address PCI register
 ///
 /// This is a write-only register that is used to select the register to access.
-pub struct ConfigAddress(PortGeneric<u32, WriteOnlyAccess>);
+pub struct ConfigAddress(PortWriteOnly<u32>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ConfigAddressValue {
@@ -224,12 +290,12 @@ impl ConfigAddress {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
-        Self(PortGeneric::new(CONFIG_ADDRESS))
+        Self(PortWriteOnly::new(CONFIG_ADDRESS))
     }
 }
 
 impl core::ops::Deref for ConfigAddress {
-    type Target = PortGeneric<u32, WriteOnlyAccess>;
+    type Target = PortWriteOnly<u32>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -250,7 +316,7 @@ struct ConfigData(Port<u32>);
 
 impl ConfigData {
     pub const fn new() -> Self {
-        Self(PortGeneric::new(CONFIG_DATA))
+        Self(Port::new(CONFIG_DATA))
     }
 }
 
@@ -293,7 +359,7 @@ impl Device {
 
     #[must_use]
     #[inline]
-    pub const fn address(&self) -> BdfAddress {
+    pub const fn bdf(&self) -> BdfAddress {
         self.bdf
     }
 
@@ -316,81 +382,8 @@ impl Device {
     }
 
     #[must_use]
-    fn from_address(handler: &mut PciHandler, address: ConfigAddressValue) -> Option<Self> {
-        let (device, vendor) = {
-            let vendor_reg = ConfigAddressValue {
-                register_offset: RegisterOffset::VendorId as u8,
-                ..address
-            };
-            let vendor = handler.read_u32(vendor_reg)?;
-            (
-                u16::try_from(vendor >> 16).unwrap(),
-                u16::try_from(vendor & 0xFFFF).unwrap(),
-            )
-        };
-
-        let (class, subclass, prog_if, revision) = {
-            let class_reg = ConfigAddressValue {
-                register_offset: RegisterOffset::RevisionId as u8,
-                ..address
-            };
-            let class_reg_value = handler.read_u32(class_reg)?;
-            (
-                Class::from(u8::try_from(class_reg_value >> 24).unwrap()),
-                u8::try_from((class_reg_value >> 16) & 0xFF).unwrap(),
-                u8::try_from((class_reg_value >> 8) & 0xFF).unwrap(),
-                u8::try_from(class_reg_value & 0xFF).unwrap(),
-            )
-        };
-
-        let functions = Self::find_function_count(handler, address);
-
-        Some(Self {
-            id: device,
-            vendor_id: vendor,
-            bdf: address.bdf,
-            functions,
-            csp: Csp {
-                class,
-                subclass,
-                prog_if,
-            },
-            revision,
-        })
-    }
-
-    #[must_use]
-    fn find_function_count(handler: &mut PciHandler, address: ConfigAddressValue) -> u8 {
-        let header_reg = ConfigAddressValue {
-            register_offset: RegisterOffset::HeaderType as u8,
-            ..address
-        };
-        let header = handler.read_u8(header_reg).unwrap();
-
-        // Check multi-function bit
-        if (header >> 7) == 0 {
-            return 1;
-        }
-
-        // Brute-force over functions
-        u8::try_from(
-            (0..8)
-                .take_while(|&func| {
-                    let vendor_reg = ConfigAddressValue {
-                        register_offset: RegisterOffset::VendorId as u8,
-                        bdf: BdfAddress::new(address.bdf.bus(), address.bdf.device(), func),
-                        ..address
-                    };
-                    handler.read_u32(vendor_reg).is_some()
-                })
-                .count(),
-        )
-        .unwrap()
-    }
-
-    #[must_use]
     /// Read the raw value from the PCI configuration space
-    /// 
+    ///
     /// Bar number must be 0 to 5 (inclusive).
     pub fn bar(&self, bar_number: u8) -> Option<Bar> {
         let bar_reg_offset = match bar_number {
@@ -402,10 +395,13 @@ impl Device {
             5 => RegisterOffset::Bar5,
             _ => panic!("Invalid BAR number"),
         } as u8;
-        let bar_reg = ConfigAddressValue::new(self.bdf.bus(), self.bdf.device(), self.bdf.function(), bar_reg_offset);
-        let bar = PCI_HANDLER.with_locked(|handler| {
-            handler.read_u32(bar_reg)
-        });
+        let bar_reg = ConfigAddressValue::new(
+            self.bdf().bus(),
+            self.bdf().device(),
+            self.bdf().function(),
+            bar_reg_offset,
+        );
+        let bar = PCI_HANDLER.with_locked(|handler| handler.read_u32(bar_reg));
         bar.map(|bar| Bar::from_raw(bar, self, bar_number))
     }
 }
@@ -431,8 +427,10 @@ impl Bar {
 pub struct MemoryBar {
     /// 16-byte aligned
     base_address: PhysAddr,
+    /// If the memory is not prefetchable, caching must be disabled.
+    ///
+    /// Thus, it is better to access memory with volatile reads and writes.
     prefetchable: bool,
-    bar_type: MemoryBarType,
 }
 
 impl MemoryBar {
@@ -443,7 +441,7 @@ impl MemoryBar {
         let bar_type = match (value >> 1) & 0b11 {
             0b00 => MemoryBarType::Dword,
             0b10 => MemoryBarType::Qword,
-            _ => panic!("Invalid Memory BAR type"),
+            x => panic!("PCI: Invalid Memory BAR type: {}", x),
         };
         // FIXME: Refactor this
         let upper_value = if bar_type == MemoryBarType::Qword {
@@ -454,21 +452,26 @@ impl MemoryBar {
                 3 => RegisterOffset::Bar3,
                 4 => RegisterOffset::Bar4,
                 5 => RegisterOffset::Bar5,
-                _ => panic!("Invalid BAR number"),
+                _ => panic!("PCI: Invalid BAR number"),
             } as u8;
-            let bar_reg = ConfigAddressValue::new(device.bdf.bus(), device.bdf.device(), device.bdf.function(), bar_reg_offset);
-            PCI_HANDLER.with_locked(|handler| {
-                handler.read_u32(bar_reg)
-            }).unwrap()
+            let bar_reg = ConfigAddressValue::new(
+                device.bdf.bus(),
+                device.bdf.device(),
+                device.bdf.function(),
+                bar_reg_offset,
+            );
+            PCI_HANDLER
+                .with_locked(|handler| handler.read_u32(bar_reg))
+                .unwrap()
         } else {
             0
         };
-        let base_address = PhysAddr::new(u64::from(upper_value) << 32 | u64::from(value & 0xFFFFFFF0));
+        let base_address =
+            PhysAddr::new(u64::from(upper_value) << 32 | u64::from(value & 0xFFFFFFF0));
 
         Self {
             base_address,
             prefetchable,
-            bar_type,
         }
     }
 
@@ -482,12 +485,6 @@ impl MemoryBar {
     #[inline]
     pub const fn prefetchable(&self) -> bool {
         self.prefetchable
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn bar_type(&self) -> MemoryBarType {
-        self.bar_type
     }
 }
 

@@ -56,7 +56,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     } = boot_info;
 
     // FIXME: Serial log everything?
-    serial::init();
+    serial::logging::init();
 
     cpu::init();
 

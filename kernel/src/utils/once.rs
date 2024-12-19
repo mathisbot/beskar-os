@@ -82,6 +82,7 @@ impl<T> Once<T> {
         }
     }
 
+    // FIXME: What to do if the initializer panics?
     /// Initializes the value if it has not been initialized yet.
     ///
     /// Try to make the `initializer` function as less likely to panic as possible.
