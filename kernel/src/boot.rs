@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicU8;
 
 use crate::{
     cpu::{self, apic, interrupts},
-    pci, process, screen, serdebug, serial, serinfo,
+    io, pci, process, screen, serdebug, serial, serinfo,
 };
 use bootloader::BootInfo;
 use x86_64::PhysAddr;
@@ -95,6 +95,8 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     apic::init_ioapic();
 
     pci::init();
+
+    io::init();
 }
 
 /// This function is called by each core once they're ready to start the kernel.

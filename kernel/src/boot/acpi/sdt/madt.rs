@@ -287,7 +287,10 @@ impl Madt {
 
                     let x2apic_nmi = unsafe { entry_start.cast::<X2ApicNmi>().read_unaligned() };
                     // TODO: Handle Local x2APIC NMI Structure.
-                    log::warn!("Unhandled Local x2APIC NMI Structure entry: {:?}", x2apic_nmi);
+                    log::warn!(
+                        "Unhandled Local x2APIC NMI Structure entry: {:?}",
+                        x2apic_nmi
+                    );
                 }
                 // GIC related entries
                 x if (11..=15).contains(&x) => {

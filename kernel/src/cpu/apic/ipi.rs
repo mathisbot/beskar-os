@@ -9,14 +9,14 @@ pub enum DeliveryMode {
     /// This mode may not be available on all processors.
     LowestPriority(Irq),
     /// This IPI is mainly used by UEFI firmware to signal the processor to enter System Management Mode (SMM).
-    /// 
+    ///
     /// For now, it shouldn't be used by the kernel.
     Smi,
     Nmi,
     /// This IPI should only be used once at the beginning of the processor's execution.
     Init,
     /// The `u8` contains the physical address of the payload.
-    /// 
+    ///
     /// This IPI should only be used once at the beginning of the processor's execution.
     Sipi(u8),
 }
@@ -66,18 +66,18 @@ impl Ipi {
             DeliveryMode::Fixed(irq) => {
                 low |= u32::from(irq as u8);
                 0b000
-            },
+            }
             DeliveryMode::LowestPriority(irq) => {
                 low |= u32::from(irq as u8);
                 0b001
-            },
+            }
             DeliveryMode::Smi => 0b010,
             DeliveryMode::Nmi => 0b100,
             DeliveryMode::Init => 0b101,
             DeliveryMode::Sipi(payload) => {
                 low |= u32::from(payload);
                 0b110
-            },
+            }
         };
         low |= mode << 8;
 
@@ -87,7 +87,7 @@ impl Ipi {
             Destination::One(cpu) => {
                 high |= u32::from(cpu) << 24;
                 0b00
-            },
+            }
             Destination::OneSelf => 0b01,
         };
         low |= destination << 18;

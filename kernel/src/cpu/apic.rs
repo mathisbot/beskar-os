@@ -135,7 +135,7 @@ impl LocalApic {
 }
 
 /// Ensures that PIC 8259 is disabled.
-/// 
+///
 /// This a mandatory step before enabling the APIC.
 fn ensure_pic_disabled() {
     unsafe {
@@ -220,7 +220,7 @@ pub enum Destination {
     /// and must be 4 bits long.
     ///
     /// Yes, this means that only 16 processors can be addressed.
-    Physical(u8),
+    Physical(u8), // TODO: I think x2APIC uses 32 bits
     /// Logical destination
     ///
     /// Number describes a set of processors
@@ -313,8 +313,11 @@ impl IoApic {
     pub fn init(&self) {
         enable_disable_interrupts(false);
 
-        let id = IOAPICID_CNTER.fetch_add(1, Ordering::Relaxed);
-        self.set_id(id);
+        let id_offset = IOAPICID_CNTER.fetch_add(1, Ordering::Relaxed);
+        let cpu_count = crate::locals::get_ready_core_count();
+        // Each APIC device must have a unique ID to be uniquely addressed
+        // on the APIC Bus.
+        self.set_id(cpu_count + id_offset);
 
         // TODO: Setup redirection entries (See MADT)
         let isos = crate::boot::acpi::ACPI.get().unwrap().madt().io_iso();
@@ -382,8 +385,8 @@ impl IoApic {
 
         let reg = IoApicReg::Redirection(index);
 
-        let high_idx = reg.index();
-        let low_idx = high_idx + 1;
+        let low_idx = reg.index();
+        let high_idx = low_idx + 1;
 
         // High register
 

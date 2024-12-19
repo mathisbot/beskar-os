@@ -1,5 +1,9 @@
 use crate::{
-    cpu::{self, apic::ipi::{self, Ipi}}, locals,
+    cpu::{
+        self,
+        apic::ipi::{self, Ipi},
+    },
+    locals,
     mem::{
         frame_alloc, page_alloc, page_table,
         ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
@@ -113,9 +117,15 @@ pub fn start_up_aps(core_count: u8) {
         // FIXME: Decide if the following advised boot sequence is mandatory or if
         // this dumb code works just fine.
         // <https://wiki.osdev.org/Symmetric_Multiprocessing#Startup_Sequence>
-        apic.send_ipi(Ipi::new(ipi::DeliveryMode::Init, ipi::Destination::AllExcludingSelf));
+        apic.send_ipi(Ipi::new(
+            ipi::DeliveryMode::Init,
+            ipi::Destination::AllExcludingSelf,
+        ));
         // crate::time::tsc::wait_ms(10);
-        apic.send_ipi(Ipi::new(ipi::DeliveryMode::Sipi(sipi_payload), ipi::Destination::AllExcludingSelf));
+        apic.send_ipi(Ipi::new(
+            ipi::DeliveryMode::Sipi(sipi_payload),
+            ipi::Destination::AllExcludingSelf,
+        ));
         // crate::time::tsc::wait_ms(100);
         // apic.send_ipi(Ipi::new(ipi::DeliveryMode::Sipi(sipi_payload), ipi::Destination::AllExcludingSelf));
     });
