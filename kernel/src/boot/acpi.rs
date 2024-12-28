@@ -1,5 +1,3 @@
-#![allow(dead_code, unused_variables)] // TODO: Remove
-
 use core::sync::atomic::AtomicU8;
 
 use crate::utils::once::Once;

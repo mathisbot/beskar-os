@@ -12,10 +12,10 @@ pub fn init(recursive_index: u16) {
 
     let bootloader_pt_vaddr = {
         let recursive_index = u64::from(recursive_index);
-        let vaddr = recursive_index << 39
-            | recursive_index << 30
-            | recursive_index << 21
-            | recursive_index << 12;
+        let vaddr = (recursive_index << 39)
+            | (recursive_index << 30)
+            | (recursive_index << 21)
+            | (recursive_index << 12);
         VirtAddr::new(vaddr)
     };
 

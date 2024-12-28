@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};

@@ -31,7 +31,7 @@ A great choice for most of modern CPUs is `x86-64-v3` (`v4` if it is very modern
 If you want to run the OS on a testing virtual machine on QEMU, you can do so by running the following command :
 
 ```powershell
-& "qemu-system-x86_64.exe" -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci,id=xhci
+& "qemu-system-x86_64.exe" -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -device usb-kbd
 ```
 
 Where:
@@ -42,6 +42,9 @@ Where:
 - `<ACCEL_BACKEND>` allows QEMU to use acceleration based on your OS. On Linux, you can set it to `kvm`, and to `whpx` on Windows (currently incompatible with OMVF files).
 
 Standard output will be filled with early logging info, such as memory initialization, which is needed to initialize windows (thus screen logging).
+
+Other useful parameters:
+- `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.
 
 ### Running on baremetal
 

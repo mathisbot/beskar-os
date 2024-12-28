@@ -47,14 +47,17 @@ struct RawIpi {
 }
 
 impl Ipi {
+    #[must_use]
+    #[inline]
     /// Creates a new IPI with the specified delivery mode and destination.
-    pub fn new(delivery_mode: DeliveryMode, destination: Destination) -> Self {
+    pub const fn new(delivery_mode: DeliveryMode, destination: Destination) -> Self {
         Self {
             delivery_mode,
             destination,
         }
     }
 
+    #[must_use]
     /// Converts the IPI to its raw format.
     fn to_raw(&self) -> RawIpi {
         let mut low = 0;
@@ -96,7 +99,11 @@ impl Ipi {
     }
 
     /// Sends the IPI using the specified ICR registers.
-    pub fn send(&self, icr_low: *mut u32, icr_high: *mut u32) {
+    ///
+    /// ## Safety
+    ///
+    /// ICR pointers must be valid.
+    pub(super) unsafe fn send(&self, icr_low: *mut u32, icr_high: *mut u32) {
         // Assert Interrupts are ready to be received
         while unsafe { icr_low.read() >> 12 } & 1 == 1 {
             // TODO: Fail with a timeout

@@ -13,7 +13,7 @@ pub fn init() {
             .find(|device| {
                 device.csp().class() == Class::SerialBus && device.csp().subclass() == 0x03
             })
-            .cloned()
+            .copied()
     }) else {
         log::warn!("No USB controller found");
         return;

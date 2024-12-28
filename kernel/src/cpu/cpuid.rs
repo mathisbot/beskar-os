@@ -25,10 +25,9 @@ pub fn cpuid(leaf: u32) -> CpuidResult {
     unsafe { core::arch::x86_64::__cpuid(leaf) }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Every meaningful CPUID register
-enum CpuidReg {
+pub enum CpuidReg {
     Eax,
     Ebx,
     Ecx,
@@ -61,7 +60,6 @@ impl core::fmt::Display for CpuFeature {
     }
 }
 
-#[allow(dead_code)]
 // TODO: Add more features!
 impl CpuFeature {
     // LEAF 0
@@ -153,11 +151,10 @@ impl CpuFeature {
 /// List of required features for the kernel to run
 ///
 /// Please keep the list sorted by leaf number
-const REQUIRED_FEATURES: [CpuFeature; 10] = [
+const REQUIRED_FEATURES: [CpuFeature; 9] = [
     // Leaf 1
     CpuFeature::FPU,
     CpuFeature::PSE,
-    CpuFeature::TSC, // TODO: Find away around TSC?
     CpuFeature::MSR,
     CpuFeature::APIC,
     CpuFeature::PAT, // FIXME: Is it really mandatory?

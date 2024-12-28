@@ -1,5 +1,3 @@
-#![allow(dead_code, unused_variables)] // TODO: Remove
-
 use crate::{boot::acpi::sdt::Sdt, impl_sdt};
 
 use super::{RawGenericAddress, SdtHeader};

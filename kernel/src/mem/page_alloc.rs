@@ -103,14 +103,14 @@ pub fn init(recursive_index: u16) {
 
     let zero = PageTableIndex::new(0);
     let max = PageTableIndex::new(511);
-    let pte_start = u64::from(recursive_index) << 39
-        | u64::from(zero) << 30
-        | u64::from(zero) << 21
-        | u64::from(zero) << 12;
-    let pte_end = u64::from(recursive_index) << 39
-        | u64::from(max) << 30
-        | u64::from(max) << 21
-        | u64::from(max) << 12;
+    let pte_start = (u64::from(recursive_index) << 39)
+        | (u64::from(zero) << 30)
+        | (u64::from(zero) << 21)
+        | (u64::from(zero) << 12);
+    let pte_end = (u64::from(recursive_index) << 39)
+        | (u64::from(max) << 30)
+        | (u64::from(max) << 21)
+        | (u64::from(max) << 12);
 
     vaddrs.remove(MemoryRange::new(pte_start, pte_end));
 

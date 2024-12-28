@@ -159,6 +159,9 @@ fn make_mappings(
         frame_allocator,
     ));
 
+    // TODO: Secure Boot ?
+    // Verify kernel signature, ...
+
     info!("Kernel loaded");
     debug!("Kernel entry point at {:#x}", kernel_entry_point.as_u64());
     debug!("Kernel image offset: {:#x}", kernel_image_offset.as_u64());

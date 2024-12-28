@@ -1,6 +1,5 @@
 use crate::utils::locks::McsLock;
 use core::fmt::Write;
-use x86_64::instructions::port::Port;
 
 use super::SerialPort;
 
@@ -10,14 +9,20 @@ const COM1_IO_PORT: u16 = 0x3F8;
 #[cfg(debug_assertions)]
 static SERIAL_PORT: McsLock<SerialLogger> = McsLock::new(SerialLogger::new());
 
-#[inline]
 pub fn init() {
+    #[cfg(debug_assertions)]
     SERIAL_PORT.with_locked(|serial| {
         serial.init();
     });
 }
 
 pub struct SerialLogger(SerialPort);
+
+impl Default for SerialLogger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SerialLogger {
     #[must_use]

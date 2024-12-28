@@ -22,8 +22,10 @@ pub struct PhysicalMapping {
 
 impl PhysicalMapping {
     /// Creates a new physical mapping.
+    ///
+    /// `flags` will be `OR`ed with `PageTableFlags::PRESENT` to ensure the page is present.
     #[must_use]
-    pub fn new(start_paddr: PhysAddr, required_length: usize, writable: bool) -> Self {
+    pub fn new(start_paddr: PhysAddr, required_length: usize, flags: PageTableFlags) -> Self {
         let end_paddr = start_paddr + u64::try_from(required_length).unwrap();
 
         let start_frame = PhysFrame::<Size4KiB>::containing_address(start_paddr);
@@ -39,17 +41,12 @@ impl PhysicalMapping {
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             page_table::with_page_table(|page_table| {
-                let mut flags =
-                    PageTableFlags::PRESENT | PageTableFlags::NO_CACHE | PageTableFlags::NO_EXECUTE;
-                if writable {
-                    flags |= PageTableFlags::WRITABLE;
-                }
                 for (frame, page) in frame_range.zip(page_range) {
                     unsafe {
                         page_table.map_to_with_table_flags(
                             page,
                             frame,
-                            flags,
+                            flags | PageTableFlags::PRESENT,
                             PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
                             &mut *frame_allocator,
                         )

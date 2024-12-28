@@ -1,6 +1,6 @@
 use x86_64::{
     registers::control::{Cr3, Cr3Flags},
-    structures::paging::{Mapper, Page, PageTable, PageTableFlags, Size4KiB},
+    structures::paging::{Mapper, Page, PageTable, PageTableFlags, RecursivePageTable, Size4KiB},
     PhysAddr, VirtAddr,
 };
 
@@ -9,19 +9,27 @@ use crate::utils::once::Once;
 
 static KERNEL_ADDRESS_SPACE: Once<AddressSpace> = Once::uninit();
 
+static KERNEL_CODE_ADDRESS: Once<VirtAddr> = Once::uninit();
+
 /// This function should only be called once BY THE BSP on startup.
-pub fn init(recursive_index: u16) {
+pub fn init(recursive_index: u16, kernel_vaddr: u64) {
+    KERNEL_CODE_ADDRESS.call_once(|| VirtAddr::new(kernel_vaddr));
+
     KERNEL_ADDRESS_SPACE.call_once(|| {
         let (frame, flags) = Cr3::read();
         let vaddr = {
             let recursive_index = u64::from(recursive_index);
-            let vaddr = recursive_index << 39
-                | recursive_index << 30
-                | recursive_index << 21
-                | recursive_index << 12;
+            let vaddr = (recursive_index << 39)
+                | (recursive_index << 30)
+                | (recursive_index << 21)
+                | (recursive_index << 12);
             VirtAddr::new(vaddr)
         };
-        AddressSpace::new_raw(vaddr, frame.start_address(), flags)
+        AddressSpace {
+            lvl4_vaddr: vaddr,
+            lvl4_paddr: frame.start_address(),
+            cr3: flags,
+        }
     });
 }
 
@@ -35,17 +43,13 @@ pub struct AddressSpace {
     cr3: Cr3Flags,
 }
 
-impl AddressSpace {
-    #[must_use]
-    #[inline]
-    pub const fn new_raw(lvl4_vaddr: VirtAddr, lvl4_paddr: PhysAddr, cr3: Cr3Flags) -> Self {
-        Self {
-            lvl4_vaddr,
-            lvl4_paddr,
-            cr3,
-        }
+impl Default for AddressSpace {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
+impl AddressSpace {
     #[must_use]
     pub fn new() -> Self {
         let frame = frame_alloc::with_frame_allocator(|frame_allocator| {
@@ -79,7 +83,24 @@ impl AddressSpace {
 
         let mut pt = PageTable::new();
 
-        // TODO: Copy the kernel's page table entries to the new address space
+        // Copy the kernel's page table entries to the new address space
+        let kernel_start_page =
+            Page::<Size4KiB>::containing_address(*KERNEL_CODE_ADDRESS.get().unwrap());
+        let kernel_page_range = kernel_start_page.p4_index().into()..512_usize;
+
+        let current_page_table = KERNEL_ADDRESS_SPACE.get().unwrap().get_recursive_pt();
+        let current_pt = current_page_table.level_4_table();
+        for (i, pte) in current_pt
+            .iter()
+            .enumerate()
+            .skip(kernel_page_range.start)
+            .take(512 - kernel_page_range.start)
+        {
+            if pte.is_unused() {
+                continue;
+            }
+            pt[i].set_addr(pte.addr(), pte.flags());
+        }
 
         let (index, pte) = pt
             .iter_mut()
@@ -93,8 +114,8 @@ impl AddressSpace {
 
         unsafe { page.start_address().as_mut_ptr::<PageTable>().write(pt) };
 
+        // Unmap the page from the current address space as we're done with it
         page_table::with_page_table(|page_table| page_table.unmap(page).unwrap().1.flush());
-
         page_alloc::with_page_allocator(|page_allocator| {
             page_allocator.free_pages(Page::range_inclusive(page, page));
         });
@@ -102,10 +123,14 @@ impl AddressSpace {
         let lvl4_vaddr = {
             assert!(u16::try_from(index).is_ok(), "Index is too large");
             let i = u64::try_from(index).unwrap();
-            VirtAddr::new(i << 39 | i << 30 | i << 21 | i << 12)
+            VirtAddr::new((i << 39) | (i << 30) | (i << 21) | (i << 12))
         };
 
-        Self::new_raw(lvl4_vaddr, frame.start_address(), Cr3Flags::empty())
+        Self {
+            lvl4_vaddr,
+            lvl4_paddr: frame.start_address(),
+            cr3: Cr3Flags::empty(),
+        }
     }
 
     pub fn is_active(&self) -> bool {
@@ -119,6 +144,11 @@ impl AddressSpace {
         } else {
             self.cr3
         }
+    }
+
+    fn get_recursive_pt(&self) -> RecursivePageTable<'static> {
+        assert!(self.is_active(), "Address space is not active");
+        unsafe { RecursivePageTable::new(&mut *self.lvl4_vaddr.as_mut_ptr()) }.unwrap()
     }
 }
 

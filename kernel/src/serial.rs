@@ -5,11 +5,6 @@
 //! On a physical machine, the serial port can be connected to another machine
 //! to capture early debug messages in case of hard failure.
 
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
-use crate::utils::locks::McsLock;
-use core::fmt::Write;
 use x86_64::instructions::port::Port;
 
 pub mod logging;
@@ -37,7 +32,6 @@ impl SerialPort {
         }
     }
 
-    /// Initializes the serial port with default settings.
     pub fn init(&mut self) {
         // Disable interrupts
         unsafe { self.interrupt_enable.write(0x00) };

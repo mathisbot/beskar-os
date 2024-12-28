@@ -15,12 +15,6 @@ static TSC_MHZ: AtomicU64 = AtomicU64::new(0);
 
 #[must_use]
 #[inline]
-fn read_tsc() -> u64 {
-    unsafe { core::arch::x86_64::_rdtsc() }
-}
-
-#[must_use]
-#[inline]
 fn read_tsc_fenced() -> u64 {
     unsafe {
         core::arch::x86_64::_mm_mfence();
@@ -30,7 +24,8 @@ fn read_tsc_fenced() -> u64 {
     }
 }
 
-fn calibration_tick() -> f64 {
+#[must_use]
+fn calibrate_with_pit() -> f64 {
     let mut pit_ctrl = PortWriteOnly::<u8>::new(0x43);
     let mut pit_data = Port::<u8>::new(0x40);
 
@@ -55,7 +50,15 @@ fn calibration_tick() -> f64 {
 }
 
 pub fn calibrate() {
-    STARTUP_TIME.store(read_tsc(), core::sync::atomic::Ordering::Relaxed);
+    assert!(
+        cpuid::check_feature(cpuid::CpuFeature::TSC),
+        "TSC not supported"
+    );
+
+    STARTUP_TIME.store(
+        unsafe { core::arch::x86_64::_rdtsc() },
+        core::sync::atomic::Ordering::Relaxed,
+    );
 
     // If CPU supports it, use the RDTSC calibration (Intel only apparently)
     let highest_leaf = cpuid::get_highest_supported_leaf();
@@ -72,10 +75,13 @@ pub fn calibrate() {
         crate::serdebug!("CPU does not support RDTSC calibration");
     }
 
+    // FIXME: PIT isn't guaranteed to be available on modern hardware
+    // Maybe make sure the counter decrements ?
+
     // If the CPU doesn't support RDTSC calibration, manually calibrate it with PIT
 
     let start = read_tsc_fenced();
-    let elapsed = calibration_tick();
+    let elapsed = calibrate_with_pit();
     let end = read_tsc_fenced();
 
     let diff = u32::try_from(end - start).unwrap();
@@ -89,7 +95,7 @@ pub fn calibrate() {
     TSC_MHZ.store(rate_mhz, core::sync::atomic::Ordering::Relaxed);
 }
 
-pub fn wait_ms(count: u64) {
+pub(super) fn wait_ms(count: u64) {
     let tsc_mhz = TSC_MHZ.load(core::sync::atomic::Ordering::Relaxed);
 
     // FIXME: Find a way to handle this

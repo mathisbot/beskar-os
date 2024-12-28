@@ -1,4 +1,4 @@
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::{structures::paging::PageTableFlags, PhysAddr, VirtAddr};
 
 use crate::{mem::page_alloc::pmap::PhysicalMapping, utils::locks::MUMcsLock};
 
@@ -10,7 +10,7 @@ pub fn init(paddr: PhysAddr) {
 
     XHCI.with_locked(|xhci| {
         log::debug!("xHCI Capabilities Register: {:?}", xhci.cap);
-    })
+    });
 }
 
 #[derive(Debug)]
@@ -20,8 +20,14 @@ pub struct Xhci<'a> {
 }
 
 impl Xhci<'_> {
+    #[must_use]
     pub fn new(paddr: PhysAddr) -> Self {
-        let physical_mapping = PhysicalMapping::new(paddr, 0x1000, true);
+        let flags = PageTableFlags::PRESENT
+            | PageTableFlags::WRITABLE
+            | PageTableFlags::NO_EXECUTE
+            | PageTableFlags::NO_CACHE;
+
+        let physical_mapping = PhysicalMapping::new(paddr, 32, flags);
         let vaddr = physical_mapping.translate(paddr).unwrap();
 
         let cap = CapabilitiesRegister::new(vaddr);
@@ -55,8 +61,9 @@ struct CapabilitiesRegister<'a> {
     hcc_params2: &'a mut u32,
 }
 
-impl<'a> CapabilitiesRegister<'a> {
-    pub fn new(base: VirtAddr) -> Self {
+impl CapabilitiesRegister<'_> {
+    #[must_use]
+    pub const fn new(base: VirtAddr) -> Self {
         let base_ptr = base.as_mut_ptr::<u32>();
 
         unsafe {
@@ -85,6 +92,7 @@ impl<'a> CapabilitiesRegister<'a> {
     }
 }
 
-pub fn with_xhci<T, F: FnOnce(&Xhci) -> T>(f: F) -> Option<T> {
-    XHCI.try_with_locked(|xhci| f(xhci))
+#[inline]
+pub fn with_xhci<T, F: FnOnce(&mut Xhci) -> T>(f: F) -> Option<T> {
+    XHCI.try_with_locked(f)
 }

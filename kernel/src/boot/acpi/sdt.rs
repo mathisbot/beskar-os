@@ -1,6 +1,6 @@
 use core::mem::offset_of;
 
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::{structures::paging::PageTableFlags, PhysAddr, VirtAddr};
 
 use super::AcpiRevision;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
@@ -24,7 +24,6 @@ pub struct SdtHeader {
     creator_revision: u32,
 }
 
-#[allow(dead_code)]
 /// System Descriptor Table (SDT) trait.
 ///
 /// ## Safety
@@ -134,7 +133,10 @@ unsafe impl Sdt for Rsdt {
 
 impl Rsdt {
     pub fn load(rsdt_paddr: PhysAddr) -> Self {
-        let physical_mapping = PhysicalMapping::new(rsdt_paddr, size_of::<SdtHeader>(), false);
+        let flags =
+            PageTableFlags::PRESENT | x86_64::structures::paging::PageTableFlags::NO_EXECUTE;
+
+        let physical_mapping = PhysicalMapping::new(rsdt_paddr, size_of::<SdtHeader>(), flags);
         let rsdt_vaddr = physical_mapping.translate(rsdt_paddr).unwrap();
 
         let rsdt = Self {
@@ -157,7 +159,7 @@ impl Rsdt {
 
         drop(rsdt);
 
-        let table_mapping = PhysicalMapping::new(rsdt_paddr, rsdt_length, false);
+        let table_mapping = PhysicalMapping::new(rsdt_paddr, rsdt_length, flags);
         let rsdt_vaddr = table_mapping.translate(rsdt_paddr).unwrap();
 
         let rsdt = Self {
@@ -200,7 +202,10 @@ impl Rsdt {
         for i in 0..self.sdt_table_length() {
             let paddr = unsafe { start_ptr.add(i).read_unaligned() };
 
-            let physical_mapping = PhysicalMapping::new(paddr, size_of::<SdtHeader>(), false);
+            let flags = x86_64::structures::paging::PageTableFlags::PRESENT
+                | x86_64::structures::paging::PageTableFlags::NO_EXECUTE;
+
+            let physical_mapping = PhysicalMapping::new(paddr, size_of::<SdtHeader>(), flags);
             let table_vaddr = physical_mapping.translate(paddr).unwrap();
             let header = unsafe { &*table_vaddr.as_ptr::<SdtHeader>() };
 
@@ -237,7 +242,9 @@ impl From<Signature> for &'static [u8; 4] {
 ///
 /// The provided physical address must point to a potentially valid SDT.
 unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
-    let header_mapping = PhysicalMapping::new(phys_addr, core::mem::size_of::<SdtHeader>(), false);
+    let flags = PageTableFlags::PRESENT | x86_64::structures::paging::PageTableFlags::NO_EXECUTE;
+
+    let header_mapping = PhysicalMapping::new(phys_addr, core::mem::size_of::<SdtHeader>(), flags);
     let header_vaddr = header_mapping.translate(phys_addr).unwrap();
 
     let table_length = unsafe {
@@ -249,7 +256,7 @@ unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
 
     drop(header_mapping);
 
-    PhysicalMapping::new(phys_addr, usize::try_from(table_length).unwrap(), false)
+    PhysicalMapping::new(phys_addr, usize::try_from(table_length).unwrap(), flags)
 }
 
 #[macro_export]

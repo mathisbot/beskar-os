@@ -1,4 +1,4 @@
-#![feature(abi_x86_interrupt)]
+#![feature(abi_x86_interrupt, naked_functions)]
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
@@ -8,13 +8,13 @@
 compile_error!("BeskarOS kernel only supports x86_64 architecture");
 
 pub mod boot;
-mod cpu;
+pub mod cpu;
 pub mod io;
 pub mod locals;
 mod logging;
 mod mem;
 mod pci;
-mod process;
+pub mod process;
 pub mod screen;
 pub mod serial;
 mod syscall;

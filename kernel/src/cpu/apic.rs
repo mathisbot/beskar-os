@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
+use timer::LapicTimer;
 use x86_64::{
     instructions::port::Port,
     structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
@@ -14,9 +15,13 @@ use crate::{
     mem::{frame_alloc, page_alloc, page_table},
 };
 
+use super::interrupts::Irq;
+
 pub mod ap;
 pub mod ipi;
+pub mod timer;
 
+#[must_use]
 pub fn apic_id() -> u8 {
     let cpuid_res = cpuid::cpuid(1);
     u8::try_from((cpuid_res.ebx >> 24) & 0xFF).unwrap()
@@ -39,9 +44,9 @@ pub fn init_lapic() {
 
     ensure_pic_disabled();
 
-    let lapic = LocalApic::from_paddr(lapic_paddr);
+    let mut lapic = LocalApic::from_paddr(lapic_paddr);
 
-    // TODO: Calibrate APIC timer when Timer is implemented
+    lapic.timer().calibrate();
 
     locals!().lapic().init(lapic);
 }
@@ -63,10 +68,8 @@ pub fn init_ioapic() {
 /// ## Panics
 ///
 /// This function will panic if the APIC is not enabled.
-pub fn enable_disable_interrupts(enable: bool) {
-    let lapic = locals!().lapic();
-
-    lapic.with_locked(|lapic| {
+fn enable_disable_interrupts(enable: bool) {
+    locals!().lapic().try_with_locked(|lapic| {
         let base = unsafe { lapic.base.as_mut_ptr::<u32>().byte_add(0xF0) };
         let mut value = unsafe { base.read() };
         if enable {
@@ -82,10 +85,11 @@ pub fn enable_disable_interrupts(enable: bool) {
 
 pub struct LocalApic {
     base: VirtAddr,
-    // TODO: Timer? <https://wiki.osdev.org/APIC_Timer>
+    timer: LapicTimer,
 }
 
 impl LocalApic {
+    #[must_use]
     fn get_paddr_from_msr() -> PhysAddr {
         let msr = x86_64::registers::model_specific::Msr::new(0x1B);
         let base = unsafe { msr.read() };
@@ -95,6 +99,7 @@ impl LocalApic {
         PhysAddr::new(base & 0xF_FFFF_F000)
     }
 
+    #[must_use]
     pub fn from_paddr(paddr: PhysAddr) -> Self {
         let frame = PhysFrame::<Size4KiB>::from_start_address(paddr).unwrap();
 
@@ -124,13 +129,32 @@ impl LocalApic {
 
         Self {
             base: page.start_address(),
+            timer: timer::LapicTimer::new(timer::Configuration::new(
+                page.start_address(),
+                Irq::Timer,
+            )),
         }
     }
 
-    pub fn send_ipi(&self, ipi: ipi::Ipi) {
+    pub fn send_ipi(&self, ipi: &ipi::Ipi) {
         let icr_low = unsafe { self.base.as_mut_ptr::<u32>().byte_add(0x300) };
         let icr_high = unsafe { self.base.as_mut_ptr::<u32>().byte_add(0x310) };
-        ipi.send(icr_low, icr_high);
+        // Safety:
+        // The ICR registers are read/write and their addresses are valid.
+        unsafe { ipi.send(icr_low, icr_high) };
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn timer(&mut self) -> &mut timer::LapicTimer {
+        &mut self.timer
+    }
+
+    pub fn send_eoi(&mut self) {
+        let eoi_addr = unsafe { self.base.as_mut_ptr::<u32>().byte_add(0xB0) };
+        unsafe {
+            eoi_addr.write_volatile(0);
+        }
     }
 }
 
@@ -198,6 +222,7 @@ enum IoApicReg {
 }
 
 impl IoApicReg {
+    #[must_use]
     fn index(self) -> u32 {
         match self {
             Self::Id => 0,
@@ -271,6 +296,7 @@ pub struct Redirection {
 }
 
 impl IoApic {
+    #[must_use]
     pub fn new(base: PhysAddr, gsi_base: u32) -> Self {
         let frame = PhysFrame::<Size4KiB>::containing_address(base);
 
@@ -336,12 +362,13 @@ impl IoApic {
 
 // Safe register access
 impl IoApic {
+    #[must_use]
     /// Returns the ID of the IO APIC.
     ///
     /// This ID is NOT valid until the IO APIC has been initialized.
     pub fn id(&self) -> u8 {
         let id = self.read_reg(IoApicReg::Id);
-        u8::try_from(id >> 24 & 0xF).unwrap()
+        u8::try_from((id >> 24) & 0xF).unwrap()
     }
 
     fn set_id(&self, id: u8) {
@@ -351,19 +378,22 @@ impl IoApic {
         unsafe { self.update_reg(IoApicReg::Id, u32::from(id), 4, 24) };
     }
 
+    #[must_use]
     pub fn version(&self) -> u8 {
         let ver = self.read_reg(IoApicReg::Version);
         u8::try_from(ver & 0xFF).unwrap()
     }
 
+    #[must_use]
     pub fn max_red_ent(&self) -> u8 {
         let ver = self.read_reg(IoApicReg::Version);
-        u8::try_from(ver >> 16 & 0xFF).unwrap()
+        u8::try_from((ver >> 16) & 0xFF).unwrap()
     }
 
+    #[must_use]
     pub fn arbitration_id(&self) -> u8 {
         let arb = self.read_reg(IoApicReg::Arbitration);
-        u8::try_from(arb >> 24 & 0xF).unwrap()
+        u8::try_from((arb >> 24) & 0xF).unwrap()
     }
 
     pub fn set_redirection(&self, index: u8, redirection: Redirection) {
@@ -441,17 +471,9 @@ impl IoApic {
         let old_value = unsafe { self.read_reg_idx(idx) };
 
         let mask = ((1 << len) - 1) << bit;
-        let new_value = (old_value & !mask) | (value << bit & mask);
+        let new_value = (old_value & !mask) | ((value << bit) & mask);
 
         unsafe { self.write_reg_idx(idx, new_value) };
-    }
-
-    #[inline]
-    /// # Safety
-    ///
-    /// The index must be a valid writable register index.
-    unsafe fn write_reg(&self, reg: IoApicReg, value: u32) {
-        unsafe { self.write_reg_idx(reg.index(), value) }
     }
 
     /// # Safety

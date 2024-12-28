@@ -217,19 +217,19 @@ impl BdfAddress {
 
     #[must_use]
     #[inline]
-    pub const fn bus(&self) -> u8 {
+    pub const fn bus(self) -> u8 {
         self.bus
     }
 
     #[must_use]
     #[inline]
-    pub const fn device(&self) -> u8 {
+    pub const fn device(self) -> u8 {
         self.device
     }
 
     #[must_use]
     #[inline]
-    pub const fn function(&self) -> u8 {
+    pub const fn function(self) -> u8 {
         self.function
     }
 }
@@ -267,7 +267,7 @@ impl ConfigAddressValue {
     }
 
     #[must_use]
-    pub fn as_raw(&self) -> u32 {
+    pub fn as_raw(self) -> u32 {
         let enable_bit = u32::from(self.enable) << 31;
         let bus = u32::from(self.bdf.bus()) << 16;
         let device = u32::from(self.bdf.device()) << 11;
@@ -467,7 +467,7 @@ impl MemoryBar {
             0
         };
         let base_address =
-            PhysAddr::new(u64::from(upper_value) << 32 | u64::from(value & 0xFFFFFFF0));
+            PhysAddr::new((u64::from(upper_value) << 32) | (u64::from(value & 0xFFFF_FFF0)));
 
         Self {
             base_address,
@@ -498,14 +498,14 @@ impl IoBar {
     #[must_use]
     pub fn from_raw(value: u32) -> Self {
         assert_eq!(value & 0b1, 1, "BAR register is not IO type");
-        let base_address = PhysAddr::new(u64::from(value & 0xFFFFFFFC));
+        let base_address = PhysAddr::new(u64::from(value & 0xFFFF_FFFC));
 
         Self { base_address }
     }
 
     #[must_use]
     #[inline]
-    pub const fn base_address(&self) -> PhysAddr {
+    pub const fn base_address(self) -> PhysAddr {
         self.base_address
     }
 }
@@ -517,7 +517,7 @@ pub enum MemoryBarType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Device Class, Subclass, ProgIf
+/// Device Class, Subclass, Programming Interface
 pub struct Csp {
     class: Class,
     subclass: u8,
@@ -527,19 +527,19 @@ pub struct Csp {
 impl Csp {
     #[must_use]
     #[inline]
-    pub const fn class(&self) -> Class {
+    pub const fn class(self) -> Class {
         self.class
     }
 
     #[must_use]
     #[inline]
-    pub const fn subclass(&self) -> u8 {
+    pub const fn subclass(self) -> u8 {
         self.subclass
     }
 
     #[must_use]
     #[inline]
-    pub const fn prog_if(&self) -> u8 {
+    pub const fn prog_if(self) -> u8 {
         self.prog_if
     }
 }

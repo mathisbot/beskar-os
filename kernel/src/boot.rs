@@ -37,11 +37,9 @@ pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> !
 
     bsp_init(boot_info);
 
-    log::debug!("Core count: {}", core_count);
+    log::debug!("Starting up APs. Core count: {}", core_count);
 
     apic::ap::start_up_aps(core_count);
-
-    log::debug!("Kernel initialized");
 
     enter_kmain()
 }
@@ -52,6 +50,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         recursive_index,
         memory_regions,
         rsdp_paddr: rsdp_addr,
+        kernel_vaddr,
         ..
     } = boot_info;
 
@@ -64,7 +63,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     time::tsc::calibrate();
 
-    mem::init(*recursive_index, memory_regions);
+    mem::init(*recursive_index, memory_regions, *kernel_vaddr);
     serinfo!("Memory initialized");
 
     // TODO: Get framebuffer from PCI ?

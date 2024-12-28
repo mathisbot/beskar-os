@@ -22,6 +22,7 @@ pub struct Gdt {
 }
 
 impl Gdt {
+    #[must_use]
     pub const fn uninit() -> Self {
         Self {
             inner: UnsafeCell::new(InnerGdt {
@@ -65,6 +66,7 @@ impl Gdt {
         }
     }
 
+    #[must_use]
     fn create_tss() -> TaskStateSegment {
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[DOUBLE_FAULT_IST as usize] = {

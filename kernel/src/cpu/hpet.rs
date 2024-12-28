@@ -1,6 +1,6 @@
-#![allow(dead_code)] // TODO: Remove
-                     // FIXME: Support for multiple HPET blocks?
+// FIXME: Support for multiple HPET blocks?
 
+use x86_64::structures::paging::PageTableFlags;
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::boot::acpi::sdt::hpet_table::ParsedHpetTable;
@@ -26,11 +26,37 @@ pub struct Hpet {
     timers_comp_value: [Option<TimerCompValue>; 32],
 }
 
+impl Hpet {
+    #[must_use]
+    #[inline]
+    pub const fn general_capabilities(&self) -> &GeneralCapabilities {
+        &self.general_capabilities
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn general_configuration(&self) -> &GeneralConfiguration {
+        &self.general_configuration
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn general_interrupt_status(&self) -> &GeneralInterruptStatus {
+        &self.general_interrupt_status
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn main_counter_value(&self) -> &MainCounterValue {
+        &self.main_counter_value
+    }
+}
+
 macro_rules! read_write_reg {
     ($name:ident { $($field_name:ident : $field_type:ty),* $(,)? }) => {
         #[derive(Debug)]
         /// HPET Read/Write register
-        struct $name {
+        pub struct $name {
             vaddr: VirtAddr,
             _physical_mapping: PhysicalMapping,
             $(
@@ -43,7 +69,9 @@ macro_rules! read_write_reg {
             ///
             /// Does NOT validate the content of the register.
             fn new(paddr: PhysAddr, $($field_name: $field_type),*) -> Self {
-                let physical_mapping = PhysicalMapping::new(paddr, core::mem::size_of::<u64>(), true);
+                let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE | PageTableFlags::NO_CACHE;
+
+                let physical_mapping = PhysicalMapping::new(paddr, core::mem::size_of::<u64>(), flags);
                 let vaddr = physical_mapping.translate(paddr).unwrap();
                 Self {
                     vaddr,
@@ -71,11 +99,14 @@ macro_rules! read_write_reg {
 // So we can just copy instead of handling physical mappings.
 #[derive(Debug, Clone, Copy)]
 /// HPET Read-only register
-struct GeneralCapabilities(u64);
+pub struct GeneralCapabilities(u64);
 
 impl GeneralCapabilities {
+    #[must_use]
     pub fn new(paddr: PhysAddr) -> Self {
-        let physical_mapping = PhysicalMapping::new(paddr, core::mem::size_of::<u64>(), false);
+        let flags = PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE;
+
+        let physical_mapping = PhysicalMapping::new(paddr, core::mem::size_of::<u64>(), flags);
         let vaddr = physical_mapping.translate(paddr).unwrap();
         Self(unsafe { vaddr.as_ptr::<u64>().read() })
     }
@@ -372,19 +403,18 @@ read_write_reg!(TimerCompValue { count_cap: bool });
 
 impl TimerCompValue {
     #[must_use]
-    #[inline]
     pub const fn get_value(&self) -> u64 {
         // FIXME: Handle 32-bit counter ? Does it exist on x86_64 ?
         assert!(self.count_cap, "HPET count size not capable");
         self.read()
     }
 
-    #[inline]
     pub fn set_value(&mut self, value: u64) {
         assert!(self.count_cap, "HPET count size not capable");
         *self.as_mut() = value;
     }
 
+    #[allow(clippy::unused_self)]
     const fn validate(&self) {}
 }
 

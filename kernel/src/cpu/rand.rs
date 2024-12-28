@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use core::{mem::MaybeUninit, sync::atomic::AtomicU8};
 
 use crate::cpu::cpuid;

@@ -8,6 +8,8 @@ compile_error!("BeskarOS kernel only supports x86_64 architecture");
 use kernel::locals;
 use x86_64::instructions::hlt;
 
+use kernel::cpu::apic::timer;
+
 kernel::kernel_main!(kmain);
 
 #[panic_handler]
@@ -40,10 +42,25 @@ fn kmain() -> ! {
         log::info!("Welcome to BeskarOS kernel!");
     }
 
-    // Start user-space processes
+    if locals!().core_id() == 1 {
+        locals!().lapic().with_locked(|lapic| {
+            let rate_mhz = lapic.timer().rate_mhz().unwrap();
+
+            let duration = 125_000 * rate_mhz;
+
+            lapic
+                .timer()
+                .set(timer::Mode::Periodic(timer::ModeConfiguration::new(
+                    timer::Divider::Eight,
+                    duration,
+                )));
+        });
+    }
+
+    // TODO: Start user-space processes
     // (GUI, ...)
 
-    // Scheduler: make this thread sleep
+    // TODO: Stop this thread from being scheduled
 
     log::error!(
         "Kernel main function reached the end on core {}",

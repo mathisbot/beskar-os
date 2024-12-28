@@ -84,6 +84,12 @@ impl<const N: usize> IndexMut<usize> for MemoryRanges<N> {
     }
 }
 
+impl<const N: usize> Default for MemoryRanges<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const N: usize> MemoryRanges<N> {
     #[must_use]
     #[inline]

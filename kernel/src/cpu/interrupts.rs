@@ -1,6 +1,9 @@
 use core::cell::UnsafeCell;
 
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use x86_64::{
+    registers::control::Cr2,
+    structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
+};
 
 use crate::{
     cpu::gdt::{DOUBLE_FAULT_IST, PAGE_FAULT_IST},
@@ -81,6 +84,7 @@ impl Default for Interrupts {
 }
 
 impl Interrupts {
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             idt: UnsafeCell::new(InterruptDescriptorTable::new()),
@@ -102,8 +106,6 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    use x86_64::registers::control::Cr2;
-
     log::error!("EXCEPTION: PAGE FAULT {:?}", error_code);
     log::error!("Accessed Address: {:?}", Cr2::read());
     log::error!("{:#?}", stack_frame);
@@ -115,8 +117,9 @@ macro_rules! panic_isr {
     ($name:ident) => {
         extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame) {
             panic!(
-                "EXCEPTION: {} INTERRUPT\n{:#?}",
+                "EXCEPTION: {} INTERRUPT on core {}\n{:#?}",
                 stringify!($name),
+                locals!().core_id(),
                 stack_frame
             );
         }
@@ -127,9 +130,10 @@ macro_rules! panic_isr_with_errcode {
     ($name:ident) => {
         extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame, err_code: u64) -> () {
             panic!(
-                "EXCEPTION: {} INTERRUPT {:#x}\n{:#?}",
+                "EXCEPTION: {} INTERRUPT {:#x} on core {}\n{:#?}",
                 stringify!($name),
                 err_code,
+                locals!().core_id(),
                 stack_frame
             );
         }
@@ -139,7 +143,12 @@ macro_rules! panic_isr_with_errcode {
 macro_rules! info_isr {
     ($name:ident) => {
         extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
-            log::info!("{} INTERRUPT", stringify!($name));
+            log::info!(
+                "{} INTERRUPT on core {}",
+                stringify!($name),
+                locals!().core_id()
+            );
+            locals!().lapic().with_locked(|lapic| lapic.send_eoi());
         }
     };
 }
@@ -170,8 +179,18 @@ extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFram
     panic!("EXCEPTION: MACHINE CHECK");
 }
 
-info_isr!(timer_interrupt_handler);
 info_isr!(spurious_interrupt_handler);
+
+extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    log::debug!(
+        "TIMER INTERRUPT on core {}\nRescheduling...",
+        locals!().core_id(),
+    );
+    log::warn!("Rescheduling not implemented yet");
+    locals!()
+        .lapic()
+        .with_locked(crate::cpu::apic::LocalApic::send_eoi);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

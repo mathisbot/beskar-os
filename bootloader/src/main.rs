@@ -236,8 +236,6 @@ fn create_framebuffer_logger() -> bootloader::FrameBuffer {
         boot::open_protocol_exclusive::<GraphicsOutput>(gop_handle).unwrap()
     };
 
-    // FIXME: Screen always seems to initialize at 2560x1600 (at least on QEMU),
-    // No matter what resolution is my host's screen.
     // Panics:
     // There is at least one mode (the current one) available.
     let best_mode = gop

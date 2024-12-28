@@ -1,22 +1,25 @@
-// TODO: Processes and user space
-
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use alloc::string::{String, ToString};
+use alloc::{
+    string::{String, ToString},
+    sync::Arc,
+};
+use scheduler::priority;
 
 use crate::mem::address_space::AddressSpace;
 
 pub mod scheduler;
 
 pub fn init() {
-    let kernel_process = Process {
+    // FIXME: One process per core ?
+    let kernel_process = Arc::new(Process {
         name: "kernel".to_string(),
         pid: ProcessId::new(),
         address_space: *crate::mem::address_space::get_kernel_address_space(),
-    };
-    let current_thread = scheduler::thread::Thread::new(kernel_process);
+    });
+    let current_thread = scheduler::thread::Thread::new(kernel_process, priority::Priority::High);
 
-    scheduler::init(current_thread);
+    unsafe { scheduler::init(current_thread) };
 }
 
 pub struct Process {
@@ -54,6 +57,12 @@ impl core::ops::Deref for ProcessId {
 
     fn deref(&self) -> &u64 {
         &self.0
+    }
+}
+
+impl Default for ProcessId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

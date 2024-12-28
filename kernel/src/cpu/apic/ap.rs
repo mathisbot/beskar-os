@@ -117,12 +117,12 @@ pub fn start_up_aps(core_count: u8) {
         // FIXME: Decide if the following advised boot sequence is mandatory or if
         // this dumb code works just fine.
         // <https://wiki.osdev.org/Symmetric_Multiprocessing#Startup_Sequence>
-        apic.send_ipi(Ipi::new(
+        apic.send_ipi(&Ipi::new(
             ipi::DeliveryMode::Init,
             ipi::Destination::AllExcludingSelf,
         ));
         // crate::time::tsc::wait_ms(10);
-        apic.send_ipi(Ipi::new(
+        apic.send_ipi(&Ipi::new(
             ipi::DeliveryMode::Sipi(sipi_payload),
             ipi::Destination::AllExcludingSelf,
         ));
@@ -236,7 +236,7 @@ extern "C" fn kap_entry() -> ! {
 
     ap_init();
 
-    log::debug!("Core {} ready!", locals!().core_id());
+    log::debug!("AP {} started", locals!().core_id());
 
     crate::boot::enter_kmain()
 }
