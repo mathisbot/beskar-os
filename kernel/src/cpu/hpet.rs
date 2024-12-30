@@ -5,7 +5,7 @@ use x86_64::{PhysAddr, VirtAddr};
 
 use crate::boot::acpi::sdt::hpet_table::ParsedHpetTable;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
-use crate::utils::locks::MUMcsLock;
+use hyperdrive::locks::mcs::MUMcsLock;
 
 static HPET: MUMcsLock<Hpet> = MUMcsLock::uninit();
 

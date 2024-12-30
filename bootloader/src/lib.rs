@@ -145,11 +145,11 @@ fn make_mappings(
         });
     };
 
-    let kernel_start = PhysAddr::new(kernel.input.as_ptr() as u64);
+    let kernel_paddr = PhysAddr::new(kernel.input.as_ptr() as u64);
     let kernel_len = u64::try_from(kernel.input.len()).unwrap();
 
     let kernel_elf::KernelInfo {
-        image_offset: kernel_image_offset,
+        image_offset: kernel_vaddr,
         entry_point: kernel_entry_point,
         tls_template,
     } = crate::kernel_elf::load_kernel_elf(kernel_elf::KernelLoadingUtils::new(
@@ -164,7 +164,7 @@ fn make_mappings(
 
     info!("Kernel loaded");
     debug!("Kernel entry point at {:#x}", kernel_entry_point.as_u64());
-    debug!("Kernel image offset: {:#x}", kernel_image_offset.as_u64());
+    debug!("Kernel image offset: {:#x}", kernel_vaddr.as_u64());
     if tls_template.is_some() {
         info!("TLS template found");
     }
@@ -325,9 +325,9 @@ fn make_mappings(
         recursive_index,
         tls_template,
 
-        kernel_addr: kernel_start,
+        kernel_addr: kernel_paddr,
         kernel_len,
-        kernel_image_offset,
+        kernel_vaddr,
     }
 }
 
@@ -397,9 +397,9 @@ fn create_boot_info(
             ),
             recursive_index: u16::from(mappings.recursive_index()),
             rsdp_paddr: system_info.rsdp_paddr.map(x86_64::PhysAddr::as_u64), // RSDP address is physical because it is not mapped
-            kernel_vaddr: mappings.kernel_addr().as_u64(),
+            kernel_paddr: mappings.kernel_addr(),
             kernel_len: mappings.kernel_len(),
-            kernel_image_offset: mappings.kernel_image_offset().as_u64(),
+            kernel_vaddr: mappings.kernel_vaddr(),
             tls_template: mappings.tls_template(),
             cpu_count: system_info.cpu_count,
         });
@@ -433,7 +433,7 @@ pub struct Mappings {
     /// The size of the kernel ELF in memory.
     kernel_len: u64,
     /// The offset of the kernel image.
-    kernel_image_offset: VirtAddr,
+    kernel_vaddr: VirtAddr,
 }
 
 impl Mappings {
@@ -487,7 +487,7 @@ impl Mappings {
 
     #[must_use]
     #[inline]
-    pub const fn kernel_image_offset(&self) -> VirtAddr {
-        self.kernel_image_offset
+    pub const fn kernel_vaddr(&self) -> VirtAddr {
+        self.kernel_vaddr
     }
 }

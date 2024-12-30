@@ -1,34 +1,36 @@
 use crate::pci::{Bar, Class};
 
+use alloc::vec::Vec;
+
 pub mod device;
 pub mod driver;
 pub mod host;
 pub mod hub;
 
 pub fn init() {
-    let Some(usb_device) = crate::pci::with_pci_handler(|handler| {
+    // Get all USB devices from PCI
+    let usb_devices = crate::pci::with_pci_handler(|handler| {
         handler
             .devices()
             .iter()
-            .find(|device| {
+            .filter(|device| {
                 device.csp().class() == Class::SerialBus && device.csp().subclass() == 0x03
             })
             .copied()
-    }) else {
-        log::warn!("No USB controller found");
-        return;
-    };
+            .collect::<Vec<_>>()
+    });
 
-    if usb_device.csp().prog_if() != 0x30 {
-        log::warn!("Non-xHCI USB devices are not supported yet, skipping");
-        return;
-    }
+    // Filter out xHCI controllers and get their base addresses
+    let xhci_paddrs = usb_devices
+        .iter()
+        .filter(|device| device.csp().prog_if() == 0x30)
+        .filter_map(|device| {
+            if let Some(Bar::Memory(memory_bar)) = device.bar(0) {
+                Some(memory_bar.base_address())
+            } else {
+                None
+            }
+        });
 
-    // xHCI uses BAR0
-    let Some(Bar::Memory(usb_device_bar)) = usb_device.bar(0) else {
-        log::warn!("xHCI controller does not have a memory-mapped BAR0");
-        return;
-    };
-
-    host::init(usb_device_bar.base_address());
+    host::init(xhci_paddrs);
 }

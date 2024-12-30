@@ -4,10 +4,8 @@ use x86_64::registers::segmentation::Segment64;
 
 use alloc::boxed::Box;
 
-use crate::{
-    cpu::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts},
-    utils::locks::MUMcsLock,
-};
+use crate::cpu::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts};
+use hyperdrive::locks::mcs::MUMcsLock;
 
 /// Count APs that got around of their trampoline code
 ///
@@ -31,7 +29,6 @@ pub fn init() {
     let mut core_locals = Box::new(CoreLocalsInfo {
         core_id,
         apic_id,
-        // GDT will be initialized later
         ..CoreLocalsInfo::empty()
     });
 

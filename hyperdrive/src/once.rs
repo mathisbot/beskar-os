@@ -1,3 +1,23 @@
+//! A wrapper around lazily-initialized data.
+//!
+//! This structure is similar to `std::sync::Once`, but it does not provide interior mutability.
+//! It is used to perform a one-time initialization of a value, and then provide a reference to it.
+//!
+//! If you need one-time initialization with interior mutability, use `hyperdrive::locks::mcs::MUMcsLock` instead.
+//!
+//! ## Examples
+//!
+//! ```rust
+//! # use hyperdrive::once::Once;
+//! #
+//! static ONCE: Once<u8> = Once::uninit();
+//! assert!(ONCE.get().is_none());
+//!
+//! ONCE.call_once(|| 42);
+//!
+//! let value = ONCE.get().unwrap();
+//! assert_eq!(*value, 42);
+//! ```
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -154,5 +174,21 @@ impl<T> Drop for Once<T> {
             // AND the value is initialized (if-statement).
             unsafe { (*self.value.get()).assume_init_drop() };
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_once() {
+        let once = Once::uninit();
+        assert!(once.get().is_none());
+
+        once.call_once(|| 42);
+
+        let value = once.get().unwrap();
+        assert_eq!(*value, 42);
     }
 }

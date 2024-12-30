@@ -29,7 +29,7 @@ pub struct SdtHeader {
 /// ## Safety
 ///
 /// The implementor must ensure that the memory is mapped and readable, as well as making sure
-/// the underlying data is indeed a valid SDT.
+/// the underlying data is indeed a potentially valid SDT.
 pub unsafe trait Sdt {
     fn start(&self) -> *const u8;
 

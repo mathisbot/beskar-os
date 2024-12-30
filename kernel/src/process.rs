@@ -11,13 +11,16 @@ use crate::mem::address_space::AddressSpace;
 pub mod scheduler;
 
 pub fn init() {
-    // FIXME: One process per core ?
     let kernel_process = Arc::new(Process {
         name: "kernel".to_string(),
         pid: ProcessId::new(),
         address_space: *crate::mem::address_space::get_kernel_address_space(),
     });
-    let current_thread = scheduler::thread::Thread::new(kernel_process, priority::Priority::High);
+
+    debug_assert!(kernel_process.address_space().is_active());
+
+    let current_thread =
+        scheduler::thread::Thread::new(kernel_process, priority::Priority::High, None);
 
     unsafe { scheduler::init(current_thread) };
 }

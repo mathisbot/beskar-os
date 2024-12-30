@@ -269,13 +269,13 @@ fn create_framebuffer_logger() -> bootloader::FrameBuffer {
         }
     };
 
-    // ## Panics
+    // Panics:
     // The mode is supported by the GOP as it is provided by `modes()`.
     gop.set_mode(&best_mode).unwrap();
 
     let mut framebuffer = gop.frame_buffer();
 
-    // ## Safety
+    // Safety:
     // The framebuffer address and buffer length are valid because they are derived
     // from the GOP-provided framebuffer, which guarantees their correctness.
     let framebuffer_slice =
@@ -290,9 +290,7 @@ fn create_framebuffer_logger() -> bootloader::FrameBuffer {
         stride: mode_info.stride(),
     };
 
-    let logger = bootloader::logging::LOGGER.call_once(move || {
-        bootloader::logging::LockedLogger::new(framebuffer_slice, framebuffer_info)
-    });
+    let logger = bootloader::logging::init(framebuffer_slice, framebuffer_info);
     log::set_logger(logger).expect("Failed to set logger");
     log::set_max_level(if cfg!(debug_assertions) {
         log::LevelFilter::Trace
@@ -306,7 +304,7 @@ fn create_framebuffer_logger() -> bootloader::FrameBuffer {
         framebuffer_info.height
     );
 
-    // ## Safety
+    // Safety:
     // The framebuffer address and information are valid because they are derived
     // from the GOP-provided framebuffer, which guarantees their correctness.
     unsafe { bootloader::FrameBuffer::new(framebuffer.as_mut_ptr() as u64, framebuffer_info) }
@@ -382,7 +380,7 @@ mod fs {
         )
         .ok()?;
 
-        // ## Safety
+        // Safety:
         // `ptr` is a valid pointer (`NonNull`) to an array of `u8` with length at least `file_size`
         let file_slice = unsafe { core::slice::from_raw_parts_mut(ptr.as_ptr(), file_size) };
 
@@ -498,7 +496,7 @@ fn create_page_tables(
 
         let ptr: *mut PageTable = (physical_offset + frame.start_address().as_u64()).as_mut_ptr();
 
-        // ## Safety
+        // Safety:
         // We are writing a page table to a valid physical address
         // mapped in the virtual address space.
         let table = unsafe {

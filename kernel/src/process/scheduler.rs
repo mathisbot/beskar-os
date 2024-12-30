@@ -1,12 +1,20 @@
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use thread::Thread;
+
+use crate::locals;
 
 use super::Process;
 
 pub mod priority;
 pub mod thread;
+
+/// The time quantum for the scheduler, in milliseconds.
+pub const SCHEDULER_QUANTUM_MS: u32 = 1_000;
 
 // Because scheduler will be playing with context switching, we cannot acquire locks.
 // Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
@@ -27,7 +35,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
 }
 
 pub struct Scheduler<Q: priority::ThreadQueue> {
-    current_thread: Thread,
+    current_thread: Box<Thread>,
     /// A local, atomic, priority for the current thread.
     current_priority: priority::AtomicPriority,
     should_exit_thread: AtomicBool,
@@ -36,17 +44,15 @@ pub struct Scheduler<Q: priority::ThreadQueue> {
 
 impl<Q: priority::ThreadQueue> Scheduler<Q> {
     #[must_use]
-    fn new(kernel_thread: thread::Thread) -> Self
-    where
-        Q: Default,
-    {
+    fn new(kernel_thread: thread::Thread) -> Self {
         let current_priority = priority::AtomicPriority::new(kernel_thread.priority());
+        let root_proc = kernel_thread.process();
 
         Self {
-            current_thread: kernel_thread,
+            current_thread: Box::new(kernel_thread),
             current_priority,
             should_exit_thread: AtomicBool::new(false),
-            queues: Q::default(),
+            queues: Q::create(root_proc),
         }
     }
 
@@ -54,7 +60,7 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
         self.should_exit_thread.store(true, Ordering::Relaxed);
     }
 
-    pub fn schedule_thread(&mut self, thread: thread::Thread) {
+    pub fn schedule_thread(&mut self, thread: Pin<Box<thread::Thread>>) {
         self.queues.append(thread);
     }
 
@@ -83,8 +89,11 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
         static IN_RESCHEDULE: AtomicBool = AtomicBool::new(false);
 
         // We cannot acquire locks, so we imitate one with an `AtomicBool`.
+        // It is tempting to use a spin loop here, but it is better to use the CPU for the last thread
+        // than to waste it on a spin loop.
+        // It is also a better solution if `yield` is implemented.
         if IN_RESCHEDULE
-            .compare_exchange(false, false, Ordering::Release, Ordering::Relaxed)
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
             return;
@@ -92,16 +101,81 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
 
         x86_64::instructions::interrupts::disable();
 
-        if !self.should_exit_thread.load(Ordering::Acquire) {
-            self.queues.append(self.current_thread().clone());
+        // Swap the current thread with the next one.
+        let mut new_thread = Pin::into_inner(self.queues.next());
+        core::mem::swap(self.current_thread.as_mut(), &mut new_thread);
+        let mut old_thread = new_thread; // Yes...
+
+        // Gather information about the old thread.
+        let old_priority = self
+            .current_priority
+            .swap(self.current_thread().priority(), Ordering::Relaxed);
+        unsafe { old_thread.set_priority(old_priority) };
+        let old_should_exit = self.should_exit_thread.swap(false, Ordering::Relaxed);
+
+        // Handle stack pointers.
+        let old_stack = old_thread.last_stack_ptr_mut();
+        let new_stack = self.current_thread().last_stack_ptr();
+
+        if old_should_exit {
+            // FIXME: Handle this properly
+            drop(old_thread);
+        } else {
+            self.queues.append(Pin::new(old_thread));
         }
-        self.should_exit_thread.store(false, Ordering::Relaxed);
-        self.current_thread = self.queues.next();
+
+        let cr3 = self.current_process().address_space().cr3_raw();
+
+        IN_RESCHEDULE.store(false, Ordering::Release);
 
         // Safety:
         // Interrupts are indeed disabled at the start of the function.
-        // unsafe {
-        //     crate::cpu::context::context_switch(old_stack, new_stack, cr3);
-        // }
+        unsafe {
+            crate::cpu::context::context_switch(old_stack, new_stack, cr3);
+        }
+
+        unreachable!("The scheduler should never return from a context switch.");
+        // unsafe { core::hint::unreachable_unchecked() };
     }
+}
+
+pub fn reschedule() {
+    // Safety:
+    // Data races are avoided by the `Scheduler::reschedule` function.
+    #[allow(static_mut_refs)]
+    unsafe {
+        SCHEDULER.as_mut().unwrap().reschedule();
+    }
+}
+
+/// ## Safety
+///
+/// The function is unsafe due to the use of mutable statics.
+/// Do not use this function once scheduling has started, unless you know what you are doing.
+pub unsafe fn spawn_thread(thread: Pin<Box<Thread>>) {
+    // Safety:
+    // Function safety guards.
+    #[allow(static_mut_refs)]
+    unsafe {
+        SCHEDULER.as_mut().unwrap().schedule_thread(thread);
+    };
+}
+
+pub fn enable_scheduling(enable: bool) {
+    use crate::cpu::apic::timer;
+
+    locals!().lapic().try_with_locked(|lapic| {
+        const TIMER_DIVIDER: timer::Divider = timer::Divider::Eight;
+
+        let timer = lapic.timer();
+
+        let ticks_per_ms = timer.rate_mhz().unwrap().get() * 1_000 / TIMER_DIVIDER.as_u32();
+        let ticks = SCHEDULER_QUANTUM_MS * ticks_per_ms;
+
+        lapic.timer().set(if enable {
+            timer::Mode::Periodic(timer::ModeConfiguration::new(TIMER_DIVIDER, ticks))
+        } else {
+            timer::Mode::Inactive
+        });
+    });
 }

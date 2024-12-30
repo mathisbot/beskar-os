@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-check:
+    name: Build and check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: cargo build
+
+      - name: Run tests
+        run: cargo test --package hyperdrive
+
+      # The project isn't advanced enough to have clippy enabled
+      # over all the code.
+      - name: Run Clippy
+        run: cargo clippy --package hyperdrive -- -D warnings
+
+      - name: Run Rustfmt
+        run: cargo fmt --verbose --all -- --check

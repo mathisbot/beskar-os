@@ -14,10 +14,8 @@ use x86_64::{
     PhysAddr,
 };
 
-use crate::{
-    serdebug, serwarn,
-    utils::locks::{MUMcsLock, McsNode},
-};
+use crate::{serdebug, serwarn};
+use hyperdrive::locks::mcs::{MUMcsLock, McsNode};
 
 use super::page_table;
 
@@ -35,7 +33,7 @@ pub fn init(regions: &[MemoryRegion]) {
     }
     // FIXME: Two stages init for dynamic sizing?
     assert!(usable_regions > 0, "No usable memory regions found");
-    if usable_regions > MAX_MEMORY_REGIONS {
+    if usable_regions >= MAX_MEMORY_REGIONS {
         serwarn!(
             "[WARN ] Too many usable memory regions, using only the first {}",
             MAX_MEMORY_REGIONS
@@ -46,14 +44,14 @@ pub fn init(regions: &[MemoryRegion]) {
 
     serdebug!("Free memory: {} MiB", ranges.sum() / 1_048_576);
 
-    let mut phys_allocator = FrameAllocator {
+    let mut frallocator = FrameAllocator {
         memory_ranges: ranges,
     };
 
     // Make sure physical frame for the AP trampoline code is reserved
-    crate::cpu::apic::ap::reserve_tramp_frame(&mut phys_allocator);
+    crate::cpu::apic::ap::reserve_tramp_frame(&mut frallocator);
 
-    KFRAME_ALLOC.init(phys_allocator);
+    KFRAME_ALLOC.init(frallocator);
 }
 
 pub struct FrameAllocator {
@@ -99,8 +97,8 @@ impl FrameAllocator {
         RecursivePageTable<'static>: Mapper<S>,
     {
         // FIXME: Use `page_table::with_page_table` instead of `get_kernel_page_table`
-        let node = McsNode::new();
-        let mut page_table = page_table::get_kernel_page_table(&node);
+        let mut node = McsNode::new();
+        let mut page_table = page_table::get_kernel_page_table(&mut node);
 
         for page in pages {
             let frame = self.alloc::<S>().unwrap();

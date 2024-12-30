@@ -6,7 +6,8 @@ use core::{
 
 use x86_64::structures::paging::{page::PageRangeInclusive, PageSize, PageTableFlags, Size2MiB};
 
-use crate::{mem::page_alloc, utils::locks::MUMcsLock};
+use crate::mem::page_alloc;
+use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::frame_alloc;
 

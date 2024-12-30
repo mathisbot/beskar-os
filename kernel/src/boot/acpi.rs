@@ -1,6 +1,6 @@
 use core::sync::atomic::AtomicU8;
 
-use crate::utils::once::Once;
+use hyperdrive::once::Once;
 use x86_64::PhysAddr;
 
 mod rsdp;

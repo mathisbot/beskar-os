@@ -1,7 +1,7 @@
 // TODO: PCI Express support
 
-use crate::utils::locks::McsLock;
 use alloc::vec::Vec;
+use hyperdrive::locks::mcs::McsLock;
 use x86_64::{
     instructions::port::{Port, PortWriteOnly},
     structures::port::PortWrite,
@@ -13,6 +13,7 @@ const CONFIG_DATA: u16 = 0xCFC;
 
 static PCI_HANDLER: McsLock<PciHandler> = McsLock::new(PciHandler::new());
 
+#[derive(Debug, Default, Clone)]
 pub struct PciHandler {
     config_port: ConfigAddress,
     data_port: ConfigData,
@@ -286,6 +287,12 @@ impl PortWrite for ConfigAddressValue {
     }
 }
 
+impl Default for ConfigAddress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfigAddress {
     #[must_use]
     #[inline]
@@ -313,6 +320,12 @@ impl core::ops::DerefMut for ConfigAddress {
 ///
 /// This is a write-only register that is used to select the register to access.
 struct ConfigData(Port<u32>);
+
+impl Default for ConfigData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ConfigData {
     pub const fn new() -> Self {
@@ -455,9 +468,9 @@ impl MemoryBar {
                 _ => panic!("PCI: Invalid BAR number"),
             } as u8;
             let bar_reg = ConfigAddressValue::new(
-                device.bdf.bus(),
-                device.bdf.device(),
-                device.bdf.function(),
+                device.bdf().bus(),
+                device.bdf().device(),
+                device.bdf().function(),
                 bar_reg_offset,
             );
             PCI_HANDLER

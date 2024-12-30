@@ -1,3 +1,5 @@
+use x86_64::{PhysAddr, VirtAddr};
+
 use crate::FrameBuffer;
 
 /// This structure represents the information that the bootloader passes to the kernel.
@@ -13,11 +15,11 @@ pub struct BootInfo {
     /// The address of the `RSDP`, used to find the ACPI tables (if reported).
     pub rsdp_paddr: Option<u64>,
     /// Physical address of the kernel ELF in memory.
-    pub kernel_vaddr: u64,
+    pub kernel_paddr: PhysAddr,
+    /// Virtual address of the loaded kernel image.
+    pub kernel_vaddr: VirtAddr,
     /// Size of the kernel ELF in memory.
     pub kernel_len: u64,
-    /// Virtual address of the loaded kernel image.
-    pub kernel_image_offset: u64,
     /// An optional template for the thread local storage.
     pub tls_template: Option<TlsTemplate>,
     /// Number of enabled and healthy CPU cores in the system.

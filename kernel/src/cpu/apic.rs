@@ -33,7 +33,7 @@ pub fn apic_id() -> u8 {
 pub fn init_lapic() {
     let x2apic_supported = cpuid::check_feature(cpuid::CpuFeature::X2APIC);
     if locals!().core_id() == 0 && !x2apic_supported {
-        log::warn!("X2APIC not supported");
+        log::warn!("x2APIC not supported");
     }
 
     let lapic_paddr = crate::boot::acpi::ACPI
@@ -73,11 +73,11 @@ fn enable_disable_interrupts(enable: bool) {
         let base = unsafe { lapic.base.as_mut_ptr::<u32>().byte_add(0xF0) };
         let mut value = unsafe { base.read() };
         if enable {
-            // Disable spurious interrupt
-            value &= !0x100;
-        } else {
             // Enable spurious interrupt
             value |= 0x100;
+        } else {
+            // Disable spurious interrupt
+            value &= !0x100;
         }
         unsafe { base.write_volatile(value) };
     });

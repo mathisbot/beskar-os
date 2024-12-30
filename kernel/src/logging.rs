@@ -3,36 +3,20 @@
 //! This logger is only intended to be used during the bootloader phase and will NOT be available
 //! after the jump to the kernel.
 
-use crate::utils::once::Once;
 use core::fmt::Write;
 
-use crate::{
-    screen::{self, Window},
-    serdebug,
-    utils::locks::McsLock,
-};
+use crate::{screen, serdebug};
+use hyperdrive::locks::mcs::MUMcsLock;
 
 mod writer;
 
 /// The global logger instance used for the `log` crate.
-pub static LOGGER: Once<LockedLogger> = Once::uninit();
+static LOGGER: MUMcsLock<writer::WindowWriter> = MUMcsLock::uninit();
 
-pub struct LockedLogger {
-    window_writer: McsLock<writer::WindowWriter>,
-}
+/// The backed logger instance used for the `log` crate.
+pub static LOGGER_API: LockedLogger = LockedLogger;
 
-impl LockedLogger {
-    #[must_use]
-    #[inline]
-    /// Create a new instance that logs to the given framebuffer.
-    pub const fn new(window: Window) -> Self {
-        let writer = writer::WindowWriter::new(window);
-
-        Self {
-            window_writer: McsLock::new(writer),
-        }
-    }
-}
+pub struct LockedLogger;
 
 impl log::Log for LockedLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
@@ -44,12 +28,16 @@ impl log::Log for LockedLogger {
     }
 
     fn log(&self, record: &log::Record) {
-        self.window_writer.with_locked(|writer| {
-            writeln!(writer, "[{:5}] {}", record.level(), record.args()).unwrap();
+        LOGGER
+            .try_with_locked(|writer| {
+                let res = writeln!(writer, "[{:5}] {}", record.level(), record.args());
 
-            let screen = screen::get_screen();
-            screen.present_window(writer.window());
-        });
+                let screen = screen::get_screen();
+                screen.present_window(writer.window());
+
+                res
+            })
+            .map(Result::unwrap);
     }
 
     fn flush(&self) {}
@@ -61,10 +49,10 @@ pub fn init() {
         .unwrap();
     serdebug!("Logger window created");
 
-    let locked_logger = LockedLogger::new(window);
-    let logger = LOGGER.call_once(|| locked_logger);
+    let window_writer = writer::WindowWriter::new(window);
+    LOGGER.init(window_writer);
 
-    log::set_logger(logger).expect("Failed to set logger");
+    log::set_logger(&LOGGER_API).expect("Failed to set logger");
     log::set_max_level(if cfg!(debug_assertions) {
         log::LevelFilter::Trace
     } else {

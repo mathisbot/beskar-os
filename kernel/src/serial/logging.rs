@@ -1,5 +1,5 @@
-use crate::utils::locks::McsLock;
 use core::fmt::Write;
+use hyperdrive::locks::mcs::McsLock;
 
 use super::SerialPort;
 

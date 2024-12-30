@@ -6,10 +6,8 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::{
-    mem::{page_table, ranges::MemoryRange},
-    utils::locks::MUMcsLock,
-};
+use crate::mem::{page_table, ranges::MemoryRange};
+use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::ranges::MemoryRanges;
 

@@ -2,16 +2,15 @@
 
 use core::cell::UnsafeCell;
 
-use crate::utils::once::Once;
+use hyperdrive::once::Once;
 use x86_64::{
     structures::paging::{Mapper, Page, PageSize, PageTableFlags, Size4KiB},
     VirtAddr,
 };
 
-use crate::{
-    mem::{frame_alloc, page_alloc, page_table},
-    utils::locks::{McsGuard, McsLock, McsNode},
-};
+use crate::mem::{frame_alloc, page_alloc, page_table};
+
+use hyperdrive::locks::mcs::{McsGuard, McsLock, McsNode};
 
 pub mod pixel;
 use pixel::PixelFormat;
@@ -102,8 +101,8 @@ impl Screen {
             "Window has to fit in the screen"
         );
 
-        let node = McsNode::new();
-        let mut windows = self.windows.lock(&node);
+        let mut node = McsNode::new();
+        let mut windows = self.windows.lock(&mut node);
 
         assert!(
             windows.iter().all(|window| {
@@ -179,13 +178,14 @@ impl Screen {
     pub fn present_window(&self, window: &Window) {
         assert!(window.index < MAX_WINDOWS, "Invalid window index");
 
-        let node = McsNode::new();
-        let windows = self.windows.lock(&node);
+        let mut node_windows = McsNode::new();
+        let windows = self.windows.lock(&mut node_windows);
         let Some(&window_info) = &windows[window.index].as_ref() else {
             panic!("Window not found");
         };
         // Row by row copy
         let line_length = window.width * window.bytes_per_pixel;
+        let mut node_line = McsNode::new();
         for h in 0..window.height {
             let offset_in_screen = (
                 // Position in window
@@ -203,7 +203,8 @@ impl Screen {
 
             // Copy the window's buffer to the screen's buffer
             raw_buffer[offset_in_screen..offset_in_screen + line_length].copy_from_slice(
-                &window.raw_buffer.lock(&node)[offset_in_window..offset_in_window + line_length],
+                &window.raw_buffer.lock(&mut node_line)
+                    [offset_in_window..offset_in_window + line_length],
             );
         }
         // windows should be locked until the current window is presented
@@ -219,8 +220,8 @@ impl Screen {
     pub unsafe fn destroy_window(&self, window: &Window) {
         assert!(window.index < MAX_WINDOWS, "Invalid window index");
 
-        let node = McsNode::new();
-        let mut windows = self.windows.lock(&node);
+        let mut node = McsNode::new();
+        let mut windows = self.windows.lock(&mut node);
 
         assert!(windows[window.index].is_some(), "Window not found");
 
@@ -234,7 +235,7 @@ impl Window {
     #[inline]
     pub fn buffer_mut<'s, 'node>(
         &'s self,
-        node: &'node McsNode,
+        node: &'node mut McsNode,
     ) -> McsGuard<'node, 's, &'static mut [u8]> {
         self.raw_buffer.lock(node)
     }

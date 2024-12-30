@@ -6,10 +6,11 @@ edition = "2021"
 [dependencies]
 
 [workspace]
-members = ["bootloader", "kernel"]
+members = ["bootloader", "hyperdrive", "kernel"]
 
 [workspace.dependencies]
 bootloader = { path = "bootloader" }
+hyperdrive = { path = "hyperdrive" }
 x86_64 = { version = "0.15.2", default-features = false, features = ["abi_x86_interrupt","instructions"] }
 
 [build-dependencies]

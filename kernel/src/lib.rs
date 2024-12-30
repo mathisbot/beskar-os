@@ -13,12 +13,11 @@ pub mod io;
 pub mod locals;
 mod logging;
 mod mem;
-mod pci;
+pub mod pci;
 pub mod process;
 pub mod screen;
 pub mod serial;
 mod syscall;
 pub mod time;
-pub mod utils;
 
 extern crate alloc;

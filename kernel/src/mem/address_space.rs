@@ -5,15 +5,15 @@ use x86_64::{
 };
 
 use super::{frame_alloc, page_alloc, page_table};
-use crate::utils::once::Once;
+use hyperdrive::once::Once;
 
 static KERNEL_ADDRESS_SPACE: Once<AddressSpace> = Once::uninit();
 
 static KERNEL_CODE_ADDRESS: Once<VirtAddr> = Once::uninit();
 
 /// This function should only be called once BY THE BSP on startup.
-pub fn init(recursive_index: u16, kernel_vaddr: u64) {
-    KERNEL_CODE_ADDRESS.call_once(|| VirtAddr::new(kernel_vaddr));
+pub fn init(recursive_index: u16, kernel_vaddr: VirtAddr) {
+    KERNEL_CODE_ADDRESS.call_once(|| kernel_vaddr);
 
     KERNEL_ADDRESS_SPACE.call_once(|| {
         let (frame, flags) = Cr3::read();
@@ -144,6 +144,10 @@ impl AddressSpace {
         } else {
             self.cr3
         }
+    }
+
+    pub fn cr3_raw(&self) -> usize {
+        usize::try_from(self.lvl4_paddr.as_u64() | self.cr3_flags().bits()).unwrap()
     }
 
     fn get_recursive_pt(&self) -> RecursivePageTable<'static> {

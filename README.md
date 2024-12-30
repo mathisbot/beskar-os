@@ -55,21 +55,21 @@ Copy the content of the directory `efi_disk` to a FAT32 filesystem on a GPT or M
 
 ## Architecture
 
-This repository is a mono-repo. You will find two major components :
+This repository is a mono-repo. You will find three major components :
 
 - Bootloader
+- Hyperdrive (utilities)
 - Kernel
 
 Please refer to their READMEs for more information.
 
 ## TO-DOs
 
-- APIC [WIP]
-- HPET [WIP]
 - Process [WIP]
+- IO APIC [WIP]
 - User mode
-- Storage
 - USB
+- Storage
 - FADT
 - Optimizations
 - Stabilization

@@ -2,6 +2,8 @@
 //! Local APIC Timers must be a separate object
 //! instead of being a method of the Local APIC.
 
+use core::num::NonZeroU32;
+
 use x86_64::VirtAddr;
 
 const TIMER_DIVIDE_CONFIG_REG: usize = 0x3E0;
@@ -130,12 +132,8 @@ impl LapicTimer {
     }
 
     #[must_use]
-    pub const fn rate_mhz(&self) -> Option<u32> {
-        if self.configuration.rate_mhz == 0 {
-            None
-        } else {
-            Some(self.configuration.rate_mhz)
-        }
+    pub const fn rate_mhz(&self) -> Option<NonZeroU32> {
+        NonZeroU32::new(self.configuration.rate_mhz)
     }
 }
 
@@ -205,6 +203,22 @@ pub enum Divider {
     SixtyFour = 0b1001,
     /// Divide by 128
     OneTwentyEight = 0b1010,
+}
+
+impl Divider {
+    #[must_use]
+    pub const fn as_u32(self) -> u32 {
+        match self {
+            Self::One => 1,
+            Self::Two => 2,
+            Self::Four => 4,
+            Self::Eight => 8,
+            Self::Sixteen => 16,
+            Self::ThirtyTwo => 32,
+            Self::SixtyFour => 64,
+            Self::OneTwentyEight => 128,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

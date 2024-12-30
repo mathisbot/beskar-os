@@ -1,4 +1,5 @@
 use bootloader::info::MemoryRegion;
+use x86_64::VirtAddr;
 
 pub mod address_space;
 pub mod frame_alloc;
@@ -7,7 +8,7 @@ pub mod page_alloc;
 pub mod page_table;
 pub mod ranges;
 
-pub fn init(recursive_index: u16, regions: &[MemoryRegion], kernel_vaddr: u64) {
+pub fn init(recursive_index: u16, regions: &[MemoryRegion], kernel_vaddr: VirtAddr) {
     page_table::init(recursive_index);
 
     frame_alloc::init(regions);

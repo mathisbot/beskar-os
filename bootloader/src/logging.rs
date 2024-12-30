@@ -6,25 +6,21 @@
 use crate::framebuffer::FrameBufferWriter;
 use crate::FrameBufferInfo;
 use core::fmt::Write;
-use spin::{mutex::SpinMutex, once::Once};
+use hyperdrive::locks::mcs::MUMcsLock;
 
 /// The global logger instance used for the `log` crate.
-pub static LOGGER: Once<LockedLogger> = Once::new();
+static LOGGER: MUMcsLock<FrameBufferWriter> = MUMcsLock::uninit();
+
+/// The backed logger instance used for the `log` crate.
+pub static LOGGER_API: LockedLogger = LockedLogger;
 
 /// A logger instance protected by a spinlock.
-pub struct LockedLogger {
-    framebuffer: SpinMutex<FrameBufferWriter>,
-}
+pub struct LockedLogger;
 
-impl LockedLogger {
-    #[must_use]
-    #[inline]
-    /// Create a new instance that logs to the given framebuffer.
-    pub fn new(framebuffer: &'static mut [u8], info: FrameBufferInfo) -> Self {
-        let framebuffer = SpinMutex::new(FrameBufferWriter::new(framebuffer, info));
-
-        Self { framebuffer }
-    }
+pub fn init(framebuffer: &'static mut [u8], info: FrameBufferInfo) -> &'static LockedLogger {
+    let logger = FrameBufferWriter::new(framebuffer, info);
+    LOGGER.init(logger);
+    &LOGGER_API
 }
 
 impl log::Log for LockedLogger {
@@ -38,23 +34,22 @@ impl log::Log for LockedLogger {
 
     fn log(&self, record: &log::Record) {
         if cfg!(debug_assertions) {
-            writeln!(
-                self.framebuffer.lock(),
-                "[{:5}] {}:{}: {}",
-                record.level(),
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                record.args()
-            )
-            .unwrap();
+            LOGGER
+                .with_locked(|fb| {
+                    writeln!(
+                        fb,
+                        "[{:5}] {}:{}: {}",
+                        record.level(),
+                        record.file().unwrap_or("unknown"),
+                        record.line().unwrap_or(0),
+                        record.args()
+                    )
+                })
+                .unwrap();
         } else {
-            writeln!(
-                self.framebuffer.lock(),
-                "[{:5}] {}",
-                record.level(),
-                record.args()
-            )
-            .unwrap();
+            LOGGER
+                .with_locked(|fb| writeln!(fb, "[{:5}] {}", record.level(), record.args()))
+                .unwrap();
         }
     }
 

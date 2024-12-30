@@ -40,6 +40,10 @@ const AP_TRAMPOLINE_CODE: &[u8] = include_bytes!("ap_tramp");
 
 // TODO: If the main core panics, all APs should stop.
 pub fn start_up_aps(core_count: u8) {
+    if core_count <= 1 {
+        return;
+    }
+
     // Store the current state of the BSP
     BSP_CR0.store(
         x86_64::registers::control::Cr0::read_raw(),

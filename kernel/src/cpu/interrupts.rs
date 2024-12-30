@@ -182,14 +182,14 @@ extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFram
 info_isr!(spurious_interrupt_handler);
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    log::debug!(
-        "TIMER INTERRUPT on core {}\nRescheduling...",
-        locals!().core_id(),
-    );
-    log::warn!("Rescheduling not implemented yet");
+    log::warn!("Scheduling is a work in progress");
+
     locals!()
         .lapic()
         .with_locked(crate::cpu::apic::LocalApic::send_eoi);
+
+    // TODO: Finish implementing scheduling
+    // crate::process::scheduler::reschedule();
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

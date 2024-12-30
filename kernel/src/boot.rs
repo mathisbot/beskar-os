@@ -91,6 +91,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     time::hpet::init();
 
     apic::init_lapic();
+    process::scheduler::enable_scheduling(true);
     apic::init_ioapic();
 
     pci::init();

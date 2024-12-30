@@ -2,9 +2,15 @@
 //!
 //! This helps the scheduler to decide which process to run next.
 
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::{
+    pin::Pin,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
-use alloc::{boxed::Box, collections::vec_deque::VecDeque};
+use alloc::{boxed::Box, sync::Arc};
+use hyperdrive::queues::mpsc::MpscQueue;
+
+use crate::process::Process;
 
 use super::thread::Thread;
 
@@ -24,6 +30,10 @@ impl AtomicPriority {
 
     pub fn store(&self, priority: Priority, order: Ordering) {
         self.0.store(priority.into(), order);
+    }
+
+    pub fn swap(&self, priority: Priority, order: Ordering) -> Priority {
+        self.0.swap(priority.into(), order).try_into().unwrap()
     }
 }
 
@@ -66,20 +76,21 @@ impl From<Priority> for u8 {
 /// The `next` function must not allocate memory, acquire locks, ...
 /// because it will be used by interrupt handlers.
 pub unsafe trait ThreadQueue {
-    fn append(&mut self, thread: Thread);
-    fn next(&mut self) -> Thread;
+    fn create(root_proc: Arc<Process>) -> Self;
+    fn append(&mut self, thread: Pin<Box<Thread>>);
+    fn next(&mut self) -> Pin<Box<Thread>>;
 }
 
 pub struct RoundRobinQueues {
     current: usize,
     cycle: Box<[Priority]>,
-    low: VecDeque<Thread>,
-    normal: VecDeque<Thread>,
-    high: VecDeque<Thread>,
+    low: MpscQueue<Thread>,
+    normal: MpscQueue<Thread>,
+    high: MpscQueue<Thread>,
 }
 
-impl Default for RoundRobinQueues {
-    fn default() -> Self {
+unsafe impl ThreadQueue for RoundRobinQueues {
+    fn create(root_proc: Arc<Process>) -> Self {
         Self {
             cycle: alloc::vec![
                 Priority::High,
@@ -91,52 +102,40 @@ impl Default for RoundRobinQueues {
             ]
             .into_boxed_slice(),
             current: usize::default(),
-            low: VecDeque::default(),
-            normal: VecDeque::default(),
-            high: VecDeque::default(),
+            low: MpscQueue::new_with_stub(Box::pin(Thread::new_stub(root_proc.clone()))),
+            normal: MpscQueue::new_with_stub(Box::pin(Thread::new_stub(root_proc.clone()))),
+            high: MpscQueue::new_with_stub(Box::pin(Thread::new_stub(root_proc))),
         }
     }
-}
 
-unsafe impl ThreadQueue for RoundRobinQueues {
-    /// Appends a thread to the appropriate queue
-    ///
-    /// This function can allocate memory (when the inner `VecDeque` grows).
-    fn append(&mut self, thread: Thread) {
+    fn append(&mut self, thread: Pin<Box<Thread>>) {
         match thread.priority() {
             Priority::Null => {}
             Priority::Low => {
-                self.low.push_back(thread);
+                self.low.enqueue(thread);
             }
             Priority::Normal => {
-                self.normal.push_back(thread);
+                self.normal.enqueue(thread);
             }
             Priority::High => {
-                self.high.push_back(thread);
+                self.high.enqueue(thread);
             }
         }
     }
 
     #[must_use]
-    /// Returns the next thread to run
-    ///
-    /// This function does not use locks (this implies no memory allocations).
-    fn next(&mut self) -> Thread {
+    fn next(&mut self) -> Pin<Box<Thread>> {
         let priority = self.cycle[self.current];
 
         self.current = (self.current + 1) % self.cycle.len();
 
         let next_thread = match priority {
             Priority::Null => unreachable!(),
-            Priority::Low => self.low.pop_front(),
-            Priority::Normal => self.normal.pop_front(),
-            Priority::High => self.high.pop_front(),
+            Priority::Low => self.low.dequeue(),
+            Priority::Normal => self.normal.dequeue(),
+            Priority::High => self.high.dequeue(),
         };
 
-        // This line can be dangerous (infinite recursion).
-        // We must ensure that at least one thread is in the queues.
-        // This should hold because the kernel thread is always in the queues.
-        // FIXME: Find a better way to write this.
         next_thread.unwrap_or_else(|| self.next())
     }
 }

@@ -157,7 +157,7 @@ const REQUIRED_FEATURES: [CpuFeature; 9] = [
     CpuFeature::PSE,
     CpuFeature::MSR,
     CpuFeature::APIC,
-    CpuFeature::PAT, // FIXME: Is it really mandatory?
+    CpuFeature::PAT, // FIXME: Use PAT
     CpuFeature::FXSR,
     CpuFeature::SSE,
     CpuFeature::SSE2,
@@ -198,6 +198,7 @@ pub fn check_cpuid() {
 fn cpuid_supported() -> bool {
     let mut rflags = rflags::read();
     let old_id_flag = rflags.intersection(rflags::RFlags::ID);
+
     rflags.toggle(rflags::RFlags::ID);
 
     // Depending on the CPU, this line can cause an invalid opcode exception, crashing the whole system.
@@ -218,6 +219,16 @@ pub enum CpuVendor {
     Other,
 }
 
+impl From<&[u8; 12]> for CpuVendor {
+    fn from(vendor: &[u8; 12]) -> Self {
+        match vendor {
+            b"GenuineIntel" | b"GenuineIotel" => Self::Intel,
+            b"AuthenticAMD" => Self::Amd,
+            _ => Self::Other,
+        }
+    }
+}
+
 #[must_use]
 pub fn get_cpu_vendor() -> CpuVendor {
     let cpuid_res = cpuid(0);
@@ -227,11 +238,7 @@ pub fn get_cpu_vendor() -> CpuVendor {
     vendor[4..8].copy_from_slice(&cpuid_res.edx.to_ne_bytes());
     vendor[8..12].copy_from_slice(&cpuid_res.ecx.to_ne_bytes());
 
-    match &vendor {
-        b"GenuineIntel" | b"GenuineIotel" => CpuVendor::Intel,
-        b"AuthenticAMD" => CpuVendor::Amd,
-        _ => CpuVendor::Other,
-    }
+    CpuVendor::from(&vendor)
 }
 
 #[must_use]

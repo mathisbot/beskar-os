@@ -66,7 +66,7 @@ pub unsafe fn rand<T: Sized>() -> T {
 /// This function could be used for complex structs that are not `Sized`.
 ///
 /// ```rust,ignore
-/// use kernel::utils::rand_unsized;
+/// use kernel::cpu::rand::rand_unsized;
 /// use alloc::vec::Vec;
 ///
 /// let mut buffer = vec![0_u32; 256];

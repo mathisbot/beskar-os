@@ -2,10 +2,8 @@ use noto_sans_mono_bitmap::{
     get_raster, get_raster_width, FontWeight, RasterHeight, RasterizedChar,
 };
 
-use crate::{
-    screen::{self, pixel::PixelFormat, Window},
-    utils::locks::McsNode,
-};
+use crate::screen::{self, pixel::PixelFormat, Window};
+use hyperdrive::locks::mcs::McsNode;
 
 const LINE_SPACING: usize = 2;
 const LETTER_SPACING: usize = 0;
@@ -62,8 +60,8 @@ impl WindowWriter {
     pub fn clear(&mut self) {
         self.x = BORDER_PADDING;
         self.y = BORDER_PADDING;
-        let node = McsNode::new();
-        self.window.buffer_mut(&node).fill(0);
+        let mut node = McsNode::new();
+        self.window.buffer_mut(&mut node).fill(0);
     }
 
     /// Writes a single char to the framebuffer.
@@ -98,8 +96,8 @@ impl WindowWriter {
 
                 let rasterized_char = get_raster_backed(c);
 
-                let node = McsNode::new();
-                let mut raw_framebuffer = self.window.buffer_mut(&node);
+                let mut node = McsNode::new();
+                let mut raw_framebuffer = self.window.buffer_mut(&mut node);
 
                 for (v, row) in rasterized_char.raster().iter().enumerate() {
                     for (u, byte) in row.iter().enumerate() {
