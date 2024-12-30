@@ -17,6 +17,18 @@ jobs:
       - name: Checkout the code
         uses: actions/checkout@v4
 
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt, clippy, llvm-tools-preview, rust-src
+      - name: Add x86_64-unknown-none target
+        run: |
+          rustup target add x86_64-unknown-none
+      - name: Add x86_64-unknown-uefi target
+        run: |
+          rustup target add x86_64-unknown-uefi
+
       - name: Build
         run: cargo build
 
