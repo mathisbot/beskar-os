@@ -4,10 +4,11 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
+//! ```rust
 //! # use hyperdrive::queues::mpsc::{Link, MpscQueue, Queueable};
 //! # use core::pin::Pin;
 //! # use core::ptr::NonNull;
+//! # use core::mem::offset_of;
 //! #
 //! # extern crate alloc;
 //! # use alloc::boxed::Box;
@@ -28,11 +29,12 @@
 //!     }
 //!     
 //!     unsafe fn from_ptr(ptr: NonNull<Self>) -> Self::Handle {
-//!         unsafe { Pin::new(Box::from_raw(ptr.as_ptr())) }
+//!         Pin::new(unsafe { Box::from_raw(ptr.as_ptr()) })
 //!     }
 //!
 //!     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-//!         let ptr = ptr.as_ptr() as *mut Link<Self>;
+//!         let base = ptr.as_ptr().cast::<Link<Self>>();
+//!         let ptr = unsafe { base.byte_add(offset_of!(Element, next)) };
 //!         unsafe { NonNull::new_unchecked(ptr) }
 //!     }
 //! }
@@ -95,11 +97,17 @@ pub struct MpscQueue<T: Queueable> {
     head: AtomicPtr<T>,
     /// The tail of the queue.
     tail: UnsafeCell<*mut T>,
-    /// Whether the queue has a consumer or not.
-    is_consumed: AtomicBool,
+    /// Whether the queue is being dequeued or not.
+    being_dequeued: AtomicBool,
     /// The stub node.
     stub: NonNull<T>,
 }
+
+// Safety:
+// The queue is thread-safe.
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl<T: Queueable> Send for MpscQueue<T> {}
+unsafe impl<T: Queueable> Sync for MpscQueue<T> {}
 
 /// The result of a dequeue operation.
 pub enum DequeueResult<T: Queueable> {
@@ -126,12 +134,6 @@ impl<T: Queueable> DequeueResult<T> {
             Self::InUse => panic!("Unwrapped a DequeueResult::Busy"),
         }
     }
-
-    #[must_use]
-    #[inline]
-    pub const fn should_retry(&self) -> bool {
-        matches!(self, Self::Retry | Self::InUse)
-    }
 }
 
 impl<T: Queueable> Default for MpscQueue<T>
@@ -139,30 +141,26 @@ where
     T::Handle: Default,
 {
     fn default() -> Self {
-        Self::new_with_stub(T::Handle::default())
+        Self::new(T::Handle::default())
     }
 }
 
 impl<T: Queueable> MpscQueue<T> {
     #[must_use]
-    pub fn new_with_stub(stub: T::Handle) -> Self {
-        // Get raw pointer to the stub.
+    pub fn new(stub: T::Handle) -> Self {
         let stub_ptr = <T as Queueable>::into_ptr(stub);
         Self {
             head: AtomicPtr::new(stub_ptr.as_ptr()),
             tail: UnsafeCell::new(stub_ptr.as_ptr()),
-            is_consumed: AtomicBool::new(false),
+            being_dequeued: AtomicBool::new(false),
             stub: stub_ptr,
         }
     }
 
-    pub fn enqueue(&self, element: T::Handle)
-    where
-        T: Unpin,
-    {
+    pub fn enqueue(&self, element: T::Handle) {
         unsafe {
             self.enqueue_ptr(T::into_ptr(element));
-        };
+        }
     }
 
     /// ## Safety
@@ -187,7 +185,7 @@ impl<T: Queueable> MpscQueue<T> {
 
     pub fn dequeue(&self) -> Option<T::Handle> {
         let mut state = self.try_dequeue();
-        while state.should_retry() {
+        while matches!(state, DequeueResult::Retry | DequeueResult::InUse) {
             core::hint::spin_loop();
             state = self.try_dequeue();
         }
@@ -196,7 +194,7 @@ impl<T: Queueable> MpscQueue<T> {
 
     pub fn try_dequeue(&self) -> DequeueResult<T> {
         if self
-            .is_consumed
+            .being_dequeued
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
@@ -205,7 +203,7 @@ impl<T: Queueable> MpscQueue<T> {
 
         let res = unsafe { self.dequeue_impl() };
 
-        self.is_consumed.store(false, Ordering::Release);
+        self.being_dequeued.store(false, Ordering::Release);
 
         res
     }
@@ -279,8 +277,10 @@ impl<T: Queueable> Drop for MpscQueue<T> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::thread::spawn;
 
     extern crate alloc;
     use alloc::boxed::Box;
@@ -302,7 +302,7 @@ mod test {
         }
 
         unsafe fn from_ptr(ptr: NonNull<Self>) -> Self::Handle {
-            unsafe { Pin::new(Box::from_raw(ptr.as_ptr())) }
+            Pin::new(unsafe { Box::from_raw(ptr.as_ptr()) })
         }
 
         unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
@@ -314,7 +314,7 @@ mod test {
 
     #[test]
     fn test_mpsc_queue() {
-        let queue: MpscQueue<Element> = MpscQueue::new_with_stub(Box::pin(Element {
+        let queue: MpscQueue<Element> = MpscQueue::new(Box::pin(Element {
             value: 0,
             next: None,
         }));
@@ -326,6 +326,37 @@ mod test {
             value: 2,
             next: None,
         }));
+        let element = queue.dequeue().unwrap();
+        assert_eq!(element.value, 1);
+    }
+
+    #[test]
+    fn test_concurent() {
+        let num_threads = 10;
+
+        let queue = Arc::new(MpscQueue::<Element>::new(Box::pin(Element {
+            value: 0,
+            next: None,
+        })));
+
+        let mut handles = Vec::with_capacity(num_threads);
+
+        for _ in 0..num_threads {
+            handles.push(spawn({
+                let queue = queue.clone();
+                move || {
+                    queue.enqueue(Box::pin(Element {
+                        value: 1,
+                        next: None,
+                    }));
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
         let element = queue.dequeue().unwrap();
         assert_eq!(element.value, 1);
     }

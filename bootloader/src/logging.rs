@@ -11,10 +11,12 @@ use hyperdrive::locks::mcs::MUMcsLock;
 /// The global logger instance used for the `log` crate.
 static LOGGER: MUMcsLock<FrameBufferWriter> = MUMcsLock::uninit();
 
-/// The backed logger instance used for the `log` crate.
+/// The static API for the logger.
 pub static LOGGER_API: LockedLogger = LockedLogger;
 
-/// A logger instance protected by a spinlock.
+/// An API that is backed by a static locked logger.
+///
+/// It is used to interface with the `log` crate.
 pub struct LockedLogger;
 
 pub fn init(framebuffer: &'static mut [u8], info: FrameBufferInfo) -> &'static LockedLogger {

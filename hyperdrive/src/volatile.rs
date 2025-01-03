@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     #[should_panic = "Unauthorized read access"]
-    fn test_volatile_unauthorized_read() {
+    fn test_unauthorized_read() {
         let mut value = 0;
         let volatile = Volatile::from_mut(&mut value, Access::WriteOnly);
 
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     #[should_panic = "Unauthorized write access"]
-    fn test_volatile_unauthorized_write() {
+    fn test_unauthorized_write() {
         let value = 0;
         let volatile = Volatile::from_ref(&value);
 

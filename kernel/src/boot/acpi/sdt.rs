@@ -52,11 +52,7 @@ pub unsafe trait Sdt {
     }
 
     fn revision(&self) -> u8 {
-        unsafe {
-            self.start()
-                .add(offset_of!(SdtHeader, revision))
-                .read_unaligned()
-        }
+        unsafe { self.start().add(offset_of!(SdtHeader, revision)).read() }
     }
 
     fn oem_id(&self) -> &[u8; 6] {
@@ -109,7 +105,7 @@ pub unsafe trait Sdt {
 
         let mut sum = 0u8;
         for i in 0..usize::try_from(self.length()).unwrap() {
-            sum = sum.wrapping_add(unsafe { start_ptr.add(i).read_unaligned() });
+            sum = sum.wrapping_add(unsafe { start_ptr.add(i).read() });
         }
 
         sum == 0

@@ -16,6 +16,9 @@ static LOGGER: MUMcsLock<writer::WindowWriter> = MUMcsLock::uninit();
 /// The backed logger instance used for the `log` crate.
 pub static LOGGER_API: LockedLogger = LockedLogger;
 
+/// An API that is backed by a static locked logger.
+///
+/// It is used to interface with the `log` crate.
 pub struct LockedLogger;
 
 impl log::Log for LockedLogger {

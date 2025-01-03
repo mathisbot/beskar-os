@@ -148,20 +148,14 @@ pub fn reschedule() {
     }
 }
 
-/// ## Safety
-///
-/// The function is unsafe due to the use of mutable statics.
-/// Do not use this function once scheduling has started, unless you know what you are doing.
-pub unsafe fn spawn_thread(thread: Pin<Box<Thread>>) {
-    // Safety:
-    // Function safety guards.
+pub fn spawn_thread(thread: Pin<Box<Thread>>) {
     #[allow(static_mut_refs)]
     unsafe {
         SCHEDULER.as_mut().unwrap().schedule_thread(thread);
     };
 }
 
-pub fn enable_scheduling(enable: bool) {
+pub fn set_scheduling(enable: bool) {
     use crate::cpu::apic::timer;
 
     locals!().lapic().try_with_locked(|lapic| {

@@ -102,9 +102,9 @@ unsafe impl ThreadQueue for RoundRobinQueues {
             ]
             .into_boxed_slice(),
             current: usize::default(),
-            low: MpscQueue::new_with_stub(Box::pin(Thread::new_stub(root_proc.clone()))),
-            normal: MpscQueue::new_with_stub(Box::pin(Thread::new_stub(root_proc.clone()))),
-            high: MpscQueue::new_with_stub(Box::pin(Thread::new_stub(root_proc))),
+            low: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
+            normal: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
+            high: MpscQueue::new(Box::pin(Thread::new_stub(root_proc))),
         }
     }
 

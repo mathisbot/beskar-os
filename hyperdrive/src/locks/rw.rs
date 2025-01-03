@@ -51,8 +51,9 @@ pub struct RwLock<T> {
 
 // Safety:
 // `RwLock` is a synchronization primitive.
-unsafe impl Send for RwLock<()> {}
-unsafe impl Sync for RwLock<()> {}
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl<T> Send for RwLock<T> {}
+unsafe impl<T> Sync for RwLock<T> {}
 
 impl<T> RwLock<T> {
     #[must_use]
@@ -152,7 +153,7 @@ impl AtomicState {
             // We give the priority to the writer:
             // if he acquired it before us, we give it the lock
             if self.writer.load(Ordering::Acquire) {
-                self.readers.fetch_sub(1, Ordering::Release);
+                self.readers.fetch_sub(1, Ordering::Acquire);
             } else {
                 break;
             }
@@ -161,7 +162,7 @@ impl AtomicState {
 
     #[inline]
     pub fn read_unlock(&self) {
-        debug_assert_ne!(self.readers.load(Ordering::Acquire), 0);
+        debug_assert_ne!(self.readers.load(Ordering::Relaxed), 0);
         self.readers.fetch_sub(1, Ordering::Release);
     }
 
@@ -184,7 +185,7 @@ impl AtomicState {
 
     #[inline]
     pub fn write_unlock(&self) {
-        debug_assert!(self.writer.load(Ordering::Acquire));
+        debug_assert!(self.writer.load(Ordering::Relaxed));
         self.writer.store(false, Ordering::Release);
     }
 }
@@ -192,6 +193,8 @@ impl AtomicState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier};
+    use std::thread::spawn;
 
     #[test]
     fn read() {
@@ -238,5 +241,147 @@ mod tests {
 
         let r = lock.read();
         assert_eq!(*r, 1);
+    }
+
+    #[test]
+    fn test_concurent_writes() {
+        let lock = Arc::new(RwLock::new(0));
+
+        let num_threads = 10;
+        let iterations = 50;
+
+        let mut handles = Vec::with_capacity(num_threads);
+
+        for _ in 0..num_threads {
+            let lock = lock.clone();
+            let handle = spawn(move || {
+                for _ in 0..iterations {
+                    let mut w = lock.write();
+                    *w += 1;
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert_eq!(*lock.read(), num_threads * iterations);
+    }
+
+    #[test]
+    fn test_concurent_reads() {
+        let num_readers = 10;
+
+        let lock = Arc::new(RwLock::new(0));
+        let barrier = Arc::new(Barrier::new(num_readers));
+
+        let mut handles = Vec::with_capacity(num_readers);
+
+        for _ in 0..num_readers {
+            let lock = lock.clone();
+            let barrier = barrier.clone();
+            handles.push(spawn(move || {
+                let r = lock.read();
+                barrier.wait();
+                drop(r);
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_concurent_readwrite() {
+        let lock = Arc::new(RwLock::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let w = spawn({
+            let lock = lock.clone();
+            let barrier = barrier.clone();
+            move || {
+                let mut w = lock.write();
+                barrier.wait();
+                for i in 0..=100 {
+                    *w = i;
+                }
+            }
+        });
+
+        let r = spawn({
+            let lock = lock.clone();
+            let barrier = barrier.clone();
+            move || {
+                barrier.wait();
+                let r = lock.read();
+                assert_eq!(*r, 100);
+            }
+        });
+
+        w.join().unwrap();
+        r.join().unwrap();
+    }
+
+    #[test]
+    fn test_write_starvation() {
+        let lock = Arc::new(RwLock::new(0));
+
+        let barrier = Arc::new(Barrier::new(2));
+
+        // Bih thread that will continuously start readers that will try to
+        // starve the writer
+        let big_handle = spawn({
+            let lock = lock.clone();
+            let barrier = barrier.clone();
+
+            let reader_closure = |lock: Arc<RwLock<i32>>, tx: std::sync::mpsc::Sender<i32>| {
+                let r = lock.read();
+                tx.send(*r).unwrap();
+                drop(r);
+            };
+
+            move || {
+                let (tx, rx) = std::sync::mpsc::channel();
+
+                let mut handle_first = spawn({
+                    let lock = lock.clone();
+                    let tx = tx.clone();
+                    move || reader_closure(lock, tx)
+                });
+                barrier.wait(); // Tell main thread we are ready
+                #[allow(unused_assignments)] // It IS used
+                let mut handle_second = None;
+
+                // Stop when writer has successfully written
+                while let Ok(0) = rx.recv() {
+                    handle_second = Some(spawn({
+                        let lock = lock.clone();
+                        let tx = tx.clone();
+                        move || reader_closure(lock, tx)
+                    }));
+                    handle_first.join().unwrap();
+                    handle_first = handle_second.take().unwrap();
+                }
+
+                handle_first.join().unwrap();
+            }
+        });
+
+        barrier.wait(); // Wait for the reader to start
+
+        let w = spawn({
+            let lock = lock.clone();
+            move || {
+                let mut w = lock.write();
+                *w = 42;
+            }
+        });
+
+        big_handle.join().unwrap();
+        w.join().unwrap();
     }
 }

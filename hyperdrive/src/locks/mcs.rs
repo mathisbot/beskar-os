@@ -9,12 +9,12 @@
 //! The second one being a wrapper around the first one that allows to safely lock a `MaybeUninit` value.
 //!  
 //! To access the content of the lock, use the `with_locked` method.
-//! This method is wrapper around the `lock` method and the guard.
+//! This method is a convenient wrapper around the `lock` method.
 //!
 //! ### `McsLock`
 //!
 //! ```rust
-//! # use hyperdrive::locks::mcs::{McsLock, McsNode};
+//! # use hyperdrive::locks::mcs::McsLock;
 //! #
 //! let lock = McsLock::new(0);
 //!
@@ -42,7 +42,6 @@
 //! let mut guard = lock.lock(&mut node);
 //! *guard = 42;
 //! assert_eq!(*guard, 42);
-//! drop(guard);
 //! ```
 //!
 //! ### `MUMcsLock`
@@ -94,7 +93,7 @@ pub struct McsNode {
     /// Whether the node is locked (has access to the locked data).
     locked: AtomicBool,
     /// Next node in the queue.
-    next: Option<NonNull<McsNode>>,
+    next: AtomicPtr<McsNode>,
 }
 
 impl McsNode {
@@ -103,6 +102,12 @@ impl McsNode {
     /// Returns true if the node is locked.
     fn is_locked(&self) -> bool {
         self.locked.load(Ordering::Acquire)
+    }
+
+    #[must_use]
+    #[inline]
+    fn next(&self) -> Option<NonNull<Self>> {
+        NonNull::new(self.next.load(Ordering::Acquire))
     }
 }
 
@@ -124,13 +129,15 @@ impl<T> McsLock<T> {
     pub fn lock<'s, 'node>(&'s self, node: &'node mut McsNode) -> McsGuard<'node, 's, T> {
         // Assert the node is ready to be used
         node.locked.store(true, Ordering::Release);
-        node.next = None;
+        node.next.store(ptr::null_mut(), Ordering::Release);
 
         // Place the node at the end of the queue
-        let prev = self.tail.swap(ptr::from_mut(node), Ordering::AcqRel);
+        let prev = self.tail.swap(node, Ordering::AcqRel);
 
-        if let Some(mut prev_ptr) = NonNull::new(prev) {
-            unsafe { prev_ptr.as_mut() }.next = Some(unsafe { NonNull::new_unchecked(node) });
+        if let Some(prev_ptr) = NonNull::new(prev) {
+            unsafe { prev_ptr.as_ref() }
+                .next
+                .store(node, Ordering::Release);
 
             // Wait until the node is at the front of the queue
             while node.is_locked() {
@@ -167,7 +174,7 @@ impl McsNode {
     pub const fn new() -> Self {
         Self {
             locked: AtomicBool::new(false),
-            next: None,
+            next: AtomicPtr::new(ptr::null_mut()),
         }
     }
 }
@@ -175,7 +182,7 @@ impl McsNode {
 /// RAII guard for MCS lock.
 pub struct McsGuard<'node, 'lock, T> {
     lock: &'lock McsLock<T>,
-    node: &'node mut McsNode,
+    node: &'node McsNode,
 }
 
 impl<T> Deref for McsGuard<'_, '_, T> {
@@ -195,12 +202,12 @@ impl<T> DerefMut for McsGuard<'_, '_, T> {
 impl<T> Drop for McsGuard<'_, '_, T> {
     fn drop(&mut self) {
         // Check if the node is at the front of the queue
-        if self.node.next.is_none() {
+        if self.node.next().is_none() {
             if self
                 .lock
                 .tail
                 .compare_exchange(
-                    ptr::from_mut(self.node),
+                    ptr::from_ref(self.node).cast_mut(),
                     ptr::null_mut(),
                     Ordering::Release,
                     Ordering::Relaxed,
@@ -212,13 +219,13 @@ impl<T> Drop for McsGuard<'_, '_, T> {
 
             // If setting the tail to null fails, it means a new node is being added.
             // In such a case, wait until it is completely added (should be fast).
-            while self.node.next.is_none() {
+            while self.node.next().is_none() {
                 core::hint::spin_loop();
             }
         }
 
         // Unlock the next node
-        unsafe { self.node.next.as_ref().unwrap().as_ref() }
+        unsafe { self.node.next().unwrap().as_ref() }
             .locked
             .store(false, Ordering::Release);
     }
@@ -368,6 +375,8 @@ impl<T> DerefMut for MUMcsGuard<'_, '_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier};
+    use std::thread::spawn;
 
     #[test]
     fn test_mcs_lock() {
@@ -441,5 +450,68 @@ mod tests {
             *value
         });
         assert_eq!(res, Some(0));
+    }
+
+    #[test]
+    fn test_concurent() {
+        let lock = Arc::new(McsLock::new(0));
+
+        let num_threads = 10;
+        let iterations = 50;
+
+        let mut handles = Vec::with_capacity(num_threads);
+
+        for _ in 0..num_threads {
+            let handle = spawn({
+                let lock = lock.clone();
+                move || {
+                    for _ in 0..iterations {
+                        lock.with_locked(|value| {
+                            *value += 1;
+                        });
+                    }
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert_eq!(lock.with_locked(|value| *value), num_threads * iterations);
+    }
+
+    #[test]
+    fn test_concurent2() {
+        let lock = Arc::new(McsLock::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let w = spawn({
+            let lock = lock.clone();
+            let barrier = barrier.clone();
+            move || {
+                lock.with_locked(|value| {
+                    barrier.wait();
+                    for i in 0..=100 {
+                        *value = i;
+                    }
+                });
+            }
+        });
+
+        let r = spawn({
+            let lock = lock.clone();
+            let barrier = barrier.clone();
+            move || {
+                barrier.wait();
+                let v = lock.with_locked(|value| *value);
+                assert_eq!(v, 100);
+            }
+        });
+
+        w.join().unwrap();
+        r.join().unwrap();
     }
 }

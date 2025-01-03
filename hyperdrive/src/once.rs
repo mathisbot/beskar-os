@@ -180,6 +180,8 @@ impl<T> Drop for Once<T> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::sync::{Arc, Barrier};
+    use std::thread::spawn;
 
     #[test]
     fn test_once() {
@@ -190,5 +192,44 @@ mod test {
 
         let value = once.get().unwrap();
         assert_eq!(*value, 42);
+    }
+
+    #[test]
+    fn test_concurrent() {
+        let once = Arc::new(Once::uninit());
+
+        let handle = spawn({
+            let once = once.clone();
+            move || assert!(once.get().is_none())
+        });
+
+        handle.join().unwrap();
+
+        once.call_once(|| 42);
+
+        let num_threads = 10;
+        let barrier = Arc::new(Barrier::new(num_threads));
+
+        let mut handles = Vec::with_capacity(num_threads);
+
+        for _ in 0..num_threads {
+            let once = once.clone();
+            let barrier = barrier.clone();
+
+            handles.push(spawn({
+                let once = once.clone();
+                let barrier = barrier.clone();
+                move || {
+                    let once_value = once.get().unwrap();
+                    barrier.wait();
+                    assert_eq!(*once_value, 42);
+                    drop(once)
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }

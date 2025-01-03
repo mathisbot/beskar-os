@@ -258,5 +258,5 @@ pub fn check_feature(feature: CpuFeature) -> bool {
 #[must_use]
 #[inline]
 pub fn get_highest_supported_leaf() -> u32 {
-    CPUID_MAX_LEAF.load(Ordering::Relaxed)
+    CPUID_MAX_LEAF.load(Ordering::Acquire)
 }

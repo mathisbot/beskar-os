@@ -1,7 +1,7 @@
 //! Hyperdrive is a utility library for `BeskarOS`.
 //!
 //! It provides a set of utilities that are necessary to rip through the galaxy BLAZINGLY fast!
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
 

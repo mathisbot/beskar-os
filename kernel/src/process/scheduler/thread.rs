@@ -9,8 +9,11 @@ use hyperdrive::queues::mpsc::{Link, Queueable};
 use super::{super::Process, priority::Priority};
 
 pub struct Thread {
+    /// The unique identifier of the thread.
     id: ThreadId,
+    /// The process that this thread belongs to.
     root_proc: Arc<Process>,
+    /// The priority of the thread.
     priority: Priority,
     /// Used to keep ownership of the stack when needed.
     stack: Option<Vec<u8>>,

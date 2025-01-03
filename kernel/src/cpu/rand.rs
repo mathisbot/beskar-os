@@ -65,10 +65,11 @@ pub unsafe fn rand<T: Sized>() -> T {
 /// Please note that in this example, it may be safer to use `rand_bytes` directly.
 /// This function could be used for complex structs that are not `Sized`.
 ///
-/// ```rust,ignore
-/// use kernel::cpu::rand::rand_unsized;
-/// use alloc::vec::Vec;
-///
+/// ```rust,no_run
+/// # use kernel::cpu::rand::rand_unsized;
+/// # extern crate alloc;
+/// # use alloc::vec::Vec;
+/// #
 /// let mut buffer = vec![0_u32; 256];
 ///
 /// unsafe {
@@ -76,7 +77,7 @@ pub unsafe fn rand<T: Sized>() -> T {
 /// }
 /// ```
 pub unsafe fn rand_unsized<T>(ptr: *mut T, len: usize) {
-    let slice = unsafe { core::slice::from_raw_parts_mut(ptr.cast::<u8>(), len * size_of::<T>()) };
+    let slice = unsafe { core::slice::from_raw_parts_mut(ptr.cast(), len * size_of::<T>()) };
 
     rand_bytes(slice);
 }
