@@ -39,7 +39,7 @@
 //!     }
 //! }
 //!
-//! let queue: MpscQueue<Element> = MpscQueue::new_with_stub(Box::pin(Element { value: 0, next: None }));
+//! let queue: MpscQueue<Element> = MpscQueue::new(Box::pin(Element { value: 0, next: None }));
 //! queue.enqueue(Box::pin(Element { value: 1, next: None }));
 //! let element = queue.dequeue().unwrap();
 //! assert_eq!(element.value, 1);

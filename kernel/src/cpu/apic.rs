@@ -1,12 +1,16 @@
 //! Advanced Programmable Interrupt Controller (APIC) driver.
 
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::{
+    ptr::NonNull,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
+use hyperdrive::volatile::{Access, Volatile};
 use timer::LapicTimer;
 use x86_64::{
     instructions::port::Port,
     structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
-    PhysAddr, VirtAddr,
+    PhysAddr,
 };
 
 use crate::{
@@ -70,21 +74,22 @@ pub fn init_ioapic() {
 /// This function will panic if the APIC is not enabled.
 fn enable_disable_interrupts(enable: bool) {
     locals!().lapic().try_with_locked(|lapic| {
-        let base = unsafe { lapic.base.as_mut_ptr::<u32>().byte_add(0xF0) };
-        let mut value = unsafe { base.read() };
-        if enable {
-            // Enable spurious interrupt
-            value |= 0x100;
-        } else {
-            // Disable spurious interrupt
-            value &= !0x100;
-        }
-        unsafe { base.write_volatile(value) };
+        unsafe {
+            lapic.base.byte_add(0xF0).update(|value| {
+                if enable {
+                    // Enable spurious interrupt
+                    value | 0x100
+                } else {
+                    // Disable spurious interrupt
+                    value & !0x100
+                }
+            });
+        };
     });
 }
 
 pub struct LocalApic {
-    base: VirtAddr,
+    base: Volatile<u32>,
     timer: LapicTimer,
 }
 
@@ -127,18 +132,17 @@ impl LocalApic {
         *apic_spurious |= u32::from(super::interrupts::Irq::Spurious as u8); // Set spurious handler index
         *apic_spurious |= 0x100; // Enable spurious interrupt
 
+        let base = Volatile::new(NonNull::new(base_ptr).unwrap(), Access::ReadWrite);
+
         Self {
-            base: page.start_address(),
-            timer: timer::LapicTimer::new(timer::Configuration::new(
-                page.start_address(),
-                Irq::Timer,
-            )),
+            base,
+            timer: timer::LapicTimer::new(timer::Configuration::new(base, Irq::Timer)),
         }
     }
 
     pub fn send_ipi(&self, ipi: &ipi::Ipi) {
-        let icr_low = unsafe { self.base.as_mut_ptr::<u32>().byte_add(0x300) };
-        let icr_high = unsafe { self.base.as_mut_ptr::<u32>().byte_add(0x310) };
+        let icr_low = unsafe { self.base.byte_add(0x300) };
+        let icr_high = unsafe { self.base.byte_add(0x310) };
         // Safety:
         // The ICR registers are read/write and their addresses are valid.
         unsafe { ipi.send(icr_low, icr_high) };
@@ -151,10 +155,7 @@ impl LocalApic {
     }
 
     pub fn send_eoi(&mut self) {
-        let eoi_addr = unsafe { self.base.as_mut_ptr::<u32>().byte_add(0xB0) };
-        unsafe {
-            eoi_addr.write_volatile(0);
-        }
+        unsafe { self.base.byte_add(0xB0).write(0) };
     }
 }
 
@@ -204,7 +205,7 @@ static IOAPICID_CNTER: AtomicU8 = AtomicU8::new(0);
 ///
 /// See <https://pdos.csail.mit.edu/6.828/2016/readings/ia32/ioapic.pdf>
 pub struct IoApic {
-    base: VirtAddr,
+    base: Volatile<u32>,
     gsi_base: u32,
 }
 
@@ -330,10 +331,13 @@ impl IoApic {
             });
         });
 
-        Self {
-            base: page.start_address() + (base - frame.start_address()),
-            gsi_base,
-        }
+        let base = Volatile::new(
+            NonNull::new((page.start_address() + (base - frame.start_address())).as_mut_ptr())
+                .unwrap(),
+            Access::ReadWrite,
+        );
+
+        Self { base, gsi_base }
     }
 
     pub fn init(&self) {
@@ -479,7 +483,7 @@ impl IoApic {
     /// # Safety
     /// The index must be a valid writable register index.
     unsafe fn write_reg_idx(&self, idx: u32, value: u32) {
-        unsafe { self.reg_select().write_volatile(idx) };
+        unsafe { self.reg_select().write(idx) };
         unsafe { self.reg_window().write(value) };
     }
 
@@ -493,19 +497,19 @@ impl IoApic {
     /// # Safety
     /// The index must be a valid register index.
     unsafe fn read_reg_idx(&self, idx: u32) -> u32 {
-        unsafe { self.reg_select().write_volatile(idx) };
+        unsafe { self.reg_select().write(idx) };
         unsafe { self.reg_window().read() }
     }
 
     #[must_use]
     #[inline]
-    const fn reg_select(&self) -> *mut u32 {
-        self.base.as_mut_ptr::<u32>()
+    const fn reg_select(&self) -> Volatile<u32> {
+        self.base.change_access(Access::WriteOnly)
     }
 
     #[must_use]
     #[inline]
-    const fn reg_window(&self) -> *mut u32 {
-        unsafe { self.reg_select().byte_add(0x10) }
+    const fn reg_window(&self) -> Volatile<u32> {
+        unsafe { self.base.byte_add(0x10) }
     }
 }

@@ -15,6 +15,9 @@
 //! assert_eq!(unsafe { volatile_ptr.read() }, 42);
 //! ```
 
+// FIXME: Compile-time rights checking
+// Otherwise, using this wrapper is just a slower version of raw pointers.
+
 use core::ptr::NonNull;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,9 +148,51 @@ impl<T> Volatile<T> {
 
     #[must_use]
     #[inline]
+    /// Adds an offset to the volatile wrapper.
+    ///
+    /// Units of `offset` are in terms of `T`. To add bytes, use `byte_add`.
+    ///
+    /// ## Safety
+    ///
+    /// See `core::ptr::add` for safety requirements.
+    pub const unsafe fn add(&self, offset: usize) -> Self {
+        Self {
+            ptr: unsafe { self.ptr.add(offset) },
+            access: self.access,
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Adds an offset to the volatile wrapper.
+    ///
+    /// Units of `offset` are in terms of bytes. To add in units of `T`, use `add`.
+    ///
+    /// ## Safety
+    ///
+    /// See `core::ptr::byte_add` for safety requirements.
+    pub const unsafe fn byte_add(&self, offset: usize) -> Self {
+        Self {
+            ptr: unsafe { self.ptr.byte_add(offset) },
+            access: self.access,
+        }
+    }
+
+    #[must_use]
+    #[inline]
     /// Casts the volatile wrapper to a pointer.
-    pub const fn as_ptr(&self) -> NonNull<T> {
+    pub const fn as_non_null(&self) -> NonNull<T> {
         self.ptr
+    }
+
+    #[must_use]
+    #[inline]
+    /// Change the access permissions of the volatile pointer.
+    pub const fn change_access(&self, access: Access) -> Self {
+        Self {
+            ptr: self.ptr,
+            access,
+        }
     }
 }
 
@@ -185,5 +230,23 @@ mod tests {
         let volatile = Volatile::from_ref(&value);
 
         unsafe { volatile.write(1) };
+    }
+
+    #[test]
+    fn test_add() {
+        let array: [usize; 2] = [0, 1];
+        let first = Volatile::from_ref(&array[0]);
+        let second = Volatile::from_ref(&array[1]);
+
+        assert_eq!(unsafe { first.add(1) }, second);
+    }
+
+    #[test]
+    fn test_byte_add() {
+        let array: [usize; 2] = [0, 1];
+        let first = Volatile::from_ref(&array[0]);
+        let second = Volatile::from_ref(&array[1]);
+
+        assert_eq!(unsafe { first.byte_add(size_of::<usize>()) }, second);
     }
 }

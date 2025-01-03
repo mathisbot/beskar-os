@@ -1,5 +1,7 @@
 //! Inter-Processor Interrupts (IPIs)
 
+use hyperdrive::volatile::Volatile;
+
 use crate::cpu::interrupts::Irq;
 
 /// Represents the delivery mode of an IPI.
@@ -103,10 +105,10 @@ impl Ipi {
     /// ## Safety
     ///
     /// ICR pointers must be valid.
-    pub(super) unsafe fn send(&self, icr_low: *mut u32, icr_high: *mut u32) {
+    pub(super) unsafe fn send(&self, icr_low: Volatile<u32>, icr_high: Volatile<u32>) {
         // Assert Interrupts are ready to be received
         while unsafe { icr_low.read() >> 12 } & 1 == 1 {
-            // TODO: Fail with a timeout
+            // FIXME: Fail with a timeout?
             core::hint::spin_loop();
         }
 

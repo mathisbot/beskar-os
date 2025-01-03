@@ -4,7 +4,7 @@
 
 use core::num::NonZeroU32;
 
-use x86_64::VirtAddr;
+use hyperdrive::volatile::Volatile;
 
 const TIMER_DIVIDE_CONFIG_REG: usize = 0x3E0;
 const TIMER_INIT_COUNT_REG: usize = 0x380;
@@ -27,23 +27,17 @@ impl LapicTimer {
     }
 
     #[must_use]
-    pub const fn divider_config_reg(&mut self) -> *mut u32 {
+    pub const fn divider_config_reg(&mut self) -> Volatile<u32> {
         unsafe {
             self.configuration
                 .apic_base
-                .as_mut_ptr::<u32>()
                 .byte_add(TIMER_DIVIDE_CONFIG_REG)
         }
     }
 
     #[must_use]
-    pub const fn init_count_reg(&mut self) -> *mut u32 {
-        unsafe {
-            self.configuration
-                .apic_base
-                .as_mut_ptr::<u32>()
-                .byte_add(TIMER_INIT_COUNT_REG)
-        }
+    pub const fn init_count_reg(&mut self) -> Volatile<u32> {
+        unsafe { self.configuration.apic_base.byte_add(TIMER_INIT_COUNT_REG) }
     }
 
     #[must_use]
@@ -51,18 +45,16 @@ impl LapicTimer {
         unsafe {
             self.configuration
                 .apic_base
-                .as_mut_ptr::<u32>()
                 .byte_add(TIMER_CURR_COUNT_REG)
-                .read_volatile()
+                .read()
         }
     }
 
     #[must_use]
-    pub const fn vector_table_reg(&mut self) -> *mut u32 {
+    pub const fn vector_table_reg(&mut self) -> Volatile<u32> {
         unsafe {
             self.configuration
                 .apic_base
-                .as_mut_ptr::<u32>()
                 .byte_add(TIMER_VECTOR_TABLE_REG)
         }
     }
@@ -105,15 +97,15 @@ impl LapicTimer {
                 let old_vte = unsafe { apic_timer_vte.read() };
                 // Keep IRQ set but disable it
                 let new_vte = old_vte | MASK_IRQ_DISABLE;
-                unsafe { apic_timer_vte.write_volatile(new_vte) };
+                unsafe { apic_timer_vte.write(new_vte) };
 
-                unsafe { self.init_count_reg().write_volatile(0) };
+                unsafe { self.init_count_reg().write(0) };
             }
             Mode::OneShot(config) | Mode::Periodic(config) => {
                 let apic_timer_divide = self.divider_config_reg();
                 let old_divide = unsafe { apic_timer_divide.read() };
                 let new_divide = (old_divide & !0xF) | config.divider as u32;
-                unsafe { apic_timer_divide.write_volatile(new_divide) };
+                unsafe { apic_timer_divide.write(new_divide) };
 
                 let apic_timer_vt = self.vector_table_reg();
                 let old_vte = unsafe { apic_timer_vt.read() };
@@ -121,9 +113,9 @@ impl LapicTimer {
                 let new_vte = (old_vte & !(MASK_IRQ | MASK_IRQ_DISABLE | MODE_MASK))
                     | u32::from(self.configuration.ivt as u8)
                     | (self.configuration.mode.as_vte_bits() << 17);
-                unsafe { apic_timer_vt.write_volatile(new_vte) };
+                unsafe { apic_timer_vt.write(new_vte) };
 
-                unsafe { self.init_count_reg().write_volatile(config.duration) };
+                unsafe { self.init_count_reg().write(config.duration) };
             }
             Mode::TscDeadline => {
                 unimplemented!("TSC_DEADLINE is not supported");
@@ -139,7 +131,7 @@ impl LapicTimer {
 
 #[derive(Debug, Clone)]
 pub struct Configuration {
-    apic_base: VirtAddr,
+    apic_base: Volatile<u32>,
     rate_mhz: u32,
     ivt: crate::cpu::interrupts::Irq,
     mode: Mode,
@@ -147,7 +139,7 @@ pub struct Configuration {
 
 impl Configuration {
     #[must_use]
-    pub const fn new(apic_base: VirtAddr, ivt: crate::cpu::interrupts::Irq) -> Self {
+    pub const fn new(apic_base: Volatile<u32>, ivt: crate::cpu::interrupts::Irq) -> Self {
         Self {
             apic_base,
             rate_mhz: 0,
