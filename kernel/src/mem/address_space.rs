@@ -1,7 +1,7 @@
 use x86_64::{
+    PhysAddr, VirtAddr,
     registers::control::{Cr3, Cr3Flags},
     structures::paging::{Mapper, Page, PageTable, PageTableFlags, RecursivePageTable, Size4KiB},
-    PhysAddr, VirtAddr,
 };
 
 use super::{frame_alloc, page_alloc, page_table};

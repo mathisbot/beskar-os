@@ -3,9 +3,9 @@
 use alloc::vec::Vec;
 use hyperdrive::locks::mcs::McsLock;
 use x86_64::{
+    PhysAddr,
     instructions::port::{Port, PortWriteOnly},
     structures::port::PortWrite,
-    PhysAddr,
 };
 
 const CONFIG_ADDRESS: u16 = 0xCF8;

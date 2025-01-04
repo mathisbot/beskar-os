@@ -452,6 +452,13 @@ mod tests {
         assert_eq!(res, Some(0));
     }
 
+    #[cfg(miri)]
+    #[test]
+    fn test_mumcs_drop() {
+        let lock = MUMcsLock::uninit();
+        lock.init(Box::new(42));
+    }
+
     #[test]
     fn test_concurent() {
         let lock = Arc::new(McsLock::new(0));

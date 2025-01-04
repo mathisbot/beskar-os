@@ -17,8 +17,8 @@ use uefi::{
     },
 };
 use x86_64::{
-    structures::paging::{FrameAllocator, OffsetPageTable, PageSize, PageTable, Size4KiB},
     PhysAddr, VirtAddr,
+    structures::paging::{FrameAllocator, OffsetPageTable, PageSize, PageTable, Size4KiB},
 };
 
 #[panic_handler]
@@ -300,8 +300,7 @@ fn create_framebuffer_logger() -> bootloader::FrameBuffer {
 
     trace!(
         "Framebuffer initialized at {}x{}",
-        framebuffer_info.width,
-        framebuffer_info.height
+        framebuffer_info.width, framebuffer_info.height
     );
 
     // Safety:
@@ -313,10 +312,10 @@ fn create_framebuffer_logger() -> bootloader::FrameBuffer {
 mod fs {
     use boot::MemoryType;
     use uefi::{
+        CStr16,
         data_types::Align,
         prelude::*,
         proto::media::file::{Directory, File, FileAttribute, FileHandle, FileInfo, FileMode},
-        CStr16,
     };
     use x86_64::structures::paging::{PageSize, Size4KiB};
 

@@ -8,9 +8,9 @@ use core::{
 use hyperdrive::volatile::{Access, Volatile};
 use timer::LapicTimer;
 use x86_64::{
+    PhysAddr,
     instructions::port::Port,
     structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
-    PhysAddr,
 };
 
 use crate::{

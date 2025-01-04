@@ -10,6 +10,7 @@ use info::{MemoryRegion, TlsTemplate};
 use log::{debug, info};
 use mem::{EarlyFrameAllocator, Level4Entries, PageTables};
 use x86_64::{
+    PhysAddr, VirtAddr,
     instructions::segmentation,
     registers::{self, segmentation::Segment},
     structures::{
@@ -19,7 +20,6 @@ use x86_64::{
             Size4KiB,
         },
     },
-    PhysAddr, VirtAddr,
 };
 use xmas_elf::ElfFile;
 
@@ -40,7 +40,7 @@ const KERNEL_STACK_SIZE: u64 = 64 * 4096; // 256 KiB
 #[macro_export]
 macro_rules! entry_point {
     ($path:path) => {
-        #[export_name = "_start"]
+        #[unsafe(export_name = "_start")]
         pub extern "C" fn __kernel_entry(boot_info: &'static mut $crate::BootInfo) -> ! {
             ($path)(boot_info)
         }

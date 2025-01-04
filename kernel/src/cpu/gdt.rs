@@ -2,7 +2,7 @@ use core::{cell::UnsafeCell, mem::MaybeUninit};
 
 use x86_64::{
     instructions::tables::load_tss,
-    registers::segmentation::{Segment, CS},
+    registers::segmentation::{CS, Segment},
     structures::{
         gdt::GlobalDescriptorTable,
         paging::{Page, PageSize, PageTableFlags, Size4KiB},

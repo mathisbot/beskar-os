@@ -1,9 +1,9 @@
 use x86_64::{
-    structures::paging::{
-        page::PageRangeInclusive, Page, PageSize, PageTable, PageTableFlags, PageTableIndex,
-        Size1GiB, Size2MiB, Size4KiB,
-    },
     VirtAddr,
+    structures::paging::{
+        Page, PageSize, PageTable, PageTableFlags, PageTableIndex, Size1GiB, Size2MiB, Size4KiB,
+        page::PageRangeInclusive,
+    },
 };
 
 use crate::mem::{page_table, ranges::MemoryRange};

@@ -4,8 +4,8 @@ use core::cell::UnsafeCell;
 
 use hyperdrive::once::Once;
 use x86_64::{
-    structures::paging::{Mapper, Page, PageSize, PageTableFlags, Size4KiB},
     VirtAddr,
+    structures::paging::{Mapper, Page, PageSize, PageTableFlags, Size4KiB},
 };
 
 use crate::mem::{frame_alloc, page_alloc, page_table};
@@ -180,7 +180,7 @@ impl Screen {
 
         let mut node_windows = McsNode::new();
         let windows = self.windows.lock(&mut node_windows);
-        let Some(&window_info) = &windows[window.index].as_ref() else {
+        let Some(window_info) = &windows[window.index].as_ref() else {
             panic!("Window not found");
         };
         // Row by row copy

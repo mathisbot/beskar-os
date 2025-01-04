@@ -1,4 +1,4 @@
-use x86_64::{structures::paging::PageTableFlags, PhysAddr, VirtAddr};
+use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
 
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 use hyperdrive::locks::mcs::MUMcsLock;

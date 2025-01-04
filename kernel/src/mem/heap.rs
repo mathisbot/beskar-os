@@ -4,7 +4,7 @@ use core::{
     ptr::NonNull,
 };
 
-use x86_64::structures::paging::{page::PageRangeInclusive, PageSize, PageTableFlags, Size2MiB};
+use x86_64::structures::paging::{PageSize, PageTableFlags, Size2MiB, page::PageRangeInclusive};
 
 use crate::mem::page_alloc;
 use hyperdrive::locks::mcs::MUMcsLock;

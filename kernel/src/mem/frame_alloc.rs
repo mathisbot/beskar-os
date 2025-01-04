@@ -8,10 +8,10 @@
 use super::ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges};
 use bootloader::info::{MemoryRegion, MemoryRegionUsage};
 use x86_64::{
-    structures::paging::{
-        page::PageRangeInclusive, Mapper, PageSize, PageTableFlags, PhysFrame, RecursivePageTable,
-    },
     PhysAddr,
+    structures::paging::{
+        Mapper, PageSize, PageTableFlags, PhysFrame, RecursivePageTable, page::PageRangeInclusive,
+    },
 };
 
 use crate::{serdebug, serwarn};

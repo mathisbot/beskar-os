@@ -5,7 +5,7 @@ use x86_64::PhysAddr;
 
 mod rsdp;
 pub mod sdt;
-use sdt::{fadt::ParsedFadt, hpet_table::ParsedHpetTable, madt::ParsedMadt, Rsdt};
+use sdt::{Rsdt, fadt::ParsedFadt, hpet_table::ParsedHpetTable, madt::ParsedMadt};
 
 static ACPI_REVISION: AcpiRevisionStorage = AcpiRevisionStorage::uninit();
 

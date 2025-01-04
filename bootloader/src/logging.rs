@@ -3,8 +3,8 @@
 //! This logger is only intended to be used during the bootloader phase and will NOT be available
 //! after the jump to the kernel.
 
-use crate::framebuffer::FrameBufferWriter;
 use crate::FrameBufferInfo;
+use crate::framebuffer::FrameBufferWriter;
 use core::fmt::Write;
 use hyperdrive::locks::mcs::MUMcsLock;
 

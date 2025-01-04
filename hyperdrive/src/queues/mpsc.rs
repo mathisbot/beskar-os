@@ -392,5 +392,7 @@ mod tests {
         for handle in handles {
             handle.join().unwrap();
         }
+
+        assert!(queue.dequeue().is_none());
     }
 }

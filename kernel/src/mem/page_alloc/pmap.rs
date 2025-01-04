@@ -3,8 +3,8 @@
 //! It is useful as ACPI tables must me mapped before being read, but are not needed after that.
 
 use x86_64::{
-    structures::paging::{Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB},
     PhysAddr, VirtAddr,
+    structures::paging::{Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB},
 };
 
 use crate::mem::{frame_alloc, page_alloc, page_table};

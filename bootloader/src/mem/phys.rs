@@ -4,8 +4,8 @@ use uefi::{
     mem::memory_map::{MemoryMap, MemoryMapOwned},
 };
 use x86_64::{
-    structures::paging::{FrameAllocator, PageSize, PhysFrame, Size4KiB},
     PhysAddr,
+    structures::paging::{FrameAllocator, PageSize, PhysFrame, Size4KiB},
 };
 
 /// A physical frame allocator based on a UEFI provided memory map.

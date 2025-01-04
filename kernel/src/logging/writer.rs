@@ -1,8 +1,8 @@
 use noto_sans_mono_bitmap::{
-    get_raster, get_raster_width, FontWeight, RasterHeight, RasterizedChar,
+    FontWeight, RasterHeight, RasterizedChar, get_raster, get_raster_width,
 };
 
-use crate::screen::{self, pixel::PixelFormat, Window};
+use crate::screen::{self, Window, pixel::PixelFormat};
 use hyperdrive::locks::mcs::McsNode;
 
 const LINE_SPACING: usize = 2;

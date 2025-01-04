@@ -1,8 +1,8 @@
 use hyperdrive::locks::mcs::{MUMcsGuard, MUMcsLock, McsNode};
 use x86_64::{
+    VirtAddr,
     registers::control::Cr3,
     structures::paging::{RecursivePageTable, Translate},
-    VirtAddr,
 };
 
 static KERNEL_PAGE_TABLE: MUMcsLock<RecursivePageTable> = MUMcsLock::uninit();

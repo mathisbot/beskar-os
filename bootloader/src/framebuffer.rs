@@ -1,5 +1,5 @@
 use noto_sans_mono_bitmap::{
-    get_raster, get_raster_width, FontWeight, RasterHeight, RasterizedChar,
+    FontWeight, RasterHeight, RasterizedChar, get_raster, get_raster_width,
 };
 pub use uefi::proto::console::gop::PixelBitmask;
 

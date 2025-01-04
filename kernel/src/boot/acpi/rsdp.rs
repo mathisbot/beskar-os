@@ -2,7 +2,7 @@ use core::mem::offset_of;
 
 use super::AcpiRevision;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
-use x86_64::{structures::paging::PageTableFlags, PhysAddr, VirtAddr};
+use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]

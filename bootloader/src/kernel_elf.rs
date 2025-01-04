@@ -1,14 +1,14 @@
 use x86_64::structures::paging::{
-    mapper::{MappedFrame, TranslateResult},
     FrameAllocator, Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB, Translate,
+    mapper::{MappedFrame, TranslateResult},
 };
 use x86_64::{PhysAddr, VirtAddr};
 use xmas_elf::{
+    ElfFile,
     dynamic::Tag,
     header,
     program::{self, ProgramHeader, Type},
     sections::Rela,
-    ElfFile,
 };
 
 use crate::info::TlsTemplate;

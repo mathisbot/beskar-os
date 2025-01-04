@@ -1,6 +1,6 @@
 use x86_64::{
-    structures::paging::{Page, PageSize, PageTableIndex, Size4KiB},
     VirtAddr,
+    structures::paging::{Page, PageSize, PageTableIndex, Size4KiB},
 };
 use xmas_elf::program::ProgramHeader;
 

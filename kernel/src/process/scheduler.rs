@@ -142,6 +142,7 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
 pub fn reschedule() {
     // Safety:
     // Data races are avoided by the `Scheduler::reschedule` function.
+    // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]
     unsafe {
         SCHEDULER.as_mut().unwrap().reschedule();
@@ -149,6 +150,7 @@ pub fn reschedule() {
 }
 
 pub fn spawn_thread(thread: Pin<Box<Thread>>) {
+    // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]
     unsafe {
         SCHEDULER.as_mut().unwrap().schedule_thread(thread);

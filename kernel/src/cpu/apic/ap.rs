@@ -14,9 +14,9 @@ use crate::{
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use x86_64::{
+    PhysAddr, VirtAddr,
     registers::control::{Cr0, Cr3, Cr4, Efer},
     structures::paging::{Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB},
-    PhysAddr, VirtAddr,
 };
 
 static AP_STACK_TOP_ADDR: AtomicU64 = AtomicU64::new(0);
