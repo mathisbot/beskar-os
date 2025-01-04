@@ -33,11 +33,11 @@ impl Unpin for Thread {}
 impl Queueable for Thread {
     type Handle = Pin<Box<Self>>;
 
-    unsafe fn from_ptr(ptr: core::ptr::NonNull<Self>) -> Self::Handle {
+    unsafe fn capture(ptr: core::ptr::NonNull<Self>) -> Self::Handle {
         unsafe { Pin::new(Box::from_raw(ptr.as_ptr())) }
     }
 
-    fn into_ptr(r: Self::Handle) -> core::ptr::NonNull<Self> {
+    fn release(r: Self::Handle) -> core::ptr::NonNull<Self> {
         let ptr = Box::into_raw(Pin::into_inner(r));
         unsafe { core::ptr::NonNull::new_unchecked(ptr) }
     }

@@ -23,12 +23,12 @@
 //! impl Queueable for Element {
 //!     type Handle = Pin<Box<Self>>;
 //!
-//!     fn into_ptr(r: Self::Handle) -> NonNull<Self> {
+//!     fn release(r: Self::Handle) -> NonNull<Self> {
 //!         let ptr = Box::into_raw(Pin::into_inner(r));
 //!         unsafe { NonNull::new_unchecked(ptr) }
 //!     }
 //!     
-//!     unsafe fn from_ptr(ptr: NonNull<Self>) -> Self::Handle {
+//!     unsafe fn capture(ptr: NonNull<Self>) -> Self::Handle {
 //!         Pin::new(unsafe { Box::from_raw(ptr.as_ptr()) })
 //!     }
 //!
@@ -57,16 +57,19 @@ pub trait Queueable: Sized {
     type Handle;
 
     /// Takes ownership of the handle and returns a pointer to it.
-    fn into_ptr(r: Self::Handle) -> NonNull<Self>;
+    fn release(r: Self::Handle) -> NonNull<Self>;
 
-    /// Builds a handle from a pointer
+    /// Capture the data pointed to by the pointer and return a handle to it.
     ///
     /// ## Safety
     ///
     /// `ptr` must be a valid pointer to a `Self` instance.
-    unsafe fn from_ptr(ptr: NonNull<Self>) -> Self::Handle;
+    unsafe fn capture(ptr: NonNull<Self>) -> Self::Handle;
 
-    /// Returns a pointer to the link.
+    /// Returns a pointer to the link to the next element.
+    ///
+    /// Because an `MpscQueue` is non-intrusive, the link has to be provided
+    /// already allocated in memory, as a pointer.
     ///
     /// ## Safety
     ///
@@ -134,6 +137,23 @@ impl<T: Queueable> DequeueResult<T> {
             Self::InUse => panic!("Unwrapped a DequeueResult::Busy"),
         }
     }
+
+    #[must_use]
+    /// Unwraps the result without checking its value.
+    ///
+    /// ## Safety
+    ///
+    /// The caller must ensure that the result is not a `Retry` or `Busy`.
+    /// Otherwise, this is immediately undefined behavior.
+    ///
+    /// Refer to `core::hint::unreachable_unchecked`.
+    pub unsafe fn unwrap_unchecked(self) -> Option<T::Handle> {
+        let Self::Element(res) = self else {
+            unsafe { core::hint::unreachable_unchecked() };
+        };
+
+        res
+    }
 }
 
 impl<T: Queueable> Default for MpscQueue<T>
@@ -148,7 +168,7 @@ where
 impl<T: Queueable> MpscQueue<T> {
     #[must_use]
     pub fn new(stub: T::Handle) -> Self {
-        let stub_ptr = <T as Queueable>::into_ptr(stub);
+        let stub_ptr = <T as Queueable>::release(stub);
         Self {
             head: AtomicPtr::new(stub_ptr.as_ptr()),
             tail: UnsafeCell::new(stub_ptr.as_ptr()),
@@ -157,9 +177,10 @@ impl<T: Queueable> MpscQueue<T> {
         }
     }
 
+    #[inline]
     pub fn enqueue(&self, element: T::Handle) {
         unsafe {
-            self.enqueue_ptr(T::into_ptr(element));
+            self.enqueue_ptr(T::release(element));
         }
     }
 
@@ -167,20 +188,15 @@ impl<T: Queueable> MpscQueue<T> {
     ///
     /// `ptr` must be a valid pointer to a `T` instance.
     unsafe fn enqueue_ptr(&self, ptr: NonNull<T>) {
-        unsafe {
-            T::get_link(ptr)
-                .as_ref()
-                .next
-                .store(ptr::null_mut(), Ordering::Relaxed);
-        }
+        unsafe { T::get_link(ptr).as_ref() }
+            .next
+            .store(ptr::null_mut(), Ordering::Relaxed);
 
         let prev = self.head.swap(ptr.as_ptr(), Ordering::AcqRel);
-        unsafe {
-            T::get_link(NonNull::new_unchecked(prev))
-                .as_ref()
-                .next
-                .store(ptr.as_ptr(), Ordering::Release);
-        }
+
+        unsafe { T::get_link(NonNull::new_unchecked(prev)).as_ref() }
+            .next
+            .store(ptr.as_ptr(), Ordering::Release);
     }
 
     pub fn dequeue(&self) -> Option<T::Handle> {
@@ -189,7 +205,7 @@ impl<T: Queueable> MpscQueue<T> {
             core::hint::spin_loop();
             state = self.try_dequeue();
         }
-        state.unwrap()
+        unsafe { state.unwrap_unchecked() }
     }
 
     pub fn try_dequeue(&self) -> DequeueResult<T> {
@@ -210,6 +226,7 @@ impl<T: Queueable> MpscQueue<T> {
 
     unsafe fn dequeue_impl(&self) -> DequeueResult<T> {
         let tail_ptr = self.tail.get();
+
         let Some(mut tail_node) = NonNull::new(unsafe { *tail_ptr }) else {
             return DequeueResult::Element(None);
         };
@@ -231,7 +248,7 @@ impl<T: Queueable> MpscQueue<T> {
 
         if !next.is_null() {
             unsafe { *tail_ptr = next };
-            return DequeueResult::Element(Some(unsafe { T::from_ptr(tail_node) }));
+            return DequeueResult::Element(Some(unsafe { T::capture(tail_node) }));
         }
 
         let head = self.head.load(Ordering::Acquire);
@@ -253,7 +270,7 @@ impl<T: Queueable> MpscQueue<T> {
 
         unsafe { *tail_ptr = next };
 
-        DequeueResult::Element(Some(unsafe { T::from_ptr(tail_node) }))
+        DequeueResult::Element(Some(unsafe { T::capture(tail_node) }))
     }
 }
 
@@ -267,19 +284,19 @@ impl<T: Queueable> Drop for MpscQueue<T> {
                 .load(Ordering::Relaxed);
 
             if node != self.stub {
-                drop(unsafe { T::from_ptr(node) });
+                drop(unsafe { T::capture(node) });
             }
             current = next;
         }
 
-        drop(unsafe { T::from_ptr(self.stub) });
+        drop(unsafe { T::capture(self.stub) });
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use std::sync::{Arc, Barrier};
     use std::thread::spawn;
 
     extern crate alloc;
@@ -296,12 +313,12 @@ mod tests {
     impl Queueable for Element {
         type Handle = Pin<Box<Self>>;
 
-        fn into_ptr(r: Self::Handle) -> NonNull<Self> {
+        fn release(r: Self::Handle) -> NonNull<Self> {
             let ptr = Box::into_raw(Pin::into_inner(r));
             unsafe { NonNull::new_unchecked(ptr) }
         }
 
-        unsafe fn from_ptr(ptr: NonNull<Self>) -> Self::Handle {
+        unsafe fn capture(ptr: NonNull<Self>) -> Self::Handle {
             Pin::new(unsafe { Box::from_raw(ptr.as_ptr()) })
         }
 
@@ -338,15 +355,18 @@ mod tests {
             value: 0,
             next: None,
         })));
+        let barrier = Arc::new(Barrier::new(num_threads));
 
         let mut handles = Vec::with_capacity(num_threads);
 
         for _ in 0..num_threads {
             handles.push(spawn({
                 let queue = queue.clone();
+                let barrier = barrier.clone();
                 move || {
+                    barrier.wait();
                     queue.enqueue(Box::pin(Element {
-                        value: 1,
+                        value: 42,
                         next: None,
                     }));
                 }
@@ -357,7 +377,20 @@ mod tests {
             handle.join().unwrap();
         }
 
-        let element = queue.dequeue().unwrap();
-        assert_eq!(element.value, 1);
+        let mut handles = Vec::with_capacity(num_threads);
+
+        for _ in 0..num_threads {
+            let queue = queue.clone();
+            let barrier = barrier.clone();
+            handles.push(spawn(move || {
+                barrier.wait();
+                let element = queue.dequeue().unwrap();
+                assert_eq!(element.value, 42);
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }
