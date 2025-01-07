@@ -153,8 +153,21 @@ macro_rules! info_isr {
     };
 }
 
+macro_rules! info_isr_eoi {
+    ($name:ident) => {
+        extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
+            log::info!(
+                "{} INTERRUPT on core {}",
+                stringify!($name),
+                locals!().core_id()
+            );
+            locals!().lapic().with_locked(|lapic| lapic.send_eoi());
+        }
+    };
+}
+
 panic_isr!(divide_error_handler);
-panic_isr!(debug_handler);
+info_isr!(debug_handler);
 panic_isr!(non_maskable_interrupt_handler);
 panic_isr!(breakpoint_handler);
 panic_isr!(overflow_handler);
@@ -179,17 +192,10 @@ extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFram
     panic!("EXCEPTION: MACHINE CHECK");
 }
 
-info_isr!(spurious_interrupt_handler);
+info_isr_eoi!(spurious_interrupt_handler);
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    log::warn!("Scheduling is a work in progress");
-
-    locals!()
-        .lapic()
-        .with_locked(crate::cpu::apic::LocalApic::send_eoi);
-
-    // TODO: Finish implementing scheduling
-    // crate::process::scheduler::reschedule();
+    unsafe { crate::process::scheduler::reschedule() };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

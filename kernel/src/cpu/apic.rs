@@ -48,6 +48,14 @@ pub fn init_lapic() {
 
     ensure_pic_disabled();
 
+    // TODO: ?
+    // if x2apic_supported {
+    //     unsafe {
+    //         let mut msr = x86_64::registers::model_specific::Msr::new(0x1B);
+    //         msr.write(lapic_paddr.as_u64());
+    //     }
+    // }
+
     let mut lapic = LocalApic::from_paddr(lapic_paddr);
 
     lapic.timer().calibrate();

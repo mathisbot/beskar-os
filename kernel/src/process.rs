@@ -1,6 +1,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use alloc::{
+    boxed::Box,
     string::{String, ToString},
     sync::Arc,
 };
@@ -19,10 +20,42 @@ pub fn init() {
 
     debug_assert!(kernel_process.address_space().is_active());
 
-    let current_thread =
-        scheduler::thread::Thread::new(kernel_process, priority::Priority::High, None);
+    let current_thread = scheduler::thread::Thread::new_kernel(kernel_process.clone());
 
     unsafe { scheduler::init(current_thread) };
+
+    let test_thread = scheduler::thread::Thread::new(
+        kernel_process.clone(),
+        priority::Priority::Normal,
+        alloc::vec![0; 1024 * 256], // 256 KiB
+        test1 as *const (),
+    );
+    scheduler::spawn_thread(Box::pin(test_thread));
+    let test_thread = scheduler::thread::Thread::new(
+        kernel_process,
+        priority::Priority::Normal,
+        alloc::vec![0; 1024 * 256], // 256 KiB
+        test2 as *const (),
+    );
+    scheduler::spawn_thread(Box::pin(test_thread));
+}
+
+fn test1() {
+    let mut counter = 0;
+
+    loop {
+        log::debug!("Hello, thread 1! counter={}", counter);
+        counter += 1;
+    }
+}
+
+fn test2() {
+    let mut counter = 0;
+
+    loop {
+        log::debug!("Hello, thread 2! counter={}", counter);
+        counter += 1;
+    }
 }
 
 pub struct Process {

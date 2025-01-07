@@ -5,6 +5,7 @@ use core::{
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use hyperdrive::queues::mpsc::{Link, Queueable};
+use x86_64::registers::rflags::RFlags;
 
 use super::{super::Process, priority::Priority};
 
@@ -51,16 +52,69 @@ impl Queueable for Thread {
 impl Thread {
     #[must_use]
     #[inline]
-    pub fn new(root_process: Arc<Process>, priority: Priority, stack: Option<Vec<u8>>) -> Self {
+    pub(crate) fn new_kernel(kernel_process: Arc<Process>) -> Self {
         Self {
             id: ThreadId::new(),
-            root_proc: root_process,
-            priority,
-            stack,
+            root_proc: kernel_process,
+            priority: Priority::High,
+            stack: None,
             // Will be overwritten before being used.
             last_stack_ptr: Box::pin(0),
             link: Link::default(),
         }
+    }
+
+    #[must_use]
+    #[inline]
+    pub(crate) fn new(
+        root_proc: Arc<Process>,
+        priority: Priority,
+        mut stack: Vec<u8>,
+        entry_point: *const (),
+    ) -> Self {
+        let mut stack_ptr = stack.as_ptr() as usize + stack.len(); // Stack grows downwards
+
+        Self::setup_stack(&mut stack_ptr, &mut stack, entry_point);
+
+        // FIXME: Stack doesn't have guard page
+
+        Self {
+            id: ThreadId::new(),
+            root_proc,
+            priority,
+            stack: Some(stack),
+            last_stack_ptr: Box::pin(stack_ptr),
+            link: Link::default(),
+        }
+    }
+
+    /// Setup the stack and move stack pointer to the end of the stack.
+    fn setup_stack(stack_ptr: &mut usize, stack: &mut [u8], entry_point: *const ()) {
+        stack.fill(0xCD);
+        let stack_len = stack.len();
+
+        // TODO: Write a custom thread_end function at the end of the stack
+
+        // Push the return address
+        let entry_point_bytes = (entry_point as usize).to_ne_bytes();
+        stack[stack_len - size_of::<usize>()..stack_len].copy_from_slice(&entry_point_bytes);
+        *stack_ptr -= size_of::<usize>();
+
+        // Push the thread registers
+        *stack_ptr -= 18 * size_of::<usize>(); // 18 QWORD Registers
+        let rsp = u64::try_from(*stack_ptr).unwrap();
+        let thread_regs = ThreadRegisters {
+            rflags: (RFlags::IOPL_LOW | RFlags::INTERRUPT_FLAG).bits(),
+            rsp,
+            rbp: rsp,
+            rip: entry_point as u64,
+            ..ThreadRegisters::default()
+        };
+        debug_assert_eq!(size_of::<ThreadRegisters>(), 144);
+        let thread_regs_bytes =
+            unsafe { core::mem::transmute::<ThreadRegisters, [u8; 144]>(thread_regs) };
+        stack[stack_len - 19 * size_of::<usize>()..stack_len - size_of::<usize>()]
+            .copy_from_slice(&thread_regs_bytes);
     }
 
     #[must_use]
@@ -85,12 +139,12 @@ impl Thread {
         self.priority = priority;
     }
 
-    pub(super) fn allocate_stack(&mut self, size: usize) {
-        if self.stack.is_some() {
-            log::warn!("Thread stack already allocated");
-        }
-        self.stack = Some(alloc::vec![0; size]);
-    }
+    // pub(super) fn allocate_stack(&mut self, size: usize) {
+    //     if self.stack.is_some() {
+    //         log::warn!("Thread stack already allocated");
+    //     }
+    //     self.stack = Some(alloc::vec![0; size]);
+    // }
 
     #[must_use]
     #[inline]
@@ -124,14 +178,16 @@ impl Thread {
 
     #[must_use]
     #[inline]
+    /// Returns the value of the last stack pointer.
     pub fn last_stack_ptr(&self) -> *const usize {
-        core::ptr::from_ref(self.last_stack_ptr.as_ref().get_ref())
+        *self.last_stack_ptr.as_ref() as *const usize
     }
 
     #[must_use]
     #[inline]
+    /// Returns a mutable pointer to the last stack pointer.
     pub fn last_stack_ptr_mut(&mut self) -> *mut usize {
-        core::ptr::from_mut(self.last_stack_ptr.as_mut().get_mut())
+        self.last_stack_ptr.as_mut().get_mut()
     }
 }
 
@@ -160,25 +216,26 @@ impl ThreadId {
     }
 }
 
+#[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThreadRegisters {
-    pub rax: u64,
-    pub rbx: u64,
-    pub rcx: u64,
-    pub rdx: u64,
-    pub rsi: u64,
-    pub rdi: u64,
-    pub rbp: u64,
-    pub rsp: u64,
-    pub r8: u64,
-    pub r9: u64,
-    pub r10: u64,
-    pub r11: u64,
-    pub r12: u64,
-    pub r13: u64,
-    pub r14: u64,
-    pub r15: u64,
-    pub rip: u64,
-    pub rflags: u64,
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
+    r11: u64,
+    r10: u64,
+    r9: u64,
+    r8: u64,
+    rdi: u64,
+    rsi: u64,
+    rbp: u64,
+    rsp: u64,
+    rbx: u64,
+    rdx: u64,
+    rcx: u64,
+    rax: u64,
+    rflags: u64,
+    rip: u64,
     // FIXME: SSE/FPU registers?
 }

@@ -1,8 +1,9 @@
 name: CI
 
+# TODO: Different CI for dev and main branches
 on:
   push:
-    branches: ["main"]
+    branches: ["main","dev"]
   pull_request:
     branches: ["main"]
 

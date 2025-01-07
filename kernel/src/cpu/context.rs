@@ -19,14 +19,14 @@ pub unsafe extern "C" fn context_switch(
     // FIXME: SIMD regs?
     unsafe {
         core::arch::naked_asm!(
-            // Start by pushing the current context to the stack
+            // Push the current context to the stack
             r#"
             pushfq
             push rax
             push rcx
             push rdx
             push rbx
-            sub  rsp, {}
+            sub rsp, {}
             push rbp
             push rsi
             push rdi
@@ -39,15 +39,19 @@ pub unsafe extern "C" fn context_switch(
             push r14
             push r15
             "#,
-            // Update stack pointer and CR3
+            // Update stack pointer
             r#"
             mov [rdi], rsp
             mov rsp, rsi
-
+            "#,
+            // Set TS bit in CR0
+            r#"
             mov rax, cr0
             or rax, 8
             mov cr0, rax
-
+            "#,
+            // Load the new CR3
+            r#"
             mov cr3, rdx
             "#,
             // Load the new context from the stack

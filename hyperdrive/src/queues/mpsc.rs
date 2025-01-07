@@ -283,13 +283,10 @@ impl<T: Queueable> Drop for MpscQueue<T> {
                 .next
                 .load(Ordering::Relaxed);
 
-            if node != self.stub {
-                drop(unsafe { T::capture(node) });
-            }
+            drop(unsafe { T::capture(node) });
+
             current = next;
         }
-
-        drop(unsafe { T::capture(self.stub) });
     }
 }
 
@@ -343,8 +340,27 @@ mod tests {
             value: 2,
             next: None,
         }));
-        let element = queue.dequeue().unwrap();
-        assert_eq!(element.value, 1);
+        let element1 = queue.dequeue().unwrap();
+        let element2 = queue.dequeue().unwrap();
+        assert_eq!(element1.value, 1);
+        assert_eq!(element2.value, 2);
+    }
+
+    #[cfg(miri)]
+    #[test]
+    fn test_mpsc_drop() {
+        let queue: MpscQueue<Element> = MpscQueue::new(Box::pin(Element {
+            value: 0,
+            next: None,
+        }));
+        queue.enqueue(Box::pin(Element {
+            value: 1,
+            next: None,
+        }));
+        queue.enqueue(Box::pin(Element {
+            value: 2,
+            next: None,
+        }));
     }
 
     #[test]

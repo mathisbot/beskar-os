@@ -89,6 +89,15 @@ pub struct RoundRobinQueues {
     high: MpscQueue<Thread>,
 }
 
+impl RoundRobinQueues {
+    /// Cycle through the priorities.
+    fn cycle_priority(&mut self) -> Priority {
+        let priority = self.cycle[self.current];
+        self.current = (self.current + 1) % self.cycle.len();
+        priority
+    }
+}
+
 unsafe impl ThreadQueue for RoundRobinQueues {
     fn create(root_proc: Arc<Process>) -> Self {
         Self {
@@ -110,7 +119,9 @@ unsafe impl ThreadQueue for RoundRobinQueues {
 
     fn append(&mut self, thread: Pin<Box<Thread>>) {
         match thread.priority() {
-            Priority::Null => {}
+            Priority::Null => {
+                // TODO: Queue them so they can still be accessed and woken up.
+            }
             Priority::Low => {
                 self.low.enqueue(thread);
             }
@@ -125,17 +136,15 @@ unsafe impl ThreadQueue for RoundRobinQueues {
 
     #[must_use]
     fn next(&mut self) -> Pin<Box<Thread>> {
-        let priority = self.cycle[self.current];
-
-        self.current = (self.current + 1) % self.cycle.len();
-
-        let next_thread = match priority {
-            Priority::Null => unreachable!(),
-            Priority::Low => self.low.dequeue(),
-            Priority::Normal => self.normal.dequeue(),
-            Priority::High => self.high.dequeue(),
-        };
-
-        next_thread.unwrap_or_else(|| self.next())
+        loop {
+            if let Some(thread) = match self.cycle_priority() {
+                Priority::Null => unreachable!(),
+                Priority::Low => self.low.dequeue(),
+                Priority::Normal => self.normal.dequeue(),
+                Priority::High => self.high.dequeue(),
+            } {
+                break thread;
+            }
+        }
     }
 }

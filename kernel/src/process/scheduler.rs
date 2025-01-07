@@ -14,7 +14,7 @@ pub mod priority;
 pub mod thread;
 
 /// The time quantum for the scheduler, in milliseconds.
-pub const SCHEDULER_QUANTUM_MS: u32 = 1_000;
+pub const SCHEDULER_QUANTUM_MS: u32 = 100;
 
 // Because scheduler will be playing with context switching, we cannot acquire locks.
 // Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
@@ -32,6 +32,13 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
     unsafe {
         SCHEDULER = Some(scheduler);
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ContextSwitch {
+    old_stack: *mut usize,
+    new_stack: *const usize,
+    cr3: usize,
 }
 
 pub struct Scheduler<Q: priority::ThreadQueue> {
@@ -82,10 +89,16 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
         &self.current_priority
     }
 
+    #[must_use]
     /// Changes the internal state of the scheduler to the next thread.
     ///
-    /// This function does not change the context or else.
-    pub fn reschedule(&mut self) {
+    /// This function does not change the context or else, but will disable interrupts
+    /// if scheduling was successful.
+    ///
+    /// ## Safety
+    ///
+    /// Interrupts must be disabled when calling this function.
+    unsafe fn reschedule(&mut self) -> Option<ContextSwitch> {
         static IN_RESCHEDULE: AtomicBool = AtomicBool::new(false);
 
         // We cannot acquire locks, so we imitate one with an `AtomicBool`.
@@ -96,7 +109,7 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            return;
+            return None;
         }
 
         x86_64::instructions::interrupts::disable();
@@ -119,7 +132,10 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
 
         if old_should_exit {
             // FIXME: Handle this properly
-            drop(old_thread);
+            // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
+            // For now, we will just forget the thread.
+            // Maybe creating a cleaning thread?
+            core::mem::forget(old_thread);
         } else {
             self.queues.append(Pin::new(old_thread));
         }
@@ -128,24 +144,58 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
 
         IN_RESCHEDULE.store(false, Ordering::Release);
 
+        Some(ContextSwitch {
+            old_stack,
+            new_stack,
+            cr3,
+        })
+    }
+}
+
+#[allow(clippy::branches_sharing_code)]
+/// Reschedules the scheduler.
+///
+/// ## Safety
+///
+/// This function must only be called inside of the timer interrupt handler,
+/// and EOI is sent to the APIC in the function.
+pub(crate) unsafe fn reschedule() {
+    // TODO: Handle multiple cores
+    // Maybe a per-core scheduler?
+    // Otherwise, how to handle initialization of kernel thread on AP cores?
+    if locals!().core_id() != 0 {
+        locals!()
+            .lapic()
+            .with_locked(crate::cpu::apic::LocalApic::send_eoi);
+        return;
+    };
+
+    // Safety:
+    // Interrupts are disabled at the start of the function.
+    // Data races are avoided by the `Scheduler::reschedule` function.
+    // FIXME: Find a workaround for static mutable references.
+    #[allow(static_mut_refs)]
+    if let Some(ContextSwitch {
+        old_stack,
+        new_stack,
+        cr3,
+    }) = unsafe { SCHEDULER.as_mut().unwrap().reschedule() }
+    {
+        // We cannot send EOI later, as we are about to switch context.
+        locals!()
+            .lapic()
+            .with_locked(crate::cpu::apic::LocalApic::send_eoi);
+
         // Safety:
         // Interrupts are indeed disabled at the start of the function.
         unsafe {
             crate::cpu::context::context_switch(old_stack, new_stack, cr3);
         }
-
-        unreachable!("The scheduler should never return from a context switch.");
-        // unsafe { core::hint::unreachable_unchecked() };
-    }
-}
-
-pub fn reschedule() {
-    // Safety:
-    // Data races are avoided by the `Scheduler::reschedule` function.
-    // FIXME: Find a workaround for static mutable references.
-    #[allow(static_mut_refs)]
-    unsafe {
-        SCHEDULER.as_mut().unwrap().reschedule();
+    } else {
+        // Scheduler has failed, so we just send EOI.
+        locals!()
+            .lapic()
+            .with_locked(crate::cpu::apic::LocalApic::send_eoi);
     }
 }
 
