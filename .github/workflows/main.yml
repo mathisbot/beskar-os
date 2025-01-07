@@ -1,0 +1,77 @@
+name: BeskarOS main
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  hyperdrive:
+    name: Hyperdrive
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+
+      - name: Install latest nightly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+          components: clippy, miri
+
+      - name: Run tests
+        run: cargo test --package hyperdrive
+
+      - name: Run Clippy
+        run: |
+          cargo clippy --package hyperdrive -- -D warnings
+
+      - name: Run Miri
+        run: cargo miri test --package hyperdrive --lib
+
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+
+      - name: Install latest nightly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+          targets: x86_64-unknown-none, x86_64-unknown-uefi
+          components: llvm-tools-preview, rust-src
+
+      - name: Build
+        run: cargo build
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+
+      - name: Install latest nightly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+          targets: x86_64-unknown-none, x86_64-unknown-uefi
+          components: clippy, rustfmt, llvm-tools-preview, rust-src
+
+      - name: Run Rustfmt
+        run: cargo fmt --verbose --all -- --check
+
+      # The project isn't advanced enough to have clippy fail
+      # on warnings over all the code.
+      - name: Run Clippy
+        run: cargo clippy
