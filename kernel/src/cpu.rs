@@ -8,5 +8,5 @@ pub mod rand;
 
 pub fn init() {
     cpuid::check_cpuid();
-    crate::serdebug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
+    crate::debug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
 }

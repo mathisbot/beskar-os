@@ -204,6 +204,9 @@ pub fn spawn_thread(thread: Pin<Box<Thread>>) {
     };
 }
 
+/// Sets the scheduling of the scheduler.
+///
+/// What this function really does is enabling the timer interrupt.
 pub fn set_scheduling(enable: bool) {
     use crate::cpu::apic::timer;
 

@@ -67,12 +67,12 @@ pub fn calibrate() {
         if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
             let thc_hz =
                 u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);
-            crate::serdebug!("RDTSC calibration: {} MHz", thc_hz / 1_000_000);
+            crate::debug!("RDTSC calibration: {} MHz", thc_hz / 1_000_000);
             TSC_MHZ.store(thc_hz / 1_000_000, core::sync::atomic::Ordering::Relaxed);
             return;
         }
     } else {
-        crate::serdebug!("CPU does not support RDTSC calibration");
+        crate::debug!("CPU does not support RDTSC calibration");
     }
 
     // FIXME: PIT isn't guaranteed to be available on modern hardware
@@ -90,7 +90,7 @@ pub fn calibrate() {
     #[allow(clippy::cast_possible_truncation)]
     let rate_mhz = (((f64::from(diff) / elapsed / 100_000_000.0) + 0.5) as u64) * 100;
 
-    crate::serdebug!("PIT TSC calibration: {} MHz", rate_mhz);
+    crate::debug!("PIT TSC calibration: {} MHz", rate_mhz);
 
     TSC_MHZ.store(rate_mhz, core::sync::atomic::Ordering::Relaxed);
 }

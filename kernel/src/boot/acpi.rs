@@ -39,7 +39,7 @@ impl Acpi {
         // TODO: Support multiple HPET blocks?
         let hpet_paddr = rsdt.locate_table(sdt::Signature::Hpet);
         if hpet_paddr.is_none() {
-            log::warn!("HPET table not found");
+            crate::warn!("HPET table not found");
         }
 
         drop(rsdt);

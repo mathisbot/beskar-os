@@ -45,8 +45,9 @@ fn test1() {
     let core_id = crate::locals!().core_id();
 
     loop {
-        log::info!("Hello, thread 1 on core {}! counter={}", core_id, counter);
+        crate::info!("Hello, thread 1 on core {}! counter={}", core_id, counter);
         counter += 1;
+        crate::time::wait_ms(500);
     }
 }
 
@@ -55,8 +56,9 @@ fn test2() {
     let core_id = crate::locals!().core_id();
 
     loop {
-        log::info!("Hello, thread 2 on core {}! counter={}", core_id, counter);
+        crate::info!("Hello, thread 2 on core {}! counter={}", core_id, counter);
         counter += 1;
+        crate::time::wait_ms(500);
     }
 }
 
