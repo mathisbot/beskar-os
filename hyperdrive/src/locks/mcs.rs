@@ -159,12 +159,13 @@ impl<T> McsLock<T> {
         f(&mut guard)
     }
 
+    #[allow(clippy::mut_from_ref)]
     /// Force access to the data.
     ///
     /// ## Safety
     ///
     /// Caller is responsible for ensuring there are no data races.
-    pub unsafe fn force_lock<'s>(&'s self) -> &'s mut T {
+    pub unsafe fn force_lock(&self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
 }
@@ -359,13 +360,14 @@ impl<T> MUMcsLock<T> {
         self.lock_if_init(&mut node).map(|mut guard| f(&mut guard))
     }
 
+    #[allow(clippy::mut_from_ref)]
     /// Force access to the data.
     ///
     /// ## Safety
     ///
     /// Inner lock must be initialized.
     /// Caller is responsible for ensuring there are no data races.
-    pub unsafe fn force_lock<'s>(&'s self) -> &'s mut T {
+    pub unsafe fn force_lock(&self) -> &mut T {
         unsafe { self.inner_lock.force_lock().assume_init_mut() }
     }
 }
