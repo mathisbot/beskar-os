@@ -45,6 +45,7 @@ Standard output will be filled with early logging info, such as memory initializ
 
 Other useful parameters:
 - `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.
+- If you're not interested in graphics (for debug purposes) replace `-serial stdio` by `-nographics`.
 
 ### Running on baremetal
 

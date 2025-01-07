@@ -24,9 +24,9 @@ pub fn init() {
     PCI_HANDLER.with_locked(|handler| {
         handler.update_devices();
         if handler.devices.is_empty() {
-            log::warn!("No PCI devices found");
+            crate::warn!("No PCI devices found");
         } else {
-            log::debug!("Found {} PCI devices", handler.devices.len());
+            crate::debug!("Found {} PCI devices", handler.devices.len());
         }
     });
 }

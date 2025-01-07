@@ -241,7 +241,7 @@ extern "C" fn kap_entry() -> ! {
 
     ap_init();
 
-    log::debug!("AP {} started", locals!().core_id());
+    crate::debug!("AP {} started", locals!().core_id());
 
     crate::boot::enter_kmain()
 }

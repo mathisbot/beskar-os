@@ -14,7 +14,6 @@ use x86_64::{
     },
 };
 
-use crate::{serdebug, serwarn};
 use hyperdrive::locks::mcs::{MUMcsLock, McsNode};
 
 use super::page_table;
@@ -34,7 +33,7 @@ pub fn init(regions: &[MemoryRegion]) {
     // FIXME: Two stages init for dynamic sizing?
     assert!(usable_regions > 0, "No usable memory regions found");
     if usable_regions >= MAX_MEMORY_REGIONS {
-        serwarn!(
+        crate::warn!(
             "[WARN ] Too many usable memory regions, using only the first {}",
             MAX_MEMORY_REGIONS
         );
@@ -42,7 +41,7 @@ pub fn init(regions: &[MemoryRegion]) {
 
     let ranges = MemoryRanges::<MAX_MEMORY_REGIONS>::from_regions(regions);
 
-    serdebug!("Free memory: {} MiB", ranges.sum() / 1_048_576);
+    crate::info!("Free memory: {} MiB", ranges.sum() / 1_048_576);
 
     let mut frallocator = FrameAllocator {
         memory_ranges: ranges,

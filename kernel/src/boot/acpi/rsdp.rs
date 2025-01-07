@@ -65,7 +65,7 @@ impl Rsdp {
         // for a bit to read the data and validate the checksum.
         let rsdp = match rsdp_revision {
             0 => {
-                log::warn!(
+                crate::warn!(
                     "ACPI 2.0 not supported, falling back to ACPI 1.0. Some features may not be available"
                 );
                 super::ACPI_REVISION.store(AcpiRevision::V1);

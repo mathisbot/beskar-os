@@ -2,8 +2,7 @@ use noto_sans_mono_bitmap::{
     FontWeight, RasterHeight, RasterizedChar, get_raster, get_raster_width,
 };
 
-use crate::screen::{self, Window, pixel::PixelFormat};
-use hyperdrive::locks::mcs::McsNode;
+use crate::screen::{self, pixel::PixelFormat};
 
 const LINE_SPACING: usize = 2;
 const LETTER_SPACING: usize = 0;
@@ -22,27 +21,20 @@ fn get_raster_backed(c: char) -> RasterizedChar {
 }
 
 /// Allows logging text to a pixel-based framebuffer.
-pub struct WindowWriter {
-    window: Window,
+pub struct ScreenWriter {
+    screen_info: screen::Info,
     x: usize,
     y: usize,
 }
 
-impl Drop for WindowWriter {
-    fn drop(&mut self) {
-        let screen = screen::get_screen();
-        unsafe { screen.destroy_window(&self.window) };
-    }
-}
-
-impl WindowWriter {
+impl ScreenWriter {
     #[must_use]
     #[inline]
-    pub const fn new(window: Window) -> Self {
+    pub fn new() -> Self {
         Self {
-            window,
-            x: BORDER_PADDING,
-            y: BORDER_PADDING,
+            screen_info: screen::with_screen(|screen| screen.info()),
+            x: 0,
+            y: 0,
         }
     }
 
@@ -57,47 +49,31 @@ impl WindowWriter {
         self.x = BORDER_PADDING;
     }
 
-    pub fn clear(&mut self) {
+    fn clear_screen(&mut self, buffer: &mut [u8]) {
         self.x = BORDER_PADDING;
         self.y = BORDER_PADDING;
-        let mut node = McsNode::new();
-        self.window.buffer_mut(&mut node).fill(0);
+        buffer.fill(0);
     }
 
     /// Writes a single char to the framebuffer.
     ///
     /// Handles control characters (newline and carriage return).
-    fn write_char(&mut self, c: char) {
+    fn write_char(&mut self, buffer: &mut [u8], c: char) {
         match c {
             '\n' => self.newline(),
             '\r' => self.carriage_return(),
             c => {
-                if self.x + CHAR_WIDTH + BORDER_PADDING >= self.window.width() {
+                if self.x + CHAR_WIDTH + BORDER_PADDING >= self.screen_info.width {
                     self.newline();
                 }
                 if self.y + CHAR_HEIGHT.val() + LINE_SPACING + BORDER_PADDING
-                    >= self.window.height()
+                    >= self.screen_info.height
                 {
                     // TODO: Clear or scroll up ?
-                    // let offset = self.info.stride * (CHAR_HEIGHT.val() + LINE_SPACING) * self.info.bytes_per_pixel;
-                    // unsafe {
-                    //     core::ptr::copy(
-                    //         self.raw_framebuffer
-                    //             .as_ptr()
-                    //             .add(offset),
-                    //         self.raw_framebuffer.as_mut_ptr(),
-                    //         self.info.size - offset,
-                    //     )
-                    // };
-                    // self.carriage_return();
-                    // self.y -= CHAR_HEIGHT.val() + LINE_SPACING;
-                    self.clear();
+                    self.clear_screen(buffer);
                 }
 
                 let rasterized_char = get_raster_backed(c);
-
-                let mut node = McsNode::new();
-                let mut raw_framebuffer = self.window.buffer_mut(&mut node);
 
                 for (v, row) in rasterized_char.raster().iter().enumerate() {
                     for (u, byte) in row.iter().enumerate() {
@@ -105,7 +81,7 @@ impl WindowWriter {
                         if *byte == 0 {
                             continue;
                         }
-                        self.write_pixel(&mut raw_framebuffer, self.x + u, self.y + v, *byte);
+                        self.write_pixel(buffer, self.x + u, self.y + v, *byte);
                     }
                 }
                 self.x += rasterized_char.width() + LETTER_SPACING;
@@ -114,7 +90,7 @@ impl WindowWriter {
     }
 
     fn write_pixel(&self, raw_framebuffer: &mut [u8], x: usize, y: usize, intensity: u8) {
-        let color = match self.window.pixel_format() {
+        let color = match self.screen_info.pixel_format {
             PixelFormat::Rgb | PixelFormat::Bgr => [intensity, intensity, intensity, 0],
             // PixelFormat::Bitmask(bitmask) => {
             //     // Intensity is thown away
@@ -129,23 +105,22 @@ impl WindowWriter {
             // }
         };
 
-        let bytes_per_pixel = self.window.bytes_per_pixel();
-        let byte_offset = (y * self.window.width() + x) * bytes_per_pixel;
+        let bytes_per_pixel = self.screen_info.bytes_per_pixel;
+        let byte_offset = (y * self.screen_info.stride + x) * bytes_per_pixel;
 
         raw_framebuffer[byte_offset..(byte_offset + bytes_per_pixel)]
             .copy_from_slice(&color[..bytes_per_pixel]);
     }
-
-    pub const fn window(&self) -> &Window {
-        &self.window
-    }
 }
 
-impl core::fmt::Write for WindowWriter {
+impl core::fmt::Write for ScreenWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for c in s.chars() {
-            self.write_char(c);
-        }
+        screen::with_screen(|screen| {
+            let buffer = screen.buffer_mut();
+            for c in s.chars() {
+                self.write_char(buffer, c);
+            }
+        });
         Ok(())
     }
 }
