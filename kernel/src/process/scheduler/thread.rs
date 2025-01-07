@@ -9,6 +9,9 @@ use x86_64::registers::rflags::RFlags;
 
 use super::{super::Process, priority::Priority};
 
+/// The minimum amount of stack space that must be left unused on thread creation.
+const MINIMUM_LEFTOVER_STACK: usize = 0x1000; // 4 KiB
+
 pub struct Thread {
     /// The unique identifier of the thread.
     id: ThreadId,
@@ -72,9 +75,10 @@ impl Thread {
         mut stack: Vec<u8>,
         entry_point: *const (),
     ) -> Self {
-        let mut stack_ptr = stack.as_ptr() as usize + stack.len(); // Stack grows downwards
+        let mut stack_ptr = stack.as_ptr() as usize; // Stack grows downwards
 
-        Self::setup_stack(&mut stack_ptr, &mut stack, entry_point);
+        let stack_unused = Self::setup_stack(stack_ptr, &mut stack, entry_point);
+        stack_ptr += stack_unused; // Move stack pointer to the end of the stack
 
         // FIXME: Stack doesn't have guard page
 
@@ -89,20 +93,25 @@ impl Thread {
     }
 
     /// Setup the stack and move stack pointer to the end of the stack.
-    fn setup_stack(stack_ptr: &mut usize, stack: &mut [u8], entry_point: *const ()) {
+    fn setup_stack(stack_ptr: usize, stack: &mut [u8], entry_point: *const ()) -> usize {
+        // Can be used to detect stack overflow
         stack.fill(0xCD);
-        let stack_len = stack.len();
+
+        let mut stack_bottom = stack.len();
+        assert!(
+            stack_bottom >= MINIMUM_LEFTOVER_STACK + 19 * size_of::<usize>(),
+            "Stack too small"
+        );
 
         // TODO: Write a custom thread_end function at the end of the stack
 
         // Push the return address
         let entry_point_bytes = (entry_point as usize).to_ne_bytes();
-        stack[stack_len - size_of::<usize>()..stack_len].copy_from_slice(&entry_point_bytes);
-        *stack_ptr -= size_of::<usize>();
+        stack[stack_bottom - size_of::<usize>()..stack_bottom].copy_from_slice(&entry_point_bytes);
+        stack_bottom -= size_of::<usize>();
 
         // Push the thread registers
-        *stack_ptr -= 18 * size_of::<usize>(); // 18 QWORD Registers
-        let rsp = u64::try_from(*stack_ptr).unwrap();
+        let rsp = u64::try_from(stack_ptr).unwrap();
         let thread_regs = ThreadRegisters {
             rflags: (RFlags::IOPL_LOW | RFlags::INTERRUPT_FLAG).bits(),
             rsp,
@@ -113,8 +122,11 @@ impl Thread {
         debug_assert_eq!(size_of::<ThreadRegisters>(), 144);
         let thread_regs_bytes =
             unsafe { core::mem::transmute::<ThreadRegisters, [u8; 144]>(thread_regs) };
-        stack[stack_len - 19 * size_of::<usize>()..stack_len - size_of::<usize>()]
-            .copy_from_slice(&thread_regs_bytes);
+        stack[stack_bottom - 144..stack_bottom].copy_from_slice(&thread_regs_bytes);
+        stack_bottom -= 144;
+
+        debug_assert!(stack_bottom >= MINIMUM_LEFTOVER_STACK);
+        stack_bottom
     }
 
     #[must_use]

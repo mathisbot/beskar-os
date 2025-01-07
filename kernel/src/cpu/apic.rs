@@ -165,6 +165,11 @@ impl LocalApic {
     pub fn send_eoi(&mut self) {
         unsafe { self.base.byte_add(0xB0).write(0) };
     }
+
+    #[must_use]
+    pub const fn base(&self) -> Volatile<u32> {
+        self.base
+    }
 }
 
 /// Ensures that PIC 8259 is disabled.

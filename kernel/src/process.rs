@@ -41,19 +41,21 @@ pub fn init() {
 }
 
 fn test1() {
-    let mut counter = 0;
+    let mut counter = 0_u32;
+    let core_id = crate::locals!().core_id();
 
     loop {
-        log::debug!("Hello, thread 1! counter={}", counter);
+        log::info!("Hello, thread 1 on core {}! counter={}", core_id, counter);
         counter += 1;
     }
 }
 
 fn test2() {
-    let mut counter = 0;
+    let mut counter = 0_u32;
+    let core_id = crate::locals!().core_id();
 
     loop {
-        log::debug!("Hello, thread 2! counter={}", counter);
+        log::info!("Hello, thread 2 on core {}! counter={}", core_id, counter);
         counter += 1;
     }
 }
