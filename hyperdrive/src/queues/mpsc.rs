@@ -217,7 +217,11 @@ impl<T: Queueable> MpscQueue<T> {
             return DequeueResult::InUse;
         }
 
-        let res = unsafe { self.dequeue_impl() };
+        let mut res = unsafe { self.dequeue_impl() };
+        // If we are being asked to retry, we try again once.
+        if matches!(res, DequeueResult::Retry) {
+            res = unsafe { self.dequeue_impl() };
+        }
 
         self.being_dequeued.store(false, Ordering::Release);
 

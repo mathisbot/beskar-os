@@ -158,6 +158,16 @@ impl<T> McsLock<T> {
         let mut guard = self.lock(&mut node);
         f(&mut guard)
     }
+
+    #[allow(clippy::mut_from_ref)]
+    /// Force access to the data.
+    ///
+    /// ## Safety
+    ///
+    /// Caller is responsible for ensuring there are no data races.
+    pub unsafe fn force_lock(&self) -> &mut T {
+        unsafe { &mut *self.data.get() }
+    }
 }
 
 impl Default for McsNode {
@@ -349,6 +359,17 @@ impl<T> MUMcsLock<T> {
         let mut node = McsNode::new();
         self.lock_if_init(&mut node).map(|mut guard| f(&mut guard))
     }
+
+    #[allow(clippy::mut_from_ref)]
+    /// Force access to the data.
+    ///
+    /// ## Safety
+    ///
+    /// Inner lock must be initialized.
+    /// Caller is responsible for ensuring there are no data races.
+    pub unsafe fn force_lock(&self) -> &mut T {
+        unsafe { self.inner_lock.force_lock().assume_init_mut() }
+    }
 }
 
 /// RAII guard for `MUMcsLock` lock.
@@ -397,6 +418,18 @@ mod tests {
             *value
         });
         assert_eq!(res, 42);
+    }
+
+    #[test]
+    fn test_mcs_force_lock() {
+        let lock = McsLock::new(42);
+
+        let mut node = McsNode::new();
+        let guard = lock.lock(&mut node);
+
+        let value = unsafe { *lock.force_lock() };
+
+        assert_eq!(*guard, value);
     }
 
     #[test]

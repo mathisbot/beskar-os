@@ -14,6 +14,8 @@ pub mod priority;
 pub mod thread;
 
 /// The time quantum for the scheduler, in milliseconds.
+///
+/// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
 pub const SCHEDULER_QUANTUM_MS: u32 = 100;
 
 // Because scheduler will be playing with context switching, we cannot acquire locks.
@@ -39,6 +41,18 @@ struct ContextSwitch {
     old_stack: *mut usize,
     new_stack: *const usize,
     cr3: usize,
+}
+
+impl ContextSwitch {
+    #[inline]
+    /// Performs the context switch.
+    ///
+    /// ## Safety
+    ///
+    /// See `kernel::cpu::context::context_switch`.
+    unsafe fn perform(&self) {
+        unsafe { crate::cpu::context::context_switch(self.old_stack, self.new_stack, self.cr3) };
+    }
 }
 
 pub struct Scheduler<Q: priority::ThreadQueue> {
@@ -89,16 +103,17 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
         &self.current_priority
     }
 
+    #[inline]
+    pub fn change_current_thread_priority(&self, new_priority: priority::Priority) {
+        self.current_priority.store(new_priority, Ordering::Relaxed);
+    }
+
     #[must_use]
     /// Changes the internal state of the scheduler to the next thread.
     ///
-    /// This function does not change the context or else, but will disable interrupts
+    /// This function does not change the context, but will disable interrupts
     /// if scheduling was successful.
-    ///
-    /// ## Safety
-    ///
-    /// Interrupts must be disabled when calling this function.
-    unsafe fn reschedule(&mut self) -> Option<ContextSwitch> {
+    fn reschedule(&mut self) -> Option<ContextSwitch> {
         static IN_RESCHEDULE: AtomicBool = AtomicBool::new(false);
 
         // We cannot acquire locks, so we imitate one with an `AtomicBool`.
@@ -109,6 +124,9 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
+            // FIXME: This solution is not optimal for multiple cores:
+            // As AP start at the same time, they will all try to reschedule at the same time.
+            // Only one AP will then be able to reschedule.
             return None;
         }
 
@@ -152,7 +170,6 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
     }
 }
 
-#[allow(clippy::branches_sharing_code)]
 /// Reschedules the scheduler.
 ///
 /// ## Safety
@@ -160,42 +177,22 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
 /// This function must only be called inside of the timer interrupt handler,
 /// and EOI is sent to the APIC in the function.
 pub(crate) unsafe fn reschedule() {
-    // TODO: Handle multiple cores
-    // Maybe a per-core scheduler?
-    // Otherwise, how to handle initialization of kernel thread on AP cores?
-    if locals!().core_id() != 0 {
-        locals!()
-            .lapic()
-            .with_locked(crate::cpu::apic::LocalApic::send_eoi);
-        return;
-    };
-
     // Safety:
     // Interrupts are disabled at the start of the function.
     // Data races are avoided by the `Scheduler::reschedule` function.
     // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]
-    if let Some(ContextSwitch {
-        old_stack,
-        new_stack,
-        cr3,
-    }) = unsafe { SCHEDULER.as_mut().unwrap().reschedule() }
-    {
-        // We cannot send EOI later, as we are about to switch context.
-        locals!()
-            .lapic()
-            .with_locked(crate::cpu::apic::LocalApic::send_eoi);
+    let rescheduling_result = unsafe { SCHEDULER.as_mut().unwrap().reschedule() };
 
+    // Safety:
+    // We are only writing a single `u32` to MMIO.
+    // Also, APIC is initialized if the scheduler is initialized.
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+
+    if let Some(context_switch) = rescheduling_result {
         // Safety:
         // Interrupts are indeed disabled at the start of the function.
-        unsafe {
-            crate::cpu::context::context_switch(old_stack, new_stack, cr3);
-        }
-    } else {
-        // Scheduler has failed, so we just send EOI.
-        locals!()
-            .lapic()
-            .with_locked(crate::cpu::apic::LocalApic::send_eoi);
+        unsafe { context_switch.perform() };
     }
 }
 
@@ -224,4 +221,16 @@ pub fn set_scheduling(enable: bool) {
             timer::Mode::Inactive
         });
     });
+}
+
+pub fn change_current_thread_priority(priority: priority::Priority) {
+    #[allow(static_mut_refs)]
+    unsafe { SCHEDULER.as_ref() }
+        .unwrap()
+        .change_current_thread_priority(priority);
+}
+
+pub fn exit_current_thread() {
+    #[allow(static_mut_refs)]
+    unsafe { SCHEDULER.as_ref() }.unwrap().exit_current_thread();
 }
