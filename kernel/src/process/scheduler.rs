@@ -16,7 +16,7 @@ pub mod thread;
 /// The time quantum for the scheduler, in milliseconds.
 ///
 /// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
-pub const SCHEDULER_QUANTUM_MS: u32 = 100;
+pub const SCHEDULER_QUANTUM_MS: u32 = 60;
 
 // Because scheduler will be playing with context switching, we cannot acquire locks.
 // Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.

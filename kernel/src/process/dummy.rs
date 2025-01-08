@@ -20,6 +20,7 @@ pub fn fibonacci() {
         a = b;
         b = next;
         n += 1;
+        crate::time::wait_ms(100);
     }
 }
 
@@ -33,7 +34,7 @@ pub fn counter() {
             counter
         );
         counter = counter.wrapping_add(1);
-        crate::time::wait_ms(500);
+        crate::time::wait_ms(1_000);
     }
 }
 

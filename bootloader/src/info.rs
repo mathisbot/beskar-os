@@ -1,6 +1,6 @@
 use x86_64::{PhysAddr, VirtAddr};
 
-use crate::FrameBuffer;
+use crate::{FrameBuffer, PhysicalFrameBuffer};
 
 /// This structure represents the information that the bootloader passes to the kernel.
 #[derive(Debug)]
@@ -73,7 +73,7 @@ pub struct TlsTemplate {
 #[derive(Debug)]
 pub struct EarlySystemInfo {
     /// Framebuffer for screen output.
-    pub framebuffer: FrameBuffer,
+    pub framebuffer: PhysicalFrameBuffer,
     /// The address of the `RSDP`, used to find the ACPI tables (if reported).
     pub rsdp_paddr: Option<x86_64::PhysAddr>,
     /// Number of CPU cores in the system.

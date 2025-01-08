@@ -58,14 +58,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     crate::debug!("Booting on BSP");
 
     // TODO: Get framebuffer from PCI ?
-    let screen_info = framebuffer.info().into();
-    screen::init(framebuffer.buffer_mut(), screen_info);
-    crate::info!(
-        "Screen initialized with size: {}x{}",
-        screen_info.width,
-        screen_info.height
-    );
-
+    screen::init(framebuffer);
     crate::log::init_screen();
 
     cpu::init();

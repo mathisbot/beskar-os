@@ -2,7 +2,7 @@ use noto_sans_mono_bitmap::{
     FontWeight, RasterHeight, RasterizedChar, get_raster, get_raster_width,
 };
 
-use crate::screen::{self, pixel::PixelFormat};
+use crate::screen::{self, pixel::Pixel};
 
 const LINE_SPACING: usize = 2;
 const LETTER_SPACING: usize = 0;
@@ -49,7 +49,7 @@ impl ScreenWriter {
         self.x = BORDER_PADDING;
     }
 
-    fn clear_screen(&mut self, buffer: &mut [u8]) {
+    fn clear_screen(&mut self, buffer: &mut [u32]) {
         self.x = BORDER_PADDING;
         self.y = BORDER_PADDING;
         buffer.fill(0);
@@ -58,7 +58,7 @@ impl ScreenWriter {
     /// Writes a single char to the framebuffer.
     ///
     /// Handles control characters (newline and carriage return).
-    fn write_char(&mut self, buffer: &mut [u8], c: char) {
+    fn write_char(&mut self, buffer: &mut [u32], c: char) {
         match c {
             '\n' => self.newline(),
             '\r' => self.carriage_return(),
@@ -77,11 +77,8 @@ impl ScreenWriter {
 
                 for (v, row) in rasterized_char.raster().iter().enumerate() {
                     for (u, byte) in row.iter().enumerate() {
-                        // FIXME: Better skip black pixels
-                        if *byte == 0 {
-                            continue;
-                        }
-                        self.write_pixel(buffer, self.x + u, self.y + v, *byte);
+                        let pixel = Pixel::new(self.screen_info.pixel_format, *byte, *byte, *byte);
+                        self.write_pixel(buffer, self.x + u, self.y + v, pixel.into());
                     }
                 }
                 self.x += rasterized_char.width() + LETTER_SPACING;
@@ -89,30 +86,13 @@ impl ScreenWriter {
         }
     }
 
-    fn write_pixel(&self, raw_framebuffer: &mut [u8], x: usize, y: usize, intensity: u8) {
-        let color = match self.screen_info.pixel_format {
-            PixelFormat::Rgb | PixelFormat::Bgr => [intensity, intensity, intensity, 0],
-            // PixelFormat::Bitmask(bitmask) => {
-            //     // Intensity is thown away
-            //     let is_on = intensity > u8::MAX / 2;
-
-            //     let mut color = 0_u32;
-            //     color |= if is_on { bitmask.red } else { 0 };
-            //     color |= if is_on { bitmask.green } else { 0 };
-            //     color |= if is_on { bitmask.blue } else { 0 };
-
-            //     color.to_ne_bytes()
-            // }
-        };
-
-        let bytes_per_pixel = self.screen_info.bytes_per_pixel;
-        let byte_offset = (y * self.screen_info.stride + x) * bytes_per_pixel;
-
-        raw_framebuffer[byte_offset..(byte_offset + bytes_per_pixel)]
-            .copy_from_slice(&color[..bytes_per_pixel]);
+    #[inline]
+    fn write_pixel(&self, raw_framebuffer: &mut [u32], x: usize, y: usize, pixel: u32) {
+        raw_framebuffer[y * self.screen_info.stride + x] = pixel;
     }
 }
 
+// TODO: Color support
 impl core::fmt::Write for ScreenWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         screen::with_screen(|screen| {

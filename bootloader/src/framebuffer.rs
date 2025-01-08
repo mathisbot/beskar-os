@@ -2,15 +2,25 @@ use noto_sans_mono_bitmap::{
     FontWeight, RasterHeight, RasterizedChar, get_raster, get_raster_width,
 };
 pub use uefi::proto::console::gop::PixelBitmask;
+use x86_64::{PhysAddr, VirtAddr};
 
 /// Represents a frambuffer.
+/// 
+/// This is the struct that is sent to the kernel.
 #[derive(Debug)]
 pub struct FrameBuffer {
-    buffer_start: u64,
+    buffer_start: VirtAddr,
     info: FrameBufferInfo,
 }
 
-impl FrameBuffer {
+#[derive(Debug)]
+/// Represents a framebuffer with physical addresses.
+pub struct PhysicalFrameBuffer {
+    pub start_addr: PhysAddr,
+    pub info: FrameBufferInfo,
+}
+
+impl PhysicalFrameBuffer {
     #[must_use]
     #[inline]
     /// Creates a new framebuffer instance.
@@ -18,11 +28,14 @@ impl FrameBuffer {
     /// ## Safety
     ///
     /// The given start address and info must describe a valid framebuffer.
-    pub const unsafe fn new(start_addr: u64, info: FrameBufferInfo) -> Self {
-        Self {
-            buffer_start: start_addr,
-            info,
-        }
+    pub const unsafe fn new(start_addr: PhysAddr, info: FrameBufferInfo) -> Self {
+        Self { start_addr, info }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const unsafe fn to_framebuffer(&self, virt_addr: VirtAddr) -> FrameBuffer {
+        unsafe { FrameBuffer::new(virt_addr, self.info) }
     }
 
     #[must_use]
@@ -30,8 +43,8 @@ impl FrameBuffer {
     /// Returns the start address of the framebuffer.
     ///
     /// You should always prefer to use the `buffer` method to access the framebuffer.
-    pub const fn buffer_start(&self) -> u64 {
-        self.buffer_start
+    pub const fn buffer_start(&self) -> PhysAddr {
+        self.start_addr
     }
 
     #[must_use]
@@ -43,16 +56,46 @@ impl FrameBuffer {
 
     #[must_use]
     #[inline]
-    /// Read the raw bytes of the framebuffer as a slice.
-    pub const fn buffer(&self) -> &[u8] {
-        unsafe { core::slice::from_raw_parts(self.buffer_start as *const u8, self.info().size) }
+    /// Access the raw bytes of the framebuffer as a mutable slice.
+    pub const fn buffer_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self.buffer_start().as_u64() as *mut u8,
+                self.info().size,
+            )
+        }
+    }
+}
+
+impl FrameBuffer {
+    #[must_use]
+    #[inline]
+    /// Creates a new framebuffer instance.
+    ///
+    /// ## Safety
+    ///
+    /// The given start address and info must describe a valid framebuffer.
+    pub const unsafe fn new(start_addr: VirtAddr, info: FrameBufferInfo) -> Self {
+        Self {
+            buffer_start: start_addr,
+            info,
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns layout and pixel format information of the framebuffer.
+    pub const fn info(&self) -> FrameBufferInfo {
+        self.info
     }
 
     #[must_use]
     #[inline]
     /// Access the raw bytes of the framebuffer as a mutable slice.
     pub const fn buffer_mut(&mut self) -> &mut [u8] {
-        unsafe { core::slice::from_raw_parts_mut(self.buffer_start as *mut u8, self.info().size) }
+        unsafe {
+            core::slice::from_raw_parts_mut(self.buffer_start.as_mut_ptr::<u8>(), self.info().size)
+        }
     }
 }
 
