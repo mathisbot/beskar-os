@@ -103,6 +103,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 /// It will wait for all cores to be ready before starting the kernel,
 /// i.e. entering `KERNEL_MAIN`.
 pub(crate) fn enter_kmain() -> ! {
+    // FIXME: Use `hyperdrive::sync::barrier::Barrier` instead of this fence
     KERNEL_MAIN_FENCE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 
     while KERNEL_MAIN_FENCE.load(core::sync::atomic::Ordering::Acquire)

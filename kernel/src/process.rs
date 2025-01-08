@@ -1,14 +1,13 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use alloc::{
-    boxed::Box,
     string::{String, ToString},
     sync::Arc,
 };
-use scheduler::priority;
 
 use crate::mem::address_space::AddressSpace;
 
+pub mod dummy;
 pub mod scheduler;
 
 pub fn init() {
@@ -24,42 +23,12 @@ pub fn init() {
 
     unsafe { scheduler::init(current_thread) };
 
-    let test_thread = scheduler::thread::Thread::new(
-        kernel_process.clone(),
-        priority::Priority::Normal,
-        alloc::vec![0; 1024 * 256], // 256 KiB
-        test1 as *const (),
-    );
-    scheduler::spawn_thread(Box::pin(test_thread));
-    let test_thread = scheduler::thread::Thread::new(
+    scheduler::spawn_thread(alloc::boxed::Box::pin(scheduler::thread::Thread::new(
         kernel_process,
-        priority::Priority::Normal,
-        alloc::vec![0; 1024 * 256], // 256 KiB
-        test2 as *const (),
-    );
-    scheduler::spawn_thread(Box::pin(test_thread));
-}
-
-fn test1() {
-    let mut counter = 0_u32;
-    let core_id = crate::locals!().core_id();
-
-    loop {
-        crate::info!("Hello, thread 1 on core {}! counter={}", core_id, counter);
-        counter += 1;
-        crate::time::wait_ms(500);
-    }
-}
-
-fn test2() {
-    let mut counter = 0_u32;
-    let core_id = crate::locals!().core_id();
-
-    loop {
-        crate::info!("Hello, thread 2 on core {}! counter={}", core_id, counter);
-        counter += 1;
-        crate::time::wait_ms(500);
-    }
+        scheduler::priority::Priority::Low,
+        alloc::vec![0; 1024],
+        dummy::idle as _,
+    )));
 }
 
 pub struct Process {

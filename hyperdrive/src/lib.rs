@@ -8,4 +8,5 @@
 pub mod locks;
 pub mod once;
 pub mod queues;
+pub mod sync;
 pub mod volatile;

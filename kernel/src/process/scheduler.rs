@@ -196,6 +196,21 @@ pub(crate) unsafe fn reschedule() {
     }
 }
 
+#[must_use]
+/// Returns the current process.
+///
+/// ## Safety
+///
+/// Scheduling must be disabled.
+// TODO: Process tree?
+pub unsafe fn current_process() -> Arc<Process> {
+    // FIXME: Find a workaround for static mutable references.
+    #[allow(static_mut_refs)]
+    unsafe {
+        SCHEDULER.as_mut().unwrap().current_process()
+    }
+}
+
 pub fn spawn_thread(thread: Pin<Box<Thread>>) {
     // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]

@@ -5,7 +5,8 @@
 #[cfg(not(target_arch = "x86_64"))]
 compile_error!("BeskarOS kernel only supports x86_64 architecture");
 
-use kernel::locals;
+use hyperdrive::{once::Once, sync::barrier::Barrier};
+use kernel::{locals, process::scheduler};
 use x86_64::instructions::hlt;
 
 kernel::kernel_main!(kmain);
@@ -44,6 +45,41 @@ fn kmain() -> ! {
 
     // TODO: Start user-space processes
     // (GUI, ...)
+    static BARRIER: Once<Barrier> = Once::uninit();
+    BARRIER.call_once(|| Barrier::new(locals::get_ready_core_count().into()));
+
+    scheduler::set_scheduling(false);
+    kernel::debug!(
+        "Core ID: {} TOTAL: {} is LOCKING",
+        locals!().core_id(),
+        locals::get_ready_core_count()
+    );
+    BARRIER.get().unwrap().wait();
+
+    if locals!().core_id() == 0 {
+        use kernel::process::{
+            dummy,
+            scheduler::{self, priority::Priority, thread::Thread},
+        };
+        extern crate alloc;
+
+        kernel::debug!("Spawning threads");
+
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            unsafe { scheduler::current_process() },
+            Priority::Normal,
+            alloc::vec![0; 1024*256],
+            dummy::fibonacci as *const (),
+        )));
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            unsafe { scheduler::current_process() },
+            Priority::Normal,
+            alloc::vec![0; 1024*256],
+            dummy::counter as *const (),
+        )));
+    }
+    BARRIER.get().unwrap().wait();
+    scheduler::set_scheduling(true);
 
     // TODO: Stop this thread from being scheduled
 

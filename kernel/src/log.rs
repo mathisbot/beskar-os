@@ -55,14 +55,14 @@ macro_rules! debug {
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        $crate::log::log(format_args!("[INFO] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[INFO ] {}\n", format_args!($($arg)*)));
     };
 }
 
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        $crate::log::log(format_args!("[WARN] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[WARN ] {}\n", format_args!($($arg)*)));
     };
 }
 

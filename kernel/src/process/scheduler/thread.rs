@@ -10,7 +10,7 @@ use x86_64::registers::rflags::RFlags;
 use super::{super::Process, priority::Priority};
 
 /// The minimum amount of stack space that must be left unused on thread creation.
-const MINIMUM_LEFTOVER_STACK: usize = 0x1000; // 4 KiB
+const MINIMUM_LEFTOVER_STACK: usize = 0x100; // 256 bytes
 
 pub struct Thread {
     /// The unique identifier of the thread.
@@ -69,7 +69,7 @@ impl Thread {
 
     #[must_use]
     #[inline]
-    pub(crate) fn new(
+    pub fn new(
         root_proc: Arc<Process>,
         priority: Priority,
         mut stack: Vec<u8>,
