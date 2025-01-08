@@ -391,7 +391,9 @@ fn create_boot_info(
             memory_regions,
             // Framebuffer in the kernel has to be accessed using the virtual address found in the mappings
             // instead of the physical address.
-            framebuffer: system_info.framebuffer.to_framebuffer(mappings.framebuffer()),
+            framebuffer: system_info
+                .framebuffer
+                .to_framebuffer(mappings.framebuffer()),
             recursive_index: u16::from(mappings.recursive_index()),
             rsdp_paddr: system_info.rsdp_paddr.map(x86_64::PhysAddr::as_u64), // RSDP address is physical because it is not mapped
             kernel_paddr: mappings.kernel_addr(),

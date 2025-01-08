@@ -5,7 +5,7 @@ pub use uefi::proto::console::gop::PixelBitmask;
 use x86_64::{PhysAddr, VirtAddr};
 
 /// Represents a frambuffer.
-/// 
+///
 /// This is the struct that is sent to the kernel.
 #[derive(Debug)]
 pub struct FrameBuffer {
@@ -34,6 +34,11 @@ impl PhysicalFrameBuffer {
 
     #[must_use]
     #[inline]
+    /// Converts the framebuffer to a virtual framebuffer.
+    ///
+    /// ## Safety
+    ///
+    /// The given virtual address must be valid.
     pub const unsafe fn to_framebuffer(&self, virt_addr: VirtAddr) -> FrameBuffer {
         unsafe { FrameBuffer::new(virt_addr, self.info) }
     }

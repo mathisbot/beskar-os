@@ -18,10 +18,14 @@ impl From<Pixel> for u32 {
     fn from(pixel: Pixel) -> Self {
         match pixel.format {
             PixelFormat::Rgb => {
-                (u32::from(pixel.blue) << 16) | (u32::from(pixel.green) << 8) | u32::from(pixel.red)
+                (Self::from(pixel.blue) << 16)
+                    | (Self::from(pixel.green) << 8)
+                    | Self::from(pixel.red)
             }
             PixelFormat::Bgr => {
-                (u32::from(pixel.red) << 16) | (u32::from(pixel.green) << 8) | u32::from(pixel.blue)
+                (Self::from(pixel.red) << 16)
+                    | (Self::from(pixel.green) << 8)
+                    | Self::from(pixel.blue)
             }
         }
     }

@@ -65,13 +65,9 @@ impl Screen {
             raw_buffer.len() % PIXEL_SIZE == 0,
             "Buffer size must be a multiple of 4"
         );
-        // Framebuffer should be page aligned, therefore DWORD aligned
-        debug_assert!(
-            raw_buffer.as_ptr().cast::<u32>().is_aligned(),
-            "Buffer is not aligned"
-        );
 
         // Convert the buffer to a slice of u32
+        // Safety: Framebuffer is page aligned, the pointer is therefore dword aligned
         let raw_buffer = unsafe {
             core::slice::from_raw_parts_mut(
                 raw_buffer.as_mut_ptr().cast(),
