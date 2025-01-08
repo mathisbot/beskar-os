@@ -1,7 +1,15 @@
+// TODO: Remove
+#![allow(dead_code)]
+
+use core::ptr::NonNull;
+
 use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
 
 use crate::mem::page_alloc::pmap::PhysicalMapping;
-use hyperdrive::locks::mcs::MUMcsLock;
+use hyperdrive::{
+    locks::mcs::MUMcsLock,
+    volatile::{Access, Volatile},
+};
 
 static XHCI: MUMcsLock<Xhci> = MUMcsLock::uninit();
 
@@ -14,16 +22,13 @@ pub fn init(mut xhci_paddrs: impl Iterator<Item = PhysAddr>) {
 
     let xhci = Xhci::new(first_xhci_paddr);
     XHCI.init(xhci);
-
-    XHCI.with_locked(|xhci| {
-        crate::debug!("xHCI Capabilities Register: {:?}", xhci.cap);
-    });
 }
 
 #[derive(Debug)]
 /// See <https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf>
 pub struct Xhci {
     cap: CapabilitiesRegister,
+    op1: OperationalRegister,
     _physical_mapping: PhysicalMapping,
 }
 
@@ -35,86 +40,157 @@ impl Xhci {
             | PageTableFlags::NO_EXECUTE
             | PageTableFlags::NO_CACHE;
 
-        let physical_mapping = PhysicalMapping::new(paddr, 128, flags);
+        // At first, we only map enough memory to read the capabilities register
+        let physical_mapping = PhysicalMapping::new(paddr, CapabilitiesRegister::MIN_LENGTH, flags);
         let vaddr = physical_mapping.translate(paddr).unwrap();
 
         let cap = CapabilitiesRegister::new(vaddr);
+        let cap_length = usize::from(cap.cap_length());
+
+        // We can now map more memory to read the operational registers
+        let physical_mapping =
+            PhysicalMapping::new(paddr, cap_length + OperationalRegister::LENGTH, flags);
+
+        let op1 = OperationalRegister::new(vaddr + u64::try_from(cap_length).unwrap());
 
         Self {
             cap,
+            op1,
             _physical_mapping: physical_mapping,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 struct CapabilitiesRegister {
-    /// Offset 0x00
-    caplength: *mut u8,
-    // Offset 0x02
-    hci_version: *mut u16,
-    // Offset 0x04
-    hcs_params1: *mut u32,
-    // Offset 0x08
-    hcs_params2: *mut u32,
-    // Offset 0x0C
-    hcs_params3: *mut u32,
-    // Offset 0x10
-    hcc_params1: *mut u32,
-    // Offset 0x14
-    dboff: *mut u32,
-    // Offset 0x18
-    rtsoff: *mut u32,
-    // Offset 0x1C
-    hcc_params2: *mut u32,
-}
-
-impl core::fmt::Debug for CapabilitiesRegister {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("CapabilitiesRegister")
-            .field("caplength", unsafe { &*self.caplength })
-            .field("hci_version", unsafe { &*self.hci_version })
-            .field("hcs_params1", unsafe { &*self.hcs_params1 })
-            .field("hcs_params2", unsafe { &*self.hcs_params2 })
-            .field("hcs_params3", unsafe { &*self.hcs_params3 })
-            .field("hcc_params1", unsafe { &*self.hcc_params1 })
-            .field("dboff", unsafe { &*self.dboff })
-            .field("rtsoff", unsafe { &*self.rtsoff })
-            .field("hcc_params2", unsafe { &*self.hcc_params2 })
-            .finish()
-    }
+    base: Volatile<u32>,
 }
 
 impl CapabilitiesRegister {
+    pub const MIN_LENGTH: usize = 0x20;
+
+    const CAP_LENGTH: usize = 0x00;
+    const HCI_VERSION: usize = 0x02;
+    const HCS_PARAMS1: usize = 0x04;
+    const HCS_PARAMS2: usize = 0x08;
+    const HCS_PARAMS3: usize = 0x0C;
+    const HCC_PARAMS1: usize = 0x10;
+    const DBOFF: usize = 0x14;
+    const RTSOFF: usize = 0x18;
+    const HCC_PARAMS2: usize = 0x1C;
+
     #[must_use]
     pub const fn new(base: VirtAddr) -> Self {
-        let base_ptr = base.as_mut_ptr::<u32>();
+        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap(), Access::ReadOnly);
+        Self { base }
+    }
 
-        unsafe {
-            let caplength = base_ptr.cast::<u8>();
-            let hci_version = base_ptr.byte_add(0x02).cast::<u16>();
-            let hcs_params1 = base_ptr.byte_add(0x04);
-            let hcs_params2 = base_ptr.byte_add(0x08);
-            let hcs_params3 = base_ptr.byte_add(0x0C);
-            let hcc_params1 = base_ptr.byte_add(0x10);
-            let dboff = base_ptr.byte_add(0x14);
-            let rtsoff = base_ptr.byte_add(0x18);
-            let hcc_params2 = base_ptr.byte_add(0x1C);
+    #[must_use]
+    /// Offset of the first operational register from the base address
+    pub fn cap_length(&self) -> u8 {
+        unsafe { self.base.cast::<u8>().add(Self::CAP_LENGTH).read() }
+    }
 
-            // FIXME: This doesn't seem to stand when using the QEMU xHCI controller
-            // assert_ne!(hci_version.read(), 0, "xHCI version is 0");
+    #[must_use]
+    pub fn hci_version(&self) -> u16 {
+        unsafe { self.base.cast::<u16>().byte_add(Self::HCI_VERSION).read() }
+    }
 
-            Self {
-                caplength,
-                hci_version,
-                hcs_params1,
-                hcs_params2,
-                hcs_params3,
-                hcc_params1,
-                dboff,
-                rtsoff,
-                hcc_params2,
-            }
-        }
+    #[must_use]
+    pub fn hcs_params1(&self) -> u32 {
+        unsafe { self.base.byte_add(Self::HCS_PARAMS1).read() }
+    }
+
+    #[must_use]
+    pub fn hcs_params2(&self) -> u32 {
+        unsafe { self.base.byte_add(Self::HCS_PARAMS2).read() }
+    }
+
+    #[must_use]
+    pub fn hcs_params3(&self) -> u32 {
+        unsafe { self.base.byte_add(Self::HCS_PARAMS3).read() }
+    }
+
+    #[must_use]
+    pub fn hcc_params1(&self) -> u32 {
+        unsafe { self.base.byte_add(Self::HCC_PARAMS1).read() }
+    }
+
+    #[must_use]
+    /// Doorbell array offset
+    pub fn dboff(&self) -> u32 {
+        unsafe { self.base.byte_add(Self::DBOFF).read() }
+    }
+
+    #[must_use]
+    /// Runtime register space offset
+    pub fn rtsoff(&self) -> u32 {
+        unsafe { self.base.byte_add(Self::RTSOFF).read() }
+    }
+
+    #[must_use]
+    pub fn hcc_params2(&self) -> u32 {
+        unsafe { self.base.byte_add(Self::HCC_PARAMS2).read() }
+    }
+}
+
+#[derive(Debug)]
+struct OperationalRegister {
+    base: Volatile<u32>,
+}
+
+impl OperationalRegister {
+    pub const LENGTH: usize = 0x3C;
+
+    const COMMAND: usize = 0x00;
+    const STATUS: usize = 0x04;
+    const PAGE_SIZE: usize = 0x08;
+    const DEV_NOTIFICATION: usize = 0x14;
+    const CMD_RING: usize = 0x18;
+    const DCBAAP: usize = 0x30;
+    const CONFIGURE: usize = 0x38;
+
+    #[must_use]
+    pub const fn new(base: VirtAddr) -> Self {
+        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap(), Access::ReadWrite);
+        Self { base }
+    }
+
+    #[must_use]
+    pub fn command(&self) -> Volatile<u32> {
+        unsafe { self.base.byte_add(Self::COMMAND) }
+    }
+
+    #[must_use]
+    pub fn status(&self) -> Volatile<u32> {
+        unsafe { self.base.byte_add(Self::STATUS) }
+    }
+
+    #[must_use]
+    /// If bit `i` is set, the controller supports a page size of 2^(12 + i) bytes.
+    pub fn page_size(&self) -> Volatile<u32> {
+        unsafe { self.base.byte_add(Self::PAGE_SIZE) }
+    }
+
+    #[must_use]
+    pub fn dev_notification(&self) -> Volatile<u32> {
+        unsafe { self.base.byte_add(Self::DEV_NOTIFICATION) }
+    }
+
+    #[must_use]
+    /// Reading the command ring registor (or bits of it) provides '0'.
+    pub fn cmd_ring(&self) -> Volatile<u64> {
+        unsafe { self.base.cast::<u64>().byte_add(Self::CMD_RING) }
+    }
+
+    #[must_use]
+    pub fn dcbaap(&self) -> Volatile<u64> {
+        unsafe { self.base.cast::<u64>().byte_add(Self::DCBAAP) }
+    }
+
+    #[must_use]
+    pub fn configure(&self) -> Volatile<u32> {
+        unsafe { self.base.byte_add(Self::CONFIGURE) }
     }
 }
 
