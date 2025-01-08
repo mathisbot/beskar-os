@@ -76,7 +76,7 @@ impl Barrier {
             core::hint::spin_loop();
         }
 
-        // In theory, we could pass through the barrier a second time while th
+        // In theory, we could pass through the barrier a second time while the
         // barrier is being reset. We must wait for the passed counter to be reset
         // before we can continue.
         while self.passed.load(Ordering::Acquire) >= self.count {

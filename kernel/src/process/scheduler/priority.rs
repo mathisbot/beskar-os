@@ -78,7 +78,7 @@ impl From<Priority> for u8 {
 pub unsafe trait ThreadQueue {
     fn create(root_proc: Arc<Process>) -> Self;
     fn append(&mut self, thread: Pin<Box<Thread>>);
-    fn next(&mut self) -> Pin<Box<Thread>>;
+    fn next(&mut self) -> Option<Pin<Box<Thread>>>;
 }
 
 pub struct RoundRobinQueues {
@@ -135,16 +135,12 @@ unsafe impl ThreadQueue for RoundRobinQueues {
     }
 
     #[must_use]
-    fn next(&mut self) -> Pin<Box<Thread>> {
-        loop {
-            if let Some(thread) = match self.cycle_priority() {
-                Priority::Null => unreachable!(),
-                Priority::Low => self.low.dequeue(),
-                Priority::Normal => self.normal.dequeue(),
-                Priority::High => self.high.dequeue(),
-            } {
-                break thread;
-            }
+    fn next(&mut self) -> Option<Pin<Box<Thread>>> {
+        match self.cycle_priority() {
+            Priority::Null => unreachable!(),
+            Priority::Low => self.low.dequeue(),
+            Priority::Normal => self.normal.dequeue(),
+            Priority::High => self.high.dequeue(),
         }
     }
 }

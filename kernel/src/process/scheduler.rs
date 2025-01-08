@@ -133,7 +133,13 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
         x86_64::instructions::interrupts::disable();
 
         // Swap the current thread with the next one.
-        let mut new_thread = Pin::into_inner(self.queues.next());
+        let mut new_thread = Pin::into_inner(if let Some(new_thread) = self.queues.next() {
+            new_thread
+        } else {
+            IN_RESCHEDULE.store(false, Ordering::Release);
+            x86_64::instructions::interrupts::enable();
+            return None;
+        });
         core::mem::swap(self.current_thread.as_mut(), &mut new_thread);
         let mut old_thread = new_thread; // Yes...
 

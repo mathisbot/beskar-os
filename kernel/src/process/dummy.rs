@@ -6,7 +6,7 @@
 pub fn fibonacci() {
     let mut a = 0_usize;
     let mut b = 1_usize;
-    let mut n = 0_32;
+    let mut n = 0_u32;
 
     loop {
         crate::info!(

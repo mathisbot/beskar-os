@@ -19,16 +19,9 @@ pub fn init() {
 
     debug_assert!(kernel_process.address_space().is_active());
 
-    let current_thread = scheduler::thread::Thread::new_kernel(kernel_process.clone());
+    let current_thread = scheduler::thread::Thread::new_kernel(kernel_process);
 
     unsafe { scheduler::init(current_thread) };
-
-    scheduler::spawn_thread(alloc::boxed::Box::pin(scheduler::thread::Thread::new(
-        kernel_process,
-        scheduler::priority::Priority::Low,
-        alloc::vec![0; 1024],
-        dummy::idle as _,
-    )));
 }
 
 pub struct Process {

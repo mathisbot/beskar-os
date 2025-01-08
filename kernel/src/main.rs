@@ -35,6 +35,8 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
 ///
 /// BSP entry point (called by bootloader) is defined in `lib.rs`.
 fn kmain() -> ! {
+    static BARRIER: Once<Barrier> = Once::uninit();
+
     if locals!().core_id() == 0 {
         kernel::debug!(
             "Started kernel in {:.1?}",
@@ -45,7 +47,6 @@ fn kmain() -> ! {
 
     // TODO: Start user-space processes
     // (GUI, ...)
-    static BARRIER: Once<Barrier> = Once::uninit();
     BARRIER.call_once(|| Barrier::new(locals::get_ready_core_count().into()));
 
     scheduler::set_scheduling(false);
