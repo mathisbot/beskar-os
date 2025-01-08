@@ -8,7 +8,7 @@ static XHCI: MUMcsLock<Xhci> = MUMcsLock::uninit();
 pub fn init(mut xhci_paddrs: impl Iterator<Item = PhysAddr>) {
     // TODO: Support multiple xHCI controllers
     let Some(first_xhci_paddr) = xhci_paddrs.next() else {
-        log::warn!("No xHCI controller found");
+        crate::warn!("No xHCI controller found");
         return;
     };
 
@@ -16,7 +16,7 @@ pub fn init(mut xhci_paddrs: impl Iterator<Item = PhysAddr>) {
     XHCI.init(xhci);
 
     XHCI.with_locked(|xhci| {
-        log::debug!("xHCI Capabilities Register: {:?}", xhci.cap);
+        crate::debug!("xHCI Capabilities Register: {:?}", xhci.cap);
     });
 }
 

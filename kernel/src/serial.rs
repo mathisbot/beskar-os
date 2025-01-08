@@ -7,7 +7,7 @@
 
 use x86_64::instructions::port::Port;
 
-pub mod logging;
+pub mod com;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// I/O port-mapped UART

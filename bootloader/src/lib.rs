@@ -26,7 +26,9 @@ use xmas_elf::ElfFile;
 pub mod mem;
 
 mod framebuffer;
-pub use framebuffer::{FrameBuffer, FrameBufferInfo, FrameBufferWriter, PixelBitmask, PixelFormat};
+pub use framebuffer::{
+    FrameBuffer, FrameBufferInfo, FrameBufferWriter, PhysicalFrameBuffer, PixelBitmask, PixelFormat,
+};
 
 pub mod info;
 pub use info::{BootInfo, EarlySystemInfo};
@@ -261,14 +263,12 @@ fn make_mappings(
     debug!("GDT at {:#x}", gdt_frame.start_address().as_u64());
 
     let framebuffer_virt_addr = {
-        let start_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(
-            system_info.framebuffer.buffer_start(),
-        ));
-        let end_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(
+        let start_frame =
+            PhysFrame::<Size4KiB>::containing_address(system_info.framebuffer.buffer_start());
+        let end_frame = PhysFrame::<Size4KiB>::containing_address(
             system_info.framebuffer.buffer_start()
-                + u64::try_from(system_info.framebuffer.info().size).unwrap()
-                - 1,
-        ));
+                + (u64::try_from(system_info.framebuffer.info().size).unwrap() - 1),
+        );
 
         let start_page = Page::<Size4KiB>::from_start_address(
             level_4_entries
@@ -391,10 +391,9 @@ fn create_boot_info(
             memory_regions,
             // Framebuffer in the kernel has to be accessed using the virtual address found in the mappings
             // instead of the physical address.
-            framebuffer: FrameBuffer::new(
-                mappings.framebuffer.as_u64(),
-                system_info.framebuffer.info(),
-            ),
+            framebuffer: system_info
+                .framebuffer
+                .to_framebuffer(mappings.framebuffer()),
             recursive_index: u16::from(mappings.recursive_index()),
             rsdp_paddr: system_info.rsdp_paddr.map(x86_64::PhysAddr::as_u64), // RSDP address is physical because it is not mapped
             kernel_paddr: mappings.kernel_addr(),

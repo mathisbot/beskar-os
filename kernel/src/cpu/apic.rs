@@ -37,7 +37,7 @@ pub fn apic_id() -> u8 {
 pub fn init_lapic() {
     let x2apic_supported = cpuid::check_feature(cpuid::CpuFeature::X2APIC);
     if locals!().core_id() == 0 && !x2apic_supported {
-        log::warn!("x2APIC not supported");
+        crate::warn!("x2APIC not supported");
     }
 
     let lapic_paddr = crate::boot::acpi::ACPI
@@ -370,7 +370,7 @@ impl IoApic {
             //     // ???
             // }
             // self.set_redirection(iso.gsi(), iso.redirection());
-            log::warn!("Unhandled IOAPIC redirection: {:?}", iso);
+            crate::warn!("Unhandled IOAPIC redirection: {:?}", iso);
         }
 
         enable_disable_interrupts(true);

@@ -5,7 +5,8 @@
 #[cfg(not(target_arch = "x86_64"))]
 compile_error!("BeskarOS kernel only supports x86_64 architecture");
 
-use kernel::locals;
+use hyperdrive::{once::Once, sync::barrier::Barrier};
+use kernel::{locals, process::scheduler};
 use x86_64::instructions::hlt;
 
 kernel::kernel_main!(kmain);
@@ -14,15 +15,15 @@ kernel::kernel_main!(kmain);
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     x86_64::instructions::interrupts::disable();
 
-    kernel::sererror!("[PANIC]: Core {} {}", locals!().core_id(), panic_info);
-    log::error!(
+    kernel::error!("[PANIC]: Core {} {}", locals!().core_id(), panic_info);
+    kernel::error!(
         "[PANIC]: Core {} {}",
         locals!().core_id(),
         panic_info.message()
     );
     #[cfg(debug_assertions)]
     if let Some(location) = panic_info.location() {
-        log::error!("  at {}", location);
+        kernel::error!("  at {}", location);
     }
 
     loop {
@@ -34,22 +35,56 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
 ///
 /// BSP entry point (called by bootloader) is defined in `lib.rs`.
 fn kmain() -> ! {
+    static BARRIER: Once<Barrier> = Once::uninit();
+
     if locals!().core_id() == 0 {
-        if log::log_enabled!(log::Level::Debug) {
-            log::debug!(
-                "Started kernel in {:.1?}",
-                kernel::time::tsc::time_since_startup()
-            );
-        }
-        log::info!("Welcome to BeskarOS kernel!");
+        kernel::debug!(
+            "Started kernel in {:.1?}",
+            kernel::time::tsc::time_since_startup()
+        );
+        kernel::info!("Welcome to BeskarOS kernel!");
     }
 
     // TODO: Start user-space processes
     // (GUI, ...)
+    BARRIER.call_once(|| Barrier::new(locals::get_ready_core_count().into()));
+
+    scheduler::set_scheduling(false);
+    kernel::debug!(
+        "Core ID: {} TOTAL: {} is LOCKING",
+        locals!().core_id(),
+        locals::get_ready_core_count()
+    );
+    BARRIER.get().unwrap().wait();
+
+    if locals!().core_id() == 0 {
+        use kernel::process::{
+            dummy,
+            scheduler::{self, priority::Priority, thread::Thread},
+        };
+        extern crate alloc;
+
+        kernel::debug!("Spawning threads");
+
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            unsafe { scheduler::current_process() },
+            Priority::Normal,
+            alloc::vec![0; 1024*256],
+            dummy::fibonacci as *const (),
+        )));
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            unsafe { scheduler::current_process() },
+            Priority::Normal,
+            alloc::vec![0; 1024*256],
+            dummy::counter as *const (),
+        )));
+    }
+    BARRIER.get().unwrap().wait();
+    scheduler::set_scheduling(true);
 
     // TODO: Stop this thread from being scheduled
 
-    log::error!(
+    kernel::error!(
         "Kernel main function reached the end on core {}",
         locals!().core_id()
     );

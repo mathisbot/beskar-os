@@ -106,9 +106,9 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    log::error!("EXCEPTION: PAGE FAULT {:?}", error_code);
-    log::error!("Accessed Address: {:?}", Cr2::read());
-    log::error!("{:#?}", stack_frame);
+    crate::error!("EXCEPTION: PAGE FAULT {:?}", error_code);
+    crate::error!("Accessed Address: {:?}", Cr2::read());
+    crate::error!("{:#?}", stack_frame);
 
     panic!();
 }
@@ -143,7 +143,7 @@ macro_rules! panic_isr_with_errcode {
 macro_rules! info_isr {
     ($name:ident) => {
         extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
-            log::info!(
+            crate::info!(
                 "{} INTERRUPT on core {}",
                 stringify!($name),
                 locals!().core_id()
@@ -156,7 +156,7 @@ macro_rules! info_isr {
 macro_rules! info_isr_eoi {
     ($name:ident) => {
         extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
-            log::info!(
+            crate::info!(
                 "{} INTERRUPT on core {}",
                 stringify!($name),
                 locals!().core_id()

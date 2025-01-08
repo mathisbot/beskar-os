@@ -11,7 +11,7 @@ pub mod boot;
 pub mod cpu;
 pub mod io;
 pub mod locals;
-mod logging;
+pub mod log;
 mod mem;
 pub mod pci;
 pub mod process;

@@ -78,9 +78,8 @@ fn efi_entry() -> Status {
     #[cfg(debug_assertions)]
     let _ = boot::set_watchdog_timer(0, 0, None);
 
-    #[cfg(debug_assertions)]
     system::with_stdout(|stdout| {
-        let _ = stdout.output_string(cstr16!("Bootloader is starting...\n"));
+        let _ = stdout.output_string(cstr16!("BeskarOS bootloader is starting\n"));
     });
 
     // Initialize the framebuffer and the logger using GOP (almost infaillible)
@@ -227,7 +226,7 @@ fn enable_and_count_cores() -> u8 {
 /// ## Note
 ///
 /// The bootloader currently freezes the screen here if the screen only support `BltOnly` pixel format.
-fn create_framebuffer_logger() -> bootloader::FrameBuffer {
+fn create_framebuffer_logger() -> bootloader::PhysicalFrameBuffer {
     let mut gop = {
         // Starting from UEFI 2.0, loacting GOP cannot fail.
         let gop_handle = uefi::boot::get_handle_for_protocol::<GraphicsOutput>().unwrap();
@@ -306,7 +305,12 @@ fn create_framebuffer_logger() -> bootloader::FrameBuffer {
     // Safety:
     // The framebuffer address and information are valid because they are derived
     // from the GOP-provided framebuffer, which guarantees their correctness.
-    unsafe { bootloader::FrameBuffer::new(framebuffer.as_mut_ptr() as u64, framebuffer_info) }
+    unsafe {
+        bootloader::PhysicalFrameBuffer::new(
+            PhysAddr::new(framebuffer.as_mut_ptr() as u64),
+            framebuffer_info,
+        )
+    }
 }
 
 mod fs {
@@ -423,7 +427,7 @@ mod fs {
 
 fn create_page_tables(
     frame_allocator: &mut EarlyFrameAllocator,
-    framebuffer: &bootloader::FrameBuffer,
+    framebuffer: &bootloader::PhysicalFrameBuffer,
 ) -> bootloader::mem::PageTables {
     // All memory is identity mapped by UEFI
     let physical_offset = x86_64::VirtAddr::new(0);
@@ -465,7 +469,7 @@ fn create_page_tables(
         }
 
         // Copy indexes for framebuffer (which is not necessarily identity mapped)
-        let start_vaddr = VirtAddr::new(framebuffer.buffer_start());
+        let start_vaddr = VirtAddr::new(framebuffer.buffer_start().as_u64());
         let end_vaddr = start_vaddr + u64::try_from(framebuffer.info().size).unwrap();
         for p4_index in usize::from(start_vaddr.p4_index())..=usize::from(end_vaddr.p4_index()) {
             table[p4_index] = old_table[p4_index].clone();

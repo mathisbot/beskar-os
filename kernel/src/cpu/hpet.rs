@@ -430,9 +430,9 @@ pub fn init(hpet_info: &ParsedHpetTable) {
     let general_capabilities =
         GeneralCapabilities::new(PhysAddr::new(hpet_info.general_capabilities().address()));
     general_capabilities.validate(hpet_info);
-    log::debug!("HPET period: {} ps", general_capabilities.period() / 1_000);
+    crate::debug!("HPET period: {} ps", general_capabilities.period() / 1_000);
     if !hpet_info.count_size_capable() {
-        log::warn!("HPET count size not capable");
+        crate::warn!("HPET count size not capable");
     }
 
     let mut general_configuration =
@@ -475,7 +475,7 @@ pub fn init(hpet_info: &ParsedHpetTable) {
 
     // Enable HPET
     general_configuration.set_enable_cnf(true);
-    log::debug!("HPET enabled");
+    crate::debug!("HPET enabled");
 
     let hpet = Hpet {
         general_capabilities,

@@ -4,7 +4,7 @@ use x86_64::{
 };
 use xmas_elf::program::ProgramHeader;
 
-use crate::FrameBuffer;
+use crate::PhysicalFrameBuffer;
 
 /// Keeps track of used entries in the level 4 page table.
 pub struct Level4Entries([bool; 512]);
@@ -12,7 +12,7 @@ pub struct Level4Entries([bool; 512]);
 impl Level4Entries {
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn new(framebuffer: &FrameBuffer, max_phys_addr: u64) -> Self {
+    pub fn new(framebuffer: &PhysicalFrameBuffer, max_phys_addr: u64) -> Self {
         let mut usage = [false; 512];
 
         // Mark identity-mapped memory as used
@@ -28,7 +28,7 @@ impl Level4Entries {
         }
 
         // Mark framebuffer as used
-        let start = VirtAddr::new(framebuffer.buffer_start());
+        let start = VirtAddr::new(framebuffer.buffer_start().as_u64());
         let end = start + u64::try_from(framebuffer.info().size).unwrap() - 1;
 
         let start_page = Page::<Size4KiB>::containing_address(start);

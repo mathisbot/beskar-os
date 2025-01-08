@@ -252,7 +252,7 @@ impl Madt {
 
                     let local_nmi = unsafe { entry_start.cast::<LocalNmi>().read_unaligned() };
                     // TODO: Handle Local NMI.
-                    log::warn!("Unhandled Local NMI entry: {:?}", local_nmi);
+                    crate::warn!("Unhandled Local NMI entry: {:?}", local_nmi);
                 }
                 5 => {
                     assert_eq!(
@@ -287,7 +287,7 @@ impl Madt {
 
                     let x2apic_nmi = unsafe { entry_start.cast::<X2ApicNmi>().read_unaligned() };
                     // TODO: Handle Local x2APIC NMI Structure.
-                    log::warn!(
+                    crate::warn!(
                         "Unhandled Local x2APIC NMI Structure entry: {:?}",
                         x2apic_nmi
                     );
@@ -298,7 +298,7 @@ impl Madt {
                 }
                 _ => {
                     // We shouldn't panic here
-                    log::warn!(
+                    crate::warn!(
                         "Unknown MADT entry type: {}, skipping.",
                         entry_header.entry_type
                     );

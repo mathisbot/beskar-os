@@ -2,12 +2,12 @@ use core::sync::atomic::AtomicU8;
 
 use crate::{
     cpu::{self, apic, interrupts},
-    io, pci, process, screen, serdebug, serial, serinfo,
+    io, pci, process, screen,
 };
 use bootloader::BootInfo;
 use x86_64::PhysAddr;
 
-use crate::{locals, logging, mem, time};
+use crate::{locals, mem, time};
 
 pub mod acpi;
 
@@ -37,7 +37,7 @@ pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> !
 
     bsp_init(boot_info);
 
-    log::debug!("Starting up APs. Core count: {}", core_count);
+    crate::debug!("Starting up APs. Core count: {}", core_count);
 
     apic::ap::start_up_aps(core_count);
 
@@ -54,29 +54,21 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         ..
     } = boot_info;
 
-    // FIXME: Serial log everything?
-    serial::logging::init();
+    crate::log::init_serial();
+    crate::debug!("Booting on BSP");
+
+    // TODO: Get framebuffer from PCI ?
+    screen::init(framebuffer);
+    crate::log::init_screen();
 
     cpu::init();
 
-    serinfo!("BeskarOS kernel starting...");
+    crate::info!("BeskarOS kernel starting...");
 
     time::tsc::calibrate();
 
     mem::init(*recursive_index, memory_regions, *kernel_vaddr);
-    serinfo!("Memory initialized");
-
-    // TODO: Get framebuffer from PCI ?
-    let screen_info = framebuffer.info().into();
-    screen::init(framebuffer.buffer_mut(), screen_info);
-    serdebug!(
-        "Screen initialized with size: {}x{}",
-        screen_info.width,
-        screen_info.height
-    );
-
-    logging::init();
-    serinfo!("Screen logging initialized");
+    crate::info!("Memory initialized");
 
     locals::init();
 

@@ -16,7 +16,7 @@ pub mod thread;
 /// The time quantum for the scheduler, in milliseconds.
 ///
 /// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
-pub const SCHEDULER_QUANTUM_MS: u32 = 100;
+pub const SCHEDULER_QUANTUM_MS: u32 = 60;
 
 // Because scheduler will be playing with context switching, we cannot acquire locks.
 // Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
@@ -133,7 +133,13 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
         x86_64::instructions::interrupts::disable();
 
         // Swap the current thread with the next one.
-        let mut new_thread = Pin::into_inner(self.queues.next());
+        let mut new_thread = Pin::into_inner(if let Some(new_thread) = self.queues.next() {
+            new_thread
+        } else {
+            IN_RESCHEDULE.store(false, Ordering::Release);
+            x86_64::instructions::interrupts::enable();
+            return None;
+        });
         core::mem::swap(self.current_thread.as_mut(), &mut new_thread);
         let mut old_thread = new_thread; // Yes...
 
@@ -196,6 +202,21 @@ pub(crate) unsafe fn reschedule() {
     }
 }
 
+#[must_use]
+/// Returns the current process.
+///
+/// ## Safety
+///
+/// Scheduling must be disabled.
+// TODO: Process tree?
+pub unsafe fn current_process() -> Arc<Process> {
+    // FIXME: Find a workaround for static mutable references.
+    #[allow(static_mut_refs)]
+    unsafe {
+        SCHEDULER.as_mut().unwrap().current_process()
+    }
+}
+
 pub fn spawn_thread(thread: Pin<Box<Thread>>) {
     // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]
@@ -204,6 +225,9 @@ pub fn spawn_thread(thread: Pin<Box<Thread>>) {
     };
 }
 
+/// Sets the scheduling of the scheduler.
+///
+/// What this function really does is enabling the timer interrupt.
 pub fn set_scheduling(enable: bool) {
     use crate::cpu::apic::timer;
 
