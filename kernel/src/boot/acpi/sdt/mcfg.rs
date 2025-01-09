@@ -43,8 +43,8 @@ struct McfgHeader {
 impl Mcfg {
     #[must_use]
     pub fn parse(&self) -> ParsedMcfg {
-        let nb_cs = (usize::try_from(self.length()).unwrap() - core::mem::size_of::<McfgHeader>())
-            / core::mem::size_of::<ConfigurationSpace>();
+        let nb_cs = (usize::try_from(self.length()).unwrap() - size_of::<McfgHeader>())
+            / size_of::<ConfigurationSpace>();
 
         let mut configuration_spaces = Vec::with_capacity(nb_cs);
 
@@ -55,6 +55,7 @@ impl Mcfg {
         };
         for i in 0..nb_cs {
             let cs = unsafe { base.add(i).read() };
+            // Unpack the configuration space
             let pcs = ParsedConfigurationSpace {
                 offset: cs.offset,
                 segment_group_number: cs.segment_group_number,

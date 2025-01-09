@@ -3,7 +3,10 @@
 
 use core::ptr::NonNull;
 
-use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
+use x86_64::{
+    PhysAddr, VirtAddr,
+    structures::paging::{PageTableFlags, Size4KiB},
+};
 
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 use hyperdrive::{
@@ -43,7 +46,7 @@ impl Xhci {
 
         // At first, we only map enough memory to read the capabilities register
         let physical_mapping =
-            PhysicalMapping::new(paddr, CapabilitiesRegisters::MIN_LENGTH, flags);
+            PhysicalMapping::<Size4KiB>::new(paddr, CapabilitiesRegisters::MIN_LENGTH, flags);
         let vaddr = physical_mapping.translate(paddr).unwrap();
 
         let cap = CapabilitiesRegisters::new(vaddr);
@@ -196,7 +199,7 @@ impl StatusRegister {
     const HOST_CONTROLLER_ERROR: u32 = 1 << 12;
 
     #[must_use]
-    pub fn as_raw(&self) -> Volatile<u32> {
+    pub const fn as_raw(&self) -> Volatile<u32> {
         self.0
     }
 
@@ -269,24 +272,28 @@ impl CommandRegister {
     const VTIO_E: u32 = 1 << 16;
 
     #[must_use]
-    pub fn as_raw(&self) -> Volatile<u32> {
+    pub const fn as_raw(&self) -> Volatile<u32> {
         self.0
     }
 
-    fn send_cmd(value: u32, mask: u32, enable: bool) -> u32 {
+    #[must_use]
+    #[inline]
+    const fn update_bit_masked(value: u32, mask: u32, enable: bool) -> u32 {
         if enable { value | mask } else { value & !mask }
     }
 
     pub fn run_stop(&self, run: bool) {
         unsafe {
-            self.0.update(|c| Self::send_cmd(c, Self::RUN_STOP, run));
+            self.0
+                .update(|c| Self::update_bit_masked(c, Self::RUN_STOP, run));
         }
     }
 
     /// The function will block until the reset is complete.
     pub fn reset(&self) {
         unsafe {
-            self.0.update(|c| Self::send_cmd(c, Self::RESET, true));
+            self.0
+                .update(|c| Self::update_bit_masked(c, Self::RESET, true));
         }
         while unsafe { self.0.read() & Self::RESET != 0 } {
             core::hint::spin_loop();
@@ -295,13 +302,15 @@ impl CommandRegister {
 
     pub fn set_interrupts(&self, enable: bool) {
         unsafe {
-            self.0.update(|c| Self::send_cmd(c, Self::INT_E, enable));
+            self.0
+                .update(|c| Self::update_bit_masked(c, Self::INT_E, enable));
         }
     }
 
     pub fn set_host_system_error(&self, enable: bool) {
         unsafe {
-            self.0.update(|c| Self::send_cmd(c, Self::HSE_E, enable));
+            self.0
+                .update(|c| Self::update_bit_masked(c, Self::HSE_E, enable));
         }
     }
 
@@ -313,7 +322,7 @@ impl CommandRegister {
     pub unsafe fn light_reset(&self) {
         unsafe {
             self.0
-                .update(|c| Self::send_cmd(c, Self::LIGHT_HC_RESET, true));
+                .update(|c| Self::update_bit_masked(c, Self::LIGHT_HC_RESET, true));
         }
     }
 
@@ -325,7 +334,8 @@ impl CommandRegister {
         let was_running = unsafe { self.0.read() } & Self::RUN_STOP == 0;
         self.run_stop(false);
         unsafe {
-            self.0.update(|c| Self::send_cmd(c, Self::CSS, true));
+            self.0
+                .update(|c| Self::update_bit_masked(c, Self::CSS, true));
         }
         if was_running {
             self.run_stop(true);
@@ -340,7 +350,8 @@ impl CommandRegister {
         let was_running = unsafe { self.0.read() } & Self::RUN_STOP == 0;
         self.run_stop(false);
         unsafe {
-            self.0.update(|c| Self::send_cmd(c, Self::CRS, true));
+            self.0
+                .update(|c| Self::update_bit_masked(c, Self::CRS, true));
         }
         if was_running {
             self.run_stop(true);
@@ -350,40 +361,42 @@ impl CommandRegister {
     pub fn set_wrap_event(&self, enable: bool) {
         unsafe {
             self.0
-                .update(|c| Self::send_cmd(c, Self::E_WRAP_EVENT, enable));
+                .update(|c| Self::update_bit_masked(c, Self::E_WRAP_EVENT, enable));
         }
     }
 
     pub fn set_u3mfindex_stop(&self, enable: bool) {
         unsafe {
             self.0
-                .update(|c| Self::send_cmd(c, Self::E_U3MFINDEX, enable));
+                .update(|c| Self::update_bit_masked(c, Self::E_U3MFINDEX, enable));
         }
     }
 
     pub fn set_cem(&self, enable: bool) {
         unsafe {
-            self.0.update(|c| Self::send_cmd(c, Self::CEM_E, enable));
+            self.0
+                .update(|c| Self::update_bit_masked(c, Self::CEM_E, enable));
         }
     }
 
     pub fn set_extended_tbc(&self, enable: bool) {
         unsafe {
             self.0
-                .update(|c| Self::send_cmd(c, Self::EXTENDED_TBC_E, enable));
+                .update(|c| Self::update_bit_masked(c, Self::EXTENDED_TBC_E, enable));
         }
     }
 
     pub fn set_extended_tbc_trb(&self, enable: bool) {
         unsafe {
             self.0
-                .update(|c| Self::send_cmd(c, Self::EXTENDED_TBC_TRB_E, enable));
+                .update(|c| Self::update_bit_masked(c, Self::EXTENDED_TBC_TRB_E, enable));
         }
     }
 
     pub fn set_vtioc(&self, enable: bool) {
         unsafe {
-            self.0.update(|c| Self::send_cmd(c, Self::VTIO_E, enable));
+            self.0
+                .update(|c| Self::update_bit_masked(c, Self::VTIO_E, enable));
         }
     }
 }
