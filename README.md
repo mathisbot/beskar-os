@@ -31,7 +31,7 @@ A great choice for most of modern CPUs is `x86-64-v3` (`v4` if it is very modern
 If you want to run the OS on a testing virtual machine on QEMU, you can do so by running the following command :
 
 ```powershell
-& "qemu-system-x86_64.exe" -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -device usb-kbd
+& "qemu-system-x86_64.exe" -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -device usb-kbd -M q35
 ```
 
 Where:
@@ -46,6 +46,10 @@ Standard output will be filled with early logging info, such as memory initializ
 Other useful parameters:
 - `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.
 - If you're not interested in graphics (for debug purposes) replace `-serial stdio` by `-nographics`.
+
+#### Troubleshooting
+
+If the firmware starts without loading the kernel, try deleting `efi_disk/NvVars`.
 
 ### Running on baremetal
 
@@ -67,7 +71,8 @@ Please refer to their READMEs for more information.
 ## TO-DOs
 
 - Process [WIP]
-- IO APIC [WIP]
+- PCI Express [WIP]
+- IO APIC
 - User mode
 - USB
 - Storage

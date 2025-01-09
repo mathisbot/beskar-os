@@ -8,6 +8,8 @@ use x86_64::{
     structures::port::PortWrite,
 };
 
+mod express;
+
 const CONFIG_ADDRESS: u16 = 0xCF8;
 const CONFIG_DATA: u16 = 0xCFC;
 
@@ -21,6 +23,8 @@ pub struct PciHandler {
 }
 
 pub fn init() {
+    express::init();
+
     PCI_HANDLER.with_locked(|handler| {
         handler.update_devices();
         if handler.devices.is_empty() {

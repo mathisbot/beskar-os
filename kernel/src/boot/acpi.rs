@@ -5,7 +5,13 @@ use x86_64::PhysAddr;
 
 mod rsdp;
 pub mod sdt;
-use sdt::{Rsdt, fadt::ParsedFadt, hpet_table::ParsedHpetTable, madt::ParsedMadt};
+use sdt::{
+    Rsdt,
+    fadt::ParsedFadt,
+    hpet_table::ParsedHpetTable,
+    madt::ParsedMadt,
+    mcfg::{self, ParsedMcfg},
+};
 
 static ACPI_REVISION: AcpiRevisionStorage = AcpiRevisionStorage::uninit();
 
@@ -18,10 +24,10 @@ pub fn init(rsdp_paddr: PhysAddr) {
 
 /// Advanced Configuration and Power Interface (ACPI) support.
 pub struct Acpi {
-    revision: AcpiRevision,
     madt: ParsedMadt,
     fadt: ParsedFadt,
     hpet: Option<ParsedHpetTable>,
+    mcfg: Option<ParsedMcfg>,
 }
 
 impl Acpi {
@@ -41,18 +47,23 @@ impl Acpi {
         if hpet_paddr.is_none() {
             crate::warn!("HPET table not found");
         }
+        let mcfg_paddr = rsdt.locate_table(sdt::Signature::Mcfg);
+        if mcfg_paddr.is_none() {
+            crate::warn!("MCFG table not found");
+        }
 
         drop(rsdt);
 
         let madt = sdt::madt::Madt::load(madt_paddr).parse();
         let fadt = sdt::fadt::Fadt::load(fadt_paddr).parse();
         let hpet = hpet_paddr.map(|paddr| sdt::hpet_table::HpetTable::load(paddr).parse());
+        let mcfg = mcfg_paddr.map(|paddr| mcfg::Mcfg::load(paddr).parse());
 
         Self {
-            revision: ACPI_REVISION.load(),
             madt,
             fadt,
             hpet,
+            mcfg,
         }
     }
 
@@ -72,6 +83,12 @@ impl Acpi {
     #[inline]
     pub const fn hpet(&self) -> Option<&ParsedHpetTable> {
         self.hpet.as_ref()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn mcfg(&self) -> Option<&ParsedMcfg> {
+        self.mcfg.as_ref()
     }
 }
 

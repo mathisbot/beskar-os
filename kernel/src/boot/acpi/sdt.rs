@@ -8,6 +8,7 @@ use crate::mem::page_alloc::pmap::PhysicalMapping;
 pub mod fadt;
 pub mod hpet_table;
 pub mod madt;
+pub mod mcfg;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
@@ -220,6 +221,7 @@ pub enum Signature {
     Madt,
     Fadt,
     Hpet,
+    Mcfg,
 }
 
 impl From<Signature> for &'static [u8; 4] {
@@ -228,6 +230,7 @@ impl From<Signature> for &'static [u8; 4] {
             Signature::Madt => b"APIC",
             Signature::Fadt => b"FACP",
             Signature::Hpet => b"HPET",
+            Signature::Mcfg => b"MCFG",
         }
     }
 }

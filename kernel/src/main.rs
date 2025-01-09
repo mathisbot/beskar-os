@@ -15,7 +15,6 @@ kernel::kernel_main!(kmain);
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     x86_64::instructions::interrupts::disable();
 
-    kernel::error!("[PANIC]: Core {} {}", locals!().core_id(), panic_info);
     kernel::error!(
         "[PANIC]: Core {} {}",
         locals!().core_id(),

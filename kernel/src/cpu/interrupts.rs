@@ -201,7 +201,9 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
 
 extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFrame) {
     crate::info!("xHCI INTERRUPT on core {}", locals!().core_id());
-    locals!().lapic().with_locked(|lapic| lapic.send_eoi());
+    locals!()
+        .lapic()
+        .with_locked(super::apic::LocalApic::send_eoi);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
