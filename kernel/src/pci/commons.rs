@@ -179,6 +179,10 @@ pub struct Device {
     pub(super) functions: u8,
     pub(super) csp: Csp,
     pub(super) revision: u8,
+    /// Segment group number
+    ///
+    /// The value must be null for legacy devices.
+    pub(super) segment_group_number: u16,
 }
 
 impl Device {
@@ -265,11 +269,19 @@ pub enum Bar {
 
 impl Bar {
     #[must_use]
-    pub fn from_raw(value: u32, device: &Device, bar_number: u8) -> Self {
+    /// This function takes in a QWORD in order to be as generic as possible.
+    ///
+    /// If you want to initialize a `Bar` with a DWORD, it is as simple as
+    /// converting the DWORD to a QWORD.
+    pub fn from_raw(value: u64) -> Self {
         if value & 0b1 == 0 {
-            Self::Memory(MemoryBar::from_raw(value, device, bar_number))
+            if value >> 32 != 0 {
+                Self::Memory(MemoryBar::from_raw_u64(value))
+            } else {
+                Self::Memory(MemoryBar::from_raw_u32(u32::try_from(value).unwrap()))
+            }
         } else {
-            Self::Io(IoBar::from_raw(value))
+            Self::Io(IoBar::from_raw(u32::try_from(value).unwrap()))
         }
     }
 }
@@ -286,39 +298,30 @@ pub struct MemoryBar {
 
 impl MemoryBar {
     #[must_use]
-    fn from_raw(value: u32, device: &Device, bar_number: u8) -> Self {
+    fn from_raw_u32(value: u32) -> Self {
         assert_eq!(value & 0b1, 0, "BAR register is not memory type");
-        let prefetchable = (value & 0b100) != 0;
-        let bar_type = MemoryBarType::try_from((value >> 1) & 0b11).unwrap();
-        // FIXME: Refactor this
-        let upper_value = if bar_type == MemoryBarType::Qword {
-            let bar_reg_offset = match bar_number + 1 {
-                0 => RegisterOffset::Bar0,
-                1 => RegisterOffset::Bar1,
-                2 => RegisterOffset::Bar2,
-                3 => RegisterOffset::Bar3,
-                4 => RegisterOffset::Bar4,
-                5 => RegisterOffset::Bar5,
-                _ => panic!("PCI: Invalid BAR number"),
-            } as u8;
-            let bar_reg = ConfigAddressValue::new(
-                device.bdf().bus(),
-                device.bdf().device(),
-                device.bdf().function(),
-                bar_reg_offset,
-            );
-            todo!("Implement 64-bit read");
-            // LEGACY_PCI_HANDLER
-            //     .with_locked(|handler| handler.read_u32(bar_reg))
-            //     .unwrap()
-        } else {
-            0_u32
-        };
-        let base_address =
-            PhysAddr::new((u64::from(upper_value) << 32) | (u64::from(value & 0xFFFF_FFF0)));
 
+        let bar_type = MemoryBarType::try_from((value >> 1) & 0b11).unwrap();
+        assert_eq!(bar_type, MemoryBarType::Dword, "Bad access length provided");
+
+        let prefetchable = (value & 0b100) != 0;
         Self {
-            base_address,
+            base_address: PhysAddr::new(u64::from(value & 0xFFFF_FFF0)),
+            prefetchable,
+        }
+    }
+
+    #[must_use]
+    fn from_raw_u64(value: u64) -> Self {
+        assert_eq!(value & 0b1, 0, "BAR register is not memory type");
+
+        let lower_value = u32::try_from(value & 0xFFFF_FFFF).unwrap();
+        let bar_type = MemoryBarType::try_from((lower_value >> 1) & 0b11).unwrap();
+        assert_eq!(bar_type, MemoryBarType::Qword, "Bad access length provided");
+
+        let prefetchable = (value & 0b100) != 0;
+        Self {
+            base_address: PhysAddr::new(value & !0xF),
             prefetchable,
         }
     }

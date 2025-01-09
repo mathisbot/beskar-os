@@ -1,4 +1,7 @@
+use core::ops::RangeInclusive;
+
 use alloc::vec::Vec;
+use x86_64::PhysAddr;
 
 use super::{Sdt, SdtHeader};
 
@@ -102,5 +105,22 @@ impl ParsedConfigurationSpace {
     #[inline]
     pub const fn end_pci_bus_number(&self) -> u8 {
         self.end_pci_bus_number
+    }
+
+    #[must_use]
+    pub fn address_range(&self) -> RangeInclusive<PhysAddr> {
+        // Minimum bus, device, function, and register numbers
+        let start_paddr =
+            PhysAddr::new(self.offset + (u64::from(self.start_pci_bus_number()) << 20));
+        // Maximum bus, device, function, and register numbers
+        let end_paddr = PhysAddr::new(
+            self.offset
+                + (u64::from(self.end_pci_bus_number()) << 20)
+                + (31 << 15)
+                + (7 << 12)
+                + 0xFF,
+        );
+
+        start_paddr..=end_paddr
     }
 }

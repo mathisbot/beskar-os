@@ -9,12 +9,20 @@ pub fn init() {
     express::init();
 
     if !express::pcie_available() {
+        crate::info!("PCIe not available, falling back to legacy PCI");
         legacy::init();
     }
 }
 
 pub trait PciHandler {
+    #[must_use]
+    /// Returns the list of devices found by the PCI handler.
     fn devices(&self) -> &[commons::Device];
+
+    #[must_use]
+    /// Read the raw value from the PCI configuration space
+    ///
+    /// Bar number must be 0 to 5 (inclusive).
     fn read_bar(&mut self, device: &commons::Device, bar: u8) -> Option<commons::Bar>;
 }
 

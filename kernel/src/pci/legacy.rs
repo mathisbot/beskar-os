@@ -7,7 +7,9 @@ use x86_64::{
     structures::port::PortWrite,
 };
 
-use super::commons::{Bar, BdfAddress, Class, ConfigAddressValue, Csp, Device, RegisterOffset};
+use super::commons::{
+    Bar, BdfAddress, Class, ConfigAddressValue, Csp, Device, MemoryBarType, RegisterOffset,
+};
 
 const CONFIG_ADDRESS: u16 = 0xCF8;
 const CONFIG_DATA: u16 = 0xCFC;
@@ -99,6 +101,7 @@ impl LegacyPciHandler {
             functions,
             csp: Csp::new(class, subclass, prog_if),
             revision,
+            segment_group_number: 0,
         })
     }
 
@@ -124,6 +127,8 @@ impl LegacyPciHandler {
                         bdf: BdfAddress::new(address.bdf.bus(), address.bdf.device(), func),
                         ..address
                     };
+
+                    // Vendor ID is 0xFFFF if function is unsupported
                     self.read_u16(vendor_reg).is_some()
                 })
                 .count(),
@@ -188,10 +193,6 @@ impl super::PciHandler for LegacyPciHandler {
         &self.devices
     }
 
-    #[must_use]
-    /// Read the raw value from the PCI configuration space
-    ///
-    /// Bar number must be 0 to 5 (inclusive).
     fn read_bar(&mut self, device: &Device, bar_number: u8) -> Option<Bar> {
         let bar_reg_offset = match bar_number {
             0 => RegisterOffset::Bar0,
@@ -200,7 +201,7 @@ impl super::PciHandler for LegacyPciHandler {
             3 => RegisterOffset::Bar3,
             4 => RegisterOffset::Bar4,
             5 => RegisterOffset::Bar5,
-            _ => panic!("Invalid BAR number"),
+            _ => return None,
         } as u8;
         let bar_reg = ConfigAddressValue::new(
             device.bdf().bus(),
@@ -208,8 +209,34 @@ impl super::PciHandler for LegacyPciHandler {
             device.bdf().function(),
             bar_reg_offset,
         );
-        let bar = self.read_u32(bar_reg);
-        bar.map(|bar| Bar::from_raw(bar, device, bar_number))
+        let bar = self.read_u32(bar_reg)?;
+
+        let upper_value = if bar & 1 == 0 // Memory BAR
+            && MemoryBarType::try_from((bar >> 1) & 0b11).unwrap() == MemoryBarType::Qword
+        {
+            let bar_reg_offset = match bar_number + 1 {
+                0 => RegisterOffset::Bar0,
+                1 => RegisterOffset::Bar1,
+                2 => RegisterOffset::Bar2,
+                3 => RegisterOffset::Bar3,
+                4 => RegisterOffset::Bar4,
+                5 => RegisterOffset::Bar5,
+                _ => panic!("PCI: Invalid BAR number"),
+            } as u8;
+            let bar_reg = ConfigAddressValue::new(
+                device.bdf().bus(),
+                device.bdf().device(),
+                device.bdf().function(),
+                bar_reg_offset,
+            );
+            self.read_u32(bar_reg).unwrap()
+        } else {
+            0
+        };
+
+        Some(Bar::from_raw(
+            u64::from(bar) | (u64::from(upper_value) << 32),
+        ))
     }
 }
 
