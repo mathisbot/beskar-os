@@ -49,7 +49,7 @@ Other useful parameters:
 
 #### Troubleshooting
 
-If the firmware starts without loading the kernel, try deleting `efi_disk/NvVars`.
+If the firmware starts and boots on the UEFI shell instead of the bootloader, try deleting `efi_disk/NvVars`.
 
 ### Running on baremetal
 
