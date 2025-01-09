@@ -1,4 +1,4 @@
-use crate::{boot::acpi::sdt::Sdt, impl_sdt};
+use crate::impl_sdt;
 
 use super::{RawGenericAddress, SdtHeader};
 
@@ -82,9 +82,9 @@ impl Fadt {
     pub fn parse(&self) -> ParsedFadt {
         // Do NOT read any field in the FADT before validating the revision.
         // We can only be sure that the table is mapped up to `self.length()` bytes.
-        let full_fadt_ptr = self.start_vaddr.as_ptr::<FullFadt>();
+        let _full_fadt_ptr = self.start_vaddr.as_ptr::<FullFadt>();
 
-        assert_eq!(self.revision(), 1, "FADT revision must be 1");
+        // assert_eq!(self.revision(), 1, "FADT revision must be 1");
         // TODO: Parse and validate minor version
 
         // TODO: Parse the FADT

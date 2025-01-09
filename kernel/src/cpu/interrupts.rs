@@ -66,6 +66,7 @@ pub fn init() {
 
     idt[Irq::Timer as u8].set_handler_fn(timer_interrupt_handler);
     idt[Irq::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
+    idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
 
     idt.load();
 
@@ -198,6 +199,13 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     unsafe { crate::process::scheduler::reschedule() };
 }
 
+extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("xHCI INTERRUPT on core {}", locals!().core_id());
+    locals!()
+        .lapic()
+        .with_locked(super::apic::LocalApic::send_eoi);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 /// Represents a programmable interrupt index
@@ -206,4 +214,5 @@ pub enum Irq {
     // all numbers defined here must be greater than or equal to 32.
     Timer = 32,
     Spurious = 33,
+    Xhci = 34,
 }

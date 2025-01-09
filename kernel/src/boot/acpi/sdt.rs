@@ -1,6 +1,9 @@
 use core::mem::offset_of;
 
-use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
+use x86_64::{
+    PhysAddr, VirtAddr,
+    structures::paging::{PageTableFlags, Size4KiB},
+};
 
 use super::AcpiRevision;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
@@ -8,6 +11,7 @@ use crate::mem::page_alloc::pmap::PhysicalMapping;
 pub mod fadt;
 pub mod hpet_table;
 pub mod madt;
+pub mod mcfg;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
@@ -201,7 +205,8 @@ impl Rsdt {
             let flags = x86_64::structures::paging::PageTableFlags::PRESENT
                 | x86_64::structures::paging::PageTableFlags::NO_EXECUTE;
 
-            let physical_mapping = PhysicalMapping::new(paddr, size_of::<SdtHeader>(), flags);
+            let physical_mapping =
+                PhysicalMapping::<Size4KiB>::new(paddr, size_of::<SdtHeader>(), flags);
             let table_vaddr = physical_mapping.translate(paddr).unwrap();
             let header = unsafe { &*table_vaddr.as_ptr::<SdtHeader>() };
 
@@ -220,6 +225,7 @@ pub enum Signature {
     Madt,
     Fadt,
     Hpet,
+    Mcfg,
 }
 
 impl From<Signature> for &'static [u8; 4] {
@@ -228,6 +234,7 @@ impl From<Signature> for &'static [u8; 4] {
             Signature::Madt => b"APIC",
             Signature::Fadt => b"FACP",
             Signature::Hpet => b"HPET",
+            Signature::Mcfg => b"MCFG",
         }
     }
 }
@@ -240,7 +247,8 @@ impl From<Signature> for &'static [u8; 4] {
 unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
     let flags = PageTableFlags::PRESENT | x86_64::structures::paging::PageTableFlags::NO_EXECUTE;
 
-    let header_mapping = PhysicalMapping::new(phys_addr, core::mem::size_of::<SdtHeader>(), flags);
+    let header_mapping =
+        PhysicalMapping::<Size4KiB>::new(phys_addr, core::mem::size_of::<SdtHeader>(), flags);
     let header_vaddr = header_mapping.translate(phys_addr).unwrap();
 
     let table_length = unsafe {

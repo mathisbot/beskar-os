@@ -1,4 +1,4 @@
-use crate::pci::{Bar, Class};
+use crate::pci::Class;
 
 use alloc::vec::Vec;
 
@@ -8,8 +8,8 @@ pub mod host;
 pub mod hub;
 
 pub fn init() {
-    // Get all USB devices from PCI
-    let usb_devices = crate::pci::with_pci_handler(|handler| {
+    // Get all USB controllers from PCI
+    let usb_controllers = crate::pci::with_pci_handler(|handler| {
         handler
             .devices()
             .iter()
@@ -20,17 +20,5 @@ pub fn init() {
             .collect::<Vec<_>>()
     });
 
-    // Filter out xHCI controllers and get their base addresses
-    let xhci_paddrs = usb_devices
-        .iter()
-        .filter(|device| device.csp().prog_if() == 0x30)
-        .filter_map(|device| {
-            if let Some(Bar::Memory(memory_bar)) = device.bar(0) {
-                Some(memory_bar.base_address())
-            } else {
-                None
-            }
-        });
-
-    host::init(xhci_paddrs);
+    host::init(&usb_controllers);
 }

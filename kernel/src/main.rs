@@ -15,7 +15,6 @@ kernel::kernel_main!(kmain);
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     x86_64::instructions::interrupts::disable();
 
-    kernel::error!("[PANIC]: Core {} {}", locals!().core_id(), panic_info);
     kernel::error!(
         "[PANIC]: Core {} {}",
         locals!().core_id(),
@@ -50,11 +49,6 @@ fn kmain() -> ! {
     BARRIER.call_once(|| Barrier::new(locals::get_ready_core_count().into()));
 
     scheduler::set_scheduling(false);
-    kernel::debug!(
-        "Core ID: {} TOTAL: {} is LOCKING",
-        locals!().core_id(),
-        locals::get_ready_core_count()
-    );
     BARRIER.get().unwrap().wait();
 
     if locals!().core_id() == 0 {
@@ -63,8 +57,6 @@ fn kmain() -> ! {
             scheduler::{self, priority::Priority, thread::Thread},
         };
         extern crate alloc;
-
-        kernel::debug!("Spawning threads");
 
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             unsafe { scheduler::current_process() },
