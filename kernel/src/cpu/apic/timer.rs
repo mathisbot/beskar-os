@@ -37,7 +37,12 @@ impl LapicTimer {
 
     #[must_use]
     pub const fn init_count_reg(&mut self) -> Volatile<WriteOnly, u32> {
-        unsafe { self.configuration.apic_base.byte_add(TIMER_INIT_COUNT_REG).change_access() }
+        unsafe {
+            self.configuration
+                .apic_base
+                .byte_add(TIMER_INIT_COUNT_REG)
+                .change_access()
+        }
     }
 
     #[must_use]
@@ -139,7 +144,10 @@ pub struct Configuration {
 
 impl Configuration {
     #[must_use]
-    pub const fn new(apic_base: Volatile<ReadWrite, u32>, ivt: crate::cpu::interrupts::Irq) -> Self {
+    pub const fn new(
+        apic_base: Volatile<ReadWrite, u32>,
+        ivt: crate::cpu::interrupts::Irq,
+    ) -> Self {
         Self {
             apic_base,
             rate_mhz: 0,

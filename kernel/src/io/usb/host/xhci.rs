@@ -82,7 +82,7 @@ impl Xhci {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 struct CapabilitiesRegisters {
     base: Volatile<ReadOnly, u32>,
 }
@@ -184,7 +184,7 @@ struct OperationalRegisters {
     base: Volatile<ReadWrite, u32>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 struct StatusRegister(Volatile<ReadOnly, u32>);
 
 impl StatusRegister {
@@ -253,7 +253,7 @@ impl StatusRegister {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 struct CommandRegister(Volatile<ReadWrite, u32>);
 
 impl CommandRegister {
@@ -425,11 +425,7 @@ impl OperationalRegisters {
 
     #[must_use]
     pub const fn status(&self) -> StatusRegister {
-        StatusRegister(unsafe {
-            self.base
-                .byte_add(Self::STATUS)
-                .change_access()
-        })
+        StatusRegister(unsafe { self.base.byte_add(Self::STATUS).change_access() })
     }
 
     #[must_use]

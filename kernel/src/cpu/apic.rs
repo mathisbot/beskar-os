@@ -346,7 +346,7 @@ impl IoApic {
 
         let base = Volatile::new(
             NonNull::new((page.start_address() + (base - frame.start_address())).as_mut_ptr())
-                .unwrap()
+                .unwrap(),
         );
 
         Self { base, gsi_base }
@@ -360,7 +360,7 @@ impl IoApic {
         // Each APIC device must have a unique ID to be uniquely addressed
         // on the APIC Bus.
         assert!(
-            cpu_count + usize::from(id_offset) < IoApic::MAX_ID_USIZE,
+            cpu_count + usize::from(id_offset) < Self::MAX_ID_USIZE,
             "IOAPIC ID must be less than 0xF (too many CPUs/IOAPICs)"
         );
         self.set_id(u8::try_from(cpu_count).unwrap() + id_offset);

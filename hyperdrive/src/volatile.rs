@@ -13,16 +13,16 @@
 //! unsafe { volatile_ptr.write(42) }
 //! assert_eq!(unsafe { volatile_ptr.read() }, 42);
 //! ```
-//! 
+//!
 //! As access rights are checked at compile time, the following code will not compile:
-//! 
+//!
 //! ```rust,compile_fail
 //! # use hyperdrive::volatile::{Volatile, ReadOnly};
 //! # use core::ptr::NonNull;
 //! #
 //! let value = 0;
 //! let volatile_ptr = Volatile::<ReadOnly, _>::from_ref(&value);
-//! 
+//!
 //! unsafe { volatile_ptr.write(42) }
 //! ```
 
@@ -143,8 +143,9 @@ impl<A: ReadAccess, T: ?Sized> Volatile<A, T> {
     #[inline]
     /// Creates a new volatile pointer from a reference.
     pub const fn from_ref(ptr: &T) -> Self {
+        let ptr_mut = core::ptr::from_ref(ptr).cast_mut();
         Self {
-            ptr: unsafe { NonNull::new_unchecked(ptr as *const T as *mut T) },
+            ptr: unsafe { NonNull::new_unchecked(ptr_mut) },
             _phantom: PhantomData,
         }
     }

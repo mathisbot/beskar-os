@@ -36,7 +36,7 @@ pub fn init() {
     // Each core only accesses its own entry in the array on startup.
     // The array is then never modified.
     unsafe {
-        ALL_CORE_LOCALS[core_id as usize] = Some(NonNull::new(core_locals.as_mut()).unwrap());
+        ALL_CORE_LOCALS[core_id] = Some(NonNull::new(core_locals.as_mut()).unwrap());
     }
 
     unsafe {

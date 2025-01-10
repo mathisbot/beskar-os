@@ -25,6 +25,12 @@ jobs:
           targets: x86_64-unknown-linux-gnu
           components: clippy, miri
 
+      - name: Build
+        run: cargo build --package hyperdrive
+
+      - name: Build documentation
+        run: cargo doc --package hyperdrive --no-deps
+
       - name: Run tests
         run: cargo test --package hyperdrive
 
