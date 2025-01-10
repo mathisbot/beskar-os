@@ -5,144 +5,83 @@
 //! ## Example
 //!
 //! ```rust
-//! # use hyperdrive::volatile::{Volatile, Access};
-//! # use core::ptr::NonNull;
+//! # use hyperdrive::volatile::{Volatile, ReadWrite};
 //! #
 //! let mut value = 0;
-//! let volatile_ptr = Volatile::from_mut(&mut value, Access::ReadWrite);
+//! let volatile_ptr = Volatile::<ReadWrite, _>::from_mut(&mut value);
 //!
 //! unsafe { volatile_ptr.write(42) }
 //! assert_eq!(unsafe { volatile_ptr.read() }, 42);
 //! ```
+//! 
+//! As access rights are checked at compile time, the following code will not compile:
+//! 
+//! ```rust,compile_fail
+//! # use hyperdrive::volatile::{Volatile, ReadOnly};
+//! # use core::ptr::NonNull;
+//! #
+//! let value = 0;
+//! let volatile_ptr = Volatile::<ReadOnly, _>::from_ref(&value);
+//! 
+//! unsafe { volatile_ptr.write(42) }
+//! ```
 
-// FIXME: Compile-time rights checking
-// Otherwise, using this wrapper is just a slower version of raw pointers.
+use core::{marker::PhantomData, ptr::NonNull};
 
-use core::ptr::NonNull;
+pub trait Access {}
+
+pub trait ReadAccess: Access {}
+pub trait WriteAccess: Access {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Access permissions for volatile memory.
-pub enum Access {
-    ReadOnly,
-    WriteOnly,
-    ReadWrite,
-}
-
-impl PartialOrd for Access {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        if self == other {
-            return Some(core::cmp::Ordering::Equal);
-        }
-
-        if self == &Self::ReadWrite {
-            // `other` is not `ReadWrite`, so it must be `ReadOnly` or `WriteOnly`.
-            return Some(core::cmp::Ordering::Greater);
-        }
-
-        if other == &Self::ReadWrite {
-            // `self` is not `ReadWrite`, so it must be `ReadOnly` or `WriteOnly`.
-            return Some(core::cmp::Ordering::Less);
-        }
-
-        None
-    }
-}
+pub struct ReadOnly;
+impl Access for ReadOnly {}
+impl ReadAccess for ReadOnly {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WriteOnly;
+impl Access for WriteOnly {}
+impl WriteAccess for WriteOnly {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadWrite;
+impl Access for ReadWrite {}
+impl ReadAccess for ReadWrite {}
+impl WriteAccess for ReadWrite {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// A wrapper around structures to provide volatile access.
-pub struct Volatile<T>
-where
-    T: ?Sized,
-{
+pub struct Volatile<A: Access, T: ?Sized> {
     ptr: NonNull<T>,
-    access: Access,
+    _phantom: PhantomData<A>,
 }
 
-impl<T> Volatile<T> {
+impl<A: Access, T: ?Sized> Volatile<A, T> {
     #[must_use]
     #[inline]
     /// Creates a new volatile pointer.
-    pub const fn new(ptr: NonNull<T>, access: Access) -> Self {
-        Self { ptr, access }
-    }
-
-    #[must_use]
-    /// Creates a new volatile pointer.
-    pub const fn from_mut(ptr: &mut T, access: Access) -> Self {
+    pub const fn new(ptr: NonNull<T>) -> Self {
         Self {
-            ptr: unsafe { NonNull::new_unchecked(ptr) },
-            access,
+            ptr,
+            _phantom: PhantomData,
         }
     }
 
     #[must_use]
-    /// Creates a new volatile pointer.
-    pub const fn from_ref(ptr: &T) -> Self {
-        let ptr = core::ptr::from_ref(ptr).cast_mut();
+    #[inline]
+    /// Creates a new volatile pointer from a mutable reference.
+    pub const fn from_mut(ptr: &mut T) -> Self {
         Self {
             ptr: unsafe { NonNull::new_unchecked(ptr) },
-            access: Access::ReadOnly,
+            _phantom: PhantomData,
         }
-    }
-
-    #[must_use]
-    /// Reads the value.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if access is `WriteOnly`
-    ///
-    /// ## Safety
-    ///
-    /// The inner pointer must be valid.
-    pub unsafe fn read(&self) -> T {
-        assert!(self.access >= Access::ReadOnly, "Unauthorized read access");
-        unsafe { self.ptr.read_volatile() }
-    }
-
-    /// Writes the value.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if access is `ReadOnly`
-    ///
-    /// ## Safety
-    ///
-    /// The inner pointer must be valid.
-    pub unsafe fn write(&self, value: T) {
-        assert!(
-            self.access >= Access::WriteOnly,
-            "Unauthorized write access"
-        );
-        unsafe { self.ptr.write_volatile(value) };
-    }
-
-    /// Updates the value.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if access is not `ReadWrite`
-    ///
-    /// ## Safety
-    ///
-    /// The inner pointer must be valid.
-    pub unsafe fn update(&self, f: impl FnOnce(T) -> T) {
-        assert!(
-            self.access >= Access::ReadWrite,
-            "Unauthorized read-write access"
-        );
-        let old = unsafe { self.ptr.read() };
-        let new = f(old);
-        unsafe { self.ptr.write_volatile(new) };
     }
 
     #[must_use]
     #[inline]
     /// Casts the volatile wrapper to another type.
-    pub const fn cast<U>(&self) -> Volatile<U> {
+    pub const fn cast<U>(&self) -> Volatile<A, U> {
         Volatile {
             ptr: self.ptr.cast(),
-            access: self.access,
+            _phantom: PhantomData,
         }
     }
 
@@ -155,10 +94,13 @@ impl<T> Volatile<T> {
     /// ## Safety
     ///
     /// See `core::ptr::add` for safety requirements.
-    pub const unsafe fn add(&self, offset: usize) -> Self {
+    pub const unsafe fn add(&self, offset: usize) -> Self
+    where
+        T: Sized,
+    {
         Self {
             ptr: unsafe { self.ptr.add(offset) },
-            access: self.access,
+            _phantom: PhantomData,
         }
     }
 
@@ -174,7 +116,7 @@ impl<T> Volatile<T> {
     pub const unsafe fn byte_add(&self, offset: usize) -> Self {
         Self {
             ptr: unsafe { self.ptr.byte_add(offset) },
-            access: self.access,
+            _phantom: PhantomData,
         }
     }
 
@@ -188,11 +130,63 @@ impl<T> Volatile<T> {
     #[must_use]
     #[inline]
     /// Change the access permissions of the volatile pointer.
-    pub const fn change_access(&self, access: Access) -> Self {
-        Self {
+    pub const fn change_access<B: Access>(&self) -> Volatile<B, T> {
+        Volatile {
             ptr: self.ptr,
-            access,
+            _phantom: PhantomData,
         }
+    }
+}
+
+impl<A: ReadAccess, T: ?Sized> Volatile<A, T> {
+    #[must_use]
+    #[inline]
+    /// Creates a new volatile pointer from a reference.
+    pub const fn from_ref(ptr: &T) -> Self {
+        Self {
+            ptr: unsafe { NonNull::new_unchecked(ptr as *const T as *mut T) },
+            _phantom: PhantomData,
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Reads the value.
+    ///
+    /// ## Safety
+    ///
+    /// The inner pointer must be valid.
+    pub unsafe fn read(&self) -> T
+    where
+        T: Sized,
+    {
+        unsafe { self.ptr.read_volatile() }
+    }
+}
+
+impl<A: WriteAccess, T> Volatile<A, T> {
+    #[inline]
+    /// Writes the value.
+    ///
+    /// ## Safety
+    ///
+    /// The inner pointer must be valid.
+    pub unsafe fn write(&self, value: T) {
+        unsafe { self.ptr.write_volatile(value) };
+    }
+}
+
+impl<A: ReadAccess + WriteAccess, T> Volatile<A, T> {
+    #[inline]
+    /// Updates the value.
+    ///
+    /// ## Safety
+    ///
+    /// The inner pointer must be valid.
+    pub unsafe fn update(&self, f: impl FnOnce(T) -> T) {
+        let old = unsafe { self.ptr.read() };
+        let new = f(old);
+        unsafe { self.ptr.write_volatile(new) };
     }
 }
 
@@ -203,7 +197,7 @@ mod tests {
     #[test]
     fn test_volatile_accesses() {
         let mut value = 0;
-        let volatile = Volatile::from_mut(&mut value, Access::ReadWrite);
+        let volatile = Volatile::<ReadWrite, _>::from_mut(&mut value);
 
         assert_eq!(unsafe { volatile.read() }, 0);
 
@@ -215,28 +209,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "Unauthorized read access"]
-    fn test_unauthorized_read() {
-        let mut value = 0;
-        let volatile = Volatile::from_mut(&mut value, Access::WriteOnly);
-
-        let _ = unsafe { volatile.read() };
-    }
-
-    #[test]
-    #[should_panic = "Unauthorized write access"]
-    fn test_unauthorized_write() {
-        let value = 0;
-        let volatile = Volatile::from_ref(&value);
-
-        unsafe { volatile.write(1) };
-    }
-
-    #[test]
     fn test_add() {
         let array: [usize; 2] = [0, 1];
-        let first = Volatile::from_ref(&array[0]);
-        let second = Volatile::from_ref(&array[1]);
+        let first = Volatile::<ReadOnly, _>::from_ref(&array[0]);
+        let second = Volatile::<ReadOnly, _>::from_ref(&array[1]);
 
         assert_eq!(unsafe { first.add(1) }, second);
     }
@@ -244,8 +220,8 @@ mod tests {
     #[test]
     fn test_byte_add() {
         let array: [usize; 2] = [0, 1];
-        let first = Volatile::from_ref(&array[0]);
-        let second = Volatile::from_ref(&array[1]);
+        let first = Volatile::<ReadOnly, _>::from_ref(&array[0]);
+        let second = Volatile::<ReadOnly, _>::from_ref(&array[1]);
 
         assert_eq!(unsafe { first.byte_add(size_of::<usize>()) }, second);
     }

@@ -24,8 +24,8 @@ pub fn init(
     memory_map: MemoryMapOwned,
     kernel_elf: &ElfFile,
 ) -> (EarlyFrameAllocator, PageTables, Mappings) {
-    let total_mem_size = compute_total_memory(&memory_map);
-    debug!("Dected memory size: {} KiB", total_mem_size);
+    let total_mem_size = compute_total_memory_kib(&memory_map);
+    debug!("Detected memory size: {} MiB", total_mem_size / 1024);
 
     let mut frame_allocator = EarlyFrameAllocator::new(memory_map);
 
@@ -49,7 +49,7 @@ pub struct PageTables {
 }
 
 #[must_use]
-fn compute_total_memory(memory_map: &MemoryMapOwned) -> u64 {
+fn compute_total_memory_kib(memory_map: &MemoryMapOwned) -> u64 {
     memory_map
         .entries()
         .filter_map(|entry| match entry.ty {

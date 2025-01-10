@@ -65,21 +65,24 @@ fn efi_entry() -> Status {
     #[cfg(debug_assertions)]
     let _ = boot::set_watchdog_timer(0, 0, None);
 
-    info!("BeskarOS bootloader started");
-
     bootloader::log::init_serial();
+
+    debug!("BeskarOS bootloader is starting...");
 
     // Print basic firmware information and check for compatibility
     bootloader::system::check_firmware();
 
     bootloader::video::init();
+    debug!("Video initialized");
 
     bootloader::log::init_screen();
 
-    bootloader::system::init();
+    info!("BeskarOS bootloader started");
 
     #[cfg(debug_assertions)]
     debug!("Bootloader running in debug mode");
+
+    bootloader::system::init();
 
     // Load Kernel file in RAM
     // Kernel is expected to be the only file named `kernelx64.elf` in the `efi` directory

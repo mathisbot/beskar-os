@@ -4,7 +4,7 @@
 
 use core::num::NonZeroU32;
 
-use hyperdrive::volatile::Volatile;
+use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
 
 const TIMER_DIVIDE_CONFIG_REG: usize = 0x3E0;
 const TIMER_INIT_COUNT_REG: usize = 0x380;
@@ -27,7 +27,7 @@ impl LapicTimer {
     }
 
     #[must_use]
-    pub const fn divider_config_reg(&mut self) -> Volatile<u32> {
+    pub const fn divider_config_reg(&mut self) -> Volatile<ReadWrite, u32> {
         unsafe {
             self.configuration
                 .apic_base
@@ -36,8 +36,8 @@ impl LapicTimer {
     }
 
     #[must_use]
-    pub const fn init_count_reg(&mut self) -> Volatile<u32> {
-        unsafe { self.configuration.apic_base.byte_add(TIMER_INIT_COUNT_REG) }
+    pub const fn init_count_reg(&mut self) -> Volatile<WriteOnly, u32> {
+        unsafe { self.configuration.apic_base.byte_add(TIMER_INIT_COUNT_REG).change_access() }
     }
 
     #[must_use]
@@ -51,7 +51,7 @@ impl LapicTimer {
     }
 
     #[must_use]
-    pub const fn vector_table_reg(&mut self) -> Volatile<u32> {
+    pub const fn vector_table_reg(&mut self) -> Volatile<ReadWrite, u32> {
         unsafe {
             self.configuration
                 .apic_base
@@ -131,7 +131,7 @@ impl LapicTimer {
 
 #[derive(Debug, Clone)]
 pub struct Configuration {
-    apic_base: Volatile<u32>,
+    apic_base: Volatile<ReadWrite, u32>,
     rate_mhz: u32,
     ivt: crate::cpu::interrupts::Irq,
     mode: Mode,
@@ -139,7 +139,7 @@ pub struct Configuration {
 
 impl Configuration {
     #[must_use]
-    pub const fn new(apic_base: Volatile<u32>, ivt: crate::cpu::interrupts::Irq) -> Self {
+    pub const fn new(apic_base: Volatile<ReadWrite, u32>, ivt: crate::cpu::interrupts::Irq) -> Self {
         Self {
             apic_base,
             rate_mhz: 0,

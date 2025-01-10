@@ -5,7 +5,7 @@ use core::{
     sync::atomic::{AtomicU8, Ordering},
 };
 
-use hyperdrive::volatile::{Access, Volatile};
+use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
 use timer::LapicTimer;
 use x86_64::{
     PhysAddr,
@@ -97,7 +97,7 @@ fn enable_disable_interrupts(enable: bool) {
 }
 
 pub struct LocalApic {
-    base: Volatile<u32>,
+    base: Volatile<ReadWrite, u32>,
     timer: LapicTimer,
 }
 
@@ -140,7 +140,7 @@ impl LocalApic {
         *apic_spurious |= u32::from(super::interrupts::Irq::Spurious as u8); // Set spurious handler index
         *apic_spurious |= 0x100; // Enable spurious interrupt
 
-        let base = Volatile::new(NonNull::new(base_ptr).unwrap(), Access::ReadWrite);
+        let base = Volatile::new(NonNull::new(base_ptr).unwrap());
 
         Self {
             base,
@@ -150,7 +150,7 @@ impl LocalApic {
 
     pub fn send_ipi(&self, ipi: &ipi::Ipi) {
         let icr_low = unsafe { self.base.byte_add(0x300) };
-        let icr_high = unsafe { self.base.byte_add(0x310) };
+        let icr_high = unsafe { self.base.byte_add(0x310).change_access() };
         // Safety:
         // The ICR registers are read/write and their addresses are valid.
         unsafe { ipi.send(icr_low, icr_high) };
@@ -167,7 +167,7 @@ impl LocalApic {
     }
 
     #[must_use]
-    pub const fn base(&self) -> Volatile<u32> {
+    pub const fn base(&self) -> Volatile<ReadWrite, u32> {
         self.base
     }
 }
@@ -218,7 +218,7 @@ static IOAPICID_CNTER: AtomicU8 = AtomicU8::new(0);
 ///
 /// See <https://pdos.csail.mit.edu/6.828/2016/readings/ia32/ioapic.pdf>
 pub struct IoApic {
-    base: Volatile<u32>,
+    base: Volatile<ReadWrite, u32>,
     gsi_base: u32,
 }
 
@@ -346,8 +346,7 @@ impl IoApic {
 
         let base = Volatile::new(
             NonNull::new((page.start_address() + (base - frame.start_address())).as_mut_ptr())
-                .unwrap(),
-            Access::ReadWrite,
+                .unwrap()
         );
 
         Self { base, gsi_base }
@@ -523,13 +522,13 @@ impl IoApic {
 
     #[must_use]
     #[inline]
-    const fn reg_select(&self) -> Volatile<u32> {
-        self.base.change_access(Access::WriteOnly)
+    const fn reg_select(&self) -> Volatile<WriteOnly, u32> {
+        self.base.change_access()
     }
 
     #[must_use]
     #[inline]
-    const fn reg_window(&self) -> Volatile<u32> {
+    const fn reg_window(&self) -> Volatile<ReadWrite, u32> {
         unsafe { self.base.byte_add(0x10) }
     }
 }

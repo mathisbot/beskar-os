@@ -99,9 +99,6 @@ impl Screen {
     }
 }
 
-pub fn with_screen<F, R>(f: F) -> R
-where
-    F: FnOnce(&mut Screen) -> R,
-{
+pub fn with_screen<R, F: FnOnce(&mut Screen) -> R>(f: F) -> R {
     SCREEN.with_locked(f)
 }

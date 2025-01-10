@@ -1,6 +1,6 @@
 //! Inter-Processor Interrupts (IPIs)
 
-use hyperdrive::volatile::Volatile;
+use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
 
 use crate::cpu::interrupts::Irq;
 
@@ -105,7 +105,7 @@ impl Ipi {
     /// ## Safety
     ///
     /// ICR pointers must be valid.
-    pub(super) unsafe fn send(&self, icr_low: Volatile<u32>, icr_high: Volatile<u32>) {
+    pub(super) unsafe fn send(&self, icr_low: Volatile<ReadWrite, u32>, icr_high: Volatile<WriteOnly, u32>) {
         // Assert Interrupts are ready to be received
         while unsafe { icr_low.read() >> 12 } & 1 == 1 {
             // FIXME: Fail with a timeout?
