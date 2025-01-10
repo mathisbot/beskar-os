@@ -19,5 +19,6 @@ pub mod screen;
 pub mod serial;
 mod syscall;
 pub mod time;
+pub mod video;
 
 extern crate alloc;

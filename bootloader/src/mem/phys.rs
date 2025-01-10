@@ -1,4 +1,4 @@
-use crate::info::{MemoryRegion, MemoryRegionUsage};
+use crate::structs::{MemoryRegion, MemoryRegionUsage};
 use uefi::{
     boot::{MemoryDescriptor, MemoryType},
     mem::memory_map::{MemoryMap, MemoryMapOwned},

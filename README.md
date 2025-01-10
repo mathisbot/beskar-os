@@ -70,11 +70,11 @@ Please refer to their READMEs for more information.
 
 ## TO-DOs
 
+- MSI (PCIe) [WIP]
+- USB [WIP]
 - Process [WIP]
-- PCI Express [WIP]
 - IO APIC
 - User mode
-- USB
 - Storage
 - FADT
 - Optimizations

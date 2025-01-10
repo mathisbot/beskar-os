@@ -1,6 +1,6 @@
 use x86_64::{PhysAddr, VirtAddr};
 
-use crate::{FrameBuffer, PhysicalFrameBuffer};
+use crate::video::FrameBuffer;
 
 /// This structure represents the information that the bootloader passes to the kernel.
 #[derive(Debug)]
@@ -13,7 +13,7 @@ pub struct BootInfo {
     /// The page index of the recursive level 4 table.
     pub recursive_index: u16,
     /// The address of the `RSDP`, used to find the ACPI tables (if reported).
-    pub rsdp_paddr: Option<u64>,
+    pub rsdp_paddr: Option<PhysAddr>,
     /// Physical address of the kernel ELF in memory.
     pub kernel_paddr: PhysAddr,
     /// Virtual address of the loaded kernel image.
@@ -23,7 +23,7 @@ pub struct BootInfo {
     /// An optional template for the thread local storage.
     pub tls_template: Option<TlsTemplate>,
     /// Number of enabled and healthy CPU cores in the system.
-    pub cpu_count: u8,
+    pub cpu_count: usize,
 }
 
 /// Represent a physical memory region.
@@ -67,18 +67,4 @@ pub struct TlsTemplate {
     ///
     /// Corresponds to the combined length of the `.tdata` and `.tbss` sections.
     pub mem_size: u64,
-}
-
-/// Various information about the system.
-#[derive(Debug)]
-pub struct EarlySystemInfo {
-    /// Framebuffer for screen output.
-    pub framebuffer: PhysicalFrameBuffer,
-    /// The address of the `RSDP`, used to find the ACPI tables (if reported).
-    pub rsdp_paddr: Option<x86_64::PhysAddr>,
-    /// Number of CPU cores in the system.
-    ///
-    /// It is guaranteed that the BSP is ID 0 and that all
-    /// other core are enabled.
-    pub cpu_count: u8,
 }

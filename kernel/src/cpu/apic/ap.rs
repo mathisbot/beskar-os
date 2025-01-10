@@ -40,7 +40,7 @@ static BSP_EFER: AtomicU64 = AtomicU64::new(0);
 const AP_TRAMPOLINE_CODE: &[u8] = include_bytes!("ap_tramp");
 
 // TODO: If the main core panics, all APs should stop.
-pub fn start_up_aps(core_count: u8) {
+pub fn start_up_aps(core_count: usize) {
     if core_count <= 1 {
         return;
     }

@@ -1,11 +1,10 @@
-use core::sync::atomic::AtomicU8;
+use core::sync::atomic::AtomicUsize;
 
 use crate::{
     cpu::{self, apic, interrupts},
-    io, pci, process, screen,
+    io, pci, process, screen, video,
 };
 use bootloader::BootInfo;
-use x86_64::PhysAddr;
 
 use crate::{locals, mem, time};
 
@@ -22,7 +21,7 @@ static mut KERNEL_MAIN: fn() -> ! = || loop {
 };
 
 /// Static fence to ensure all cores enter `kmain` when they're all ready
-static KERNEL_MAIN_FENCE: AtomicU8 = AtomicU8::new(0);
+static KERNEL_MAIN_FENCE: AtomicUsize = AtomicUsize::new(0);
 
 /// This function is the proper entry point called by the bootloader.
 ///
@@ -49,7 +48,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         framebuffer,
         recursive_index,
         memory_regions,
-        rsdp_paddr: rsdp_addr,
+        rsdp_paddr,
         kernel_vaddr,
         ..
     } = boot_info;
@@ -79,7 +78,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     interrupts::init();
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
-    rsdp_addr.map(|rsdp_addr| acpi::init(PhysAddr::new(rsdp_addr)));
+    rsdp_paddr.map(acpi::init);
     time::hpet::init();
 
     apic::init_lapic();
@@ -89,6 +88,8 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     pci::init();
 
     io::init();
+
+    video::init();
 }
 
 /// This function is called by each core once they're ready to start the kernel.

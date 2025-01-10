@@ -11,7 +11,7 @@ use x86_64::{
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
-    volatile::{Access, Volatile},
+    volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
 };
 
 static XHCI: MUMcsLock<Xhci> = MUMcsLock::uninit();
@@ -82,9 +82,9 @@ impl Xhci {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 struct CapabilitiesRegisters {
-    base: Volatile<u32>,
+    base: Volatile<ReadOnly, u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -114,7 +114,7 @@ impl CapabilitiesRegisters {
 
     #[must_use]
     pub const fn new(base: VirtAddr) -> Self {
-        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap(), Access::ReadOnly);
+        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap());
         Self { base }
     }
 
@@ -181,11 +181,11 @@ impl CapabilitiesRegisters {
 
 #[derive(Debug)]
 struct OperationalRegisters {
-    base: Volatile<u32>,
+    base: Volatile<ReadWrite, u32>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct StatusRegister(Volatile<u32>);
+#[derive(Debug)]
+struct StatusRegister(Volatile<ReadOnly, u32>);
 
 impl StatusRegister {
     const HALT: u32 = 1 << 0;
@@ -199,7 +199,7 @@ impl StatusRegister {
     const HOST_CONTROLLER_ERROR: u32 = 1 << 12;
 
     #[must_use]
-    pub const fn as_raw(&self) -> Volatile<u32> {
+    pub const fn as_raw(&self) -> Volatile<ReadOnly, u32> {
         self.0
     }
 
@@ -253,8 +253,8 @@ impl StatusRegister {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct CommandRegister(Volatile<u32>);
+#[derive(Debug)]
+struct CommandRegister(Volatile<ReadWrite, u32>);
 
 impl CommandRegister {
     const RUN_STOP: u32 = 1 << 0;
@@ -272,8 +272,8 @@ impl CommandRegister {
     const VTIO_E: u32 = 1 << 16;
 
     #[must_use]
-    pub const fn as_raw(&self) -> Volatile<u32> {
-        self.0
+    pub const fn as_raw(&self) -> Volatile<WriteOnly, u32> {
+        self.0.change_access()
     }
 
     #[must_use]
@@ -414,7 +414,7 @@ impl OperationalRegisters {
 
     #[must_use]
     pub const fn new(base: VirtAddr) -> Self {
-        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap(), Access::ReadWrite);
+        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap());
         Self { base }
     }
 
@@ -425,11 +425,7 @@ impl OperationalRegisters {
 
     #[must_use]
     pub const fn status(&self) -> StatusRegister {
-        StatusRegister(unsafe {
-            self.base
-                .byte_add(Self::STATUS)
-                .change_access(Access::ReadOnly)
-        })
+        StatusRegister(unsafe { self.base.byte_add(Self::STATUS).change_access() })
     }
 
     #[must_use]
@@ -440,28 +436,28 @@ impl OperationalRegisters {
     }
 
     #[must_use]
-    pub const fn dev_notification(&self) -> Volatile<u16> {
+    pub const fn dev_notification(&self) -> Volatile<ReadWrite, u16> {
         // Bits 16-31 are reserved
         unsafe { self.base.cast::<u16>().byte_add(Self::DEV_NOTIFICATION) }
     }
 
     #[must_use]
-    pub const fn cmd_ring(&self) -> Volatile<u64> {
+    pub const fn cmd_ring(&self) -> Volatile<WriteOnly, u64> {
         unsafe {
             self.base
                 .cast::<u64>()
                 .byte_add(Self::CMD_RING)
-                .change_access(Access::WriteOnly)
+                .change_access()
         }
     }
 
     #[must_use]
-    pub const fn dcbaap(&self) -> Volatile<u64> {
+    pub const fn dcbaap(&self) -> Volatile<ReadWrite, u64> {
         unsafe { self.base.cast::<u64>().byte_add(Self::DCBAAP) }
     }
 
     #[must_use]
-    pub const fn configure(&self) -> Volatile<u32> {
+    pub const fn configure(&self) -> Volatile<ReadWrite, u32> {
         unsafe { self.base.byte_add(Self::CONFIGURE) }
     }
 }

@@ -11,8 +11,8 @@ use xmas_elf::{
     sections::Rela,
 };
 
-use crate::info::TlsTemplate;
 use crate::mem::{EarlyFrameAllocator, Level4Entries};
+use crate::structs::TlsTemplate;
 
 pub struct KernelLoadingUtils<'a> {
     kernel: &'a ElfFile<'a>,
@@ -67,7 +67,7 @@ pub fn load_kernel_elf(mut klu: KernelLoadingUtils) -> KernelInfo {
     let virtual_address_offset = match klu.kernel.header.pt2.type_().as_type() {
         header::Type::Executable => {
             // Kernel built by cargo should always be shared object (of the workspace)
-            log::warn!("Kernel is unexpectedly an executable.");
+            crate::warn!("Kernel is unexpectedly an executable.");
             0
         }
         header::Type::SharedObject => {

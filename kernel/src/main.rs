@@ -46,7 +46,7 @@ fn kmain() -> ! {
 
     // TODO: Start user-space processes
     // (GUI, ...)
-    BARRIER.call_once(|| Barrier::new(locals::get_ready_core_count().into()));
+    BARRIER.call_once(|| Barrier::new(locals::get_ready_core_count()));
 
     scheduler::set_scheduling(false);
     BARRIER.get().unwrap().wait();
