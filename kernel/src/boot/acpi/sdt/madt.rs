@@ -166,10 +166,10 @@ struct X2ApicNmi {
     reserved: [u8; 3],
 }
 
-#[allow(clippy::too_many_lines)]
 // See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt>
 impl Madt {
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn parse(&self) -> ParsedMadt {
         let mut lapic_paddr = PhysAddr::new(u64::from(unsafe {
             self.start_vaddr

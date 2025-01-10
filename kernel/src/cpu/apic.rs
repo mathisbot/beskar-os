@@ -360,7 +360,11 @@ impl IoApic {
         let cpu_count = crate::locals::get_ready_core_count();
         // Each APIC device must have a unique ID to be uniquely addressed
         // on the APIC Bus.
-        self.set_id(cpu_count + id_offset);
+        assert!(
+            cpu_count + usize::from(id_offset) < IoApic::MAX_ID_USIZE,
+            "IOAPIC ID must be less than 0xF (too many CPUs/IOAPICs)"
+        );
+        self.set_id(u8::try_from(cpu_count).unwrap() + id_offset);
 
         // TODO: Setup redirection entries (See MADT)
         let isos = crate::boot::acpi::ACPI.get().unwrap().madt().io_iso();
@@ -379,6 +383,9 @@ impl IoApic {
 
 // Safe register access
 impl IoApic {
+    pub const MAX_ID: u8 = 0xF;
+    pub const MAX_ID_USIZE: usize = 0xF;
+
     #[must_use]
     /// Returns the ID of the IO APIC.
     ///
@@ -389,7 +396,7 @@ impl IoApic {
     }
 
     fn set_id(&self, id: u8) {
-        assert!(id < 0xF, "IOAPIC ID must be less than 0xF");
+        assert!(id < Self::MAX_ID, "IOAPIC ID must be less than 0xF");
         // Safety:
         // IOAPICID is read/write
         unsafe { self.update_reg(IoApicReg::Id, u32::from(id), 4, 24) };

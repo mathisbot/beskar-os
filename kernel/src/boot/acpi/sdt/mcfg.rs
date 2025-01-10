@@ -41,7 +41,6 @@ struct McfgHeader {
     _reserved: u64,
 }
 
-#[allow(clippy::too_many_lines)]
 // See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt>
 impl Mcfg {
     #[must_use]

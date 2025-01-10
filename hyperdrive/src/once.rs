@@ -91,7 +91,12 @@ pub struct Once<T> {
     value: UnsafeCell<MaybeUninit<T>>,
 }
 
-unsafe impl<T> Sync for Once<T> where T: Sync {}
+// Safety:
+// `Once` only provies an immutable reference to the value when initialized.
+// On initialization, we manually make sure there are no data races.
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl<T> Send for Once<T> {}
+unsafe impl<T> Sync for Once<T> {}
 
 impl<T> Once<T> {
     #[must_use]

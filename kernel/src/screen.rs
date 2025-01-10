@@ -1,3 +1,4 @@
+use bootloader::video::{FrameBuffer, FrameBufferInfo};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 pub mod pixel;
@@ -5,10 +6,11 @@ use pixel::{PIXEL_SIZE, Pixel, PixelFormat};
 
 static SCREEN: MUMcsLock<Screen> = MUMcsLock::uninit();
 
-pub fn init(frame_buffer: &'static mut bootloader::FrameBuffer) {
+pub fn init(frame_buffer: &'static mut FrameBuffer) {
     let info = frame_buffer.info();
     assert_eq!(
-        info.bytes_per_pixel, PIXEL_SIZE,
+        info.bytes_per_pixel(),
+        PIXEL_SIZE,
         "Only 32-bit pixels are supported"
     );
     let screen = Screen::new(frame_buffer.buffer_mut(), info.into());
@@ -17,8 +19,8 @@ pub fn init(frame_buffer: &'static mut bootloader::FrameBuffer) {
 
     crate::info!(
         "Screen initialized with resolution {}x{}",
-        info.width,
-        info.height
+        info.width(),
+        info.height()
     );
 }
 
@@ -42,15 +44,15 @@ pub struct Info {
     pub pixel_format: PixelFormat,
 }
 
-impl From<bootloader::FrameBufferInfo> for Info {
-    fn from(value: bootloader::FrameBufferInfo) -> Self {
+impl From<FrameBufferInfo> for Info {
+    fn from(info: FrameBufferInfo) -> Self {
         Self {
-            width: value.width,
-            height: value.height,
-            stride: value.stride,
-            pixel_format: match value.pixel_format {
-                bootloader::PixelFormat::Rgb => PixelFormat::Rgb,
-                bootloader::PixelFormat::Bgr => PixelFormat::Bgr,
+            width: info.width(),
+            height: info.height(),
+            stride: info.stride(),
+            pixel_format: match info.pixel_format() {
+                bootloader::video::PixelFormat::Rgb => PixelFormat::Rgb,
+                bootloader::video::PixelFormat::Bgr => PixelFormat::Bgr,
                 _ => unimplemented!("Unsupported pixel format"),
             },
         }

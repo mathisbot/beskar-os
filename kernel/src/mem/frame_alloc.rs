@@ -6,7 +6,7 @@
 //! Allocated frames do not need to be contiguous.
 
 use super::ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges};
-use bootloader::info::{MemoryRegion, MemoryRegionUsage};
+use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
 use x86_64::{
     PhysAddr,
     structures::paging::{

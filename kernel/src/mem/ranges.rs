@@ -3,7 +3,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use bootloader::info::{MemoryRegion, MemoryRegionUsage};
+use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Represents a range of memory addresses.

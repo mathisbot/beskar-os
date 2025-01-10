@@ -1,4 +1,4 @@
-use core::{ptr::NonNull, sync::atomic::AtomicU8};
+use core::{ptr::NonNull, sync::atomic::AtomicUsize};
 
 use x86_64::registers::segmentation::Segment64;
 
@@ -10,11 +10,11 @@ use hyperdrive::locks::mcs::MUMcsLock;
 /// Count APs that got around of their trampoline code
 ///
 /// It is initialized at 1 because the BSP is already in the Rust code ;)
-static CORE_JUMPED: AtomicU8 = AtomicU8::new(1);
+static CORE_JUMPED: AtomicUsize = AtomicUsize::new(1);
 /// Count APs that are ready, right before entering `enter_kmain`
-static CORE_READY: AtomicU8 = AtomicU8::new(0);
+static CORE_READY: AtomicUsize = AtomicUsize::new(0);
 /// Distributes core IDs
-static CORE_ID: AtomicU8 = AtomicU8::new(0);
+static CORE_ID: AtomicUsize = AtomicUsize::new(0);
 
 // FIXME: Find a way to support an arbitrary number of cores (using a `Vec` makes it harder
 // to correctly initialize without data races)
@@ -57,11 +57,11 @@ pub fn init() {
     CORE_READY.fetch_add(1, core::sync::atomic::Ordering::Release);
 }
 
-pub fn get_ready_core_count() -> u8 {
+pub fn get_ready_core_count() -> usize {
     CORE_READY.load(core::sync::atomic::Ordering::Relaxed)
 }
 
-pub fn get_jumped_core_count() -> u8 {
+pub fn get_jumped_core_count() -> usize {
     CORE_JUMPED.load(core::sync::atomic::Ordering::Relaxed)
 }
 
@@ -71,7 +71,7 @@ pub fn core_jumped() {
 }
 
 pub struct CoreLocalsInfo {
-    core_id: u8,
+    core_id: usize,
     apic_id: u8,
     gdt: Gdt,
     interrupts: Interrupts,
@@ -93,7 +93,7 @@ impl CoreLocalsInfo {
 
     #[must_use]
     #[inline]
-    pub const fn core_id(&self) -> u8 {
+    pub const fn core_id(&self) -> usize {
         self.core_id
     }
 
