@@ -8,7 +8,7 @@ pub struct OperationalRegisters {
     base: Volatile<ReadWrite, u32>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct StatusRegister(Volatile<ReadOnly, u32>);
 
 impl StatusRegister {
@@ -23,54 +23,54 @@ impl StatusRegister {
     const HOST_CONTROLLER_ERROR: u32 = 1 << 12;
 
     #[must_use]
-    pub fn is_running(&self) -> bool {
+    pub fn is_running(self) -> bool {
         unsafe { self.0.read() & Self::HALT == 0 }
     }
 
     #[must_use]
-    pub fn host_system_error(&self) -> bool {
+    pub fn host_system_error(self) -> bool {
         unsafe { self.0.read() & Self::HOST_SYSTEM_ERROR != 0 }
     }
 
     #[must_use]
-    pub fn event_interrupt(&self) -> bool {
+    pub fn event_interrupt(self) -> bool {
         unsafe { self.0.read() & Self::EVENT_INTERRUPT != 0 }
     }
 
     #[must_use]
-    pub fn port_change_detect(&self) -> bool {
+    pub fn port_change_detect(self) -> bool {
         unsafe { self.0.read() & Self::PORT_CHANGE_DETECT != 0 }
     }
 
     #[must_use]
-    pub fn save_state_status(&self) -> bool {
+    pub fn save_state_status(self) -> bool {
         unsafe { self.0.read() & Self::SAVE_STATE_STATUS != 0 }
     }
 
     #[must_use]
-    pub fn restore_state_status(&self) -> bool {
+    pub fn restore_state_status(self) -> bool {
         unsafe { self.0.read() & Self::RESTORE_STATE_STATUS != 0 }
     }
 
     #[must_use]
-    pub fn save_restore_error(&self) -> bool {
+    pub fn save_restore_error(self) -> bool {
         unsafe { self.0.read() & Self::SAVE_RESTORE_ERROR != 0 }
     }
 
     #[must_use]
     /// While the controller is not ready, software shall not write any Doorbell or
     /// Operational register of the xHC, other than the USBSTS register
-    pub fn controller_ready(&self) -> bool {
+    pub fn controller_ready(self) -> bool {
         unsafe { self.0.read() & Self::CONTROLLER_NOT_READY != 0 }
     }
 
     #[must_use]
-    pub fn host_controller_error(&self) -> bool {
+    pub fn host_controller_error(self) -> bool {
         unsafe { self.0.read() & Self::HOST_CONTROLLER_ERROR != 0 }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct CommandRegister(Volatile<ReadWrite, u32>);
 
 impl CommandRegister {
@@ -89,7 +89,7 @@ impl CommandRegister {
     const VTIO_E: u32 = 1 << 16;
 
     #[must_use]
-    pub const fn as_raw(&self) -> Volatile<WriteOnly, u32> {
+    pub const fn as_raw(self) -> Volatile<WriteOnly, u32> {
         self.0.change_access()
     }
 
@@ -99,7 +99,7 @@ impl CommandRegister {
         if enable { value | mask } else { value & !mask }
     }
 
-    pub fn run_stop(&self, run: bool) {
+    pub fn run_stop(self, run: bool) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::RUN_STOP, run));
@@ -107,7 +107,7 @@ impl CommandRegister {
     }
 
     /// The function will block until the reset is complete.
-    pub fn reset(&self) {
+    pub fn reset(self) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::RESET, true));
@@ -117,14 +117,14 @@ impl CommandRegister {
         }
     }
 
-    pub fn set_interrupts(&self, enable: bool) {
+    pub fn set_interrupts(self, enable: bool) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::INT_E, enable));
         }
     }
 
-    pub fn set_host_system_error(&self, enable: bool) {
+    pub fn set_host_system_error(self, enable: bool) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::HSE_E, enable));
@@ -136,7 +136,7 @@ impl CommandRegister {
     /// ## Safety
     ///
     /// To perform such a reset, the Light HC Reset Capability bit must be set in HCCPARAMS1.
-    pub unsafe fn light_reset(&self) {
+    pub unsafe fn light_reset(self) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::LIGHT_HC_RESET, true));
@@ -147,7 +147,7 @@ impl CommandRegister {
     ///
     /// This function will stop the controller to perform the save operation.
     /// If the controller was previously running, it will be restarted after the operation.
-    pub fn save_state(&self) {
+    pub fn save_state(self) {
         let was_running = unsafe { self.0.read() } & Self::RUN_STOP == 0;
         self.run_stop(false);
         unsafe {
@@ -163,7 +163,7 @@ impl CommandRegister {
     ///
     /// This function will stop the controller to perform the restore operation.
     /// If the controller was previously running, it will be restarted after the operation.
-    pub fn restore_state(&self) {
+    pub fn restore_state(self) {
         let was_running = unsafe { self.0.read() } & Self::RUN_STOP == 0;
         self.run_stop(false);
         unsafe {
@@ -175,42 +175,42 @@ impl CommandRegister {
         }
     }
 
-    pub fn set_wrap_event(&self, enable: bool) {
+    pub fn set_wrap_event(self, enable: bool) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::E_WRAP_EVENT, enable));
         }
     }
 
-    pub fn set_u3mfindex_stop(&self, enable: bool) {
+    pub fn set_u3mfindex_stop(self, enable: bool) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::E_U3MFINDEX, enable));
         }
     }
 
-    pub fn set_cem(&self, enable: bool) {
+    pub fn set_cem(self, enable: bool) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::CEM_E, enable));
         }
     }
 
-    pub fn set_extended_tbc(&self, enable: bool) {
+    pub fn set_extended_tbc(self, enable: bool) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::EXTENDED_TBC_E, enable));
         }
     }
 
-    pub fn set_extended_tbc_trb(&self, enable: bool) {
+    pub fn set_extended_tbc_trb(self, enable: bool) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::EXTENDED_TBC_TRB_E, enable));
         }
     }
 
-    pub fn set_vtioc(&self, enable: bool) {
+    pub fn set_vtioc(self, enable: bool) {
         unsafe {
             self.0
                 .update(|c| Self::update_bit_masked(c, Self::VTIO_E, enable));
@@ -236,30 +236,30 @@ impl OperationalRegisters {
     }
 
     #[must_use]
-    pub const fn command(&self) -> CommandRegister {
+    pub const fn command(self) -> CommandRegister {
         CommandRegister(unsafe { self.base.byte_add(Self::COMMAND) })
     }
 
     #[must_use]
-    pub const fn status(&self) -> StatusRegister {
+    pub const fn status(self) -> StatusRegister {
         StatusRegister(unsafe { self.base.byte_add(Self::STATUS).change_access() })
     }
 
     #[must_use]
     /// If bit `i` is set, the controller supports a page size of 2^(12 + i) bytes.
-    pub fn page_size(&self) -> u16 {
+    pub fn page_size(self) -> u16 {
         // Bits 16-31 are reserved
         u16::try_from(unsafe { self.base.byte_add(Self::PAGE_SIZE).read() } & 0xFFFF).unwrap()
     }
 
     #[must_use]
-    pub const fn dev_notification(&self) -> Volatile<ReadWrite, u32> {
+    pub const fn dev_notification(self) -> Volatile<ReadWrite, u32> {
         // Bits 16-31 are reserved but writes must be DWORDs
         unsafe { self.base.byte_add(Self::DEV_NOTIFICATION) }
     }
 
     #[must_use]
-    pub const fn cmd_ring(&self) -> Volatile<WriteOnly, u64> {
+    pub const fn cmd_ring(self) -> Volatile<WriteOnly, u64> {
         unsafe {
             self.base
                 .cast::<u64>()
@@ -269,12 +269,12 @@ impl OperationalRegisters {
     }
 
     #[must_use]
-    pub const fn dcbaap(&self) -> Volatile<ReadWrite, u64> {
+    pub const fn dcbaap(self) -> Volatile<ReadWrite, u64> {
         unsafe { self.base.cast::<u64>().byte_add(Self::DCBAAP) }
     }
 
     #[must_use]
-    pub const fn configure(&self) -> Volatile<ReadWrite, u32> {
+    pub const fn configure(self) -> Volatile<ReadWrite, u32> {
         unsafe { self.base.byte_add(Self::CONFIGURE) }
     }
 }

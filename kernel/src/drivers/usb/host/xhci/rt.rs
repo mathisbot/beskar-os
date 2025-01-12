@@ -10,14 +10,14 @@ pub struct RuntimeRegisters {
 
 impl RuntimeRegisters {
     #[must_use]
-    pub fn new(base: VirtAddr) -> Self {
+    pub const fn new(base: VirtAddr) -> Self {
         let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap());
         Self { base }
     }
 
     #[must_use]
     /// This value changes every 125 microseconds
-    pub fn microframe_idx(&self) -> u16 {
+    pub fn microframe_idx(self) -> u16 {
         u16::try_from(unsafe { self.base.read() & 0x3FFF }).unwrap()
     }
 

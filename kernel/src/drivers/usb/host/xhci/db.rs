@@ -11,7 +11,7 @@ pub struct DoorbellRegistersSet {
 
 impl DoorbellRegistersSet {
     #[must_use]
-    pub fn new(base: VirtAddr, max_ports: u8) -> Self {
+    pub const fn new(base: VirtAddr, max_ports: u8) -> Self {
         let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap());
         Self { base, max_slots: max_ports }
     }
@@ -32,7 +32,8 @@ pub struct DoorbellRegisters {
 
 impl DoorbellRegisters {
     // TODO: Better API
-    pub fn as_raw(&self) -> Volatile<ReadWrite, u32> {
+    #[must_use]
+    pub const fn as_raw(&self) -> Volatile<ReadWrite, u32> {
         self.base
     }
 }

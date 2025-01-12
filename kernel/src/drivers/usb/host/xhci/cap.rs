@@ -29,12 +29,12 @@ impl CapabilitiesRegisters {
 
     #[must_use]
     /// Offset of the first operational register from the base address
-    pub fn cap_length(&self) -> u8 {
+    pub fn cap_length(self) -> u8 {
         unsafe { self.base.cast::<u8>().byte_add(Self::CAP_LENGTH).read() }
     }
 
     #[must_use]
-    pub fn hci_version(&self) -> HciVersion {
+    pub fn hci_version(self) -> HciVersion {
         // unsafe { self.base.cast::<u16>().byte_add(Self::HCI_VERSION).read() }
         // There currently is a bug in QEMU, where xHCI registers do not support DWORD reads.
         // This is a workaround to read the register as a QWORD and extract the bytes.
@@ -51,39 +51,39 @@ impl CapabilitiesRegisters {
     }
 
     #[must_use]
-    pub fn hcs_params1(&self) -> HcsParams1 {
+    pub fn hcs_params1(self) -> HcsParams1 {
         HcsParams1::new(unsafe { self.base.byte_add(Self::HCS_PARAMS1).read() })
     }
 
     #[must_use]
-    pub fn hcs_params2(&self) -> HcsParams2 {
+    pub fn hcs_params2(self) -> HcsParams2 {
         HcsParams2::new(unsafe { self.base.byte_add(Self::HCS_PARAMS2).read() })
     }
 
     #[must_use]
-    pub fn hcs_params3(&self) -> HcsParams3 {
+    pub fn hcs_params3(self) -> HcsParams3 {
         HcsParams3::new(unsafe { self.base.byte_add(Self::HCS_PARAMS3).read() })
     }
 
     #[must_use]
-    pub fn hcc_params1(&self) -> HccParams1 {
+    pub fn hcc_params1(self) -> HccParams1 {
         HccParams1::new(unsafe { self.base.byte_add(Self::HCC_PARAMS1).read() })
     }
 
     #[must_use]
     /// Doorbell array offset in bytes.
-    pub fn dboff(&self) -> u32 {
+    pub fn dboff(self) -> u32 {
         unsafe { self.base.byte_add(Self::DBOFF).read() & !0b11 }
     }
 
     #[must_use]
     /// Runtime register space offset in bytes.
-    pub fn rtsoff(&self) -> u32 {
+    pub fn rtsoff(self) -> u32 {
         unsafe { self.base.byte_add(Self::RTSOFF).read() & !0b1_1111 }
     }
 
     #[must_use]
-    pub fn hcc_params2(&self) -> u32 {
+    pub fn hcc_params2(self) -> u32 {
         unsafe { self.base.byte_add(Self::HCC_PARAMS2).read() }
     }
 }
@@ -101,7 +101,7 @@ impl core::fmt::Display for HciVersion {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub struct HcsParams1(u32);
+#[allow(clippy::struct_field_names)]
 pub struct HcsParams1 {
     /// Maximum number of Device Context Structures and
     /// Doorbell Array entries this host controller can support.
@@ -134,19 +134,19 @@ impl HcsParams1 {
 
     #[must_use]
     #[inline]
-    pub const fn max_slots(&self) -> u8 {
+    pub const fn max_slots(self) -> u8 {
         self.max_slots
     }
 
     #[must_use]
     #[inline]
-    pub const fn max_intrs(&self) -> u16 {
+    pub const fn max_intrs(self) -> u16 {
         self.max_intrs
     }
 
     #[must_use]
     #[inline]
-    pub const fn max_ports(&self) -> u8 {
+    pub const fn max_ports(self) -> u8 {
         self.max_ports
     }
 }
@@ -181,6 +181,30 @@ impl HcsParams2 {
             scratchpad_restore,
         }
     }
+
+    #[must_use]
+    #[inline]
+    pub const fn ist(self) -> u8 {
+        self.ist
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn erst_max(self) -> u8 {
+        self.erst_max
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn max_scratchpad_bufs(self) -> u16 {
+        self.max_scratchpad_bufs
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn scratchpad_restore(self) -> bool {
+        self.scratchpad_restore
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,6 +227,18 @@ impl HcsParams3 {
             u1_device_exit_latency,
             u2_device_exit_latency,
         }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn u1_device_exit_latency(self) -> u8 {
+        self.u1_device_exit_latency
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn u2_device_exit_latency(self) -> u16 {
+        self.u2_device_exit_latency
     }
 }
 
@@ -227,95 +263,107 @@ impl HccParams1 {
 
     #[must_use]
     #[inline]
-    pub fn new(value: u32) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self { value }
     }
 
     #[must_use]
+    #[inline]
     /// Whether the xHC has implemented the high order 32
     /// bits of 64 bit register and data structure pointer fields
-    pub const fn ac64(&self) -> bool {
+    pub const fn ac64(self) -> bool {
         (self.value & (1 << Self::AC64)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Wether the xHC has implemented the
     /// Bandwidth Negotiation
-    pub const fn bnc(&self) -> bool {
+    pub const fn bnc(self) -> bool {
         (self.value & (1 << Self::BNC)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Wether xHC uses 64 byte Context data structures
-    pub const fn csz(&self) -> bool {
+    pub const fn csz(self) -> bool {
         (self.value & (1 << Self::CSZ)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Whether the xHC implementation includes
     /// port power control
-    pub const fn ppc(&self) -> bool {
+    pub const fn ppc(self) -> bool {
         (self.value & (1 << Self::PPC)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Whether the xHC root hub ports support port indicator control.
-    pub const fn pind(&self) -> bool {
+    pub const fn pind(self) -> bool {
         (self.value & (1 << Self::PIND)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Whether the host controller implementation
     /// supports a Light Host Controller Reset.
-    pub const fn lhrc(&self) -> bool {
+    pub const fn lhrc(self) -> bool {
         (self.value & (1 << Self::LHRC)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Whether the xHC supports Latency Tolerance Messaging.
-    pub const fn ltc(&self) -> bool {
+    pub const fn ltc(self) -> bool {
         (self.value & (1 << Self::LTC)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Wether the xHC supports secondary Stream IDs.
-    pub const fn nss(&self) -> bool {
+    pub const fn nss(self) -> bool {
         (self.value & (1 << Self::NSS)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Whether the host controller implementation Parses all Event Data TRBs
     /// while advancing to the next TD after a Short Packet, or it skips all
     /// but the first Event Data TRB.
-    pub const fn pae(&self) -> bool {
+    pub const fn pae(self) -> bool {
         (self.value & (1 << Self::PAE)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Whether the host controller implementation is capable of generating
     /// a Stopped - Short Packet Completion Code
-    pub const fn spc(&self) -> bool {
+    pub const fn spc(self) -> bool {
         (self.value & (1 << Self::SPC)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Wether the host controller implementation Stream
     /// Context support a Stopped EDTLA field.
-    pub const fn sec(&self) -> bool {
+    pub const fn sec(self) -> bool {
         (self.value & (1 << Self::SEC)) != 0
     }
 
     #[must_use]
+    #[inline]
     /// Wether the host controller implementation is capable of
     /// matching the Frame ID of consecutive Isoch TDs.
-    pub const fn cfc(&self) -> bool {
+    pub const fn cfc(self) -> bool {
         (self.value & (1 << Self::CFC)) != 0
     }
 
     #[must_use]
     /// Maximum size Primary Stream Array that the xHC supports.
-    pub fn max_psa_size(&self) -> u16 {
-        let raw_value = u32::try_from((self.value >> 12) & 0xF).unwrap();
+    pub const fn max_psa_size(self) -> u16 {
+        let raw_value = (self.value >> 12) & 0xF;
         2_u16.pow(raw_value + 1)
     }
 }
@@ -331,14 +379,15 @@ impl HccParams2 {
 
     #[must_use]
     #[inline]
-    pub fn new(value: u32) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self { value }
     }
 
     #[must_use]
+    #[inline]
     /// Whether the xHC Root Hub ports support
     /// port Suspend Complete notification.
-    pub const fn u3c(&self) -> bool {
+    pub const fn u3c(self) -> bool {
         (self.value & (1 << Self::U3C)) != 0
     }
 }

@@ -71,7 +71,7 @@ impl Xhci {
         // We can now map more memory to read the operational registers
         let total_length = (usize::try_from(Self::PORT_REG_OFFSET).unwrap() + size_of::<u32>() * usize::from(max_ports)) // PR
             .max(rtsoff + size_of::<u32>()) // RT - TODO: RT regs have more registers
-            .max(dboff + size_of::<u32>() * usize::try_from(max_slots).unwrap()); // DB
+            .max(dboff + size_of::<u32>() * usize::from(max_slots)); // DB
         let physical_mapping = PhysicalMapping::new(paddr, total_length, flags);
 
         let reg_base_vaddr = physical_mapping.translate(paddr).unwrap();
