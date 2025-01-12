@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicUsize;
 
 use crate::{
     cpu::{self, apic, interrupts},
-    io, pci, process, screen, video,
+    drivers, pci, process, screen, video,
 };
 use bootloader::BootInfo;
 
@@ -87,7 +87,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     pci::init();
 
-    io::init();
+    drivers::init();
 
     video::init();
 }

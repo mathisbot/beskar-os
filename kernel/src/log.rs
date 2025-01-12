@@ -48,27 +48,27 @@ pub fn log(args: core::fmt::Arguments) {
 macro_rules! debug {
     ($($arg:tt)*) => {
         #[cfg(debug_assertions)]
-        $crate::log::log(format_args!("[DEBUG] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[DEBUG] {}\n", format_args!($($arg)*)))
     };
 }
 
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        $crate::log::log(format_args!("[INFO ] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[INFO ] {}\n", format_args!($($arg)*)))
     };
 }
 
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        $crate::log::log(format_args!("[WARN ] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[WARN ] {}\n", format_args!($($arg)*)))
     };
 }
 
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {
-        $crate::log::log(format_args!("[ERROR] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[ERROR] {}\n", format_args!($($arg)*)))
     };
 }

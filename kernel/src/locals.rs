@@ -1,11 +1,17 @@
 use core::{ptr::NonNull, sync::atomic::AtomicUsize};
 
-use x86_64::registers::segmentation::Segment64;
+use x86_64::{
+    VirtAddr,
+    registers::{
+        control::{Cr4, Cr4Flags},
+        segmentation::{GS, Segment64},
+    },
+};
 
 use alloc::boxed::Box;
 
 use crate::cpu::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts};
-use hyperdrive::locks::mcs::MUMcsLock;
+use hyperdrive::{locks::mcs::MUMcsLock, once::Once};
 
 /// Count APs that got around of their trampoline code
 ///
@@ -19,35 +25,27 @@ static CORE_ID: AtomicUsize = AtomicUsize::new(0);
 // FIXME: Find a way to support an arbitrary number of cores (using a `Vec` makes it harder
 // to correctly initialize without data races)
 /// This array holds the core locals for each core, so that it is accessible from any core.
-static mut ALL_CORE_LOCALS: [Option<NonNull<CoreLocalsInfo>>; 255] = [None; 255];
+static ALL_CORE_LOCALS: [Once<NonNull<CoreLocalsInfo>>; 255] = [const { Once::uninit() }; 255];
 
 pub fn init() {
     let core_id = CORE_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     let apic_id = crate::cpu::apic::apic_id();
 
-    // Size is too random to manually map it
     let mut core_locals = Box::new(CoreLocalsInfo {
         core_id,
         apic_id,
         ..CoreLocalsInfo::empty()
     });
 
-    // Safety:
-    // Each core only accesses its own entry in the array on startup.
-    // The array is then never modified.
+    ALL_CORE_LOCALS[core_id].call_once(|| unsafe { NonNull::new_unchecked(core_locals.as_mut()) });
+
     unsafe {
-        ALL_CORE_LOCALS[core_id] = Some(NonNull::new(core_locals.as_mut()).unwrap());
+        Cr4::update(|cr4| cr4.insert(Cr4Flags::FSGSBASE));
     }
 
     unsafe {
-        x86_64::registers::control::Cr4::update(|cr4| {
-            cr4.insert(x86_64::registers::control::Cr4Flags::FSGSBASE);
-        });
-    }
-
-    unsafe {
-        x86_64::registers::segmentation::GS::write_base(x86_64::VirtAddr::new(
-            core::ptr::from_ref(core_locals.as_ref()) as u64,
+        GS::write_base(VirtAddr::new(
+            core::ptr::from_ref(core_locals.as_ref()) as u64
         ));
     }
 
@@ -57,16 +55,17 @@ pub fn init() {
     CORE_READY.fetch_add(1, core::sync::atomic::Ordering::Release);
 }
 
+/// Returns the number of currently active cores
 pub fn get_ready_core_count() -> usize {
     CORE_READY.load(core::sync::atomic::Ordering::Relaxed)
 }
 
-pub fn get_jumped_core_count() -> usize {
+pub(crate) fn get_jumped_core_count() -> usize {
     CORE_JUMPED.load(core::sync::atomic::Ordering::Relaxed)
 }
 
 /// Increment the count of cores that jumped to Rust code
-pub fn core_jumped() {
+pub(crate) fn core_jumped() {
     CORE_JUMPED.fetch_add(1, core::sync::atomic::Ordering::Release);
 }
 

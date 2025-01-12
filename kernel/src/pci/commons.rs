@@ -248,17 +248,6 @@ impl ConfigAddressValue {
             register_offset,
         }
     }
-
-    #[must_use]
-    pub fn as_raw(self) -> u32 {
-        let enable_bit = u32::from(self.enable) << 31;
-        let bus = u32::from(self.bdf.bus()) << 16;
-        let device = u32::from(self.bdf.device()) << 11;
-        let function = u32::from(self.bdf.function()) << 8;
-        let register_offset = u32::from(self.register_offset);
-
-        enable_bit | bus | device | function | register_offset
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -273,13 +262,16 @@ impl Bar {
     ///
     /// If you want to initialize a `Bar` with a DWORD, it is as simple as
     /// converting the DWORD to a QWORD.
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// let dword = 0x1234_5678; // INVALID value
+    /// let bar = Bar::from_raw(u64::from(dword));
+    /// ```
     pub fn from_raw(value: u64) -> Self {
         if value & 0b1 == 0 {
-            if value >> 32 != 0 {
-                Self::Memory(MemoryBar::from_raw_u64(value))
-            } else {
-                Self::Memory(MemoryBar::from_raw_u32(u32::try_from(value).unwrap()))
-            }
+            Self::Memory(MemoryBar::from_raw(value))
         } else {
             Self::Io(IoBar::from_raw(u32::try_from(value).unwrap()))
         }
@@ -298,30 +290,21 @@ pub struct MemoryBar {
 
 impl MemoryBar {
     #[must_use]
-    fn from_raw_u32(value: u32) -> Self {
-        assert_eq!(value & 0b1, 0, "BAR register is not memory type");
-
-        let bar_type = MemoryBarType::try_from((value >> 1) & 0b11).unwrap();
-        assert_eq!(bar_type, MemoryBarType::Dword, "Bad access length provided");
-
-        let prefetchable = (value & 0b100) != 0;
-        Self {
-            base_address: PhysAddr::new(u64::from(value & 0xFFFF_FFF0)),
-            prefetchable,
-        }
-    }
-
-    #[must_use]
-    fn from_raw_u64(value: u64) -> Self {
+    fn from_raw(value: u64) -> Self {
         assert_eq!(value & 0b1, 0, "BAR register is not memory type");
 
         let lower_value = u32::try_from(value & 0xFFFF_FFFF).unwrap();
         let bar_type = MemoryBarType::try_from((lower_value >> 1) & 0b11).unwrap();
-        assert_eq!(bar_type, MemoryBarType::Qword, "Bad access length provided");
+        if value >> 32 != 0 {
+            assert_eq!(bar_type, MemoryBarType::Qword, "Bad access length provided");
+        } else {
+            assert_eq!(bar_type, MemoryBarType::Dword, "Bad access length provided");
+        }
 
         let prefetchable = (value & 0b100) != 0;
+        let base_address = PhysAddr::new(value & !0xF);
         Self {
-            base_address: PhysAddr::new(value & !0xF),
+            base_address,
             prefetchable,
         }
     }

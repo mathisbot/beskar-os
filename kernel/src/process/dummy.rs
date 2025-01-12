@@ -1,8 +1,6 @@
 //! Test processes for the kernel.
 // TODO: Remove this module
 
-/// The purpose of this thread is to crash after it starts
-/// because of overflow.
 pub fn fibonacci() {
     let mut a = 0_u16;
     let mut b = 1_u16;
@@ -15,13 +13,17 @@ pub fn fibonacci() {
             n,
             a
         );
-        let (next, overflow) = a.overflowing_add(b);
-        assert!(!overflow, "Overflow detected in Fibonacci sequence");
+        let Some(next) = a.checked_add(b) else {
+            crate::error!("Overflow detected in Fibonacci sequence");
+            break;
+        };
         a = b;
         b = next;
         n += 1;
         crate::time::wait_ms(1_000);
     }
+
+    panic!("Thread cannot end for now.")
 }
 
 pub fn counter() {

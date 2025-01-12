@@ -159,7 +159,8 @@ impl LegacyPciHandler {
         };
 
         unsafe {
-            self.config_port.write(aligned_address.as_raw());
+            self.config_port
+                .write(ConfigAddress::build_value(aligned_address));
         };
         let value = unsafe { self.data_port.read() };
 
@@ -249,7 +250,7 @@ pub struct ConfigAddress(PortWriteOnly<u32>);
 impl PortWrite for ConfigAddressValue {
     unsafe fn write_to_port(port: u16, value: Self) {
         unsafe {
-            u32::write_to_port(port, value.as_raw());
+            u32::write_to_port(port, ConfigAddress::build_value(value));
         }
     }
 }
@@ -265,6 +266,17 @@ impl ConfigAddress {
     #[inline]
     pub const fn new() -> Self {
         Self(PortWriteOnly::new(CONFIG_ADDRESS))
+    }
+
+    #[must_use]
+    fn build_value(address: ConfigAddressValue) -> u32 {
+        let enable_bit = u32::from(address.enable) << 31;
+        let bus = u32::from(address.bdf.bus()) << 16;
+        let device = u32::from(address.bdf.device()) << 11;
+        let function = u32::from(address.bdf.function()) << 8;
+        let register_offset = u32::from(address.register_offset);
+
+        enable_bit | bus | device | function | register_offset
     }
 }
 

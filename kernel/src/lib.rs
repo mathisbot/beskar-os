@@ -9,7 +9,7 @@ compile_error!("BeskarOS kernel only supports x86_64 architecture");
 
 pub mod boot;
 pub mod cpu;
-pub mod io;
+pub mod drivers;
 pub mod locals;
 pub mod log;
 mod mem;
