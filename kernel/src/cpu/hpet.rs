@@ -497,3 +497,8 @@ impl Hpet {
 pub fn with_hpet<R>(f: impl FnOnce(&mut Hpet) -> R) -> R {
     HPET.with_locked(f)
 }
+
+pub fn main_counter_value() -> u64 {
+    let hpet = unsafe { HPET.force_lock() };
+    hpet.main_counter_value().get_value()
+}

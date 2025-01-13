@@ -19,7 +19,7 @@ pub(super) fn wait_ms(ms: u64) {
 
     let target = start + (ms * 1_000_000) / period_ps * 1_000_000;
 
-    while hpet::with_hpet(|hpet| hpet.main_counter_value().get_value()) < target {
+    while hpet::main_counter_value() < target {
         core::hint::spin_loop();
     }
 }

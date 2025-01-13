@@ -21,7 +21,7 @@ pub const SCHEDULER_QUANTUM_MS: u32 = 60;
 
 // TODO: Runtime size for schedulers
 // Currently, it takes 4KiB of memory but on a vast majority of systems, it only needs a few schedulers.
-// 
+//
 // Because scheduler will be playing with context switching, we cannot acquire locks.
 // Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
 static mut SCHEDULERS: [Option<Scheduler>; 256] = [const { None }; 256];
@@ -274,9 +274,9 @@ pub fn change_current_thread_priority(priority: priority::Priority) {
 }
 
 /// Exits the current thread.
-/// 
+///
 /// ## Safety
-/// 
+///
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.
 pub unsafe fn exit_current_thread() {
