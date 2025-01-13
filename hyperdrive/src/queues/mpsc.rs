@@ -51,7 +51,7 @@ use core::{
 };
 
 pub trait Queueable: Sized {
-    /// The type of the handle to the link.
+    /// `Handle` is the type that owns the data.
     ///
     /// Usually, it is `Pin<Box<Self>>`.
     type Handle;
@@ -228,6 +228,9 @@ impl<T: Queueable> MpscQueue<T> {
         res
     }
 
+    /// ## Safety
+    /// 
+    /// The caller must make sure that the queue is not being dequeued by another thread.
     unsafe fn dequeue_impl(&self) -> DequeueResult<T> {
         let tail_ptr = self.tail.get();
 

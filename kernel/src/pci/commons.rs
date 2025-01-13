@@ -2,6 +2,8 @@
 
 use x86_64::PhysAddr;
 
+pub mod msi;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Device Class, Subclass, Programming Interface
 pub struct Csp {

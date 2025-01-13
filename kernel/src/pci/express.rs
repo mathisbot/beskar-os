@@ -16,7 +16,7 @@ use super::commons::{
     Bar, BdfAddress, ConfigAddressValue, Csp, Device, MemoryBarType, RegisterOffset,
 };
 
-mod msi;
+mod msix;
 
 static PCIE_HANDLER: MUMcsLock<PciExpressHandler> = MUMcsLock::uninit();
 

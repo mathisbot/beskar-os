@@ -1,13 +1,15 @@
 # BeskarOS
 
-This repository is a very basic 64-bit hobby OS written in pure Rust that boots on UEFI 2.0.
+This repository is a very basic x86-64 hobby OS written in pure Rust that boots on UEFI 2.0.
 It is named after the alloy used to forge Mandalorian armors, which cannot rust.
 
-## Requirements
+## Design and architecture
 
-- Rust (nightly)
+- Bootloader: Custom UEFI 2 bootloader
+- Kernel: Modern x86-64 kernel with SMP support
+- Hyperdrive: Bare metal utility module for the OS
 
-Because of `rust-toolchain.toml`, `cargo` will automatically download the nightly channel if it is not already installed on you system.
+You will find more information in their respective READMEs, especially in `kernel/README.md` for the features.
 
 ## Usage
 
@@ -41,15 +43,15 @@ Where:
 - `<CPU_ARCH>` specifies the CPU architecture to emulate. QEMU's default amd64 CPU doesn't support some features that are mandatory such as `FSGSBASE`. A good choice is `max` (Windows) or `host` (Linux).
 - `<ACCEL_BACKEND>` allows QEMU to use acceleration based on your OS. On Linux, you can set it to `kvm`, and to `whpx` on Windows (currently incompatible with OMVF files).
 
-Standard output will be filled with early logging info, such as memory initialization, which is needed to initialize windows (thus screen logging).
-
 Other useful parameters:
 - `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.
-- If you're not interested in graphics (for debug purposes) replace `-serial stdio` by `-nographics`.
+- If you're not interested in graphics (for debugging purposes) replace `-serial stdio` with `-nographics`.
 
 #### Troubleshooting
 
 If the firmware starts and boots on the UEFI shell instead of the bootloader, try deleting `efi_disk/NvVars`.
+
+If you are using `-accel whpx` and QEMU boots with a blank window right before crashing, remove WHPX acceleration. This a "bug" (apparently, they are not planning on fixing Windows builds of QEMU).
 
 ### Running on baremetal
 
@@ -58,28 +60,13 @@ Secure boot must also be disabled.
 
 Copy the content of the directory `efi_disk` to a FAT32 filesystem on a GPT or MBR partition of a drive, and you're good to go!
 
-## Architecture
+#### Troubleshooting
 
-This repository is a mono-repo. You will find three major components :
+I don't have access to a nice test hardware. If you find anything, please contact me!
 
-- Bootloader
-- Hyperdrive (utilities)
-- Kernel
+If the bootloader runs but the computer stalls right after (i.e. the screen gets filled with text then turns black), the kernel has likely crashed with an INVALID OPCODE exception very early. Try to build the kernel for an older version of x86-64.
 
-Please refer to their READMEs for more information.
-
-## TO-DOs
-
-- MSI (PCIe) [WIP]
-- USB [WIP]
-- Process [WIP]
-- IO APIC
-- User mode
-- Storage
-- FADT
-- Optimizations
-- Stabilization
-- Graphics
+In any other cases, the kernel **SHOULD** give information any problem it encounters.
 
 ## Sources and inspirations
 
