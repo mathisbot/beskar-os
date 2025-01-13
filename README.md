@@ -62,7 +62,7 @@ Copy the content of the directory `efi_disk` to a FAT32 filesystem on a GPT or M
 
 #### Troubleshooting
 
-I don't have access to a nice test hardware. If you find anything, please contact me!
+I don't have access to a nice testing hardware. If you find anything, please contact me!
 
 If the bootloader runs but the computer stalls right after (i.e. the screen gets filled with text then turns black), the kernel has likely crashed with an INVALID OPCODE exception very early. Try to build the kernel for an older version of x86-64.
 

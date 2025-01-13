@@ -4,19 +4,25 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
+use hyperdrive::once::Once;
 
 use crate::mem::address_space::AddressSpace;
 
 pub mod dummy;
 pub mod scheduler;
 
+static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();
+
 pub fn init() {
-    let kernel_process = Arc::new(Process {
-        name: "kernel".to_string(),
-        pid: ProcessId::new(),
-        address_space: *crate::mem::address_space::get_kernel_address_space(),
+    KERNEL_PROCESS.call_once(|| {
+        Arc::new(Process {
+            name: "kernel".to_string(),
+            pid: ProcessId::new(),
+            address_space: *crate::mem::address_space::get_kernel_address_space(),
+        })
     });
 
+    let kernel_process = KERNEL_PROCESS.get().unwrap().clone();
     debug_assert!(kernel_process.address_space().is_active());
 
     let current_thread = scheduler::thread::Thread::new_kernel(kernel_process);

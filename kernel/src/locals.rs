@@ -25,7 +25,7 @@ static CORE_ID: AtomicUsize = AtomicUsize::new(0);
 // FIXME: Find a way to support an arbitrary number of cores (using a `Vec` makes it harder
 // to correctly initialize without data races)
 /// This array holds the core locals for each core, so that it is accessible from any core.
-static ALL_CORE_LOCALS: [Once<NonNull<CoreLocalsInfo>>; 255] = [const { Once::uninit() }; 255];
+static ALL_CORE_LOCALS: [Once<NonNull<CoreLocalsInfo>>; 256] = [const { Once::uninit() }; 256];
 
 pub fn init() {
     let core_id = CORE_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);

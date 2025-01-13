@@ -70,11 +70,29 @@ fn kmain() -> ! {
             alloc::vec![0; 1024*256],
             dummy::counter as *const (),
         )));
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            unsafe { scheduler::current_process() },
+            Priority::High,
+            alloc::vec![0; 1024*256],
+            dummy::hello_world as *const (),
+        )));
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            unsafe { scheduler::current_process() },
+            Priority::Low,
+            alloc::vec![0; 1024*256],
+            dummy::alloc_intensive as *const (),
+        )));
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            unsafe { scheduler::current_process() },
+            Priority::Low,
+            alloc::vec![0; 1024*256],
+            dummy::panic_test as *const (),
+        )));
     }
     BARRIER.get().unwrap().wait();
     scheduler::set_scheduling(true);
 
-    // TODO: Stop this thread from being scheduled
+    unsafe { kernel::process::scheduler::exit_current_thread() };
 
     kernel::error!(
         "Kernel main function reached the end on core {}",

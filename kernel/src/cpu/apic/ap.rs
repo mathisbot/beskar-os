@@ -8,7 +8,7 @@ use crate::{
         frame_alloc, page_alloc, page_table,
         ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
     },
-    process::scheduler,
+    process::{self, scheduler},
 };
 
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -252,6 +252,8 @@ fn ap_init() {
     locals::init();
 
     locals!().gdt().init_load();
+
+    process::init();
 
     cpu::interrupts::init();
 

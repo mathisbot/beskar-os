@@ -229,7 +229,7 @@ impl<T: Queueable> MpscQueue<T> {
     }
 
     /// ## Safety
-    /// 
+    ///
     /// The caller must make sure that the queue is not being dequeued by another thread.
     unsafe fn dequeue_impl(&self) -> DequeueResult<T> {
         let tail_ptr = self.tail.get();

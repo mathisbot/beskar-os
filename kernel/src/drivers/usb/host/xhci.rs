@@ -69,9 +69,10 @@ impl Xhci {
         let _ = (vaddr, cap); // We are about to unmap the memory, so it's best to shadow related variables
 
         // We can now map more memory to read the operational registers
-        let total_length = (usize::try_from(Self::PORT_REG_OFFSET).unwrap() + size_of::<u32>() * usize::from(max_ports)) // PR
-            .max(rtsoff + size_of::<u32>()) // RT - TODO: RT regs have more registers
-            .max(dboff + size_of::<u32>() * usize::from(max_slots)); // DB
+        let total_length = (usize::try_from(Self::PORT_REG_OFFSET).unwrap()
+            + size_of::<u32>() * usize::from(max_ports)) // PR
+        .max(rtsoff + size_of::<u32>()) // RT - TODO: RT regs have more registers
+        .max(dboff + size_of::<u32>() * usize::from(max_slots)); // DB
         let physical_mapping = PhysicalMapping::new(paddr, total_length, flags);
 
         let reg_base_vaddr = physical_mapping.translate(paddr).unwrap();
@@ -79,14 +80,9 @@ impl Xhci {
         let cap = CapabilitiesRegisters::new(reg_base_vaddr);
         let op = OperationalRegisters::new(reg_base_vaddr + u64::try_from(cap_length).unwrap());
         let rt = RuntimeRegisters::new(reg_base_vaddr + u64::try_from(rtsoff).unwrap());
-        let port_regs = PortRegistersSet::new(
-            reg_base_vaddr + Self::PORT_REG_OFFSET,
-            max_ports,
-        );
-        let db_regs = DoorbellRegistersSet::new(
-            reg_base_vaddr + u64::try_from(dboff).unwrap(),
-            max_slots,
-        );
+        let port_regs = PortRegistersSet::new(reg_base_vaddr + Self::PORT_REG_OFFSET, max_ports);
+        let db_regs =
+            DoorbellRegistersSet::new(reg_base_vaddr + u64::try_from(dboff).unwrap(), max_slots);
 
         Self {
             cap,

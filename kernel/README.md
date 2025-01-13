@@ -10,7 +10,7 @@ I am not planning on writing a kernel close to Linux, as I am focusing on learni
 ## Features
 
 - Boot
-    - [ ]ACPI
+    - [ ] ACPI
         - [x] MADT
         - [x] HPET
         - [x] MCFG
@@ -35,11 +35,12 @@ I am not planning on writing a kernel close to Linux, as I am focusing on learni
     - [ ] ext2/ext4
 - Drivers
     - [ ] PCI/PCIe
-        - [ ] Devices
+        - [x] Devices
         - [ ] MSI/MSI-X
     - [ ] USB
-        - [ ] xHCI
-        - [ ] Keyboard
+        - [ ] xHCI drive
+        - [ ] USB 1/2/3 driver
+        - [ ] Keyboard driver
 - Network
     - [ ] Network stack
         - [ ] Ethernet driver
@@ -52,11 +53,11 @@ I am not planning on writing a kernel close to Linux, as I am focusing on learni
         - [ ] DNS
         - [ ] Sockets
 - Processes
-    - [ ] Scheduling (partial)
+    - [x] Scheduling
     - [ ] User space
     - [ ] ELF loading
 - Video
     - [x] Character rendering
     - [x] Logging
     - [ ] GUI
-    - [ ] GPU drivers?
+    - [ ] GPU driver (🤠)
