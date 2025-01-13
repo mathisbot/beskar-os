@@ -88,6 +88,12 @@ fn kmain() -> ! {
             alloc::vec![0; 1024*256],
             dummy::panic_test as *const (),
         )));
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            unsafe { scheduler::current_process() },
+            Priority::Normal,
+            alloc::vec![0; 1024*512],
+            dummy::floating_point as *const (),
+        )));
     }
     BARRIER.get().unwrap().wait();
     scheduler::set_scheduling(true);

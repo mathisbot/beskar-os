@@ -40,7 +40,7 @@ Where:
 - `<x86_64-OVMF>` is the file `<QEMU>/share/edk2-x86_64-code.fd`. Please note that the OVMF file only comes preinstalled on Windows versions of QEMU. You will have to download them on Linux. You will find many tutorials online. It is currently the only way to allow QEMU to use UEFI.
 - `<NB_CORES>` must be 1 or more, but setting it to at least 2 is better.
 - `<RAM_SIZE>` is in MiB. It must be at least 64.
-- `<CPU_ARCH>` specifies the CPU architecture to emulate. QEMU's default amd64 CPU doesn't support some features that are mandatory such as `FSGSBASE`. A good choice is `max` (Windows) or `host` (Linux).
+- `<CPU_ARCH>` specifies the CPU architecture to emulate. QEMU's default amd64 CPU doesn't support some features that are mandatory such as `FSGSBASE`. A good choice is `max` (Windows) or `host` (Linux), or even `qemu64,+pse,+msr,+apic,+fsgsbase,+rdrand` for minimal features.
 - `<ACCEL_BACKEND>` allows QEMU to use acceleration based on your OS. On Linux, you can set it to `kvm`, and to `whpx` on Windows (currently incompatible with OMVF files).
 
 Other useful parameters:
@@ -55,7 +55,7 @@ If you are using `-accel whpx` and QEMU boots with a blank window right before c
 
 ### Running on baremetal
 
-If you want to run the OS on a real baremetal server, make sure that you have a proper x86-64 server that supports UEFI 2, SSE2 and has at least 64 MiB of RAM.
+If you want to run the OS on a real baremetal server, make sure that you have a proper x86-64 server that supports UEFI 2 and has at least 64 MiB of RAM.
 Secure boot must also be disabled.
 
 Copy the content of the directory `efi_disk` to a FAT32 filesystem on a GPT or MBR partition of a drive, and you're good to go!

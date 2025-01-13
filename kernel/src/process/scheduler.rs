@@ -72,6 +72,7 @@ pub struct Scheduler {
     /// A local, atomic, priority for the current thread.
     current_priority: priority::AtomicPriority,
     should_exit_thread: AtomicBool,
+    in_reschedule: AtomicBool,
 }
 
 impl Scheduler {
@@ -83,6 +84,7 @@ impl Scheduler {
             current_thread: Box::new(kernel_thread),
             current_priority,
             should_exit_thread: AtomicBool::new(false),
+            in_reschedule: AtomicBool::new(false),
         }
     }
 
@@ -119,19 +121,15 @@ impl Scheduler {
     /// This function does not change the context, but will disable interrupts
     /// if scheduling was successful.
     fn reschedule(&mut self) -> Option<ContextSwitch> {
-        static IN_RESCHEDULE: AtomicBool = AtomicBool::new(false);
-
         // We cannot acquire locks, so we imitate one with an `AtomicBool`.
         // It is tempting to use a spin loop here, but it is better to use the CPU for the last thread
         // than to waste it on a spin loop.
         // It is also a better solution if `yield` is implemented.
-        if IN_RESCHEDULE
+        if self
+            .in_reschedule
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            // FIXME: This solution is not optimal for multiple cores:
-            // As AP start at the same time, they will all try to reschedule at the same time.
-            // Only one AP will then be able to reschedule.
             return None;
         }
 
@@ -143,7 +141,7 @@ impl Scheduler {
             if let Some(new_thread) = unsafe { QUEUE.as_mut() }.unwrap().next() {
                 new_thread
             } else {
-                IN_RESCHEDULE.store(false, Ordering::Release);
+                self.in_reschedule.store(false, Ordering::Release);
                 x86_64::instructions::interrupts::enable();
                 return None;
             },
@@ -177,7 +175,7 @@ impl Scheduler {
 
         let cr3 = self.current_process().address_space().cr3_raw();
 
-        IN_RESCHEDULE.store(false, Ordering::Release);
+        self.in_reschedule.store(false, Ordering::Release);
 
         Some(ContextSwitch {
             old_stack,

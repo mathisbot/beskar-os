@@ -63,6 +63,20 @@ pub fn alloc_intensive() {
     }
 }
 
+pub fn floating_point() {
+    let mut x = 1.1_f64;
+
+    loop {
+        crate::info!(
+            "Hello from core {}! x = {:.5}",
+            crate::locals!().core_id(),
+            x
+        );
+        x = x * x;
+        crate::time::wait_ms(1_000);
+    }
+}
+
 pub fn panic_test() {
     panic!("This is a panic test");
 }

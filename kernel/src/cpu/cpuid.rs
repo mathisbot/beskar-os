@@ -151,16 +151,14 @@ impl CpuFeature {
 /// List of required features for the kernel to run
 ///
 /// Please keep the list sorted by leaf number
-const REQUIRED_FEATURES: [CpuFeature; 9] = [
+const REQUIRED_FEATURES: [CpuFeature; 4] = [
     // Leaf 1
-    CpuFeature::FPU,
+    // CpuFeature::FPU,
     CpuFeature::PSE,
     CpuFeature::MSR,
     CpuFeature::APIC,
-    CpuFeature::PAT, // FIXME: Use PAT
-    CpuFeature::FXSR,
-    CpuFeature::SSE,
-    CpuFeature::SSE2,
+    // CpuFeature::PAT,
+    // CpuFeature::FXSR,
     // Leaf 7
     CpuFeature::FSGSBASE, // TLS support
 ];
