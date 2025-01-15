@@ -79,7 +79,7 @@ fn kmain() -> ! {
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             unsafe { scheduler::current_process() },
             Priority::Low,
-            alloc::vec![0; 1024*256],
+            alloc::vec![0; 1024*1024],
             dummy::alloc_intensive as *const (),
         )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
@@ -91,7 +91,7 @@ fn kmain() -> ! {
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             unsafe { scheduler::current_process() },
             Priority::Normal,
-            alloc::vec![0; 1024*512],
+            alloc::vec![0; 1024*256],
             dummy::floating_point as *const (),
         )));
     }

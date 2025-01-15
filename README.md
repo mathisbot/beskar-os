@@ -13,6 +13,8 @@ You will find more information in their respective READMEs, especially in `kerne
 
 ## Usage
 
+You easily use BeskarOS, however keep in mind that it is currently in an early stage where it only initializes and prints information.
+
 ### Building
 
 The OS can be built using `cargo build --release`.
@@ -64,9 +66,9 @@ Copy the content of the directory `efi_disk` to a FAT32 filesystem on a GPT or M
 
 I don't have access to a nice testing hardware. If you find anything, please contact me!
 
-If the bootloader runs but the computer stalls right after (i.e. the screen gets filled with text then turns black), the kernel has likely crashed with an INVALID OPCODE exception very early. Try to build the kernel for an older version of x86-64.
+If the bootloader runs but the computer stalls right after (i.e. the screen gets filled with text then turns black), the kernel has likely crashed with an INVALID OPCODE exception very early. Try to build the kernel for an older version of x86-64. If you happen to have a COM1 serial port on your hardware, you can receive debug messages when connecting to it (using PuTTY for example).
 
-In any other cases, the kernel **SHOULD** give information any problem it encounters.
+In any other cases, the kernel **SHOULD** print information on the screen about any problem it encounters.
 
 ## Sources and inspirations
 

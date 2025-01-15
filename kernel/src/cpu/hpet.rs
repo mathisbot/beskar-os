@@ -4,7 +4,7 @@ use x86_64::structures::paging::{PageTableFlags, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::boot::acpi::sdt::hpet_table::ParsedHpetTable;
-use crate::mem::page_alloc::pmap::PhysicalMapping;
+use crate::mem::page_alloc::pmap::{self, PhysicalMapping};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 static HPET: MUMcsLock<Hpet> = MUMcsLock::uninit();
@@ -69,7 +69,7 @@ macro_rules! read_write_reg {
             ///
             /// Does NOT validate the content of the register.
             fn new(paddr: PhysAddr, $($field_name: $field_type),*) -> Self {
-                let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE | PageTableFlags::NO_CACHE;
+                let flags = pmap::FLAGS_MMIO;
 
                 let physical_mapping = PhysicalMapping::new(paddr, core::mem::size_of::<u64>(), flags);
                 let vaddr = physical_mapping.translate(paddr).unwrap();

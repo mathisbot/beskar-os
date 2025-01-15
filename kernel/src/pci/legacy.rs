@@ -7,9 +7,7 @@ use x86_64::{
     structures::port::PortWrite,
 };
 
-use super::commons::{
-    Bar, BdfAddress, Class, ConfigAddressValue, Csp, Device, MemoryBarType, RegisterOffset,
-};
+use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 
 const CONFIG_ADDRESS: u16 = 0xCF8;
 const CONFIG_DATA: u16 = 0xCFC;
@@ -52,7 +50,8 @@ impl LegacyPciHandler {
         // FIXME: Way too slow (8192 iterations)
         for bus in 0..=255 {
             for device in 0..32 {
-                if let Some(device) = self.scan_device(ConfigAddressValue::new(
+                if let Some(device) = self.scan_device(PciAddress::new(
+                    0,
                     bus,
                     device,
                     0,
@@ -65,9 +64,9 @@ impl LegacyPciHandler {
     }
 
     #[must_use]
-    fn scan_device(&mut self, address: ConfigAddressValue) -> Option<Device> {
+    fn scan_device(&mut self, address: PciAddress) -> Option<Device> {
         let (device, vendor) = {
-            let vendor_reg = ConfigAddressValue {
+            let vendor_reg = PciAddress {
                 register_offset: RegisterOffset::VendorId as u8,
                 ..address
             };
@@ -79,7 +78,7 @@ impl LegacyPciHandler {
         };
 
         let (class, subclass, prog_if, revision) = {
-            let class_reg = ConfigAddressValue {
+            let class_reg = PciAddress {
                 register_offset: RegisterOffset::RevisionId as u8,
                 ..address
             };
@@ -97,7 +96,7 @@ impl LegacyPciHandler {
         Some(Device {
             id: device,
             vendor_id: vendor,
-            bdf: address.bdf,
+            sbdf: address.sbdf,
             functions,
             csp: Csp::new(class, subclass, prog_if),
             revision,
@@ -106,8 +105,8 @@ impl LegacyPciHandler {
     }
 
     #[must_use]
-    fn find_function_count(&mut self, address: ConfigAddressValue) -> u8 {
-        let header_reg = ConfigAddressValue {
+    fn find_function_count(&mut self, address: PciAddress) -> u8 {
+        let header_reg = PciAddress {
             register_offset: RegisterOffset::HeaderType as u8,
             ..address
         };
@@ -122,9 +121,9 @@ impl LegacyPciHandler {
         u8::try_from(
             (1..8)
                 .filter(|&func| {
-                    let vendor_reg = ConfigAddressValue {
+                    let vendor_reg = PciAddress {
                         register_offset: RegisterOffset::VendorId as u8,
-                        bdf: BdfAddress::new(address.bdf.bus(), address.bdf.device(), func),
+                        sbdf: SbdfAddress::new(0, address.sbdf.bus(), address.sbdf.device(), func),
                         ..address
                     };
 
@@ -142,19 +141,19 @@ impl LegacyPciHandler {
     ///
     /// This function should not be used directly as the value is not validated.
     /// Instead, use the `read_u*` functions.
-    unsafe fn read_raw(&mut self, address: ConfigAddressValue) -> u32 {
-        let ConfigAddressValue {
+    unsafe fn read_raw(&mut self, address: PciAddress) -> u32 {
+        let PciAddress {
             enable: _,
-            bdf,
+            sbdf,
             register_offset,
         } = address;
 
         let aligned_offset = register_offset & !0b11;
         let unaligned = register_offset & 0b11;
 
-        let aligned_address = ConfigAddressValue {
+        let aligned_address = PciAddress {
             enable: true,
-            bdf,
+            sbdf,
             register_offset: aligned_offset,
         };
 
@@ -172,7 +171,7 @@ macro_rules! impl_read_u {
     ($name:ident, $t:ty) => {
         impl LegacyPciHandler {
             #[must_use]
-            fn $name(&mut self, address: ConfigAddressValue) -> Option<$t> {
+            fn $name(&mut self, address: PciAddress) -> Option<$t> {
                 let raw_value = unsafe { self.read_raw(address) };
                 let value = <$t>::try_from((raw_value) & u32::from(<$t>::MAX)).unwrap();
                 if value == <$t>::MAX {
@@ -194,50 +193,8 @@ impl super::PciHandler for LegacyPciHandler {
         &self.devices
     }
 
-    fn read_bar(&mut self, device: &Device, bar_number: u8) -> Option<Bar> {
-        let bar_reg_offset = match bar_number {
-            0 => RegisterOffset::Bar0,
-            1 => RegisterOffset::Bar1,
-            2 => RegisterOffset::Bar2,
-            3 => RegisterOffset::Bar3,
-            4 => RegisterOffset::Bar4,
-            5 => RegisterOffset::Bar5,
-            _ => return None,
-        } as u8;
-        let bar_reg = ConfigAddressValue::new(
-            device.bdf().bus(),
-            device.bdf().device(),
-            device.bdf().function(),
-            bar_reg_offset,
-        );
-        let bar = self.read_u32(bar_reg)?;
-
-        let upper_value = if bar & 1 == 0 // Memory BAR
-            && MemoryBarType::try_from((bar >> 1) & 0b11).unwrap() == MemoryBarType::Qword
-        {
-            let bar_reg_offset = match bar_number + 1 {
-                0 => RegisterOffset::Bar0,
-                1 => RegisterOffset::Bar1,
-                2 => RegisterOffset::Bar2,
-                3 => RegisterOffset::Bar3,
-                4 => RegisterOffset::Bar4,
-                5 => RegisterOffset::Bar5,
-                _ => panic!("PCI: Invalid BAR number"),
-            } as u8;
-            let bar_reg = ConfigAddressValue::new(
-                device.bdf().bus(),
-                device.bdf().device(),
-                device.bdf().function(),
-                bar_reg_offset,
-            );
-            self.read_u32(bar_reg).unwrap()
-        } else {
-            0
-        };
-
-        Some(Bar::from_raw(
-            u64::from(bar) | (u64::from(upper_value) << 32),
-        ))
+    fn read_raw(&mut self, address: PciAddress) -> u32 {
+        self.read_u32(address).unwrap()
     }
 }
 
@@ -247,7 +204,7 @@ impl super::PciHandler for LegacyPciHandler {
 /// This is a write-only register that is used to select the register to access.
 pub struct ConfigAddress(PortWriteOnly<u32>);
 
-impl PortWrite for ConfigAddressValue {
+impl PortWrite for PciAddress {
     unsafe fn write_to_port(port: u16, value: Self) {
         unsafe {
             u32::write_to_port(port, ConfigAddress::build_value(value));
@@ -269,11 +226,11 @@ impl ConfigAddress {
     }
 
     #[must_use]
-    fn build_value(address: ConfigAddressValue) -> u32 {
+    fn build_value(address: PciAddress) -> u32 {
         let enable_bit = u32::from(address.enable) << 31;
-        let bus = u32::from(address.bdf.bus()) << 16;
-        let device = u32::from(address.bdf.device()) << 11;
-        let function = u32::from(address.bdf.function()) << 8;
+        let bus = u32::from(address.sbdf.bus()) << 16;
+        let device = u32::from(address.sbdf.device()) << 11;
+        let function = u32::from(address.sbdf.function()) << 8;
         let register_offset = u32::from(address.register_offset);
 
         enable_bit | bus | device | function | register_offset

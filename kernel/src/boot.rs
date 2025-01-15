@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicUsize;
 
 use crate::{
     cpu::{self, apic, interrupts},
-    drivers, pci, process, screen, video,
+    drivers, network, pci, process, screen,
 };
 use bootloader::BootInfo;
 
@@ -89,7 +89,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     drivers::init();
 
-    video::init();
+    network::init();
 }
 
 /// This function is called by each core once they're ready to start the kernel.

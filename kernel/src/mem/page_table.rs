@@ -1,4 +1,4 @@
-use hyperdrive::locks::mcs::{MUMcsGuard, MUMcsLock, McsNode};
+use hyperdrive::locks::mcs::MUMcsLock;
 use x86_64::{
     VirtAddr,
     registers::control::Cr3,
@@ -32,19 +32,6 @@ pub fn init(recursive_index: u16) {
     );
 
     KERNEL_PAGE_TABLE.init(recursive_page_table);
-}
-
-/// Explicitly returns a guard to the kernel page table
-///
-/// If you only plan on operating on the page table once, you can use `with_page_table`
-///
-/// ## Safety
-///
-/// The node must be valid for `McsLock::lock`
-pub(super) fn get_kernel_page_table(
-    node: &mut McsNode,
-) -> MUMcsGuard<'_, '_, RecursivePageTable<'static>> {
-    KERNEL_PAGE_TABLE.lock(node)
 }
 
 #[inline]

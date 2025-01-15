@@ -2,21 +2,14 @@
 
 use alloc::vec::Vec;
 use hyperdrive::locks::mcs::MUMcsLock;
-use x86_64::{
-    PhysAddr,
-    structures::paging::{PageTableFlags, Size2MiB},
-};
+use x86_64::{PhysAddr, structures::paging::Size2MiB};
 
 use crate::{
-    boot::acpi::sdt::mcfg::ParsedConfigurationSpace, mem::page_alloc::pmap::PhysicalMapping,
-    pci::Class,
+    boot::acpi::sdt::mcfg::ParsedConfigurationSpace,
+    mem::page_alloc::pmap::{self, PhysicalMapping},
 };
 
-use super::commons::{
-    Bar, BdfAddress, ConfigAddressValue, Csp, Device, MemoryBarType, RegisterOffset,
-};
-
-mod msix;
+use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 
 static PCIE_HANDLER: MUMcsLock<PciExpressHandler> = MUMcsLock::uninit();
 
@@ -57,10 +50,7 @@ impl PciExpressHandler {
                 )
                 .unwrap();
 
-                let flags = PageTableFlags::PRESENT
-                    | PageTableFlags::WRITABLE
-                    | PageTableFlags::NO_EXECUTE
-                    | PageTableFlags::NO_CACHE;
+                let flags = pmap::FLAGS_MMIO;
                 PhysicalMapping::<Size2MiB>::new(*cs.address_range().start(), length, flags)
             })
             .collect::<Vec<_>>();
@@ -86,7 +76,13 @@ impl PciExpressHandler {
                     if let Some(device) = Self::scan_device(
                         pmap,
                         cs,
-                        ConfigAddressValue::new(bus, dev, 0, RegisterOffset::VendorId as u8),
+                        PciAddress::new(
+                            cs.segment_group_number(),
+                            bus,
+                            dev,
+                            0,
+                            RegisterOffset::VendorId as u8,
+                        ),
                     ) {
                         self.devices.push(device);
                     }
@@ -98,10 +94,10 @@ impl PciExpressHandler {
     fn scan_device(
         pmap: &PhysicalMapping<Size2MiB>,
         cs: &ParsedConfigurationSpace,
-        address: ConfigAddressValue,
+        address: PciAddress,
     ) -> Option<Device> {
         let (device, vendor) = {
-            let reg = ConfigAddressValue {
+            let reg = PciAddress {
                 register_offset: RegisterOffset::VendorId as u8,
                 ..address
             };
@@ -120,7 +116,7 @@ impl PciExpressHandler {
         };
 
         let (class, subclass, prog_if, revision) = {
-            let reg = ConfigAddressValue {
+            let reg = PciAddress {
                 register_offset: RegisterOffset::RevisionId as u8,
                 ..address
             };
@@ -140,7 +136,7 @@ impl PciExpressHandler {
         Some(Device {
             id: device,
             vendor_id: vendor,
-            bdf: address.bdf,
+            sbdf: address.sbdf,
             functions,
             csp: Csp::new(class, subclass, prog_if),
             revision,
@@ -151,10 +147,10 @@ impl PciExpressHandler {
     fn find_function_count(
         pmap: &PhysicalMapping<Size2MiB>,
         offset: u64,
-        address: ConfigAddressValue,
+        address: PciAddress,
     ) -> u8 {
         let multifonction = {
-            let reg = ConfigAddressValue {
+            let reg = PciAddress {
                 register_offset: RegisterOffset::HeaderType as u8,
                 ..address
             };
@@ -172,8 +168,13 @@ impl PciExpressHandler {
         u8::try_from(
             (1..8)
                 .filter(|&func| {
-                    let reg = ConfigAddressValue {
-                        bdf: BdfAddress::new(address.bdf.bus(), address.bdf.device(), func),
+                    let reg = PciAddress {
+                        sbdf: SbdfAddress::new(
+                            address.sbdf.segment(),
+                            address.sbdf.bus(),
+                            address.sbdf.device(),
+                            func,
+                        ),
                         register_offset: RegisterOffset::VendorId as u8,
                         ..address
                     };
@@ -189,10 +190,10 @@ impl PciExpressHandler {
             + 1
     }
 
-    fn build_paddr(offset: u64, address: ConfigAddressValue) -> PhysAddr {
-        let bus = u64::from(address.bdf.bus());
-        let dev = u64::from(address.bdf.device());
-        let func = u64::from(address.bdf.function());
+    fn build_paddr(offset: u64, address: PciAddress) -> PhysAddr {
+        let bus = u64::from(address.sbdf.bus());
+        let dev = u64::from(address.sbdf.device());
+        let func = u64::from(address.sbdf.function());
         let reg = u64::from(address.register_offset);
 
         let paddr = offset + (bus << 20) + (dev << 15) + (func << 12) + reg;
@@ -205,32 +206,12 @@ impl super::PciHandler for PciExpressHandler {
         &self.devices
     }
 
-    fn read_bar(
-        &mut self,
-        device: &super::commons::Device,
-        bar_number: u8,
-    ) -> Option<super::commons::Bar> {
-        let bar_reg_offset = match bar_number {
-            0 => RegisterOffset::Bar0,
-            1 => RegisterOffset::Bar1,
-            2 => RegisterOffset::Bar2,
-            3 => RegisterOffset::Bar3,
-            4 => RegisterOffset::Bar4,
-            5 => RegisterOffset::Bar5,
-            _ => return None,
-        } as u8;
-        let reg = ConfigAddressValue::new(
-            device.bdf().bus(),
-            device.bdf().device(),
-            device.bdf().function(),
-            bar_reg_offset,
-        );
-
+    fn read_raw(&mut self, address: PciAddress) -> u32 {
         let (cs, pmap) = {
             let cs_index = self
                 .configuration_spaces
                 .iter()
-                .position(|cs| cs.segment_group_number() == device.segment_group_number)
+                .position(|cs| cs.segment_group_number() == address.sbdf.segment())
                 .unwrap();
 
             (
@@ -239,48 +220,10 @@ impl super::PciHandler for PciExpressHandler {
             )
         };
 
-        let paddr = Self::build_paddr(cs.offset(), reg);
+        let paddr = Self::build_paddr(cs.offset(), address);
         let vaddr = pmap.translate(paddr).unwrap();
 
-        let bar = unsafe { vaddr.as_ptr::<u32>().read() };
-        if bar == u32::MAX {
-            return None;
-        }
-
-        let upper_value = if bar & 1 == 0 // Memory BAR
-            && MemoryBarType::try_from((bar >> 1) & 0b11).unwrap() == MemoryBarType::Qword
-        {
-            let bar_reg_offset = match bar_number + 1 {
-                0 => RegisterOffset::Bar0,
-                1 => RegisterOffset::Bar1,
-                2 => RegisterOffset::Bar2,
-                3 => RegisterOffset::Bar3,
-                4 => RegisterOffset::Bar4,
-                5 => RegisterOffset::Bar5,
-                _ => panic!("PCI: Invalid BAR number"),
-            } as u8;
-            let bar_reg = ConfigAddressValue::new(
-                device.bdf().bus(),
-                device.bdf().device(),
-                device.bdf().function(),
-                bar_reg_offset,
-            );
-
-            let paddr = Self::build_paddr(cs.offset(), bar_reg);
-            let vaddr = pmap.translate(paddr).unwrap();
-
-            let bar = unsafe { vaddr.as_ptr::<u32>().read() };
-            if bar == u32::MAX {
-                return None;
-            }
-            bar
-        } else {
-            0
-        };
-
-        Some(Bar::from_raw(
-            u64::from(bar) | (u64::from(upper_value) << 32),
-        ))
+        unsafe { vaddr.as_ptr::<u32>().read() }
     }
 }
 

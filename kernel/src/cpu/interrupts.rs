@@ -67,6 +67,7 @@ pub fn init() {
     idt[Irq::Timer as u8].set_handler_fn(timer_interrupt_handler);
     idt[Irq::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
     idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
+    idt[Irq::Nic as u8].set_handler_fn(nic_interrupt_handler);
 
     idt.load();
 
@@ -162,7 +163,7 @@ macro_rules! info_isr_eoi {
                 stringify!($name),
                 locals!().core_id()
             );
-            locals!().lapic().with_locked(|lapic| lapic.send_eoi());
+            unsafe { locals!().lapic().force_lock() }.send_eoi();
         }
     };
 }
@@ -201,9 +202,12 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
 
 extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFrame) {
     crate::info!("xHCI INTERRUPT on core {}", locals!().core_id());
-    locals!()
-        .lapic()
-        .with_locked(super::apic::LocalApic::send_eoi);
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
+extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("NIC INTERRUPT on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,4 +219,5 @@ pub enum Irq {
     Timer = 32,
     Spurious = 33,
     Xhci = 34,
+    Nic = 35,
 }

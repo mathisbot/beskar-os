@@ -1,3 +1,5 @@
+//! TODO: Is having per-core heaps a good idea?
+
 use core::{
     alloc::{GlobalAlloc, Layout},
     cell::UnsafeCell,

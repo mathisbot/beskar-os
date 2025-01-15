@@ -36,15 +36,17 @@ I am not planning on writing a kernel close to Linux, as I am focusing on learni
 - Drivers
     - [ ] PCI/PCIe
         - [x] Devices
-        - [ ] MSI/MSI-X
+        - [ ] MSI/MSI-X (partial)
     - [ ] USB
         - [ ] xHCI drive
         - [ ] USB 1/2/3 driver
         - [ ] Keyboard driver
 - Network
     - [ ] Network stack
-        - [ ] Ethernet driver
+        - [ ] NIC drivers
+            - [ ] Intel e1000e
         - [ ] ARP
+        - [ ] ICMP
         - [ ] IPv4
         - [ ] UDP
         - [ ] TCP

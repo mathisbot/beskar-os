@@ -25,6 +25,11 @@ where
     count: u64,
 }
 
+pub const FLAGS_MMIO: PageTableFlags = PageTableFlags::PRESENT
+    .union(PageTableFlags::WRITABLE)
+    .union(PageTableFlags::NO_EXECUTE)
+    .union(PageTableFlags::NO_CACHE);
+
 impl<S: PageSize> PhysicalMapping<S>
 where
     for<'a> RecursivePageTable<'a>: Mapper<S>,

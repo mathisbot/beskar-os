@@ -3,6 +3,7 @@
 use x86_64::PhysAddr;
 
 pub mod msi;
+pub mod msix;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Device Class, Subclass, Programming Interface
@@ -132,7 +133,9 @@ pub enum RegisterOffset {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Bus, Device, Function address
-pub struct BdfAddress {
+pub struct SbdfAddress {
+    /// PCIe only, should be set to 0 for legacy devices
+    segment: u16,
     /// 0-255
     bus: u8,
     /// 0-31
@@ -141,17 +144,24 @@ pub struct BdfAddress {
     function: u8,
 }
 
-impl BdfAddress {
+impl SbdfAddress {
     #[must_use]
     #[inline]
-    pub const fn new(bus: u8, device: u8, function: u8) -> Self {
+    pub const fn new(segment: u16, bus: u8, device: u8, function: u8) -> Self {
         assert!(device <= 0b1_1111, "Device number must be less than 32");
         assert!(function <= 0b111, "Function number must be less than 8");
         Self {
+            segment,
             bus,
             device,
             function,
         }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn segment(self) -> u16 {
+        self.segment
     }
 
     #[must_use]
@@ -177,7 +187,7 @@ impl BdfAddress {
 pub struct Device {
     pub(super) id: u16,
     pub(super) vendor_id: u16,
-    pub(super) bdf: BdfAddress,
+    pub(super) sbdf: SbdfAddress,
     pub(super) functions: u8,
     pub(super) csp: Csp,
     pub(super) revision: u8,
@@ -202,8 +212,8 @@ impl Device {
 
     #[must_use]
     #[inline]
-    pub const fn bdf(&self) -> BdfAddress {
-        self.bdf
+    pub const fn sbdf(&self) -> SbdfAddress {
+        self.sbdf
     }
 
     #[must_use]
@@ -226,27 +236,19 @@ impl Device {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConfigAddressValue {
-    /// Bit 31: Enable bit
+pub struct PciAddress {
     pub(super) enable: bool,
-    /// Bit 30-24: Reserved
-    /// Bit 23-16: Bus number
-    /// Bit 15-11: Device number
-    /// Bit 10-8: Function number
-    pub(super) bdf: BdfAddress,
-    /// Bit 7-0: Register offset
-    ///
-    /// For accesses, offset must be DWORD-aligned.
+    pub(super) sbdf: SbdfAddress,
     pub(super) register_offset: u8,
 }
 
-impl ConfigAddressValue {
+impl PciAddress {
     #[must_use]
-    pub const fn new(bus: u8, device: u8, function: u8, register_offset: u8) -> Self {
+    pub const fn new(segment: u16, bus: u8, device: u8, function: u8, register_offset: u8) -> Self {
         // Here, we are not checking that register_offset is DWORD-aligned.
         Self {
             enable: true,
-            bdf: BdfAddress::new(bus, device, function),
+            sbdf: SbdfAddress::new(segment, bus, device, function),
             register_offset,
         }
     }
@@ -299,8 +301,6 @@ impl MemoryBar {
         let bar_type = MemoryBarType::try_from((lower_value >> 1) & 0b11).unwrap();
         if value >> 32 != 0 {
             assert_eq!(bar_type, MemoryBarType::Qword, "Bad access length provided");
-        } else {
-            assert_eq!(bar_type, MemoryBarType::Dword, "Bad access length provided");
         }
 
         let prefetchable = (value & 0b100) != 0;
@@ -361,5 +361,61 @@ impl TryFrom<u32> for MemoryBarType {
             0b10 => Ok(Self::Qword),
             _ => Err(()),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CapabilityHeader {
+    pci_addr: PciAddress,
+    id: u8,
+    next: u8,
+}
+
+impl CapabilityHeader {
+    pub const ID_NULL: u8 = 0x00;
+    pub const ID_PMI: u8 = 0x01;
+    pub const ID_AGP: u8 = 0x02;
+    pub const ID_VPD: u8 = 0x03;
+    pub const ID_SLOT_ID: u8 = 0x04;
+    pub const ID_MSI: u8 = 0x05;
+    pub const ID_CHSWP: u8 = 0x06;
+    pub const ID_PCIX: u8 = 0x07;
+    pub const ID_HT: u8 = 0x08;
+    pub const ID_VNDR: u8 = 0x09;
+    pub const ID_DBG: u8 = 0x0A;
+    pub const ID_CCRC: u8 = 0x0B;
+    pub const ID_HPC: u8 = 0x0C;
+    pub const ID_SSVID: u8 = 0x0D;
+    pub const ID_AGP8X: u8 = 0x0E;
+    pub const ID_SECURE: u8 = 0x0F;
+    pub const ID_PCIEXPRESS: u8 = 0x10;
+    pub const ID_MSIX: u8 = 0x11;
+    pub const ID_SATA: u8 = 0x12;
+
+    #[must_use]
+    #[inline]
+    pub fn new(pci_addr: PciAddress, value: u16) -> Self {
+        let id = (value >> 0 & 0xFF) as u8;
+        let next = ((value >> 8) & 0xFF) as u8;
+
+        Self { pci_addr, id, next }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn pci_addr(&self) -> PciAddress {
+        self.pci_addr
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn id(&self) -> u8 {
+        self.id
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn next(&self) -> u8 {
+        self.next
     }
 }

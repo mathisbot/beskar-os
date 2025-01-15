@@ -1,12 +1,9 @@
 // TODO: Remove
 #![allow(dead_code)]
 
-use x86_64::{
-    PhysAddr,
-    structures::paging::{PageTableFlags, Size4KiB},
-};
+use x86_64::{PhysAddr, structures::paging::Size4KiB};
 
-use crate::mem::page_alloc::pmap::PhysicalMapping;
+use crate::mem::page_alloc::pmap::{self, PhysicalMapping};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 mod cap;
@@ -49,10 +46,7 @@ impl Xhci {
 
     #[must_use]
     pub fn new(paddr: PhysAddr) -> Self {
-        let flags = PageTableFlags::PRESENT
-            | PageTableFlags::WRITABLE
-            | PageTableFlags::NO_EXECUTE
-            | PageTableFlags::NO_CACHE;
+        let flags = pmap::FLAGS_MMIO;
 
         // At first, we only map enough memory to read the capabilities register
         let physical_mapping =

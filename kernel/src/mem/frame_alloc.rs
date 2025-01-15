@@ -5,7 +5,10 @@
 //!
 //! Allocated frames do not need to be contiguous.
 
-use super::ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges};
+use super::{
+    page_table,
+    ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
+};
 use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
 use x86_64::{
     PhysAddr,
@@ -14,9 +17,7 @@ use x86_64::{
     },
 };
 
-use hyperdrive::locks::mcs::{MUMcsLock, McsNode};
-
-use super::page_table;
+use hyperdrive::locks::mcs::MUMcsLock;
 
 const MAX_MEMORY_REGIONS: usize = 1024;
 
@@ -93,26 +94,24 @@ impl FrameAllocator {
         pages: PageRangeInclusive<S>,
         flags: PageTableFlags,
     ) where
-        RecursivePageTable<'static>: Mapper<S>,
+        for<'a> RecursivePageTable<'a>: Mapper<S>,
     {
-        // FIXME: Use `page_table::with_page_table` instead of `get_kernel_page_table`
-        let mut node = McsNode::new();
-        let mut page_table = page_table::get_kernel_page_table(&mut node);
-
-        for page in pages {
-            let frame = self.alloc::<S>().unwrap();
-            unsafe {
-                page_table.map_to_with_table_flags(
-                    page,
-                    frame,
-                    flags,
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                    self,
-                )
+        page_table::with_page_table(|page_table| {
+            for page in pages {
+                let frame = self.alloc::<S>().unwrap();
+                unsafe {
+                    page_table.map_to_with_table_flags(
+                        page,
+                        frame,
+                        flags,
+                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                        self,
+                    )
+                }
+                .unwrap()
+                .flush();
             }
-            .unwrap()
-            .flush();
-        }
+        })
     }
 }
 

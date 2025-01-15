@@ -13,12 +13,12 @@ pub mod drivers;
 pub mod locals;
 pub mod log;
 mod mem;
+pub mod network;
 pub mod pci;
 pub mod process;
 pub mod screen;
 pub mod serial;
 mod syscall;
 pub mod time;
-pub mod video;
 
 extern crate alloc;
