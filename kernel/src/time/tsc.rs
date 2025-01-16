@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicU64;
 
 use x86_64::instructions::port::{Port, PortWriteOnly};
 
-use crate::cpu::cpuid;
+use crate::arch::cpuid;
 
 /// The TSC value at startup, when the TSC has been calibrated.
 static STARTUP_TIME: AtomicU64 = AtomicU64::new(0);

@@ -1,14 +1,10 @@
 use core::sync::atomic::AtomicUsize;
 
 use crate::{
-    cpu::{self, apic, interrupts},
-    drivers, network, pci, process, screen,
+    arch::{self, ap, apic, interrupts},
+    drivers, locals, mem, process, screen, time,
 };
 use bootloader::BootInfo;
-
-use crate::{locals, mem, time};
-
-pub mod acpi;
 
 /// Static reference to the kernel main function
 ///
@@ -17,7 +13,7 @@ pub mod acpi;
 ///
 /// This function should never be called directly, but only by the `enter_kmain` function.
 static mut KERNEL_MAIN: fn() -> ! = || loop {
-    x86_64::instructions::hlt();
+    crate::arch::halt();
 };
 
 /// Static fence to ensure all cores enter `kmain` when they're all ready
@@ -38,7 +34,7 @@ pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> !
 
     crate::debug!("Starting up APs. Core count: {}", core_count);
 
-    apic::ap::start_up_aps(core_count);
+    ap::start_up_aps(core_count);
 
     enter_kmain()
 }
@@ -60,7 +56,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     screen::init(framebuffer);
     crate::log::init_screen();
 
-    cpu::init();
+    arch::init();
 
     crate::info!("BeskarOS kernel starting...");
 
@@ -78,19 +74,52 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     interrupts::init();
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
-    rsdp_paddr.map(acpi::init);
+    rsdp_paddr.map(drivers::acpi::init);
     time::hpet::init();
 
     apic::init_lapic();
     process::scheduler::set_scheduling(true);
     apic::init_ioapic();
 
-    pci::init();
-
     drivers::init();
-
-    network::init();
 }
+
+/// Rust entry point for APs
+///
+/// This function is called by the AP trampoline code.
+pub extern "C" fn kap_entry() -> ! {
+    // Safety:
+    // Values are coming from the BSP, so they are safe to use.
+    unsafe {
+        ap::load_ap_regs();
+    }
+
+    // Tell the BSP we are out of the trampoline spin lock,
+    // allowing others to get their stack
+    locals::core_jumped();
+
+    ap_init();
+
+    crate::debug!("AP {} started", locals!().core_id());
+
+    crate::boot::enter_kmain()
+}
+
+fn ap_init() {
+    arch::init();
+
+    locals::init();
+
+    locals!().gdt().init_load();
+
+    process::init();
+
+    arch::interrupts::init();
+
+    arch::apic::init_lapic();
+    process::scheduler::set_scheduling(true);
+}
+
 
 /// This function is called by each core once they're ready to start the kernel.
 ///
@@ -120,6 +149,6 @@ macro_rules! kernel_main {
         fn __bootloader_entry_point(boot_info: &'static mut bootloader::BootInfo) -> ! {
             $crate::boot::kbsp_entry(boot_info, $path);
         }
-        bootloader::entry_point!(__bootloader_entry_point);
+        ::bootloader::entry_point!(__bootloader_entry_point);
     };
 }

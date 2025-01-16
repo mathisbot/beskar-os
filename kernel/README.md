@@ -9,51 +9,57 @@ I am not planning on writing a kernel close to Linux, as I am focusing on learni
 
 ## Features
 
-- Boot
+- Arch
+    - [ ] x86_64
+        - [x] Interrupts/GDT
+        - [ ] APIC
+            - [x] LAPIC
+            - [ ] IOAPIC
+        - [x] AP startup
+        - [x] Randomness
+        - [ ] Systemcalls
+    - [ ] aarch64
+- Drivers
     - [ ] ACPI
         - [x] MADT
         - [x] HPET
         - [x] MCFG
         - [ ] FADT
-- CPU
-    - [x] Interrupts/GDT
-    - [ ] APIC
-        - [x] LAPIC
-        - [ ] IOAPIC
-    - [x] AP startup
-    - [x] Randomness
-    - [x] Time
-    - [ ] Systemcalls
-- Memory
-    - [x] Paging
-    - [x] Physical/Virtual Allocators
-    - [ ] Address spaces (partial)
-- Filesystem
-    - [ ] AHCI driver
-    - [ ] NVMe driver
-    - [ ] GPT
-    - [ ] ext2/ext4
-- Drivers
     - [ ] PCI/PCIe
         - [x] Devices
         - [ ] MSI/MSI-X (partial)
     - [ ] USB
-        - [ ] xHCI drive
+        - [ ] xHCI driver
         - [ ] USB 1/2/3 driver
         - [ ] Keyboard driver
-- Network
-    - [ ] Network stack
-        - [ ] NIC drivers
-            - [ ] Intel e1000e
-        - [ ] ARP
-        - [ ] ICMP
-        - [ ] IPv4
-        - [ ] UDP
-        - [ ] TCP
-    - [ ] Services
-        - [ ] DHCP
-        - [ ] DNS
-        - [ ] Sockets
+    - [x] Time
+        - [x] HPET
+        - [x] x86_64
+            - [x] TSC
+            - [x] APIC Timer
+    - Network
+        - [ ] Network stack
+            - [ ] NIC drivers
+                - [ ] Intel e1000e
+            - [ ] ARP
+            - [ ] ICMP
+            - [ ] IPv4
+            - [ ] UDP
+            - [ ] TCP
+        - [ ] Services
+            - [ ] DHCP
+            - [ ] DNS
+            - [ ] Sockets
+    - Storage
+        - [ ] AHCI
+        - [ ] NVMe
+- Memory
+    - [x] Paging
+    - [x] Physical/Virtual Allocators
+    - [ ] Address spaces (partial)
+- FS
+    - [ ] GPT
+    - [ ] ext2/ext4
 - Processes
     - [x] Scheduling
     - [ ] User space
@@ -62,4 +68,4 @@ I am not planning on writing a kernel close to Linux, as I am focusing on learni
     - [x] Character rendering
     - [x] Logging
     - [ ] GUI
-    - [ ] GPU driver (🤠)
+    - [ ] GPU drivers (🤠)

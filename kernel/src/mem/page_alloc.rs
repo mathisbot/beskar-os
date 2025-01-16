@@ -115,7 +115,7 @@ pub fn init(recursive_index: u16) {
     let mut page_allocator = PageAllocator { vranges: vaddrs };
 
     // Make sure identity-mapped page for the AP trampoline code is reserved
-    crate::cpu::apic::ap::reserve_tramp_page(&mut page_allocator);
+    reserve_tramp_page(&mut page_allocator);
 
     KPAGE_ALLOC.init(page_allocator);
 }
@@ -192,6 +192,21 @@ impl PageAllocator {
             pages.end.start_address().as_u64() + S::SIZE - 1,
         ));
     }
+}
+
+/// Reserve a page for the AP trampoline code
+///
+/// It is easier to allocate the page at the beginning of memory initialization,
+/// because we are sure that the needed region is available.
+fn reserve_tramp_page(allocator: &mut PageAllocator) {
+    let vaddr = VirtAddr::new(crate::arch::ap::AP_TRAMPOLINE_PADDR);
+
+    let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
+
+    assert!(
+        allocator.allocate_specific_page(page).is_some(),
+        "Failed to allocate AP page"
+    );
 }
 
 #[inline]

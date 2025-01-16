@@ -52,7 +52,7 @@ pub fn hello_world() {
 
 pub fn alloc_intensive() {
     loop {
-        let sz = usize::from(unsafe { crate::cpu::rand::rand::<u16>() }) * 32;
+        let sz = usize::from(unsafe { crate::arch::rand::rand::<u16>() }) * 32;
         let vec = alloc::vec![0_u8; sz];
         crate::info!(
             "Hello from core {}! Allocated {} bytes",

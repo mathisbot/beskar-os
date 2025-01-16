@@ -63,7 +63,7 @@ impl ContextSwitch {
     ///
     /// See `kernel::cpu::context::context_switch`.
     unsafe fn perform(&self) {
-        unsafe { crate::cpu::context::context_switch(self.old_stack, self.new_stack, self.cr3) };
+        unsafe { crate::arch::context::switch(self.old_stack, self.new_stack, self.cr3) };
     }
 }
 
@@ -246,7 +246,7 @@ pub fn spawn_thread(thread: Pin<Box<Thread>>) {
 ///
 /// What this function really does is enabling the timer interrupt.
 pub fn set_scheduling(enable: bool) {
-    use crate::cpu::apic::timer;
+    use crate::arch::apic::timer;
 
     locals!().lapic().try_with_locked(|lapic| {
         const TIMER_DIVIDER: timer::Divider = timer::Divider::Eight;

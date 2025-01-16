@@ -4,21 +4,34 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![allow(clippy::missing_panics_doc, clippy::similar_names)]
 
-#[cfg(not(target_arch = "x86_64"))]
-compile_error!("BeskarOS kernel only supports x86_64 architecture");
-
+mod arch;
 pub mod boot;
-pub mod cpu;
 pub mod drivers;
+pub mod fs;
 pub mod locals;
 pub mod log;
 mod mem;
-pub mod network;
-pub mod pci;
 pub mod process;
 pub mod screen;
-pub mod serial;
-mod syscall;
 pub mod time;
 
 extern crate alloc;
+
+#[panic_handler]
+fn panic(panic_info: &core::panic::PanicInfo) -> ! {
+    arch::interrupts::int_disable();
+
+    crate::error!(
+        "[PANIC]: Core {} {}",
+        locals!().core_id(),
+        panic_info.message()
+    );
+    #[cfg(debug_assertions)]
+    if let Some(location) = panic_info.location() {
+        crate::error!("  at {}", location);
+    }
+
+    loop {
+        crate::arch::halt();
+    }
+}

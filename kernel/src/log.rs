@@ -1,7 +1,7 @@
 use core::{fmt::Write, sync::atomic::AtomicBool};
 use hyperdrive::locks::mcs::{MUMcsLock, McsLock};
 
-use crate::serial::com::{ComNumber, SerialCom};
+use crate::arch::serial::com::{ComNumber, SerialCom};
 
 mod writer;
 use writer::ScreenWriter;

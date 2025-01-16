@@ -1,4 +1,4 @@
-use crate::pci::Class;
+use super::pci::Class;
 
 use alloc::vec::Vec;
 
@@ -9,7 +9,7 @@ pub mod hub;
 
 pub fn init() {
     // Get all USB controllers from PCI
-    let usb_controllers = crate::pci::with_pci_handler(|handler| {
+    let usb_controllers = super::pci::with_pci_handler(|handler| {
         handler
             .devices()
             .iter()

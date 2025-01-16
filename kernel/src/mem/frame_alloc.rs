@@ -11,10 +11,9 @@ use super::{
 };
 use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
 use x86_64::{
-    PhysAddr,
     structures::paging::{
-        Mapper, PageSize, PageTableFlags, PhysFrame, RecursivePageTable, page::PageRangeInclusive,
-    },
+        page::PageRangeInclusive, Mapper, PageSize, PageTableFlags, PhysFrame, RecursivePageTable, Size4KiB
+    }, PhysAddr
 };
 
 use hyperdrive::locks::mcs::MUMcsLock;
@@ -49,7 +48,7 @@ pub fn init(regions: &[MemoryRegion]) {
     };
 
     // Make sure physical frame for the AP trampoline code is reserved
-    crate::cpu::apic::ap::reserve_tramp_frame(&mut frallocator);
+    reserve_tramp_frame(&mut frallocator);
 
     KFRAME_ALLOC.init(frallocator);
 }
@@ -111,7 +110,7 @@ impl FrameAllocator {
                 .unwrap()
                 .flush();
             }
-        })
+        });
     }
 }
 
@@ -119,6 +118,22 @@ unsafe impl<S: PageSize> x86_64::structures::paging::FrameAllocator<S> for Frame
     fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
         self.alloc::<S>()
     }
+}
+
+/// Reserve a frame for the AP trampoline code
+///
+/// It is easier to allocate the frame at the beginning of memory initialization,
+/// because we are sure that the needed region is available.
+fn reserve_tramp_frame(allocator: &mut FrameAllocator) {
+    let mut req_range = MemoryRanges::new();
+    req_range.insert(MemoryRange::new(
+        crate::arch::ap::AP_TRAMPOLINE_PADDR,
+        crate::arch::ap::AP_TRAMPOLINE_PADDR + Size4KiB::SIZE,
+    ));
+
+    let _frame = allocator
+        .alloc_request::<Size4KiB, 1>(&MemoryRangeRequest::MustBeWithin(&req_range))
+        .expect("Failed to allocate AP frame");
 }
 
 #[inline]

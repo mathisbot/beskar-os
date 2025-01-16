@@ -1,16 +1,8 @@
 use core::{ptr::NonNull, sync::atomic::AtomicUsize};
 
-use x86_64::{
-    VirtAddr,
-    registers::{
-        control::{Cr4, Cr4Flags},
-        segmentation::{GS, Segment64},
-    },
-};
-
 use alloc::boxed::Box;
 
-use crate::cpu::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts};
+use crate::arch::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts};
 use hyperdrive::{locks::mcs::MUMcsLock, once::Once};
 
 /// Count APs that got around of their trampoline code
@@ -29,7 +21,7 @@ static ALL_CORE_LOCALS: [Once<NonNull<CoreLocalsInfo>>; 256] = [const { Once::un
 
 pub fn init() {
     let core_id = CORE_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-    let apic_id = crate::cpu::apic::apic_id();
+    let apic_id = crate::arch::apic::apic_id();
 
     let mut core_locals = Box::new(CoreLocalsInfo {
         core_id,
@@ -39,15 +31,7 @@ pub fn init() {
 
     ALL_CORE_LOCALS[core_id].call_once(|| unsafe { NonNull::new_unchecked(core_locals.as_mut()) });
 
-    unsafe {
-        Cr4::update(|cr4| cr4.insert(Cr4Flags::FSGSBASE));
-    }
-
-    unsafe {
-        GS::write_base(VirtAddr::new(
-            core::ptr::from_ref(core_locals.as_ref()) as u64
-        ));
-    }
+    crate::arch::locals::store_locals(&core_locals);
 
     // Shouldn't be dropped
     core::mem::forget(core_locals);
@@ -125,9 +109,7 @@ impl CoreLocalsInfo {
 #[inline]
 /// Returns this core's local info.
 pub fn get_core_locals() -> &'static CoreLocalsInfo {
-    // Safety:
-    // The GS register is set to point to the core's local info.
-    unsafe { &*x86_64::registers::segmentation::GS::read_base().as_ptr() }
+    crate::arch::locals::load_locals()
 }
 
 /// A macro returning this core's local info.

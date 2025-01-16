@@ -12,6 +12,9 @@ It has few features :
 - [x] Gather information about SMP
 - [x] Initialize screen
 - [x] Handle ACPI
-- [x] Setup paging
+- [ ] Arch
+    - [x] x86_64
+        - [x] Setup paging
+        - [x] Early memory mapping
+    - [ ] aarch64
 - [x] Kernel ELF loading
-- [x] Early memory mapping
