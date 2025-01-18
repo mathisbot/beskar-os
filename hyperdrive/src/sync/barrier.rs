@@ -41,7 +41,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 pub struct Barrier {
     count: usize,
     current: AtomicUsize,
-    passed: AtomicUsize,
+    out: AtomicUsize,
 }
 
 // Safety: Barrier is a synchronization primitive.
@@ -57,7 +57,7 @@ impl Barrier {
         Self {
             count,
             current: AtomicUsize::new(0),
-            passed: AtomicUsize::new(0),
+            out: AtomicUsize::new(0),
         }
     }
 
@@ -65,35 +65,28 @@ impl Barrier {
     ///
     /// This will block the current thread until all threads have reached the barrier.
     pub fn wait(&self) {
-        // Maybe we are entering the barrier between opening and resetting.
-        // We must wait for the barrier to be reset before we can continue.
-        while self.current.load(Ordering::Acquire) >= self.count {
+        let mut rank = self.current.fetch_add(1, Ordering::AcqRel);
+        while rank >= self.count {
             core::hint::spin_loop();
+            self.current.fetch_sub(1, Ordering::AcqRel);
+            rank = self.current.fetch_add(1, Ordering::AcqRel);
         }
 
-        let original = self.current.fetch_add(1, Ordering::Acquire);
+        // Actual waiting loop.
         while self.current.load(Ordering::Acquire) < self.count {
             core::hint::spin_loop();
         }
-
-        // In theory, we could pass through the barrier a second time while the
-        // barrier is being reset. We must wait for the passed counter to be reset
-        // before we can continue.
-        while self.passed.load(Ordering::Acquire) >= self.count {
-            core::hint::spin_loop();
-        }
-
-        self.passed.fetch_add(1, Ordering::Release);
+        self.out.fetch_add(1, Ordering::Release);
 
         // Only one thread will be responsible for resetting the barrier.
         // We simply have to wait for every thread to exit the while loop,
         // and then set the counter to 0.
-        if original == 0 {
-            while self.passed.load(Ordering::Acquire) < self.count {
+        if rank == 0 {
+            while self.out.load(Ordering::Acquire) < self.count {
                 core::hint::spin_loop();
             }
-            self.current.store(0, Ordering::Release);
-            self.passed.store(0, Ordering::Release);
+            self.out.store(0, Ordering::Release);
+            self.current.fetch_sub(self.count, Ordering::AcqRel);
         }
     }
 }
@@ -157,7 +150,7 @@ mod tests {
         }
 
         assert!(barrier.current.load(Ordering::Relaxed) == 0);
-        assert!(barrier.passed.load(Ordering::Relaxed) == 0);
+        assert!(barrier.out.load(Ordering::Relaxed) == 0);
     }
 
     #[test]
