@@ -26,8 +26,14 @@ pub const SCHEDULER_QUANTUM_MS: u32 = 60;
 // Because scheduler will be playing with context switching, we cannot acquire locks.
 // Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
 static mut SCHEDULERS: [Option<Scheduler>; 256] = [const { None }; 256];
+
+// It is backed by a Multiple Producer Single Consumer queue.
+// It would be a better choice to use a Multiple Producer Multiple Consumer queue,
+// but the only implemention I know uses a fixed size buffer and I don't want to bound the number of threads.
+/// A queue for threads.
 static QUEUE: Once<priority::RoundRobinQueues> = Once::uninit();
 
+/// A queue for finished threads.
 static FINISHED_QUEUE: Once<MpscQueue<Thread>> = Once::uninit();
 
 /// This function initializes the scheduler with the kernel thread.

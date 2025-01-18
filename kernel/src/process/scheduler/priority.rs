@@ -92,9 +92,8 @@ pub struct RoundRobinQueues {
 impl RoundRobinQueues {
     /// Cycle through the priorities.
     fn cycle_priority(&self) -> Priority {
-        let current = self.current.fetch_add(1, Ordering::Relaxed) % self.cycle.len();
-        let priority = self.cycle[current];
-        priority
+        let current = self.current.fetch_add(1, Ordering::Relaxed);
+        self.cycle[current % self.cycle.len()]
     }
 }
 

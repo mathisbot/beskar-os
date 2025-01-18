@@ -1,4 +1,4 @@
-//! A non-intrusive, multiple-producer single-consumer queue.
+//! An intrusive, multiple-producer single-consumer queue.
 //!
 //! In order to be used, the element type must implement the `Queueable` trait.
 //!
@@ -45,7 +45,6 @@
 //! assert_eq!(element.value, 1);
 //! ```
 use core::{
-    cell::UnsafeCell,
     ptr::{self, NonNull},
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
@@ -99,7 +98,7 @@ pub struct MpscQueue<T: Queueable> {
     /// The head of the queue.
     head: AtomicPtr<T>,
     /// The tail of the queue.
-    tail: UnsafeCell<*mut T>,
+    tail: AtomicPtr<T>,
     /// Whether the queue is being dequeued or not.
     being_dequeued: AtomicBool,
     /// The stub node.
@@ -116,9 +115,6 @@ unsafe impl<T: Queueable> Sync for MpscQueue<T> {}
 pub enum DequeueResult<T: Queueable> {
     /// Dequeueing was successful.
     Element(Option<T::Handle>),
-    /// The queue is temporarily unavailable,
-    /// and the operation should be retried.
-    Retry,
     /// The queue is busy.
     InUse,
 }
@@ -133,7 +129,6 @@ impl<T: Queueable> DequeueResult<T> {
     pub fn unwrap(self) -> Option<T::Handle> {
         match self {
             Self::Element(res) => res,
-            Self::Retry => panic!("Unwrapped a DequeueResult::Retry"),
             Self::InUse => panic!("Unwrapped a DequeueResult::Busy"),
         }
     }
@@ -171,7 +166,7 @@ impl<T: Queueable> MpscQueue<T> {
         let stub_ptr = <T as Queueable>::release(stub);
         Self {
             head: AtomicPtr::new(stub_ptr.as_ptr()),
-            tail: UnsafeCell::new(stub_ptr.as_ptr()),
+            tail: AtomicPtr::new(stub_ptr.as_ptr()),
             being_dequeued: AtomicBool::new(false),
             stub: stub_ptr,
         }
@@ -201,7 +196,7 @@ impl<T: Queueable> MpscQueue<T> {
 
     pub fn dequeue(&self) -> Option<T::Handle> {
         let mut state = self.try_dequeue();
-        while matches!(state, DequeueResult::Retry | DequeueResult::InUse) {
+        while matches!(state, DequeueResult::InUse) {
             core::hint::spin_loop();
             state = self.try_dequeue();
         }
@@ -217,83 +212,72 @@ impl<T: Queueable> MpscQueue<T> {
             return DequeueResult::InUse;
         }
 
-        let mut res = unsafe { self.dequeue_impl() };
-        // If we are being asked to retry, we try again once.
-        if matches!(res, DequeueResult::Retry) {
-            res = unsafe { self.dequeue_impl() };
-        }
+        let res = unsafe { self.dequeue_impl() };
 
         self.being_dequeued.store(false, Ordering::Release);
 
-        res
+        DequeueResult::Element(res)
     }
 
     /// ## Safety
     ///
     /// The caller must make sure that the queue is not being dequeued by another thread.
-    unsafe fn dequeue_impl(&self) -> DequeueResult<T> {
-        let tail_ptr = self.tail.get();
-
-        let Some(mut tail_node) = NonNull::new(unsafe { *tail_ptr }) else {
-            return DequeueResult::Element(None);
-        };
+    unsafe fn dequeue_impl(&self) -> Option<T::Handle> {
+        let mut tail_node = NonNull::new(self.tail.load(Ordering::Relaxed))?;
         let mut next = unsafe { T::get_link(tail_node).as_ref() }
             .next
             .load(Ordering::Acquire);
 
+        // If node is the stub, dequeue it and use the next one
         if tail_node == self.stub {
-            let Some(next_node) = NonNull::new(next) else {
-                return DequeueResult::Element(None);
-            };
+            let next_node = NonNull::new(next)?;
 
-            unsafe { *tail_ptr = next };
+            self.tail.store(next, Ordering::Relaxed);
             tail_node = next_node;
             next = unsafe { T::get_link(tail_node).as_ref() }
                 .next
                 .load(Ordering::Acquire);
         }
 
+        // If there is a next node, simply cycle the queue
         if !next.is_null() {
-            unsafe { *tail_ptr = next };
-            return DequeueResult::Element(Some(unsafe { T::capture(tail_node) }));
+            self.tail.store(next, Ordering::Relaxed);
+            return Some(unsafe { T::capture(tail_node) });
         }
 
-        let head = self.head.load(Ordering::Acquire);
-
-        if tail_node.as_ptr() != head {
-            // Another thread is operating on the queue.
-            // We should give up and retry in a short while.
-            return DequeueResult::Retry;
-        }
-
+        // Otherwise, enqueue the stub, and then there is a next node!
         unsafe { self.enqueue_ptr(self.stub) };
 
+        // We still have to check the next node because it is possible that
+        // another node has been enqueued before the stub
         next = unsafe { T::get_link(tail_node).as_ref() }
             .next
             .load(Ordering::Acquire);
-        if next.is_null() {
-            return DequeueResult::Element(None);
-        }
 
-        unsafe { *tail_ptr = next };
+        self.tail.store(next, Ordering::Relaxed);
 
-        DequeueResult::Element(Some(unsafe { T::capture(tail_node) }))
+        Some(unsafe { T::capture(tail_node) })
     }
 }
 
 impl<T: Queueable> Drop for MpscQueue<T> {
     fn drop(&mut self) {
-        let mut current = unsafe { *self.tail.get() };
+        let mut current = self.tail.load(Ordering::Relaxed);
 
         while let Some(node) = NonNull::new(current) {
             let next = unsafe { T::get_link(node).as_ref() }
                 .next
                 .load(Ordering::Relaxed);
 
-            drop(unsafe { T::capture(node) });
+            if node != self.stub {
+                drop(unsafe { T::capture(node) });
+            }
 
             current = next;
         }
+
+        // The stub isn't necessarily in the queue, so we have to drop it manually
+        drop(unsafe { T::capture(self.stub) });
     }
 }
 
@@ -352,6 +336,7 @@ mod tests {
         let element2 = queue.dequeue().unwrap();
         assert_eq!(element1.value, 1);
         assert_eq!(element2.value, 2);
+        assert!(queue.dequeue().is_none());
     }
 
     #[cfg(miri)]
@@ -372,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn test_concurent() {
+    fn test_mpsc_concurent() {
         let num_threads = 10;
 
         let queue = Arc::new(MpscQueue::<Element>::new(Box::pin(Element {
@@ -418,5 +403,47 @@ mod tests {
         }
 
         assert!(queue.dequeue().is_none());
+    }
+
+    #[test]
+    fn test_mpsc_concurent_interlaced() {
+        let num_threads = 2 * 5;
+
+        let queue = Arc::new(MpscQueue::<Element>::new(Box::pin(Element {
+            value: 0,
+            next: None,
+        })));
+
+        for _ in 0..num_threads / 2 + 1 {
+            queue.enqueue(Box::pin(Element {
+                value: 42,
+                next: None,
+            }));
+        }
+
+        let barrier = Arc::new(Barrier::new(num_threads));
+        let mut handles = Vec::with_capacity(num_threads);
+
+        for i in 0..num_threads {
+            handles.push(spawn({
+                let queue = queue.clone();
+                let barrier = barrier.clone();
+                move || {
+                    barrier.wait();
+                    if i % 2 == 0 {
+                        assert_eq!(queue.dequeue().unwrap().value, 42);
+                    } else {
+                        queue.enqueue(Box::pin(Element {
+                            value: 1,
+                            next: None,
+                        }));
+                    }
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }
