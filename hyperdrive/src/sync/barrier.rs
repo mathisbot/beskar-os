@@ -39,8 +39,15 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 /// }
 /// ```
 pub struct Barrier {
+    /// Amount of threads that need to reach the barrier.
     count: usize,
+    /// Rank counter.
+    /// 
+    /// Used by threads to get their rank in the barrier.
+    rank: AtomicUsize,
+    /// Current amount of threads that are waiting.
     current: AtomicUsize,
+    /// Amount of threads that have exited the barrier.
     out: AtomicUsize,
 }
 
@@ -54,8 +61,10 @@ impl Barrier {
     #[inline]
     /// Creates a new barrier that allows `count` threads to synchronize.
     pub const fn new(count: usize) -> Self {
+        assert!(count > 0, "Barrier must have a count greater than 0.");
         Self {
             count,
+            rank: AtomicUsize::new(0),
             current: AtomicUsize::new(0),
             out: AtomicUsize::new(0),
         }
@@ -65,28 +74,27 @@ impl Barrier {
     ///
     /// This will block the current thread until all threads have reached the barrier.
     pub fn wait(&self) {
-        let mut rank = self.current.fetch_add(1, Ordering::AcqRel);
-        while rank >= self.count {
-            core::hint::spin_loop();
-            self.current.fetch_sub(1, Ordering::AcqRel);
-            rank = self.current.fetch_add(1, Ordering::AcqRel);
+        while self.rank.fetch_add(1, Ordering::AcqRel) >= self.count {
+            // Avoid overflow (which would be catastrophic) by waiting instead of continuously adding.
+            while self.rank.load(Ordering::Acquire) >= self.count {
+                core::hint::spin_loop();
+            }
         }
+        self.current.fetch_add(1, Ordering::AcqRel);
 
         // Actual waiting loop.
         while self.current.load(Ordering::Acquire) < self.count {
             core::hint::spin_loop();
         }
-        self.out.fetch_add(1, Ordering::Release);
+        let out = self.out.fetch_add(1, Ordering::AcqRel);
 
         // Only one thread will be responsible for resetting the barrier.
-        // We simply have to wait for every thread to exit the while loop,
-        // and then set the counter to 0.
-        if rank == 0 {
-            while self.out.load(Ordering::Acquire) < self.count {
-                core::hint::spin_loop();
-            }
+        // We simply have to wait for every thread to exit the while loop.
+        if out == self.count - 1 {
+            self.current.store(0, Ordering::Release);
             self.out.store(0, Ordering::Release);
-            self.current.fetch_sub(self.count, Ordering::AcqRel);
+            // Release the barrier
+            self.rank.store(0, Ordering::Release);
         }
     }
 }
@@ -102,6 +110,12 @@ mod tests {
         let barrier = Barrier::new(1);
 
         barrier.wait();
+    }
+
+    #[test]
+    #[should_panic = "Barrier must have a count greater than 0."]
+    fn test_barrier_0() {
+        let _ = Barrier::new(0);
     }
 
     #[test]
