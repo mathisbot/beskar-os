@@ -3,7 +3,8 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, sync::Arc, vec};
+use hyperdrive::{once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
 use thread::Thread;
 
@@ -25,7 +26,9 @@ pub const SCHEDULER_QUANTUM_MS: u32 = 60;
 // Because scheduler will be playing with context switching, we cannot acquire locks.
 // Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
 static mut SCHEDULERS: [Option<Scheduler>; 256] = [const { None }; 256];
-static mut QUEUE: Option<priority::RoundRobinQueues> = None;
+static QUEUE: Once<priority::RoundRobinQueues> = Once::uninit();
+
+static FINISHED_QUEUE: Once<MpscQueue<Thread>> = Once::uninit();
 
 /// This function initializes the scheduler with the kernel thread.
 ///
@@ -33,18 +36,26 @@ static mut QUEUE: Option<priority::RoundRobinQueues> = None;
 ///
 /// This function should only be called once, and only by the kernel, with the kernel thread.
 pub unsafe fn init(kernel_thread: thread::Thread) {
-    if locals!().core_id() == 0 {
-        #[allow(static_mut_refs)]
-        unsafe {
-            QUEUE = Some(priority::RoundRobinQueues::create(kernel_thread.process()));
-        }
-    }
+    let kernel_process = kernel_thread.process();
+
+    QUEUE.call_once(|| priority::RoundRobinQueues::create(kernel_process.clone()));
+    FINISHED_QUEUE.call_once(|| MpscQueue::new(Box::pin(Thread::new_stub(kernel_process.clone()))));
 
     let scheduler = Scheduler::new(kernel_thread);
     // Safety:
     // Function safety guards.
     unsafe {
         SCHEDULERS[locals!().core_id()] = Some(scheduler);
+    }
+
+    // Spawn the cleaning thread.
+    if locals!().core_id() == 0 {
+        spawn_thread(Box::pin(Thread::new(
+            kernel_process,
+            priority::Priority::Low,
+            vec![0; 1024 * 512],
+            clean_thread as *const (),
+        )));
     }
 }
 
@@ -136,16 +147,14 @@ impl Scheduler {
         x86_64::instructions::interrupts::disable();
 
         // Swap the current thread with the next one.
-        let mut new_thread = Pin::into_inner(
-            #[allow(static_mut_refs)]
-            if let Some(new_thread) = unsafe { QUEUE.as_mut() }.unwrap().next() {
+        let mut new_thread =
+            Pin::into_inner(if let Some(new_thread) = QUEUE.get().unwrap().next() {
                 new_thread
             } else {
                 self.in_reschedule.store(false, Ordering::Release);
                 x86_64::instructions::interrupts::enable();
                 return None;
-            },
-        );
+            });
         core::mem::swap(self.current_thread.as_mut(), &mut new_thread);
         let mut old_thread = new_thread; // Yes...
 
@@ -161,16 +170,11 @@ impl Scheduler {
         let new_stack = self.current_thread().last_stack_ptr();
 
         if old_should_exit {
-            // FIXME: Handle this properly
             // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
-            // For now, we will just forget the thread.
-            // Maybe creating a cleaning thread?
-            core::mem::forget(old_thread);
+            // This job should be done by a cleaning thread.
+            FINISHED_QUEUE.get().unwrap().enqueue(Pin::new(old_thread));
         } else {
-            #[allow(static_mut_refs)]
-            unsafe { QUEUE.as_mut() }
-                .unwrap()
-                .append(Pin::new(old_thread));
+            QUEUE.get().unwrap().append(Pin::new(old_thread));
         }
 
         let cr3 = self.current_process().address_space().cr3_raw();
@@ -185,6 +189,17 @@ impl Scheduler {
     }
 }
 
+fn clean_thread() {
+    loop {
+        if let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
+            drop(thread);
+        } else {
+            core::hint::spin_loop();
+            // TODO: Yield
+        }
+    }
+}
+
 /// Reschedules the scheduler.
 ///
 /// ## Safety
@@ -193,7 +208,6 @@ impl Scheduler {
 /// and EOI is sent to the APIC in the function.
 pub(crate) unsafe fn reschedule() {
     // Safety:
-    // Interrupts are disabled at the start of the function.
     // Data races are avoided by the `Scheduler::reschedule` function.
     // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]
@@ -235,11 +249,7 @@ pub unsafe fn current_process() -> Arc<Process> {
 }
 
 pub fn spawn_thread(thread: Pin<Box<Thread>>) {
-    // FIXME: Find a workaround for static mutable references.
-    #[allow(static_mut_refs)]
-    unsafe {
-        QUEUE.as_mut().unwrap().append(thread);
-    };
+    QUEUE.get().unwrap().append(thread);
 }
 
 /// Sets the scheduling of the scheduler.

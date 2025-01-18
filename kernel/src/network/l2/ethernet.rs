@@ -134,7 +134,18 @@ impl Packet {
         raw[14..14 + usize::from(self.data_length)]
             .copy_from_slice(&self.data[..self.data_length as usize]);
 
-        todo!("CRC checksum");
+        let crc = raw
+            .chunks_exact(size_of::<u16>())
+            .take((14 + usize::from(self.data_length)).div_ceil(2))
+            .fold(0_u16, |crc, word| {
+                crc.wrapping_add(u16::from_be_bytes(unsafe {
+                    word.try_into().unwrap_unchecked()
+                }))
+            });
+
+        raw[14 + usize::from(self.data_length)
+            ..14 + usize::from(self.data_length) + size_of::<u16>()]
+            .copy_from_slice(&crc.to_be_bytes());
 
         raw
     }

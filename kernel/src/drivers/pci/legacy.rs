@@ -167,7 +167,10 @@ impl LegacyPciHandler {
     }
 
     fn write_raw(&mut self, address: PciAddress, value: u32) {
-        assert!(address.register_offset.trailing_zeros() >= 2, "Unaligned write");
+        assert!(
+            address.register_offset.trailing_zeros() >= 2,
+            "Unaligned write"
+        );
 
         unsafe {
             self.config_port.write(ConfigAddress::build_value(address));
