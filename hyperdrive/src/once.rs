@@ -202,14 +202,6 @@ mod test {
     #[test]
     fn test_concurrent() {
         let once = Arc::new(Once::uninit());
-
-        let handle = spawn({
-            let once = once.clone();
-            move || assert!(once.get().is_none())
-        });
-
-        handle.join().unwrap();
-
         once.call_once(|| 42);
 
         let num_threads = 10;

@@ -2,7 +2,7 @@ use super::super::VirtAddr;
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 
-use super::{MemSize, M4KiB};
+use super::{M2MiB, M4KiB, MemSize};
 
 /// A virtual memory page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -55,8 +55,33 @@ impl<S: MemSize> Page<S> {
 
     #[must_use]
     #[inline]
+    pub fn p3_index(self) -> u16 {
+        self.start_address().p3_index()
+    }
+
+    #[must_use]
+    #[inline]
     pub const fn range_inclusive(start: Self, end: Self) -> PageRangeInclusive<S> {
         PageRangeInclusive { start, end }
+    }
+}
+
+impl Page<M2MiB> {
+    #[must_use]
+    pub fn p2_index(self) -> u16 {
+        self.start_address().p2_index()
+    }
+}
+
+impl Page<M4KiB> {
+    #[must_use]
+    pub fn p2_index(self) -> u16 {
+        self.start_address().p2_index()
+    }
+
+    #[must_use]
+    pub fn p1_index(self) -> u16 {
+        self.start_address().p1_index()
     }
 }
 

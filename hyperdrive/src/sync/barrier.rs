@@ -138,6 +138,29 @@ mod tests {
     }
 
     #[test]
+    fn test_barrier_reuse_concurrent() {
+        let num_threads = 2 * 10;
+
+        let barrier = Arc::new(Barrier::new(2));
+
+        let handles = (0..num_threads)
+            .map(|_| {
+                spawn({
+                    let barrier = barrier.clone();
+                    move || barrier.wait()
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert!(barrier.current.load(Ordering::Relaxed) == 0);
+        assert!(barrier.passed.load(Ordering::Relaxed) == 0);
+    }
+
+    #[test]
     fn test_barrier_concurrent_many_uses() {
         let num_threads = 5;
 

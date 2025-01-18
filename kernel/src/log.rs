@@ -30,14 +30,14 @@ pub fn init_screen() {
 }
 
 pub fn set_screen_logging(enable: bool) {
-    LOG_ON_SCREEN.store(enable, core::sync::atomic::Ordering::Relaxed);
+    LOG_ON_SCREEN.store(enable, core::sync::atomic::Ordering::Release);
 }
 
 pub fn log(args: core::fmt::Arguments) {
     SERIAL.with_locked(|serial| {
         serial.write_fmt(args).unwrap();
     });
-    if LOG_ON_SCREEN.load(core::sync::atomic::Ordering::Relaxed) {
+    if LOG_ON_SCREEN.load(core::sync::atomic::Ordering::Acquire) {
         SCREEN_LOGGER.try_with_locked(|writer| {
             writer.write_fmt(args).unwrap();
         });

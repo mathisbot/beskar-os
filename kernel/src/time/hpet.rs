@@ -13,7 +13,8 @@ pub fn init() {
 }
 
 pub(super) fn wait_ms(ms: u64) {
-    let period_100ps = u64::from(hpet::with_hpet(|hpet| hpet.general_capabilities().period())) / 100_000;
+    let period_100ps =
+        u64::from(hpet::with_hpet(|hpet| hpet.general_capabilities().period())) / 100_000;
     let start = hpet::with_hpet(|hpet| hpet.main_counter_value().get_value());
 
     let target = start + ms * 1_000_000 / period_100ps * 10;

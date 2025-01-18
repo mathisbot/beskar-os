@@ -2,7 +2,7 @@ use x86_64::{
     VirtAddr,
     structures::paging::{
         Page, PageSize, PageTable, PageTableFlags, PageTableIndex, Size1GiB, Size2MiB, Size4KiB,
-        page::PageRangeInclusive,
+        page::PageRangeInclusive, page_table::FrameError,
     },
 };
 
@@ -21,6 +21,7 @@ const MAX_VALID_VADDR: u64 = 0xFFFF_FFFF_FFFF; // 256 TiB
 const MAX_VRANGES: usize = 128;
 
 pub fn init(recursive_index: u16) {
+    /// Recursively remove already mapped pages from the available ranges.
     fn remove_mapping(
         level: u8,
         page_table: &PageTable,
@@ -52,7 +53,7 @@ pub fn init(recursive_index: u16) {
                         vaddrs.remove(MemoryRange::new(vaddr, vaddr + (Size2MiB::SIZE - 1)));
                     }
                     1 => {
-                        panic!("Huge page in level 1");
+                        unreachable!("Huge page in level 1");
                     }
                     _ => unreachable!("Invalid level"),
                 }
@@ -68,9 +69,9 @@ pub fn init(recursive_index: u16) {
                         let vaddr = (l4 << 39) | (l3 << 30) | (l2 << 21) | (l1 << 12);
                         vaddrs.remove(MemoryRange::new(vaddr, vaddr + (Size4KiB::SIZE - 1)));
                     }
-                    Err(x86_64::structures::paging::page_table::FrameError::FrameNotPresent) => {}
-                    Err(x86_64::structures::paging::page_table::FrameError::HugeFrame) => {
-                        panic!("Huge page in level 1");
+                    Err(FrameError::FrameNotPresent) => {}
+                    Err(FrameError::HugeFrame) => {
+                        unreachable!("Huge page in level 1");
                     }
                 }
             } else {
@@ -99,16 +100,12 @@ pub fn init(recursive_index: u16) {
         );
     });
 
-    let zero = PageTableIndex::new(0);
-    let max = PageTableIndex::new(511);
-    let pte_start = (u64::from(recursive_index) << 39)
-        | (u64::from(zero) << 30)
-        | (u64::from(zero) << 21)
-        | (u64::from(zero) << 12);
+    let pte_start = u64::from(recursive_index) << 39;
     let pte_end = (u64::from(recursive_index) << 39)
-        | (u64::from(max) << 30)
-        | (u64::from(max) << 21)
-        | (u64::from(max) << 12);
+        // Fill in bits with all 1s
+        | (0x1FF << 30)
+        | (0x1FF << 21)
+        | (0x1FF << 12);
 
     vaddrs.remove(MemoryRange::new(pte_start, pte_end));
 

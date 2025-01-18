@@ -47,6 +47,24 @@ impl VirtAddr {
     pub fn p4_index(self) -> u16 {
         u16::try_from((self.0 >> 39) & 0x1FF).unwrap()
     }
+
+    #[must_use]
+    #[inline]
+    pub fn p3_index(self) -> u16 {
+        u16::try_from((self.0 >> 30) & 0x1FF).unwrap()
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn p2_index(self) -> u16 {
+        u16::try_from((self.0 >> 21) & 0x1FF).unwrap()
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn p1_index(self) -> u16 {
+        u16::try_from((self.0 >> 12) & 0x1FF).unwrap()
+    }
 }
 
 impl PhysAddr {

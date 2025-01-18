@@ -1,18 +1,20 @@
-pub mod frame;
-pub mod page;
+mod frame;
+pub use frame::{Frame, FrameRangeInclusive};
+mod page;
+pub use page::{Page, PageRangeInclusive};
 
 pub trait MemSize: Copy + Eq + Ord + PartialOrd {
     const SIZE: u64;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct  M4KiB {}
+pub struct M4KiB {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum M2MiB {}
+pub struct M2MiB {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum M1GiB {}
+pub struct M1GiB {}
 
 impl MemSize for M4KiB {
     const SIZE: u64 = 4096;

@@ -53,21 +53,26 @@
 
 use core::{marker::PhantomData, ptr::NonNull};
 
-pub trait Access {}
+trait Sealed {}
+#[allow(private_bounds)] // That's the whole point :)
+pub trait Access: Sealed {}
 
 pub trait ReadAccess: Access {}
 pub trait WriteAccess: Access {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadOnly;
+impl Sealed for ReadOnly {}
 impl Access for ReadOnly {}
 impl ReadAccess for ReadOnly {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteOnly;
+impl Sealed for WriteOnly {}
 impl Access for WriteOnly {}
 impl WriteAccess for WriteOnly {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadWrite;
+impl Sealed for ReadWrite {}
 impl Access for ReadWrite {}
 impl ReadAccess for ReadWrite {}
 impl WriteAccess for ReadWrite {}

@@ -38,6 +38,7 @@ pub struct Process {
 
 impl Process {
     #[must_use]
+    #[inline]
     pub fn name(&self) -> &str {
         &self.name
     }

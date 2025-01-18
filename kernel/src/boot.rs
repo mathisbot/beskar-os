@@ -52,7 +52,6 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     crate::log::init_serial();
     crate::debug!("Booting on BSP");
 
-    // TODO: Get framebuffer from PCI ?
     screen::init(framebuffer);
     crate::log::init_screen();
 
@@ -119,7 +118,6 @@ fn ap_init() {
     arch::apic::init_lapic();
     process::scheduler::set_scheduling(true);
 }
-
 
 /// This function is called by each core once they're ready to start the kernel.
 ///

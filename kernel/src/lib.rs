@@ -7,12 +7,13 @@
 mod arch;
 pub mod boot;
 pub mod drivers;
-pub mod fs;
 pub mod locals;
 pub mod log;
 mod mem;
+pub mod network;
 pub mod process;
 pub mod screen;
+pub mod storage;
 pub mod time;
 
 extern crate alloc;
@@ -34,4 +35,11 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     loop {
         crate::arch::halt();
     }
+}
+
+#[macro_export]
+macro_rules! static_assert {
+    ($assertion:expr $(, $($arg:tt)+)?) => {
+        const _: () = assert!($assertion $(, $($arg)+)?);
+    };
 }

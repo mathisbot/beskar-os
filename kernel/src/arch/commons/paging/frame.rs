@@ -4,7 +4,7 @@ use super::super::PhysAddr;
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 
-use super::{MemSize, M4KiB};
+use super::{M4KiB, MemSize};
 
 /// A physical memory frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -133,7 +133,7 @@ impl<S: MemSize> DoubleEndedIterator for FrameRangeInclusive<S> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.start <= self.end {
             let frame = self.end;
-            
+
             // Avoid underflow
             if self.end.start_address().as_u64() == 0 {
                 self.start = frame + 1;

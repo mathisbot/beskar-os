@@ -186,7 +186,7 @@ pub fn check_cpuid() {
             (reg >> feature.bit) & 1,
             1,
             "CPU does not support required feature: {}",
-            feature.name
+            feature
         );
     }
 }

@@ -1,9 +1,8 @@
-use crate::{
-    locals, mem::{
-        frame_alloc, page_alloc, page_table,
-    }
-};
 use super::apic::ipi::{self, Ipi};
+use crate::{
+    locals,
+    mem::{frame_alloc, page_alloc, page_table},
+};
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -32,7 +31,10 @@ static BSP_EFER: AtomicU64 = AtomicU64::new(0);
 /// Manually compiled with nasm from `ap_tramp.asm`.
 /// Must be manually recompiled if the code changes.
 const AP_TRAMPOLINE_CODE: &[u8] = include_bytes!("ap/ap_tramp");
-const _: () = assert!(AP_TRAMPOLINE_CODE.len() < 4096, "AP trampoline code is too big");
+crate::static_assert!(
+    AP_TRAMPOLINE_CODE.len() <= 4096,
+    "AP trampoline code is too big"
+);
 
 // TODO: If the main core panics, all APs should stop.
 pub fn start_up_aps(core_count: usize) {

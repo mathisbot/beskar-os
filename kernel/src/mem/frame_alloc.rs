@@ -11,9 +11,11 @@ use super::{
 };
 use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
 use x86_64::{
+    PhysAddr,
     structures::paging::{
-        page::PageRangeInclusive, Mapper, PageSize, PageTableFlags, PhysFrame, RecursivePageTable, Size4KiB
-    }, PhysAddr
+        Mapper, PageSize, PageTableFlags, PhysFrame, RecursivePageTable, Size4KiB,
+        page::PageRangeInclusive,
+    },
 };
 
 use hyperdrive::locks::mcs::MUMcsLock;
@@ -34,7 +36,7 @@ pub fn init(regions: &[MemoryRegion]) {
     assert!(usable_regions > 0, "No usable memory regions found");
     if usable_regions >= MAX_MEMORY_REGIONS {
         crate::warn!(
-            "[WARN ] Too many usable memory regions, using only the first {}",
+            "Too many usable memory regions, using only the first {}",
             MAX_MEMORY_REGIONS
         );
     }

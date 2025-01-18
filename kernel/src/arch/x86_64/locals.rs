@@ -13,9 +13,7 @@ pub fn store_locals(locals: &crate::locals::CoreLocalsInfo) {
     }
 
     unsafe {
-        GS::write_base(VirtAddr::new(
-            core::ptr::from_ref(locals) as u64
-        ));
+        GS::write_base(VirtAddr::new(core::ptr::from_ref(locals) as u64));
     }
 }
 

@@ -2,7 +2,6 @@
 
 use core::{
     alloc::{GlobalAlloc, Layout},
-    cell::UnsafeCell,
     ptr::NonNull,
 };
 
@@ -40,7 +39,7 @@ struct Heap {
     // start: NonZeroU64,
     // end: NonZeroU64,
     // TODO: Add faster allocator
-    linked_list: UnsafeCell<linked_list_allocator::Heap>,
+    linked_list: linked_list_allocator::Heap,
 }
 
 impl Heap {
@@ -56,25 +55,21 @@ impl Heap {
         Self {
             // start: start_address.try_into().unwrap(),
             // end: end_address.try_into().unwrap(),
-            linked_list: UnsafeCell::new(linked_list),
+            linked_list,
         }
     }
 
-    pub fn alloc(&self, layout: Layout) -> *mut u8 {
+    pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
         // According to the safety requirements of the `GlobalAlloc trait`, we need to ensure that
         // this function doesn't panic. Therefore, we need to return null if the allocation fails.
 
-        // Safety:
-        // The heap is locked, so we can safely access its fields.
-        let linked_allocator = unsafe { &mut *self.linked_list.get() };
-
-        linked_allocator
+        self.linked_list
             .allocate_first_fit(layout)
             .ok()
             .map_or(core::ptr::null_mut(), core::ptr::NonNull::as_ptr)
     }
 
-    pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;
         }
@@ -83,12 +78,8 @@ impl Heap {
         let non_null_ptr = NonNull::new(ptr).unwrap();
 
         // Safety:
-        // The heap is locked, so we can safely access its fields.
-        let linked_allocator = unsafe { &mut *self.linked_list.get() };
-
-        // Safety:
         // `GlobalAlloc` guarantees that the pointer is valid and the layout is correct.
-        unsafe { linked_allocator.deallocate(non_null_ptr, layout) };
+        unsafe { self.linked_list.deallocate(non_null_ptr, layout) };
     }
 }
 

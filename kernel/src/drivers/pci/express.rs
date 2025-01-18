@@ -213,7 +213,6 @@ impl super::PciHandler for PciExpressHandler {
                 .iter()
                 .position(|cs| cs.segment_group_number() == address.sbdf.segment())
                 .unwrap();
-
             (
                 &self.configuration_spaces[cs_index],
                 &self.physical_mappings[cs_index],
@@ -224,6 +223,25 @@ impl super::PciHandler for PciExpressHandler {
         let vaddr = pmap.translate(paddr).unwrap();
 
         unsafe { vaddr.as_ptr::<u32>().read() }
+    }
+
+    fn write_raw(&mut self, address: PciAddress, value: u32) {
+        let (cs, pmap) = {
+            let cs_index = self
+                .configuration_spaces
+                .iter()
+                .position(|cs| cs.segment_group_number() == address.sbdf.segment())
+                .unwrap();
+            (
+                &self.configuration_spaces[cs_index],
+                &self.physical_mappings[cs_index],
+            )
+        };
+
+        let paddr = Self::build_paddr(cs.offset(), address);
+        let vaddr = pmap.translate(paddr).unwrap();
+
+        unsafe { vaddr.as_mut_ptr::<u32>().write(value) };
     }
 }
 

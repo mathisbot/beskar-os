@@ -339,6 +339,7 @@ mod tests {
             value: 0,
             next: None,
         }));
+        assert!(queue.dequeue().is_none());
         queue.enqueue(Box::pin(Element {
             value: 1,
             next: None,

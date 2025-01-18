@@ -23,6 +23,8 @@ pub trait PciHandler {
     #[must_use]
     fn read_raw(&mut self, address: PciAddress) -> u32;
 
+    fn write_raw(&mut self, address: PciAddress, value: u32);
+
     #[must_use]
     /// Read the raw value from the PCI configuration space
     ///

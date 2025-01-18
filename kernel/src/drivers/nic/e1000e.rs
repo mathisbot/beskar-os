@@ -18,11 +18,12 @@ use x86_64::{
     structures::paging::{Mapper, Page, PageSize, Size4KiB},
 };
 
+use super::Nic;
 use crate::{
-    mem::page_alloc::pmap::{self, PhysicalMapping},
     drivers::pci::{self, Bar, with_pci_handler},
+    mem::page_alloc::pmap::{self, PhysicalMapping},
+    network::l2::ethernet::MacAddress,
 };
-use super::super::{nic::Nic, structs::MacAddress};
 
 const RX_BUFFERS: usize = 32;
 const TX_BUFFERS: usize = 8;
@@ -171,17 +172,22 @@ impl E1000e<'_> {
 
     fn enable_int(&self) {
         // FIXME: Only one pass over the capabilities is needed
-        let msix_capable = pci::with_pci_handler(|handler| {
-            pci::msix::find_msix_cap(handler, &self.pci_device)
-        });
-        let msi_capable = if msix_capable.is_none() {
-            pci::with_pci_handler(|handler| {
-                pci::msi::find_msi_cap(handler, &self.pci_device)
-            })
+        let msix = pci::with_pci_handler(|handler| pci::msix::MsiX::new(handler, &self.pci_device));
+        let msi = if msix.is_none() {
+            pci::with_pci_handler(|handler| pci::msi::find_msi_cap(handler, &self.pci_device))
         } else {
             None
         };
-        // TODO: Enable MSI-X or MSI
+
+        if let Some(msix) = msix {
+            msix.setup_int(crate::arch::interrupts::Irq::Nic as u8, 0);
+            pci::with_pci_handler(|handler| msix.enable(handler));
+        } else if let Some(_msi) = msi {
+            // TODO: Enable MSI
+            todo!("MSI not implemented");
+        } else {
+            unreachable!("No MSI or MSI-X capability found for the network controller.");
+        }
     }
 
     fn configure_descriptors(
@@ -280,15 +286,9 @@ impl Nic for E1000e<'_> {
     fn send_frame(&self, _frame: &[u8]) {
         todo!()
     }
-}
 
-impl Nic for &E1000e<'_> {
-    fn poll_frame(&self) -> Option<&[u8]> {
-        todo!()
-    }
-
-    fn send_frame(&self, _frame: &[u8]) {
-        todo!()
+    fn mac_address(&self) -> MacAddress {
+        self.mac_address()
     }
 }
 

@@ -5,6 +5,7 @@ pub mod cpuid;
 pub mod gdt;
 pub mod interrupts;
 pub mod locals;
+pub mod paging;
 pub mod rand;
 pub mod serial;
 pub mod syscall;

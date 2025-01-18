@@ -2,7 +2,7 @@ name: BeskarOS dev
 
 on:
   push:
-    branches: ["dev"]
+    branches: ["dev","main"]
 
 env:
   CARGO_TERM_COLOR: always

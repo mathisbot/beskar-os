@@ -2,33 +2,20 @@
 
 use super::SerialPort;
 
-/// Port number for COM1
-const COM1_IO_PORT: u16 = 0x3F8;
-/// Port number for COM2
-const COM2_IO_PORT: u16 = 0x2F8;
-/// Port number for COM3
-const COM3_IO_PORT: u16 = 0x3E8;
-/// Port number for COM4
-const COM4_IO_PORT: u16 = 0x2E8;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u16)]
 pub enum ComNumber {
-    Com1,
-    Com2,
-    Com3,
-    Com4,
+    Com1 = 0x3F8,
+    Com2 = 0x2F8,
+    Com3 = 0x3E8,
+    Com4 = 0x2E8,
 }
 
 impl ComNumber {
     #[must_use]
     #[inline]
     pub const fn io_port(self) -> u16 {
-        match self {
-            Self::Com1 => COM1_IO_PORT,
-            Self::Com2 => COM2_IO_PORT,
-            Self::Com3 => COM3_IO_PORT,
-            Self::Com4 => COM4_IO_PORT,
-        }
+        self as u16
     }
 }
 

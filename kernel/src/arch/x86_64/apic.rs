@@ -8,9 +8,9 @@ use core::{
 use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
 use timer::LapicTimer;
 use x86_64::{
-    PhysAddr,
+    PhysAddr, VirtAddr,
     instructions::port::Port,
-    structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
+    structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB, Translate},
 };
 
 use super::cpuid;
@@ -161,13 +161,23 @@ impl LocalApic {
         &mut self.timer
     }
 
+    #[inline]
     pub fn send_eoi(&mut self) {
         unsafe { self.base.byte_add(0xB0).write(0) };
     }
 
     #[must_use]
+    #[inline]
     pub const fn base(&self) -> Volatile<ReadWrite, u32> {
         self.base
+    }
+
+    #[must_use]
+    pub fn paddr(&self) -> PhysAddr {
+        page_table::with_page_table(|pt| {
+            pt.translate_addr(VirtAddr::new(self.base.as_non_null().as_ptr() as u64))
+                .unwrap()
+        })
     }
 }
 
