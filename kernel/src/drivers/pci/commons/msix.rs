@@ -128,7 +128,7 @@ impl MsiX {
         offset_0x068.msg_ctrl |= 1 << (31 - 16);
         offset_0x068.msg_ctrl &= !(1 << (30 - 16));
         handler.write_raw(offset_0x068_addr, unsafe {
-            core::mem::transmute(offset_0x068)
+            core::mem::transmute::<MsiX068, u32>(offset_0x068)
         });
     }
 }

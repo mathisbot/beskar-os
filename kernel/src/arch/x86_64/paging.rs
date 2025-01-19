@@ -6,7 +6,7 @@ pub struct TlbFlush<S: MemSize>(Page<S>);
 
 impl<S: MemSize> TlbFlush<S> {
     #[inline]
-    pub fn new(page: Page<S>) -> Self {
+    pub const fn new(page: Page<S>) -> Self {
         Self(page)
     }
 
@@ -24,11 +24,11 @@ impl<S: MemSize> TlbFlush<S> {
     ///
     /// The page table containing the page must not be used at the moment,
     /// otherwise the CPU will not be aware of the changes.
-    pub unsafe fn ignore_flush(self) {}
+    pub const unsafe fn ignore_flush(self) {}
 
     #[must_use]
     #[inline]
-    pub fn page(&self) -> Page<S> {
+    pub const fn page(&self) -> Page<S> {
         self.0
     }
 }

@@ -58,7 +58,7 @@ where
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             page_table::with_page_table(|page_table| {
-                for (frame, page) in frame_range.zip(page_range) {
+                for (frame, page) in frame_range.into_iter().zip(page_range) {
                     page_table
                         .map(page, frame, flags | Flags::PRESENT, frame_allocator)
                         .flush();

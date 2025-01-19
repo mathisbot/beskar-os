@@ -139,7 +139,26 @@ impl<S: MemSize> PageRangeInclusive<S> {
     }
 }
 
-impl<S: MemSize> Iterator for PageRangeInclusive<S> {
+impl<S: MemSize> IntoIterator for PageRangeInclusive<S> {
+    type Item = Page<S>;
+    type IntoIter = PageIterator<S>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        PageIterator {
+            start: self.start,
+            end: self.end,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PageIterator<S: MemSize = M4KiB> {
+    start: Page<S>,
+    end: Page<S>,
+}
+
+impl<S: MemSize> Iterator for PageIterator<S> {
     type Item = Page<S>;
 
     #[inline]
@@ -154,13 +173,17 @@ impl<S: MemSize> Iterator for PageRangeInclusive<S> {
     }
 }
 
-impl<S: MemSize> ExactSizeIterator for PageRangeInclusive<S> {
+impl<S: MemSize> ExactSizeIterator for PageIterator<S> {
     fn len(&self) -> usize {
-        usize::try_from(self.len()).unwrap()
+        usize::try_from(if self.start > self.end {
+            0
+        } else {
+            self.end - self.start + 1
+        }).unwrap()
     }
 }
 
-impl<S: MemSize> DoubleEndedIterator for PageRangeInclusive<S> {
+impl<S: MemSize> DoubleEndedIterator for PageIterator<S> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.start <= self.end {
             let page = self.end;

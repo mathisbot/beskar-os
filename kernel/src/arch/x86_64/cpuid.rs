@@ -185,8 +185,7 @@ pub fn check_cpuid() {
         assert_eq!(
             (reg >> feature.bit) & 1,
             1,
-            "CPU does not support required feature: {}",
-            feature
+            "CPU does not support required feature: {feature}",
         );
     }
 }

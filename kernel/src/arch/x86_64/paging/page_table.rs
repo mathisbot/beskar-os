@@ -33,25 +33,25 @@ impl Flags {
 
     #[must_use]
     #[inline]
-    pub const fn is_empty(&self) -> bool {
+    pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
     #[must_use]
     #[inline]
-    pub fn contains(&self, other: Self) -> bool {
-        (*self & other) == other
+    pub fn contains(self, other: Self) -> bool {
+        (self & other) == other
     }
 
     #[must_use]
     #[inline]
-    pub const fn union(&self, other: Self) -> Self {
+    pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
     #[must_use]
     #[inline]
-    pub const fn intersection(&self, other: Self) -> Self {
+    pub const fn intersection(self, other: Self) -> Self {
         Self(self.0 & other.0)
     }
 }
@@ -81,25 +81,25 @@ pub struct Entry(u64);
 impl Entry {
     #[must_use]
     #[inline]
-    pub const fn as_u64(&self) -> u64 {
+    pub const fn as_u64(self) -> u64 {
         self.0
     }
 
     #[must_use]
     #[inline]
-    pub const fn flags(&self) -> Flags {
+    pub const fn flags(self) -> Flags {
         Flags(self.0 & Flags::ALL.0)
     }
 
     #[must_use]
     #[inline]
-    pub const fn addr(&self) -> PhysAddr {
+    pub const fn addr(self) -> PhysAddr {
         PhysAddr::new(self.0 & 0x000f_ffff_ffff_f000)
     }
 
     #[must_use]
     #[inline]
-    pub fn frame_start(&self) -> Option<PhysAddr> {
+    pub fn frame_start(self) -> Option<PhysAddr> {
         assert!(!self.flags().contains(Flags::HUGE_PAGE), "Huge page");
 
         if self.flags().contains(Flags::PRESENT) {
@@ -122,7 +122,7 @@ impl Entry {
 
     #[must_use]
     #[inline]
-    pub const fn is_null(&self) -> bool {
+    pub const fn is_null(self) -> bool {
         self.0 == 0
     }
 }
@@ -138,13 +138,11 @@ impl Entries {
         Self([Entry(0); 512])
     }
 
-    #[must_use]
     #[inline]
     pub fn iter(&self) -> core::slice::Iter<Entry> {
         self.0.iter()
     }
 
-    #[must_use]
     #[inline]
     pub fn iter_mut(&mut self) -> core::slice::IterMut<Entry> {
         self.0.iter_mut()
@@ -333,9 +331,7 @@ impl Mapper<M4KiB> for PageTable<'_> {
             )
         };
 
-        if !p1[usize::from(page.p1_index())].is_null() {
-            panic!("Page already mapped");
-        }
+        assert!(p1[usize::from(page.p1_index())].is_null(), "Page already mapped");
         p1[usize::from(page.p1_index())].set(frame.start_address(), flags);
 
         super::TlbFlush::new(page)
@@ -447,9 +443,7 @@ impl Mapper<M2MiB> for PageTable<'_> {
             )
         };
 
-        if !p2[usize::from(page.p2_index())].is_null() {
-            panic!("Page already mapped");
-        }
+        assert!(p2[usize::from(page.p2_index())].is_null(), "Page already mapped");
         p2[usize::from(page.p2_index())].set(frame.start_address(), Flags::HUGE_PAGE | flags);
 
         super::TlbFlush::new(page)
@@ -514,7 +508,7 @@ impl Mapper<M2MiB> for PageTable<'_> {
         };
         let p2_entry = &p2[usize::from(page.p2_index())];
         if p2_entry.is_null() {
-            return None;
+            None
         } else {
             Some(Frame::from_start_address(p2_entry.addr()).unwrap())
         }
@@ -590,7 +584,7 @@ impl Mapper<M1GiB> for PageTable<'_> {
         };
         let p3_entry = &p3[usize::from(page.p3_index())];
         if p3_entry.is_null() {
-            return None;
+            None
         } else {
             Some(Frame::from_start_address(p3_entry.addr()).unwrap())
         }

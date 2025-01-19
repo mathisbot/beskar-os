@@ -36,6 +36,7 @@ impl MemSize for M1GiB {
 pub trait CacheFlush<S: MemSize> {
     fn new(page: Page<S>) -> Self;
     fn flush(&self);
+    #[allow(clippy::unused_self)]
     /// Ignore the flush operation on the TLB.
     ///
     /// ## Safety

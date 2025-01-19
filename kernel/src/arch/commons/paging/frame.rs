@@ -108,7 +108,26 @@ impl<S: MemSize> FrameRangeInclusive<S> {
     }
 }
 
-impl<S: MemSize> Iterator for FrameRangeInclusive<S> {
+impl<S: MemSize> IntoIterator for FrameRangeInclusive<S> {
+    type Item = Frame<S>;
+    type IntoIter = FrameIterator<S>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        FrameIterator {
+            start: self.start,
+            end: self.end,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct FrameIterator<S: MemSize = M4KiB> {
+    pub start: Frame<S>,
+    pub end: Frame<S>,
+}
+
+impl<S: MemSize> Iterator for FrameIterator<S> {
     type Item = Frame<S>;
 
     #[inline]
@@ -123,13 +142,17 @@ impl<S: MemSize> Iterator for FrameRangeInclusive<S> {
     }
 }
 
-impl<S: MemSize> ExactSizeIterator for FrameRangeInclusive<S> {
+impl<S: MemSize> ExactSizeIterator for FrameIterator<S> {
     fn len(&self) -> usize {
-        usize::try_from(self.len()).unwrap()
+        usize::try_from(if self.start > self.end {
+            0
+        } else {
+            self.end - self.start + 1
+        }).unwrap()
     }
 }
 
-impl<S: MemSize> DoubleEndedIterator for FrameRangeInclusive<S> {
+impl<S: MemSize> DoubleEndedIterator for FrameIterator<S> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.start <= self.end {
             let frame = self.end;
