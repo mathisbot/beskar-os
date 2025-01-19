@@ -66,7 +66,7 @@ impl From<MemoryRegion> for MemoryRange {
 pub struct MemoryRanges<const N: usize> {
     /// Array of ranges
     ranges: [MemoryRange; N],
-    /// Number of ranges that are cuurently in use
+    /// Number of ranges that are currently in use
     used: u16,
 }
 
@@ -91,10 +91,11 @@ impl<const N: usize> Default for MemoryRanges<N> {
 }
 
 impl<const N: usize> MemoryRanges<N> {
+    const _N_VALID: () = assert!(N > 0 && N <= 0xFFFF);
+
     #[must_use]
     #[inline]
-    pub fn new() -> Self {
-        assert!(N > 0 && u16::try_from(N).is_ok());
+    pub const fn new() -> Self {
         Self {
             ranges: [MemoryRange { start: 0, end: 0 }; N],
             used: 0,
@@ -151,25 +152,19 @@ impl<const N: usize> MemoryRanges<N> {
         );
 
         // Try merging the new range with the existing ones
-        loop {
-            let mut merged = false;
-
+        'outer: loop {
             for i in 0..usize::from(self.len()) {
                 let current = &self.ranges[i];
 
                 if range.overlaps(current).is_some() {
                     range.start = range.start.min(current.start);
                     range.end = range.end.max(current.end);
-                    merged = true;
                     self.delete(i);
-                    break;
+                    continue 'outer;
                 }
             }
 
-            // If merge occured, another merge may be possible
-            if !merged {
-                break;
-            }
+            break;
         }
 
         self.ranges[usize::from(self.len())] = range;

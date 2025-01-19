@@ -1,11 +1,10 @@
-use hyperdrive::locks::mcs::{MUMcsGuard, MUMcsLock, McsNode};
-use x86_64::{
-    VirtAddr,
-    registers::control::Cr3,
-    structures::paging::{RecursivePageTable, Translate},
-};
+use crate::arch::commons::VirtAddr;
+use crate::arch::commons::paging::Translator;
+use crate::arch::paging::page_table::PageTable;
+use crate::arch::registers::Cr3;
+use hyperdrive::locks::mcs::MUMcsLock;
 
-static KERNEL_PAGE_TABLE: MUMcsLock<RecursivePageTable> = MUMcsLock::uninit();
+static KERNEL_PAGE_TABLE: MUMcsLock<PageTable> = MUMcsLock::uninit();
 
 pub fn init(recursive_index: u16) {
     let (level_4_page_table, _) = Cr3::read();
@@ -22,7 +21,7 @@ pub fn init(recursive_index: u16) {
     // Safety: The page table given by the bootloader is valid
     let bootloader_pt = unsafe { &mut *bootloader_pt_vaddr.as_mut_ptr() };
 
-    let recursive_page_table = RecursivePageTable::new(bootloader_pt).unwrap();
+    let recursive_page_table = PageTable::new(bootloader_pt);
 
     debug_assert_eq!(
         recursive_page_table
@@ -34,24 +33,11 @@ pub fn init(recursive_index: u16) {
     KERNEL_PAGE_TABLE.init(recursive_page_table);
 }
 
-/// Explicitly returns a guard to the kernel page table
-///
-/// If you only plan on operating on the page table once, you can use `with_page_table`
-///
-/// ## Safety
-///
-/// The node must be valid for `McsLock::lock`
-pub(super) fn get_kernel_page_table(
-    node: &mut McsNode,
-) -> MUMcsGuard<'_, '_, RecursivePageTable<'static>> {
-    KERNEL_PAGE_TABLE.lock(node)
-}
-
 #[inline]
 /// Perform a single operation on the kernel page table
 pub fn with_page_table<F, R>(f: F) -> R
 where
-    F: FnOnce(&mut RecursivePageTable) -> R,
+    F: FnOnce(&mut PageTable) -> R,
 {
     KERNEL_PAGE_TABLE.with_locked(f)
 }

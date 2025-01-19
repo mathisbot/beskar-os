@@ -109,6 +109,11 @@ impl McsNode {
     fn next(&self) -> Option<NonNull<Self>> {
         NonNull::new(self.next.load(Ordering::Acquire))
     }
+
+    #[inline]
+    fn set_next(&self, next: *mut Self) {
+        self.next.store(next, Ordering::Release);
+    }
 }
 
 impl<T> McsLock<T> {
@@ -129,15 +134,13 @@ impl<T> McsLock<T> {
     pub fn lock<'s, 'node>(&'s self, node: &'node mut McsNode) -> McsGuard<'node, 's, T> {
         // Assert the node is ready to be used
         node.locked.store(true, Ordering::Release);
-        node.next.store(ptr::null_mut(), Ordering::Release);
+        node.set_next(ptr::null_mut());
 
         // Place the node at the end of the queue
         let prev = self.tail.swap(node, Ordering::AcqRel);
 
         if let Some(prev_ptr) = NonNull::new(prev) {
-            unsafe { prev_ptr.as_ref() }
-                .next
-                .store(node, Ordering::Release);
+            unsafe { prev_ptr.as_ref() }.set_next(node);
 
             // Wait until the node is at the front of the queue
             while node.is_locked() {
@@ -351,7 +354,8 @@ impl<T> MUMcsLock<T> {
     }
 
     #[inline]
-    /// Try to lock the lock and call the closure with the guard if possible.
+    /// Try to lock the lock and call the closure with the guard if the lock
+    /// is initialized.
     pub fn try_with_locked<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R,

@@ -4,7 +4,7 @@
 
 use core::{
     pin::Pin,
-    sync::atomic::{AtomicU8, Ordering},
+    sync::atomic::{AtomicU8, AtomicUsize, Ordering},
 };
 
 use alloc::{boxed::Box, sync::Arc};
@@ -77,12 +77,12 @@ impl From<Priority> for u8 {
 /// because it will be used by interrupt handlers.
 pub unsafe trait ThreadQueue {
     fn create(root_proc: Arc<Process>) -> Self;
-    fn append(&mut self, thread: Pin<Box<Thread>>);
-    fn next(&mut self) -> Option<Pin<Box<Thread>>>;
+    fn append(&self, thread: Pin<Box<Thread>>);
+    fn next(&self) -> Option<Pin<Box<Thread>>>;
 }
 
 pub struct RoundRobinQueues {
-    current: usize,
+    current: AtomicUsize,
     cycle: Box<[Priority]>,
     low: MpscQueue<Thread>,
     normal: MpscQueue<Thread>,
@@ -91,10 +91,9 @@ pub struct RoundRobinQueues {
 
 impl RoundRobinQueues {
     /// Cycle through the priorities.
-    fn cycle_priority(&mut self) -> Priority {
-        let priority = self.cycle[self.current];
-        self.current = (self.current + 1) % self.cycle.len();
-        priority
+    fn cycle_priority(&self) -> Priority {
+        let current = self.current.fetch_add(1, Ordering::Relaxed);
+        self.cycle[current % self.cycle.len()]
     }
 }
 
@@ -110,14 +109,14 @@ unsafe impl ThreadQueue for RoundRobinQueues {
                 Priority::Normal,
             ]
             .into_boxed_slice(),
-            current: usize::default(),
+            current: AtomicUsize::default(),
             low: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
             normal: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
             high: MpscQueue::new(Box::pin(Thread::new_stub(root_proc))),
         }
     }
 
-    fn append(&mut self, thread: Pin<Box<Thread>>) {
+    fn append(&self, thread: Pin<Box<Thread>>) {
         match thread.priority() {
             Priority::Null => {
                 // TODO: Queue them so they can still be accessed and woken up.
@@ -135,7 +134,7 @@ unsafe impl ThreadQueue for RoundRobinQueues {
     }
 
     #[must_use]
-    fn next(&mut self) -> Option<Pin<Box<Thread>>> {
+    fn next(&self) -> Option<Pin<Box<Thread>>> {
         match self.cycle_priority() {
             Priority::Null => unreachable!(),
             Priority::Low => self.low.dequeue(),

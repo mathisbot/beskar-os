@@ -1,8 +1,6 @@
 //! Test processes for the kernel.
 // TODO: Remove this module
 
-/// The purpose of this thread is to crash after it starts
-/// because of overflow.
 pub fn fibonacci() {
     let mut a = 0_u16;
     let mut b = 1_u16;
@@ -10,16 +8,23 @@ pub fn fibonacci() {
 
     loop {
         crate::info!(
-            "Core {}: Fibonacci({}) = {}",
+            "Hello from core {}! Fibonacci({}) = {}",
             crate::locals!().core_id(),
             n,
             a
         );
-        let (next, overflow) = a.overflowing_add(b);
-        assert!(!overflow, "Overflow detected in Fibonacci sequence");
+        let Some(next) = a.checked_add(b) else {
+            crate::error!("Overflow detected in Fibonacci sequence");
+            break;
+        };
         a = b;
         b = next;
         n += 1;
+        crate::time::wait_ms(1_000);
+    }
+
+    loop {
+        crate::error!("Fibonacci sequence overflowed");
         crate::time::wait_ms(1_000);
     }
 }
@@ -29,7 +34,7 @@ pub fn counter() {
 
     loop {
         crate::info!(
-            "Hello, thread 2 on core {}! counter={}",
+            "Hello from core {}! counter={}",
             crate::locals!().core_id(),
             counter
         );
@@ -38,8 +43,46 @@ pub fn counter() {
     }
 }
 
+pub fn hello_world() {
+    loop {
+        crate::info!("Hello from core {}!", crate::locals!().core_id());
+        crate::time::wait_ms(1_000);
+    }
+}
+
+pub fn alloc_intensive() {
+    loop {
+        let sz = usize::from(unsafe { crate::arch::rand::rand::<u16>() }) * 32;
+        let vec = alloc::vec![0_u8; sz];
+        crate::info!(
+            "Hello from core {}! Allocated {} bytes",
+            crate::locals!().core_id(),
+            vec.len()
+        );
+        crate::time::wait_ms(1_000);
+    }
+}
+
+pub fn floating_point() {
+    let mut x = 1.1_f64;
+
+    loop {
+        crate::info!(
+            "Hello from core {}! x = {:.5}",
+            crate::locals!().core_id(),
+            x
+        );
+        x = x * x;
+        crate::time::wait_ms(1_000);
+    }
+}
+
+pub fn panic_test() {
+    panic!("This is a panic test");
+}
+
 pub fn idle() {
     loop {
-        x86_64::instructions::hlt();
+        crate::arch::halt();
     }
 }

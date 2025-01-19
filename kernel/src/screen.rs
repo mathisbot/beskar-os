@@ -1,3 +1,5 @@
+// TODO: Move into a `video` module (driver?)
+
 use bootloader::video::{FrameBuffer, FrameBufferInfo};
 use hyperdrive::locks::mcs::MUMcsLock;
 

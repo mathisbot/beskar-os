@@ -39,9 +39,16 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 /// }
 /// ```
 pub struct Barrier {
+    /// Amount of threads that need to reach the barrier.
     count: usize,
+    /// Rank counter.
+    ///
+    /// Used by threads to get their rank in the barrier.
+    rank: AtomicUsize,
+    /// Current amount of threads that are waiting.
     current: AtomicUsize,
-    passed: AtomicUsize,
+    /// Amount of threads that have exited the barrier.
+    out: AtomicUsize,
 }
 
 // Safety: Barrier is a synchronization primitive.
@@ -54,10 +61,12 @@ impl Barrier {
     #[inline]
     /// Creates a new barrier that allows `count` threads to synchronize.
     pub const fn new(count: usize) -> Self {
+        assert!(count > 0, "Barrier must have a count greater than 0.");
         Self {
             count,
+            rank: AtomicUsize::new(0),
             current: AtomicUsize::new(0),
-            passed: AtomicUsize::new(0),
+            out: AtomicUsize::new(0),
         }
     }
 
@@ -65,35 +74,27 @@ impl Barrier {
     ///
     /// This will block the current thread until all threads have reached the barrier.
     pub fn wait(&self) {
-        // Maybe we are entering the barrier between opening and resetting.
-        // We must wait for the barrier to be reset before we can continue.
-        while self.current.load(Ordering::Acquire) >= self.count {
-            core::hint::spin_loop();
+        while self.rank.fetch_add(1, Ordering::AcqRel) >= self.count {
+            // Avoid overflow (which would be catastrophic) by waiting instead of continuously adding.
+            while self.rank.load(Ordering::Acquire) >= self.count {
+                core::hint::spin_loop();
+            }
         }
+        self.current.fetch_add(1, Ordering::AcqRel);
 
-        let original = self.current.fetch_add(1, Ordering::Acquire);
+        // Actual waiting loop.
         while self.current.load(Ordering::Acquire) < self.count {
             core::hint::spin_loop();
         }
-
-        // In theory, we could pass through the barrier a second time while the
-        // barrier is being reset. We must wait for the passed counter to be reset
-        // before we can continue.
-        while self.passed.load(Ordering::Acquire) >= self.count {
-            core::hint::spin_loop();
-        }
-
-        self.passed.fetch_add(1, Ordering::Release);
+        let out = self.out.fetch_add(1, Ordering::AcqRel);
 
         // Only one thread will be responsible for resetting the barrier.
-        // We simply have to wait for every thread to exit the while loop,
-        // and then set the counter to 0.
-        if original == 0 {
-            while self.passed.load(Ordering::Acquire) < self.count {
-                core::hint::spin_loop();
-            }
+        // We simply have to wait for every thread to exit the while loop.
+        if out == self.count - 1 {
             self.current.store(0, Ordering::Release);
-            self.passed.store(0, Ordering::Release);
+            self.out.store(0, Ordering::Release);
+            // Release the barrier
+            self.rank.store(0, Ordering::Release);
         }
     }
 }
@@ -109,6 +110,12 @@ mod tests {
         let barrier = Barrier::new(1);
 
         barrier.wait();
+    }
+
+    #[test]
+    #[should_panic = "Barrier must have a count greater than 0."]
+    fn test_barrier_0() {
+        let _ = Barrier::new(0);
     }
 
     #[test]
@@ -135,6 +142,29 @@ mod tests {
         for handle in handles {
             handle.join().unwrap();
         }
+    }
+
+    #[test]
+    fn test_barrier_reuse_concurrent() {
+        let num_threads = 2 * 10;
+
+        let barrier = Arc::new(Barrier::new(2));
+
+        let handles = (0..num_threads)
+            .map(|_| {
+                spawn({
+                    let barrier = barrier.clone();
+                    move || barrier.wait()
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert!(barrier.current.load(Ordering::Relaxed) == 0);
+        assert!(barrier.out.load(Ordering::Relaxed) == 0);
     }
 
     #[test]

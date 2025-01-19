@@ -3,7 +3,9 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, sync::Arc, vec};
+use hyperdrive::{once::Once, queues::mpsc::MpscQueue};
+use priority::ThreadQueue;
 use thread::Thread;
 
 use crate::locals;
@@ -18,9 +20,21 @@ pub mod thread;
 /// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
 pub const SCHEDULER_QUANTUM_MS: u32 = 60;
 
+// TODO: Runtime size for schedulers
+// Currently, it takes 4KiB of memory but on a vast majority of systems, it only needs a few schedulers.
+//
 // Because scheduler will be playing with context switching, we cannot acquire locks.
 // Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
-static mut SCHEDULER: Option<Scheduler<priority::RoundRobinQueues>> = None;
+static mut SCHEDULERS: [Option<Scheduler>; 256] = [const { None }; 256];
+
+// It is backed by a Multiple Producer Single Consumer queue.
+// It would be a better choice to use a Multiple Producer Multiple Consumer queue,
+// but the only implemention I know uses a fixed size buffer and I don't want to bound the number of threads.
+/// A queue for threads.
+static QUEUE: Once<priority::RoundRobinQueues> = Once::uninit();
+
+/// A queue for finished threads.
+static FINISHED_QUEUE: Once<MpscQueue<Thread>> = Once::uninit();
 
 /// This function initializes the scheduler with the kernel thread.
 ///
@@ -28,11 +42,26 @@ static mut SCHEDULER: Option<Scheduler<priority::RoundRobinQueues>> = None;
 ///
 /// This function should only be called once, and only by the kernel, with the kernel thread.
 pub unsafe fn init(kernel_thread: thread::Thread) {
+    let kernel_process = kernel_thread.process();
+
+    QUEUE.call_once(|| priority::RoundRobinQueues::create(kernel_process.clone()));
+    FINISHED_QUEUE.call_once(|| MpscQueue::new(Box::pin(Thread::new_stub(kernel_process.clone()))));
+
     let scheduler = Scheduler::new(kernel_thread);
     // Safety:
     // Function safety guards.
     unsafe {
-        SCHEDULER = Some(scheduler);
+        SCHEDULERS[locals!().core_id()] = Some(scheduler);
+    }
+
+    // Spawn the cleaning thread.
+    if locals!().core_id() == 0 {
+        spawn_thread(Box::pin(Thread::new(
+            kernel_process,
+            priority::Priority::Low,
+            vec![0; 1024 * 512],
+            clean_thread as *const (),
+        )));
     }
 }
 
@@ -49,40 +78,35 @@ impl ContextSwitch {
     ///
     /// ## Safety
     ///
-    /// See `kernel::cpu::context::context_switch`.
+    /// See `kernel::arch::context::context_switch`.
     unsafe fn perform(&self) {
-        unsafe { crate::cpu::context::context_switch(self.old_stack, self.new_stack, self.cr3) };
+        unsafe { crate::arch::context::switch(self.old_stack, self.new_stack, self.cr3) };
     }
 }
 
-pub struct Scheduler<Q: priority::ThreadQueue> {
+pub struct Scheduler {
     current_thread: Box<Thread>,
     /// A local, atomic, priority for the current thread.
     current_priority: priority::AtomicPriority,
     should_exit_thread: AtomicBool,
-    queues: Q,
+    in_reschedule: AtomicBool,
 }
 
-impl<Q: priority::ThreadQueue> Scheduler<Q> {
+impl Scheduler {
     #[must_use]
     fn new(kernel_thread: thread::Thread) -> Self {
         let current_priority = priority::AtomicPriority::new(kernel_thread.priority());
-        let root_proc = kernel_thread.process();
 
         Self {
             current_thread: Box::new(kernel_thread),
             current_priority,
             should_exit_thread: AtomicBool::new(false),
-            queues: Q::create(root_proc),
+            in_reschedule: AtomicBool::new(false),
         }
     }
 
     pub fn exit_current_thread(&self) {
         self.should_exit_thread.store(true, Ordering::Relaxed);
-    }
-
-    pub fn schedule_thread(&mut self, thread: Pin<Box<thread::Thread>>) {
-        self.queues.append(thread);
     }
 
     #[must_use]
@@ -114,32 +138,29 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
     /// This function does not change the context, but will disable interrupts
     /// if scheduling was successful.
     fn reschedule(&mut self) -> Option<ContextSwitch> {
-        static IN_RESCHEDULE: AtomicBool = AtomicBool::new(false);
-
         // We cannot acquire locks, so we imitate one with an `AtomicBool`.
         // It is tempting to use a spin loop here, but it is better to use the CPU for the last thread
         // than to waste it on a spin loop.
         // It is also a better solution if `yield` is implemented.
-        if IN_RESCHEDULE
+        if self
+            .in_reschedule
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            // FIXME: This solution is not optimal for multiple cores:
-            // As AP start at the same time, they will all try to reschedule at the same time.
-            // Only one AP will then be able to reschedule.
             return None;
         }
 
-        x86_64::instructions::interrupts::disable();
+        crate::arch::interrupts::int_disable();
 
         // Swap the current thread with the next one.
-        let mut new_thread = Pin::into_inner(if let Some(new_thread) = self.queues.next() {
-            new_thread
-        } else {
-            IN_RESCHEDULE.store(false, Ordering::Release);
-            x86_64::instructions::interrupts::enable();
-            return None;
-        });
+        let mut new_thread =
+            Pin::into_inner(if let Some(new_thread) = QUEUE.get().unwrap().next() {
+                new_thread
+            } else {
+                self.in_reschedule.store(false, Ordering::Release);
+                crate::arch::interrupts::int_enable();
+                return None;
+            });
         core::mem::swap(self.current_thread.as_mut(), &mut new_thread);
         let mut old_thread = new_thread; // Yes...
 
@@ -155,24 +176,33 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
         let new_stack = self.current_thread().last_stack_ptr();
 
         if old_should_exit {
-            // FIXME: Handle this properly
             // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
-            // For now, we will just forget the thread.
-            // Maybe creating a cleaning thread?
-            core::mem::forget(old_thread);
+            // This job should be done by a cleaning thread.
+            FINISHED_QUEUE.get().unwrap().enqueue(Pin::new(old_thread));
         } else {
-            self.queues.append(Pin::new(old_thread));
+            QUEUE.get().unwrap().append(Pin::new(old_thread));
         }
 
         let cr3 = self.current_process().address_space().cr3_raw();
 
-        IN_RESCHEDULE.store(false, Ordering::Release);
+        self.in_reschedule.store(false, Ordering::Release);
 
         Some(ContextSwitch {
             old_stack,
             new_stack,
             cr3,
         })
+    }
+}
+
+fn clean_thread() {
+    loop {
+        if let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
+            drop(thread);
+        } else {
+            core::hint::spin_loop();
+            // TODO: Yield
+        }
     }
 }
 
@@ -184,11 +214,15 @@ impl<Q: priority::ThreadQueue> Scheduler<Q> {
 /// and EOI is sent to the APIC in the function.
 pub(crate) unsafe fn reschedule() {
     // Safety:
-    // Interrupts are disabled at the start of the function.
     // Data races are avoided by the `Scheduler::reschedule` function.
     // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]
-    let rescheduling_result = unsafe { SCHEDULER.as_mut().unwrap().reschedule() };
+    let rescheduling_result = unsafe {
+        SCHEDULERS[locals!().core_id()]
+            .as_mut()
+            .unwrap()
+            .reschedule()
+    };
 
     // Safety:
     // We are only writing a single `u32` to MMIO.
@@ -213,23 +247,22 @@ pub unsafe fn current_process() -> Arc<Process> {
     // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]
     unsafe {
-        SCHEDULER.as_mut().unwrap().current_process()
+        SCHEDULERS[locals!().core_id()]
+            .as_mut()
+            .unwrap()
+            .current_process()
     }
 }
 
 pub fn spawn_thread(thread: Pin<Box<Thread>>) {
-    // FIXME: Find a workaround for static mutable references.
-    #[allow(static_mut_refs)]
-    unsafe {
-        SCHEDULER.as_mut().unwrap().schedule_thread(thread);
-    };
+    QUEUE.get().unwrap().append(thread);
 }
 
 /// Sets the scheduling of the scheduler.
 ///
 /// What this function really does is enabling the timer interrupt.
 pub fn set_scheduling(enable: bool) {
-    use crate::cpu::apic::timer;
+    use crate::arch::apic::timer;
 
     locals!().lapic().try_with_locked(|lapic| {
         const TIMER_DIVIDER: timer::Divider = timer::Divider::Eight;
@@ -249,12 +282,28 @@ pub fn set_scheduling(enable: bool) {
 
 pub fn change_current_thread_priority(priority: priority::Priority) {
     #[allow(static_mut_refs)]
-    unsafe { SCHEDULER.as_ref() }
+    unsafe { SCHEDULERS[locals!().core_id()].as_ref() }
         .unwrap()
         .change_current_thread_priority(priority);
 }
 
-pub fn exit_current_thread() {
+/// Exits the current thread.
+///
+/// ## Safety
+///
+/// The context will be brutally switched without returning.
+/// If any locks are acquired, they will be poisoned.
+pub unsafe fn exit_current_thread() {
     #[allow(static_mut_refs)]
-    unsafe { SCHEDULER.as_ref() }.unwrap().exit_current_thread();
+    unsafe { SCHEDULERS[locals!().core_id()].as_ref() }
+        .unwrap()
+        .exit_current_thread();
+    // Wait for the next thread to be scheduled.
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
+pub fn is_scheduling_init() -> bool {
+    unsafe { SCHEDULERS[locals!().core_id()].is_some() }
 }

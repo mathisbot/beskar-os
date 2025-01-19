@@ -33,8 +33,8 @@ impl ScreenWriter {
     pub fn new() -> Self {
         Self {
             screen_info: screen::with_screen(|screen| screen.info()),
-            x: 0,
-            y: 0,
+            x: BORDER_PADDING,
+            y: BORDER_PADDING,
         }
     }
 

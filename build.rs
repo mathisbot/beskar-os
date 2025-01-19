@@ -1,8 +1,8 @@
-use std::{env, fs};
+use std::{env::var, fs};
 
 fn main() {
-    let bootloader_path = env::var("CARGO_BIN_FILE_BOOTLOADER").unwrap();
-    let kernel_path = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
+    let bootloader_path = var("CARGO_BIN_FILE_BOOTLOADER").unwrap();
+    let kernel_path = var("CARGO_BIN_FILE_KERNEL").unwrap();
 
     fs::create_dir_all("efi_disk/efi/boot").expect("Failed to create efi_disk/efi/boot directory");
 
@@ -11,10 +11,7 @@ fn main() {
         .expect("Failed to copy bootloader.efi");
     fs::copy(&kernel_path, "efi_disk/efi/kernelx64.elf").expect("Failed to copy kernel");
 
-    // TODO: Build FAT image for USB stick
-    // For compatibility, image should be FAT32 (so at least 32MiB)
-
-    println!("cargo:rerun-if-changed=./hyperdrive");
     println!("cargo:rerun-if-changed=./bootloader");
+    println!("cargo:rerun-if-changed=./hyperdrive");
     println!("cargo:rerun-if-changed=./kernel");
 }

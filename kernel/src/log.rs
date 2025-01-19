@@ -1,7 +1,7 @@
 use core::{fmt::Write, sync::atomic::AtomicBool};
 use hyperdrive::locks::mcs::{MUMcsLock, McsLock};
 
-use crate::serial::com::{ComNumber, SerialCom};
+use crate::arch::serial::com::{ComNumber, SerialCom};
 
 mod writer;
 use writer::ScreenWriter;
@@ -30,14 +30,14 @@ pub fn init_screen() {
 }
 
 pub fn set_screen_logging(enable: bool) {
-    LOG_ON_SCREEN.store(enable, core::sync::atomic::Ordering::Relaxed);
+    LOG_ON_SCREEN.store(enable, core::sync::atomic::Ordering::Release);
 }
 
 pub fn log(args: core::fmt::Arguments) {
     SERIAL.with_locked(|serial| {
         serial.write_fmt(args).unwrap();
     });
-    if LOG_ON_SCREEN.load(core::sync::atomic::Ordering::Relaxed) {
+    if LOG_ON_SCREEN.load(core::sync::atomic::Ordering::Acquire) {
         SCREEN_LOGGER.try_with_locked(|writer| {
             writer.write_fmt(args).unwrap();
         });
@@ -48,27 +48,27 @@ pub fn log(args: core::fmt::Arguments) {
 macro_rules! debug {
     ($($arg:tt)*) => {
         #[cfg(debug_assertions)]
-        $crate::log::log(format_args!("[DEBUG] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[DEBUG] {}\n", format_args!($($arg)*)))
     };
 }
 
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        $crate::log::log(format_args!("[INFO ] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[INFO ] {}\n", format_args!($($arg)*)))
     };
 }
 
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        $crate::log::log(format_args!("[WARN ] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[WARN ] {}\n", format_args!($($arg)*)))
     };
 }
 
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {
-        $crate::log::log(format_args!("[ERROR] {}\n", format_args!($($arg)*)));
+        $crate::log::log(format_args!("[ERROR] {}\n", format_args!($($arg)*)))
     };
 }

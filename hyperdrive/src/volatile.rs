@@ -14,6 +14,31 @@
 //! assert_eq!(unsafe { volatile_ptr.read() }, 42);
 //! ```
 //!
+//! In real world applications, you will not have to specify `::<Access, _>` as the compiler will infer it :
+//!
+//! ```rust
+//! # use hyperdrive::volatile::{Volatile, ReadWrite};
+//! # use core::ptr::NonNull;
+//! #
+//! struct MyStruct {
+//!     ptr: Volatile<ReadWrite, u32>,
+//! }
+//!
+//! impl MyStruct {
+//!     fn new(ptr: *mut u32) -> Self {
+//!         let non_null = NonNull::new(ptr).unwrap();
+//!         Self {
+//!             ptr: Volatile::new(non_null),
+//!         }
+//!     }
+//! }
+//!
+//! let my_struct = MyStruct::new(0xdead_beef as *mut u32);
+//! ```
+//!
+//! Please note that in the above example, the pointer is dangling.
+//! This is not UB as long as it is not dereferenced/accessed.
+//!
 //! As access rights are checked at compile time, the following code will not compile:
 //!
 //! ```rust,compile_fail
@@ -28,21 +53,26 @@
 
 use core::{marker::PhantomData, ptr::NonNull};
 
-pub trait Access {}
+trait Sealed {}
+#[allow(private_bounds)] // That's the whole point :)
+pub trait Access: Sealed {}
 
 pub trait ReadAccess: Access {}
 pub trait WriteAccess: Access {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadOnly;
+impl Sealed for ReadOnly {}
 impl Access for ReadOnly {}
 impl ReadAccess for ReadOnly {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteOnly;
+impl Sealed for WriteOnly {}
 impl Access for WriteOnly {}
 impl WriteAccess for WriteOnly {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadWrite;
+impl Sealed for ReadWrite {}
 impl Access for ReadWrite {}
 impl ReadAccess for ReadWrite {}
 impl WriteAccess for ReadWrite {}
@@ -67,10 +97,24 @@ impl<A: Access, T: ?Sized> Volatile<A, T> {
 
     #[must_use]
     #[inline]
+    /// Casts the volatile wrapper to a pointer.
+    pub const fn as_non_null(&self) -> NonNull<T> {
+        self.ptr
+    }
+
+    #[must_use]
+    #[inline]
     /// Creates a new volatile pointer from a mutable reference.
     pub const fn from_mut(ptr: &mut T) -> Self {
-        Self {
-            ptr: unsafe { NonNull::new_unchecked(ptr) },
+        Self::new(unsafe { NonNull::new_unchecked(ptr) })
+    }
+
+    #[must_use]
+    #[inline]
+    /// Change the access permissions of the volatile pointer.
+    pub const fn change_access<B: Access>(&self) -> Volatile<B, T> {
+        Volatile {
+            ptr: self.ptr,
             _phantom: PhantomData,
         }
     }
@@ -119,35 +163,22 @@ impl<A: Access, T: ?Sized> Volatile<A, T> {
             _phantom: PhantomData,
         }
     }
-
-    #[must_use]
-    #[inline]
-    /// Casts the volatile wrapper to a pointer.
-    pub const fn as_non_null(&self) -> NonNull<T> {
-        self.ptr
-    }
-
-    #[must_use]
-    #[inline]
-    /// Change the access permissions of the volatile pointer.
-    pub const fn change_access<B: Access>(&self) -> Volatile<B, T> {
-        Volatile {
-            ptr: self.ptr,
-            _phantom: PhantomData,
-        }
-    }
 }
 
 impl<A: ReadAccess, T: ?Sized> Volatile<A, T> {
     #[must_use]
     #[inline]
     /// Creates a new volatile pointer from a reference.
-    pub const fn from_ref(ptr: &T) -> Self {
-        let ptr_mut = core::ptr::from_ref(ptr).cast_mut();
-        Self {
-            ptr: unsafe { NonNull::new_unchecked(ptr_mut) },
-            _phantom: PhantomData,
-        }
+    pub const fn from_ref(ptr: &T) -> Volatile<ReadOnly, T> {
+        let ptr_mut = unsafe { NonNull::new_unchecked(core::ptr::from_ref(ptr).cast_mut()) };
+        Self::new_read_only(ptr_mut)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Creates a new read-only volatile pointer.
+    pub const fn new_read_only(ptr: NonNull<T>) -> Volatile<ReadOnly, T> {
+        Self::new(ptr).change_access()
     }
 
     #[must_use]
@@ -175,6 +206,13 @@ impl<A: WriteAccess, T> Volatile<A, T> {
     pub unsafe fn write(&self, value: T) {
         unsafe { self.ptr.write_volatile(value) };
     }
+
+    #[must_use]
+    #[inline]
+    /// Creates a new write-only volatile pointer.
+    pub const fn new_write_only(ptr: NonNull<T>) -> Volatile<WriteOnly, T> {
+        Self::new(ptr).change_access()
+    }
 }
 
 impl<A: ReadAccess + WriteAccess, T> Volatile<A, T> {
@@ -189,6 +227,25 @@ impl<A: ReadAccess + WriteAccess, T> Volatile<A, T> {
         let new = f(old);
         unsafe { self.ptr.write_volatile(new) };
     }
+
+    #[must_use]
+    #[inline]
+    /// Creates a new read-write volatile pointer.
+    pub const fn new_read_write(ptr: NonNull<T>) -> Volatile<ReadWrite, T> {
+        Self::new(ptr).change_access()
+    }
+}
+
+mod private {
+    use super::{ReadOnly, ReadWrite, Volatile, WriteOnly};
+
+    const _: () = assert!(
+        size_of::<Volatile<ReadOnly, ()>>() == size_of::<*mut ()>()
+            && size_of::<Volatile<ReadOnly, u8>>() == size_of::<*mut u8>()
+            && size_of::<Volatile<ReadOnly, [u8]>>() == size_of::<*mut [u8]>()
+            && size_of::<Volatile<WriteOnly, ()>>() == size_of::<Volatile<ReadOnly, ()>>()
+            && size_of::<Volatile<ReadWrite, ()>>() == size_of::<Volatile<ReadOnly, ()>>()
+    );
 }
 
 #[cfg(test)]

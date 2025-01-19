@@ -1,12 +1,17 @@
+//! TODO: Is having per-core heaps a good idea?
+
 use core::{
     alloc::{GlobalAlloc, Layout},
-    cell::UnsafeCell,
     ptr::NonNull,
 };
 
-use x86_64::structures::paging::{PageSize, PageTableFlags, Size2MiB, page::PageRangeInclusive};
-
-use crate::mem::page_alloc;
+use crate::{
+    arch::{
+        commons::paging::{M2MiB, MemSize, PageRangeInclusive},
+        paging::page_table::Flags,
+    },
+    mem::page_alloc,
+};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::frame_alloc;
@@ -27,7 +32,7 @@ pub fn init() {
     frame_alloc::with_frame_allocator(|frame_allocator| {
         frame_allocator.map_pages(
             page_range,
-            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,
+            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
         );
     });
 
@@ -38,13 +43,13 @@ struct Heap {
     // start: NonZeroU64,
     // end: NonZeroU64,
     // TODO: Add faster allocator
-    linked_list: UnsafeCell<linked_list_allocator::Heap>,
+    linked_list: linked_list_allocator::Heap,
 }
 
 impl Heap {
-    pub fn new(page_range: PageRangeInclusive<Size2MiB>) -> Self {
+    pub fn new(page_range: PageRangeInclusive<M2MiB>) -> Self {
         let start_address = page_range.start.start_address().as_u64();
-        let end_address = page_range.end.start_address().as_u64() + (Size2MiB::SIZE - 1);
+        let end_address = page_range.end.start_address().as_u64() + (M2MiB::SIZE - 1);
 
         let size = usize::try_from(end_address - start_address + 1).unwrap();
         let linked_list = unsafe {
@@ -54,25 +59,21 @@ impl Heap {
         Self {
             // start: start_address.try_into().unwrap(),
             // end: end_address.try_into().unwrap(),
-            linked_list: UnsafeCell::new(linked_list),
+            linked_list,
         }
     }
 
-    pub fn alloc(&self, layout: Layout) -> *mut u8 {
+    pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
         // According to the safety requirements of the `GlobalAlloc trait`, we need to ensure that
         // this function doesn't panic. Therefore, we need to return null if the allocation fails.
 
-        // Safety:
-        // The heap is locked, so we can safely access its fields.
-        let linked_allocator = unsafe { &mut *self.linked_list.get() };
-
-        linked_allocator
+        self.linked_list
             .allocate_first_fit(layout)
             .ok()
             .map_or(core::ptr::null_mut(), core::ptr::NonNull::as_ptr)
     }
 
-    pub fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;
         }
@@ -81,12 +82,8 @@ impl Heap {
         let non_null_ptr = NonNull::new(ptr).unwrap();
 
         // Safety:
-        // The heap is locked, so we can safely access its fields.
-        let linked_allocator = unsafe { &mut *self.linked_list.get() };
-
-        // Safety:
         // `GlobalAlloc` guarantees that the pointer is valid and the layout is correct.
-        unsafe { linked_allocator.deallocate(non_null_ptr, layout) };
+        unsafe { self.linked_list.deallocate(non_null_ptr, layout) };
     }
 }
 

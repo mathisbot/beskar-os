@@ -5,18 +5,21 @@
 //!
 //! Allocated frames do not need to be contiguous.
 
-use super::ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges};
-use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
-use x86_64::{
-    PhysAddr,
-    structures::paging::{
-        Mapper, PageSize, PageTableFlags, PhysFrame, RecursivePageTable, page::PageRangeInclusive,
+use crate::arch::{
+    commons::{
+        PhysAddr,
+        paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, PageRangeInclusive},
     },
+    paging::page_table::{Flags, PageTable},
 };
 
-use hyperdrive::locks::mcs::{MUMcsLock, McsNode};
+use super::{
+    page_table,
+    ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
+};
+use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
 
-use super::page_table;
+use hyperdrive::locks::mcs::MUMcsLock;
 
 const MAX_MEMORY_REGIONS: usize = 1024;
 
@@ -34,7 +37,7 @@ pub fn init(regions: &[MemoryRegion]) {
     assert!(usable_regions > 0, "No usable memory regions found");
     if usable_regions >= MAX_MEMORY_REGIONS {
         crate::warn!(
-            "[WARN ] Too many usable memory regions, using only the first {}",
+            "Too many usable memory regions, using only the first {}",
             MAX_MEMORY_REGIONS
         );
     }
@@ -48,7 +51,7 @@ pub fn init(regions: &[MemoryRegion]) {
     };
 
     // Make sure physical frame for the AP trampoline code is reserved
-    crate::cpu::apic::ap::reserve_tramp_frame(&mut frallocator);
+    reserve_tramp_frame(&mut frallocator);
 
     KFRAME_ALLOC.init(frallocator);
 }
@@ -60,27 +63,27 @@ pub struct FrameAllocator {
 impl FrameAllocator {
     #[must_use]
     #[inline]
-    pub fn alloc<S: PageSize>(&mut self) -> Option<PhysFrame<S>> {
+    pub fn alloc<S: MemSize>(&mut self) -> Option<Frame<S>> {
         self.alloc_request(&MemoryRangeRequest::<MAX_MEMORY_REGIONS>::DontCare)
     }
 
     #[must_use]
     #[inline]
-    pub fn alloc_request<S: PageSize, const M: usize>(
+    pub fn alloc_request<S: MemSize, const M: usize>(
         &mut self,
         req_range: &MemoryRangeRequest<M>,
-    ) -> Option<PhysFrame<S>> {
+    ) -> Option<Frame<S>> {
         let size = S::SIZE;
         let alignment = S::SIZE;
 
         let addr = self.memory_ranges.allocate(size, alignment, req_range)?;
-        Some(PhysFrame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
+        Some(Frame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
     }
 
     // FIXME: Keep track of allocated frames?
     // Here nothing ensures the caller has provided a valid frame
     // (valid as in "usable memory region provided by the bootloader")
-    pub fn free<S: PageSize>(&mut self, frame: PhysFrame<S>) {
+    pub fn free<S: MemSize>(&mut self, frame: Frame<S>) {
         self.memory_ranges.insert(MemoryRange::new(
             frame.start_address().as_u64(),
             frame.start_address().as_u64() + (frame.size() - 1),
@@ -88,38 +91,46 @@ impl FrameAllocator {
     }
 
     /// Given a range of pages, allocate whatever frames are needed and map them to the pages.
-    pub fn map_pages<S: PageSize + core::fmt::Debug>(
+    pub fn map_pages<S: MemSize + core::fmt::Debug>(
         &mut self,
         pages: PageRangeInclusive<S>,
-        flags: PageTableFlags,
+        flags: Flags,
     ) where
-        RecursivePageTable<'static>: Mapper<S>,
+        for<'a> PageTable<'a>: Mapper<S>,
     {
-        // FIXME: Use `page_table::with_page_table` instead of `get_kernel_page_table`
-        let mut node = McsNode::new();
-        let mut page_table = page_table::get_kernel_page_table(&mut node);
-
-        for page in pages {
-            let frame = self.alloc::<S>().unwrap();
-            unsafe {
-                page_table.map_to_with_table_flags(
-                    page,
-                    frame,
-                    flags,
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                    self,
-                )
+        page_table::with_page_table(|page_table| {
+            for page in pages {
+                let frame = self.alloc::<S>().unwrap();
+                page_table.map(page, frame, flags, self).flush();
             }
-            .unwrap()
-            .flush();
-        }
+        });
     }
 }
 
-unsafe impl<S: PageSize> x86_64::structures::paging::FrameAllocator<S> for FrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
+impl<S: MemSize> crate::arch::commons::paging::FrameAllocator<S> for FrameAllocator {
+    fn allocate_frame(&mut self) -> Option<Frame<S>> {
         self.alloc::<S>()
     }
+
+    fn deallocate_frame(&mut self, frame: Frame<S>) {
+        self.free(frame);
+    }
+}
+
+/// Reserve a frame for the AP trampoline code
+///
+/// It is easier to allocate the frame at the beginning of memory initialization,
+/// because we are sure that the needed region is available.
+fn reserve_tramp_frame(allocator: &mut FrameAllocator) {
+    let mut req_range = MemoryRanges::new();
+    req_range.insert(MemoryRange::new(
+        crate::arch::ap::AP_TRAMPOLINE_PADDR,
+        crate::arch::ap::AP_TRAMPOLINE_PADDR + M4KiB::SIZE,
+    ));
+
+    let _frame = allocator
+        .alloc_request::<M4KiB, 1>(&MemoryRangeRequest::MustBeWithin(&req_range))
+        .expect("Failed to allocate AP frame");
 }
 
 #[inline]
