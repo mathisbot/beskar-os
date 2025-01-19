@@ -23,13 +23,18 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     arch::interrupts::int_disable();
 
     crate::error!(
-        "[PANIC]: Core {} {}",
+        "[PANIC]: Core {} - {}",
         locals!().core_id(),
         panic_info.message()
     );
     #[cfg(debug_assertions)]
     if let Some(location) = panic_info.location() {
         crate::error!("  at {}", location);
+    }
+
+    if process::scheduler::is_scheduling_init() {
+        arch::interrupts::int_enable();
+        unsafe { process::scheduler::exit_current_thread() };
     }
 
     loop {

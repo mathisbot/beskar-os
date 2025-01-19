@@ -7,6 +7,7 @@ pub mod interrupts;
 pub mod locals;
 pub mod paging;
 pub mod rand;
+pub mod registers;
 pub mod serial;
 pub mod syscall;
 

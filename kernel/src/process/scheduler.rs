@@ -78,7 +78,7 @@ impl ContextSwitch {
     ///
     /// ## Safety
     ///
-    /// See `kernel::cpu::context::context_switch`.
+    /// See `kernel::arch::context::context_switch`.
     unsafe fn perform(&self) {
         unsafe { crate::arch::context::switch(self.old_stack, self.new_stack, self.cr3) };
     }
@@ -150,7 +150,7 @@ impl Scheduler {
             return None;
         }
 
-        x86_64::instructions::interrupts::disable();
+        crate::arch::interrupts::int_disable();
 
         // Swap the current thread with the next one.
         let mut new_thread =
@@ -158,7 +158,7 @@ impl Scheduler {
                 new_thread
             } else {
                 self.in_reschedule.store(false, Ordering::Release);
-                x86_64::instructions::interrupts::enable();
+                crate::arch::interrupts::int_enable();
                 return None;
             });
         core::mem::swap(self.current_thread.as_mut(), &mut new_thread);
@@ -302,4 +302,8 @@ pub unsafe fn exit_current_thread() {
     loop {
         core::hint::spin_loop();
     }
+}
+
+pub fn is_scheduling_init() -> bool {
+    unsafe { SCHEDULERS[locals!().core_id()].is_some() }
 }

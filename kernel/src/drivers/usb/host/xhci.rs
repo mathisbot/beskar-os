@@ -1,7 +1,7 @@
 // TODO: Remove
 #![allow(dead_code)]
 
-use x86_64::{PhysAddr, structures::paging::Size4KiB};
+use crate::arch::commons::{PhysAddr, paging::M4KiB};
 
 use crate::mem::page_alloc::pmap::{self, PhysicalMapping};
 use hyperdrive::locks::mcs::MUMcsLock;
@@ -50,7 +50,7 @@ impl Xhci {
 
         // At first, we only map enough memory to read the capabilities register
         let physical_mapping =
-            PhysicalMapping::<Size4KiB>::new(paddr, CapabilitiesRegisters::MIN_LENGTH, flags);
+            PhysicalMapping::<M4KiB>::new(paddr, CapabilitiesRegisters::MIN_LENGTH, flags);
         let vaddr = physical_mapping.translate(paddr).unwrap();
 
         let cap = CapabilitiesRegisters::new(vaddr);

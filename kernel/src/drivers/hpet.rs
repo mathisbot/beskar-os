@@ -1,8 +1,7 @@
 // FIXME: Support for multiple HPET blocks?
 
-use x86_64::structures::paging::{PageTableFlags, Size4KiB};
-use x86_64::{PhysAddr, VirtAddr};
-
+use crate::arch::commons::{PhysAddr, VirtAddr, paging::M4KiB};
+use crate::arch::paging::page_table::Flags;
 use crate::drivers::acpi::sdt::hpet_table::ParsedHpetTable;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 use hyperdrive::locks::mcs::MUMcsLock;
@@ -104,10 +103,10 @@ pub struct GeneralCapabilities(u64);
 impl GeneralCapabilities {
     #[must_use]
     pub fn new(paddr: PhysAddr) -> Self {
-        let flags = PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE;
+        let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
         let physical_mapping =
-            PhysicalMapping::<Size4KiB>::new(paddr, core::mem::size_of::<u64>(), flags);
+            PhysicalMapping::<M4KiB>::new(paddr, core::mem::size_of::<u64>(), flags);
         let vaddr = physical_mapping.translate(paddr).unwrap();
         Self(unsafe { vaddr.as_ptr::<u64>().read() })
     }

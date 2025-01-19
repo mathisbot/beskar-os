@@ -121,15 +121,15 @@ pub enum DequeueResult<T: Queueable> {
 
 impl<T: Queueable> DequeueResult<T> {
     #[must_use]
-    /// Unwraps the result, panicking if it is a `Retry` or `Busy`.
+    /// Unwraps the result.
     ///
     /// ## Panics
     ///
-    /// Panics if the result is a `Retry` or `Busy`.
+    /// Panics if the result is not of type `Element`.
     pub fn unwrap(self) -> Option<T::Handle> {
         match self {
             Self::Element(res) => res,
-            Self::InUse => panic!("Unwrapped a DequeueResult::Busy"),
+            Self::InUse => panic!("Unwrapped a DequeueResult::InUse"),
         }
     }
 
@@ -138,7 +138,7 @@ impl<T: Queueable> DequeueResult<T> {
     ///
     /// ## Safety
     ///
-    /// The caller must ensure that the result is not a `Retry` or `Busy`.
+    /// The caller must ensure that the result is of type `Element`.
     /// Otherwise, this is immediately undefined behavior.
     ///
     /// Refer to `core::hint::unreachable_unchecked`.

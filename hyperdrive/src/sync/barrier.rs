@@ -42,7 +42,7 @@ pub struct Barrier {
     /// Amount of threads that need to reach the barrier.
     count: usize,
     /// Rank counter.
-    /// 
+    ///
     /// Used by threads to get their rank in the barrier.
     rank: AtomicUsize,
     /// Current amount of threads that are waiting.

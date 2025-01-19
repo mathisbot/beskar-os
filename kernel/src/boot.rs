@@ -1,7 +1,11 @@
 use core::sync::atomic::AtomicUsize;
 
 use crate::{
-    arch::{self, ap, apic, interrupts},
+    arch::{
+        self, ap, apic,
+        commons::{PhysAddr, VirtAddr},
+        interrupts,
+    },
     drivers, locals, mem, process, screen, time,
 };
 use bootloader::BootInfo;
@@ -61,7 +65,11 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     time::tsc::calibrate();
 
-    mem::init(*recursive_index, memory_regions, *kernel_vaddr);
+    mem::init(
+        *recursive_index,
+        memory_regions,
+        VirtAddr::new(kernel_vaddr.as_u64()),
+    );
     crate::info!("Memory initialized");
 
     locals::init();
@@ -73,7 +81,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     interrupts::init();
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
-    rsdp_paddr.map(drivers::acpi::init);
+    rsdp_paddr.map(|rsdp_paddr| drivers::acpi::init(PhysAddr::new(rsdp_paddr.as_u64())));
     time::hpet::init();
 
     apic::init_lapic();

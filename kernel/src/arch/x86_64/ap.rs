@@ -1,16 +1,18 @@
 use super::apic::ipi::{self, Ipi};
 use crate::{
+    arch::{
+        commons::{
+            PhysAddr, VirtAddr,
+            paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
+        },
+        paging::page_table::Flags,
+        registers::{Cr0, Cr3, Cr4, Efer},
+    },
     locals,
     mem::{frame_alloc, page_alloc, page_table},
 };
 
 use core::sync::atomic::{AtomicU64, Ordering};
-
-use x86_64::{
-    PhysAddr, VirtAddr,
-    registers::control::{Cr0, Cr3, Cr4, Efer},
-    structures::paging::{Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB},
-};
 
 static AP_STACK_TOP_ADDR: AtomicU64 = AtomicU64::new(0);
 
@@ -43,34 +45,32 @@ pub fn start_up_aps(core_count: usize) {
     }
 
     // Store the current state of the BSP
-    unsafe { store_ap_regs() };
+    store_ap_regs();
 
     // Identity-map AP trampoline code, as paging isn't enabled on APs yet.
     // Everything should still be accessible with the same address when paging is enabled.
 
     let payload_paddr = PhysAddr::new(AP_TRAMPOLINE_PADDR);
-    let frame = PhysFrame::<Size4KiB>::from_start_address(payload_paddr).unwrap();
+    let frame = Frame::<M4KiB>::from_start_address(payload_paddr).unwrap();
     let payload_vaddr = VirtAddr::new(AP_TRAMPOLINE_PADDR);
-    let page = Page::<Size4KiB>::from_start_address(payload_vaddr).unwrap();
+    let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
         page_table::with_page_table(|page_table| {
-            unsafe {
-                page_table.map_to(
+            page_table
+                .map(
                     page,
                     frame,
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    Flags::PRESENT | Flags::WRITABLE,
                     &mut *frame_allocator,
                 )
-            }
-            .unwrap()
-            .flush();
+                .flush();
         });
     });
 
     // Load code
     assert!(
-        AP_TRAMPOLINE_CODE.len() <= usize::try_from(Size4KiB::SIZE).unwrap(),
+        AP_TRAMPOLINE_CODE.len() <= usize::try_from(M4KiB::SIZE).unwrap(),
         "AP trampoline code is too big"
     );
     unsafe {
@@ -84,7 +84,7 @@ pub fn start_up_aps(core_count: usize) {
     // Update section .data of the AP trampoline code
 
     // Page table address
-    let (frame, offset) = Cr3::read_raw();
+    let (frame, offset) = Cr3::read();
     write_sipi(
         payload_vaddr,
         3,
@@ -140,7 +140,7 @@ pub fn start_up_aps(core_count: usize) {
         });
     });
     page_alloc::with_page_allocator(|page_allocator| {
-        let page = Page::<Size4KiB>::from_start_address(payload_vaddr).unwrap();
+        let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
         page_allocator.free_pages(Page::range_inclusive(page, page));
     });
 
@@ -162,17 +162,17 @@ fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
 fn allocate_stack() {
     let stack_pages = page_alloc::with_page_allocator(|page_allocator| {
         // The amount of pages should be kept in sync with the stack size allocated by the bootloader
-        page_allocator.allocate_pages::<Size4KiB>(64).unwrap()
+        page_allocator.allocate_pages::<M4KiB>(64).unwrap()
     });
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
         frame_allocator.map_pages(
             stack_pages,
-            PageTableFlags::WRITABLE | PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE,
+            Flags::WRITABLE | Flags::PRESENT | Flags::NO_EXECUTE,
         );
     });
 
-    let stack_top = (stack_pages.end.start_address() + Size4KiB::SIZE - 1).align_down(16_u64);
+    let stack_top = (stack_pages.end.start_address() + M4KiB::SIZE - 1).align_down(16_u64);
 
     let previous_ap_stack = AP_STACK_TOP_ADDR.swap(stack_top.as_u64(), Ordering::SeqCst);
     assert_eq!(previous_ap_stack, 0, "AP stack allocated twice");
@@ -180,23 +180,14 @@ fn allocate_stack() {
 
 pub unsafe fn load_ap_regs() {
     unsafe {
-        Cr0::write_raw(BSP_CR0.load(Ordering::Acquire));
-        Cr4::write_raw(BSP_CR4.load(Ordering::Acquire));
-        Efer::write_raw(BSP_EFER.load(Ordering::Acquire));
+        Cr0::write(BSP_CR0.load(Ordering::Acquire));
+        Cr4::write(BSP_CR4.load(Ordering::Acquire));
+        Efer::write(BSP_EFER.load(Ordering::Acquire));
     }
 }
 
-pub unsafe fn store_ap_regs() {
-    BSP_CR0.store(
-        x86_64::registers::control::Cr0::read_raw(),
-        Ordering::Relaxed,
-    );
-    BSP_CR4.store(
-        x86_64::registers::control::Cr4::read_raw(),
-        Ordering::Relaxed,
-    );
-    BSP_EFER.store(
-        x86_64::registers::model_specific::Efer::read_raw(),
-        Ordering::Relaxed,
-    );
+pub fn store_ap_regs() {
+    BSP_CR0.store(Cr0::read(), Ordering::Relaxed);
+    BSP_CR4.store(Cr4::read(), Ordering::Relaxed);
+    BSP_EFER.store(Efer::read(), Ordering::Relaxed);
 }

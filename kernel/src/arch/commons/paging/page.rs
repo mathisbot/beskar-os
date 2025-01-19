@@ -109,7 +109,7 @@ impl<S: MemSize> Sub<Self> for Page<S> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct PageRangeInclusive<S: MemSize = M4KiB> {
     pub start: Page<S>,
     pub end: Page<S>,

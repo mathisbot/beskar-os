@@ -1,8 +1,9 @@
 use core::mem::offset_of;
 
 use super::AcpiRevision;
+use crate::arch::commons::{PhysAddr, VirtAddr};
+use crate::arch::paging::page_table::Flags;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
-use x86_64::{PhysAddr, VirtAddr, structures::paging::PageTableFlags};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
@@ -44,7 +45,7 @@ impl Rsdp {
     ///
     /// Returns the RSDT address.
     pub fn load(rsdp_paddr: PhysAddr) -> Self {
-        let flags = PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE;
+        let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
         // First, we need to map the RSDP address to read the data.
         // Otherwise, a nice page fault will occur.

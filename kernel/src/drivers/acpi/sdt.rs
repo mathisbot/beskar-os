@@ -1,8 +1,8 @@
 use core::mem::offset_of;
 
-use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{PageTableFlags, Size4KiB},
+use crate::arch::{
+    commons::{PhysAddr, VirtAddr, paging::M4KiB},
+    paging::page_table::Flags,
 };
 
 use super::AcpiRevision;
@@ -133,8 +133,7 @@ unsafe impl Sdt for Rsdt {
 
 impl Rsdt {
     pub fn load(rsdt_paddr: PhysAddr) -> Self {
-        let flags =
-            PageTableFlags::PRESENT | x86_64::structures::paging::PageTableFlags::NO_EXECUTE;
+        let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
         let physical_mapping = PhysicalMapping::new(rsdt_paddr, size_of::<SdtHeader>(), flags);
         let rsdt_vaddr = physical_mapping.translate(rsdt_paddr).unwrap();
@@ -202,11 +201,10 @@ impl Rsdt {
         for i in 0..self.sdt_table_length() {
             let paddr = unsafe { start_ptr.add(i).read_unaligned() };
 
-            let flags = x86_64::structures::paging::PageTableFlags::PRESENT
-                | x86_64::structures::paging::PageTableFlags::NO_EXECUTE;
+            let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
             let physical_mapping =
-                PhysicalMapping::<Size4KiB>::new(paddr, size_of::<SdtHeader>(), flags);
+                PhysicalMapping::<M4KiB>::new(paddr, size_of::<SdtHeader>(), flags);
             let table_vaddr = physical_mapping.translate(paddr).unwrap();
             let header = unsafe { &*table_vaddr.as_ptr::<SdtHeader>() };
 
@@ -245,10 +243,10 @@ impl From<Signature> for &'static [u8; 4] {
 ///
 /// The provided physical address must point to a potentially valid SDT.
 unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
-    let flags = PageTableFlags::PRESENT | x86_64::structures::paging::PageTableFlags::NO_EXECUTE;
+    let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
     let header_mapping =
-        PhysicalMapping::<Size4KiB>::new(phys_addr, core::mem::size_of::<SdtHeader>(), flags);
+        PhysicalMapping::<M4KiB>::new(phys_addr, core::mem::size_of::<SdtHeader>(), flags);
     let header_vaddr = header_mapping.translate(phys_addr).unwrap();
 
     let table_length = unsafe {
@@ -272,7 +270,7 @@ macro_rules! impl_sdt {
     ($name:ident) => {
         #[derive(Debug)]
         pub struct $name {
-            start_vaddr: x86_64::VirtAddr,
+            start_vaddr: $crate::arch::commons::VirtAddr,
             _physical_mapping: $crate::mem::page_alloc::pmap::PhysicalMapping,
         }
 
@@ -284,7 +282,7 @@ macro_rules! impl_sdt {
 
         impl $name {
             #[must_use]
-            pub fn load(paddr: x86_64::PhysAddr) -> Self {
+            pub fn load(paddr: $crate::arch::commons::PhysAddr) -> Self {
                 use $crate::drivers::acpi::sdt::Sdt;
 
                 let mapping = unsafe { $crate::drivers::acpi::sdt::map(paddr) };

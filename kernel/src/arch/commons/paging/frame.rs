@@ -146,3 +146,8 @@ impl<S: MemSize> DoubleEndedIterator for FrameRangeInclusive<S> {
         }
     }
 }
+
+pub trait FrameAllocator<S: MemSize> {
+    fn allocate_frame(&mut self) -> Option<Frame<S>>;
+    fn deallocate_frame(&mut self, frame: Frame<S>);
+}

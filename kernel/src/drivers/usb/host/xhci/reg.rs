@@ -1,7 +1,7 @@
 use core::ptr::NonNull;
 
+use crate::arch::commons::VirtAddr;
 use hyperdrive::volatile::{ReadWrite, Volatile};
-use x86_64::VirtAddr;
 
 #[derive(Clone, Copy)]
 pub struct PortRegistersSet {

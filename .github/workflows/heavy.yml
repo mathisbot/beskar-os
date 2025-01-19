@@ -21,7 +21,7 @@ jobs:
         with:
           toolchain: nightly
           targets: x86_64-unknown-linux-gnu
-          components: clippy, miri
+          components: clippy, miri, rust-src
 
       - name: Build
         run: cargo build --package hyperdrive

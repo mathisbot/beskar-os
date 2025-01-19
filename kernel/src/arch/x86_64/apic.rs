@@ -7,14 +7,14 @@ use core::{
 
 use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
 use timer::LapicTimer;
-use x86_64::{
-    PhysAddr, VirtAddr,
-    instructions::port::Port,
-    structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB, Translate},
-};
+use x86_64::instructions::port::Port;
 
-use super::cpuid;
+use super::{cpuid, paging::page_table::Flags};
 use crate::{
+    arch::commons::{
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Translator as _},
+    },
     locals,
     mem::{frame_alloc, page_alloc, page_table},
 };
@@ -113,21 +113,18 @@ impl LocalApic {
 
     #[must_use]
     pub fn from_paddr(paddr: PhysAddr) -> Self {
-        let frame = PhysFrame::<Size4KiB>::from_start_address(paddr).unwrap();
+        let frame = Frame::<M4KiB>::from_start_address(paddr).unwrap();
 
-        let apic_flags = PageTableFlags::PRESENT
-            | PageTableFlags::WRITABLE
-            | PageTableFlags::NO_EXECUTE
-            | PageTableFlags::NO_CACHE;
+        let apic_flags = Flags::MMIO_SUITABLE;
 
         let page = page_alloc::with_page_allocator(|page_allocator| {
-            page_allocator.allocate_pages::<Size4KiB>(1).unwrap().start
+            page_allocator.allocate_pages::<M4KiB>(1).unwrap().start
         });
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             page_table::with_page_table(|page_table| {
-                unsafe { page_table.map_to(page, frame, apic_flags, &mut *frame_allocator) }
-                    .unwrap()
+                page_table
+                    .map(page, frame, apic_flags, &mut *frame_allocator)
                     .flush();
             });
         });
@@ -321,24 +318,21 @@ pub struct Redirection {
 impl IoApic {
     #[must_use]
     pub fn new(base: PhysAddr, gsi_base: u32) -> Self {
-        let frame = PhysFrame::<Size4KiB>::containing_address(base);
+        let frame = Frame::<M4KiB>::containing_address(base);
 
-        let frame_end_addr = frame.start_address() + (Size4KiB::SIZE - 1);
+        let frame_end_addr = frame.start_address() + (M4KiB::SIZE - 1);
         assert!(
             base + u64::try_from(size_of::<u64>()).unwrap() <= frame_end_addr,
             "IOAPIC frame must not cross a 4KiB boundary"
         );
 
-        let apic_flags = PageTableFlags::PRESENT
-            | PageTableFlags::WRITABLE
-            | PageTableFlags::NO_EXECUTE
-            | PageTableFlags::NO_CACHE;
+        let apic_flags = Flags::MMIO_SUITABLE;
 
         // FIXME: I don't quite like that each IOAPIC gets its own page
         // Apparently, IOAPICs only live in Physical 0xFEC0..00, so one page per 16 IOAPICs?
         // Or maybe keep track of mapped pages and check if the page is already mapped?
         let page = page_alloc::with_page_allocator(|page_allocator| {
-            page_allocator.allocate_pages::<Size4KiB>(1)
+            page_allocator.allocate_pages::<M4KiB>(1)
         })
         .unwrap()
         .start;
@@ -347,8 +341,8 @@ impl IoApic {
             page_table::with_page_table(|page_table| {
                 // Safety:
                 // The frame is reserved by the UEFI, so it is already allocated.
-                unsafe { page_table.map_to(page, frame, apic_flags, frame_allocator) }
-                    .unwrap()
+                page_table
+                    .map(page, frame, apic_flags, frame_allocator)
                     .flush();
             });
         });

@@ -2,9 +2,9 @@
 
 use alloc::vec::Vec;
 use hyperdrive::locks::mcs::MUMcsLock;
-use x86_64::{PhysAddr, structures::paging::Size2MiB};
 
 use crate::{
+    arch::commons::{PhysAddr, paging::M2MiB},
     drivers::acpi::sdt::mcfg::ParsedConfigurationSpace,
     mem::page_alloc::pmap::{self, PhysicalMapping},
 };
@@ -15,7 +15,7 @@ static PCIE_HANDLER: MUMcsLock<PciExpressHandler> = MUMcsLock::uninit();
 
 pub struct PciExpressHandler {
     configuration_spaces: &'static [ParsedConfigurationSpace],
-    physical_mappings: Vec<PhysicalMapping<Size2MiB>>,
+    physical_mappings: Vec<PhysicalMapping<M2MiB>>,
     devices: Vec<Device>,
 }
 
@@ -51,7 +51,7 @@ impl PciExpressHandler {
                 .unwrap();
 
                 let flags = pmap::FLAGS_MMIO;
-                PhysicalMapping::<Size2MiB>::new(*cs.address_range().start(), length, flags)
+                PhysicalMapping::<M2MiB>::new(*cs.address_range().start(), length, flags)
             })
             .collect::<Vec<_>>();
 
@@ -92,7 +92,7 @@ impl PciExpressHandler {
     }
 
     fn scan_device(
-        pmap: &PhysicalMapping<Size2MiB>,
+        pmap: &PhysicalMapping<M2MiB>,
         cs: &ParsedConfigurationSpace,
         address: PciAddress,
     ) -> Option<Device> {
@@ -144,11 +144,7 @@ impl PciExpressHandler {
         })
     }
 
-    fn find_function_count(
-        pmap: &PhysicalMapping<Size2MiB>,
-        offset: u64,
-        address: PciAddress,
-    ) -> u8 {
+    fn find_function_count(pmap: &PhysicalMapping<M2MiB>, offset: u64, address: PciAddress) -> u8 {
         let multifonction = {
             let reg = PciAddress {
                 register_offset: RegisterOffset::HeaderType as u8,

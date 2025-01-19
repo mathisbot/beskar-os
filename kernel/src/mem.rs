@@ -1,5 +1,5 @@
+use crate::arch::commons::VirtAddr;
 use bootloader::structs::MemoryRegion;
-use x86_64::VirtAddr;
 
 pub mod address_space;
 pub mod frame_alloc;

@@ -8,14 +8,14 @@
 
 use core::ptr::NonNull;
 
+use crate::arch::commons::{
+    PhysAddr, VirtAddr,
+    paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
+};
 use alloc::vec::Vec;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
     volatile::{ReadWrite, Volatile},
-};
-use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{Mapper, Page, PageSize, Size4KiB},
 };
 
 use super::Nic;
@@ -47,7 +47,7 @@ pub fn init(network_controller: pci::Device) {
 
     let flags = pmap::FLAGS_MMIO;
     // Max size is 128 KiB
-    let pmap = PhysicalMapping::<Size4KiB>::new(reg_paddr, 128 * 1024, flags);
+    let pmap = PhysicalMapping::<M4KiB>::new(reg_paddr, 128 * 1024, flags);
     let reg_vaddr = pmap.translate(reg_paddr).unwrap();
 
     let (buffer_set, rxdesc_paddr, txdesc_paddr) = BufferSet::new(RX_BUFFERS, TX_BUFFERS);
@@ -75,7 +75,7 @@ pub fn init(network_controller: pci::Device) {
 pub struct E1000e<'a> {
     pci_device: pci::Device,
     base: Volatile<ReadWrite, u32>,
-    _physical_mapping: PhysicalMapping<Size4KiB>,
+    _physical_mapping: PhysicalMapping<M4KiB>,
     buffer_set: BufferSet<'a>,
     rx_curr: usize,
     tx_curr: usize,
@@ -197,7 +197,7 @@ impl E1000e<'_> {
         nb_rx: usize,
         nb_tx: usize,
     ) {
-        assert!(rxdesc_paddr.is_aligned(16_u64));
+        assert!(rxdesc_paddr.as_u64() & 0xF == 0);
         let rx_hi = u32::try_from(rxdesc_paddr.as_u64() >> 32).unwrap();
         let rx_lo = u32::try_from(rxdesc_paddr.as_u64() & u64::from(u32::MAX)).unwrap();
 
@@ -221,7 +221,7 @@ impl E1000e<'_> {
             | Self::RCTL_SECRC;
         self.write_reg(Self::RCTL, rctl_value);
 
-        assert!(txdesc_paddr.is_aligned(16_u64));
+        assert!(txdesc_paddr.as_u64() & 0xF == 0);
         let tx_hi = u32::try_from(rxdesc_paddr.as_u64() >> 32).unwrap();
         let tx_lo = u32::try_from(rxdesc_paddr.as_u64() & u64::from(u32::MAX)).unwrap();
 
@@ -326,7 +326,7 @@ impl BufferSet<'_> {
     pub fn new(nb_rx: usize, nb_tx: usize) -> (Self, PhysAddr, PhysAddr) {
         assert!(
             nb_rx * size_of::<RxDescriptor>() + nb_tx * size_of::<TxDescriptor>()
-                < Size4KiB::SIZE.try_into().unwrap()
+                < M4KiB::SIZE.try_into().unwrap()
         );
 
         let mut rx_buffers = Vec::with_capacity(nb_rx);
@@ -342,10 +342,10 @@ impl BufferSet<'_> {
                 .start;
         let flags = pmap::FLAGS_MMIO;
         let descriptor_frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-            let frame = fralloc.alloc::<Size4KiB>().unwrap();
+            let frame = fralloc.alloc::<M4KiB>().unwrap();
             crate::mem::page_table::with_page_table(|page_table| {
-                unsafe { page_table.map_to(descriptor_page, frame, flags, fralloc) }
-                    .unwrap()
+                page_table
+                    .map(descriptor_page, frame, flags, fralloc)
                     .flush();
             });
             frame
@@ -370,11 +370,9 @@ impl BufferSet<'_> {
 
         for (i, page) in page_range.take(nb_rx).enumerate() {
             let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-                let frame = fralloc.alloc::<Size4KiB>().unwrap();
+                let frame = fralloc.alloc::<M4KiB>().unwrap();
                 crate::mem::page_table::with_page_table(|page_table| {
-                    unsafe { page_table.map_to(page, frame, flags, fralloc) }
-                        .unwrap()
-                        .flush();
+                    page_table.map(page, frame, flags, fralloc).flush();
                 });
                 frame
             });
@@ -382,12 +380,12 @@ impl BufferSet<'_> {
             rx_buffers.push(unsafe {
                 core::slice::from_raw_parts_mut(
                     page.start_address().as_mut_ptr(),
-                    Size4KiB::SIZE.try_into().unwrap(),
+                    M4KiB::SIZE.try_into().unwrap(),
                 )
             });
             rx_descriptors[i] = RxDescriptor {
                 buffer_addr: frame.start_address(),
-                length: u16::try_from(Size4KiB::SIZE).unwrap(),
+                length: u16::try_from(M4KiB::SIZE).unwrap(),
                 checksum: 0,
                 status: 0,
                 errors: 0,
@@ -397,11 +395,9 @@ impl BufferSet<'_> {
 
         for (i, page) in page_range.skip(nb_rx).take(nb_tx).enumerate() {
             let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-                let frame = fralloc.alloc::<Size4KiB>().unwrap();
+                let frame = fralloc.alloc::<M4KiB>().unwrap();
                 crate::mem::page_table::with_page_table(|page_table| {
-                    unsafe { page_table.map_to(page, frame, flags, fralloc) }
-                        .unwrap()
-                        .flush();
+                    page_table.map(page, frame, flags, fralloc).flush();
                 });
                 frame
             });
@@ -409,12 +405,12 @@ impl BufferSet<'_> {
             tx_buffers.push(unsafe {
                 core::slice::from_raw_parts_mut(
                     page.start_address().as_mut_ptr(),
-                    Size4KiB::SIZE.try_into().unwrap(),
+                    M4KiB::SIZE.try_into().unwrap(),
                 )
             });
             tx_descriptors[i] = TxDescriptor {
                 buffer_addr: frame.start_address(),
-                length: u16::try_from(Size4KiB::SIZE).unwrap(),
+                length: u16::try_from(M4KiB::SIZE).unwrap(),
                 cso: 0,
                 cmd: 0,
                 status: 1 << 0, // TSTA Descriptor Done
@@ -434,7 +430,7 @@ impl BufferSet<'_> {
             },
             descriptor_frame.start_address(),
             descriptor_frame.start_address()
-                + (nb_rx * size_of::<RxDescriptor>()).try_into().unwrap(),
+                + u64::try_from(nb_rx * size_of::<RxDescriptor>()).unwrap(),
         )
     }
 
@@ -466,7 +462,7 @@ impl BufferSet<'_> {
 impl Drop for BufferSet<'_> {
     fn drop(&mut self) {
         let buffers_start_page =
-            Page::<Size4KiB>::from_start_address(VirtAddr::new(self.rx_buffers[0].as_ptr() as u64))
+            Page::<M4KiB>::from_start_address(VirtAddr::new(self.rx_buffers[0].as_ptr() as u64))
                 .unwrap();
         let buffer_page_range = Page::range_inclusive(
             buffers_start_page,
@@ -486,10 +482,9 @@ impl Drop for BufferSet<'_> {
         }
         crate::mem::page_alloc::with_page_allocator(|palloc| palloc.free_pages(buffer_page_range));
 
-        let descriptors_page = Page::<Size4KiB>::from_start_address(VirtAddr::new(
-            self.rx_descriptors.as_ptr() as u64,
-        ))
-        .unwrap();
+        let descriptors_page =
+            Page::<M4KiB>::from_start_address(VirtAddr::new(self.rx_descriptors.as_ptr() as u64))
+                .unwrap();
         let descriptors_frame = crate::mem::page_table::with_page_table(|pt| {
             let (frame, tlb) = pt.unmap(descriptors_page).unwrap();
             tlb.flush();

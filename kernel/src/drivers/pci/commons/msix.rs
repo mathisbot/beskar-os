@@ -3,8 +3,8 @@
 use core::ptr::NonNull;
 
 use hyperdrive::volatile::{ReadWrite, Volatile};
-use x86_64::structures::paging::Size4KiB;
 
+use crate::arch::commons::paging::M4KiB;
 use crate::locals;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 
@@ -67,23 +67,23 @@ impl MsiX {
         let flags = crate::mem::page_alloc::pmap::FLAGS_MMIO;
 
         let table_size = usize::from(msix.size) * size_of::<TableEntry>();
-        let pmap_table = PhysicalMapping::<Size4KiB>::new(
-            table_bar.base_address() + msix.table_offset.into(),
+        let pmap_table = PhysicalMapping::<M4KiB>::new(
+            table_bar.base_address() + u64::from(msix.table_offset),
             table_size,
             flags,
         );
         let table_vaddr = pmap_table
-            .translate(table_bar.base_address() + msix.table_offset.into())
+            .translate(table_bar.base_address() + u64::from(msix.table_offset))
             .unwrap();
 
         let pba_size = usize::from(msix.size) * size_of::<u64>();
-        let pmap_pba = PhysicalMapping::<Size4KiB>::new(
-            pba_bar.base_address() + msix.pba_offset.into(),
+        let pmap_pba = PhysicalMapping::<M4KiB>::new(
+            pba_bar.base_address() + u64::from(msix.pba_offset),
             pba_size,
             flags,
         );
         let pba_vaddr = pmap_pba
-            .translate(pba_bar.base_address() + msix.pba_offset.into())
+            .translate(pba_bar.base_address() + u64::from(msix.pba_offset))
             .unwrap();
 
         Some(Self {

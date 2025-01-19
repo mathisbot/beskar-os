@@ -18,7 +18,6 @@ pub fn init() {
                 if d.csp().subclass() == 0x06 && d.csp().prog_if() == 0x01 {
                     ahci_controllers.push(d);
                 } else if d.csp().subclass() == 0x08 && d.csp().prog_if() == 0x02 {
-                    crate::debug!("NVMe controller found");
                     nvme.push(d);
                 }
             });

@@ -1,5 +1,5 @@
+use crate::arch::commons::PhysAddr;
 use alloc::vec::Vec;
-use x86_64::PhysAddr;
 
 use super::{Sdt, SdtHeader};
 

@@ -1,9 +1,9 @@
-use x86_64::{
-    VirtAddr,
-    structures::paging::{
-        Page, PageSize, PageTable, PageTableFlags, PageTableIndex, Size1GiB, Size2MiB, Size4KiB,
-        page::PageRangeInclusive, page_table::FrameError,
+use crate::arch::{
+    commons::{
+        VirtAddr,
+        paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
     },
+    paging::page_table::{Entries, Flags},
 };
 
 use crate::mem::{page_table, ranges::MemoryRange};
@@ -24,33 +24,33 @@ pub fn init(recursive_index: u16) {
     /// Recursively remove already mapped pages from the available ranges.
     fn remove_mapping(
         level: u8,
-        page_table: &PageTable,
-        level_indices: &[PageTableIndex; 4],
+        page_table: &Entries,
+        level_indices: &[u16; 4],
         vaddrs: &mut MemoryRanges<MAX_VRANGES>,
     ) {
         for (i, pte) in page_table.iter().enumerate() {
-            if !pte.flags().contains(PageTableFlags::PRESENT) {
+            if !pte.flags().contains(Flags::PRESENT) {
                 continue;
             }
 
             let mut level_indices = *level_indices;
             level_indices.rotate_left(1);
-            level_indices[3] = PageTableIndex::new(u16::try_from(i).unwrap());
+            level_indices[3] = u16::try_from(i).unwrap();
 
-            if pte.flags().contains(PageTableFlags::HUGE_PAGE) {
+            if pte.flags().contains(Flags::HUGE_PAGE) {
                 match level {
                     3 => {
                         let l4 = u64::from(level_indices[2]);
                         let l3 = u64::from(level_indices[3]);
                         let vaddr = (l4 << 39) | (l3 << 30);
-                        vaddrs.remove(MemoryRange::new(vaddr, vaddr + (Size1GiB::SIZE - 1)));
+                        vaddrs.remove(MemoryRange::new(vaddr, vaddr + (M1GiB::SIZE - 1)));
                     }
                     2 => {
                         let l4 = u64::from(level_indices[1]);
                         let l3 = u64::from(level_indices[2]);
                         let l2 = u64::from(level_indices[3]);
                         let vaddr = (l4 << 39) | (l3 << 30) | (l2 << 21);
-                        vaddrs.remove(MemoryRange::new(vaddr, vaddr + (Size2MiB::SIZE - 1)));
+                        vaddrs.remove(MemoryRange::new(vaddr, vaddr + (M2MiB::SIZE - 1)));
                     }
                     1 => {
                         unreachable!("Huge page in level 1");
@@ -60,28 +60,22 @@ pub fn init(recursive_index: u16) {
             }
 
             if level == 1 {
-                match pte.frame() {
-                    Ok(_) => {
-                        let l4 = u64::from(level_indices[0]);
-                        let l3 = u64::from(level_indices[1]);
-                        let l2 = u64::from(level_indices[2]);
-                        let l1 = u64::from(level_indices[3]);
-                        let vaddr = (l4 << 39) | (l3 << 30) | (l2 << 21) | (l1 << 12);
-                        vaddrs.remove(MemoryRange::new(vaddr, vaddr + (Size4KiB::SIZE - 1)));
-                    }
-                    Err(FrameError::FrameNotPresent) => {}
-                    Err(FrameError::HugeFrame) => {
-                        unreachable!("Huge page in level 1");
-                    }
-                }
+                pte.frame_start().map(|_| {
+                    let l4 = u64::from(level_indices[0]);
+                    let l3 = u64::from(level_indices[1]);
+                    let l2 = u64::from(level_indices[2]);
+                    let l1 = u64::from(level_indices[3]);
+                    let vaddr = (l4 << 39) | (l3 << 30) | (l2 << 21) | (l1 << 12);
+                    vaddrs.remove(MemoryRange::new(vaddr, vaddr + (M4KiB::SIZE - 1)));
+                });
             } else {
                 let l4 = u64::from(level_indices[0]);
                 let l3 = u64::from(level_indices[1]);
                 let l2 = u64::from(level_indices[2]);
                 let l1 = u64::from(level_indices[3]);
-                let vaddr = (l4 << 39) | (l3 << 30) | (l2 << 21) | (l1 << 12);
+                let vaddr = VirtAddr::new((l4 << 39) | (l3 << 30) | (l2 << 21) | (l1 << 12));
 
-                let entry: &PageTable = unsafe { &*(vaddr as *const PageTable) };
+                let entry: &Entries = unsafe { &*(vaddr.as_ptr()) };
                 remove_mapping(level - 1, entry, &level_indices, vaddrs);
             }
         }
@@ -89,15 +83,10 @@ pub fn init(recursive_index: u16) {
 
     let mut vaddrs = MemoryRanges::new();
     // Skip the first two pages
-    vaddrs.insert(MemoryRange::new(2 * Size4KiB::SIZE, MAX_VALID_VADDR));
+    vaddrs.insert(MemoryRange::new(2 * M4KiB::SIZE, MAX_VALID_VADDR));
 
     page_table::with_page_table(|pt| {
-        remove_mapping(
-            4,
-            pt.level_4_table(),
-            &[PageTableIndex::new(recursive_index); 4],
-            &mut vaddrs,
-        );
+        remove_mapping(4, pt.entries(), &[recursive_index; 4], &mut vaddrs);
     });
 
     let pte_start = u64::from(recursive_index) << 39;
@@ -122,7 +111,7 @@ pub struct PageAllocator {
 }
 
 impl PageAllocator {
-    pub fn allocate_pages<S: PageSize>(&mut self, count: u64) -> Option<PageRangeInclusive<S>> {
+    pub fn allocate_pages<S: MemSize>(&mut self, count: u64) -> Option<PageRangeInclusive<S>> {
         let start_vaddr = self.vranges.allocate::<1>(
             S::SIZE * count,
             S::SIZE,
@@ -135,7 +124,7 @@ impl PageAllocator {
         Some(Page::range_inclusive(first_page, first_page + (count - 1)))
     }
 
-    pub fn allocate_specific_page<S: PageSize>(&mut self, page: Page<S>) -> Option<Page<S>> {
+    pub fn allocate_specific_page<S: MemSize>(&mut self, page: Page<S>) -> Option<Page<S>> {
         if page.start_address().as_u64() == 0 {
             return None; // Can't allocate the null page (not the first two pages)
         }
@@ -155,14 +144,14 @@ impl PageAllocator {
     }
 
     /// Returns a tuple with the range of pages and the guard page
-    pub fn allocate_guarded<S: PageSize>(
+    pub fn allocate_guarded<S: MemSize>(
         &mut self,
         count: u64,
-    ) -> Option<(PageRangeInclusive<S>, Page<Size4KiB>)> {
-        let size = S::SIZE * count + Size4KiB::SIZE;
+    ) -> Option<(PageRangeInclusive<S>, Page<M4KiB>)> {
+        let size = S::SIZE * count + M4KiB::SIZE;
         let alignment = S::SIZE;
 
-        let mut start_vaddr = VirtAddr::new(
+        let start_vaddr = VirtAddr::new(
             u64::try_from(self.vranges.allocate::<1>(
                 size,
                 alignment,
@@ -172,8 +161,8 @@ impl PageAllocator {
         );
 
         // Guard page is the first page
-        let guard_page = Page::<Size4KiB>::from_start_address(start_vaddr).unwrap();
-        start_vaddr += Size4KiB::SIZE;
+        let guard_page = Page::<M4KiB>::from_start_address(start_vaddr).unwrap();
+        let start_vaddr = start_vaddr + M4KiB::SIZE;
 
         let first_page = Page::<S>::from_start_address(start_vaddr).unwrap();
 
@@ -183,7 +172,7 @@ impl PageAllocator {
         ))
     }
 
-    pub fn free_pages<S: PageSize>(&mut self, pages: PageRangeInclusive<S>) {
+    pub fn free_pages<S: MemSize>(&mut self, pages: PageRangeInclusive<S>) {
         self.vranges.insert(MemoryRange::new(
             pages.start.start_address().as_u64(),
             pages.end.start_address().as_u64() + S::SIZE - 1,
@@ -198,7 +187,7 @@ impl PageAllocator {
 fn reserve_tramp_page(allocator: &mut PageAllocator) {
     let vaddr = VirtAddr::new(crate::arch::ap::AP_TRAMPOLINE_PADDR);
 
-    let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
+    let page = Page::<M4KiB>::from_start_address(vaddr).unwrap();
 
     assert!(
         allocator.allocate_specific_page(page).is_some(),

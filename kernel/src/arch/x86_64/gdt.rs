@@ -3,14 +3,15 @@ use core::{cell::UnsafeCell, mem::MaybeUninit};
 use x86_64::{
     instructions::tables::load_tss,
     registers::segmentation::{CS, Segment},
-    structures::{
-        gdt::GlobalDescriptorTable,
-        paging::{Page, PageSize, PageTableFlags, Size4KiB},
-        tss::TaskStateSegment,
-    },
+    structures::{gdt::GlobalDescriptorTable, tss::TaskStateSegment},
 };
 
-use crate::mem::{frame_alloc, page_alloc};
+use crate::{
+    arch::commons::paging::{M4KiB, MemSize as _, Page},
+    mem::{frame_alloc, page_alloc},
+};
+
+use super::paging::page_table::Flags;
 
 pub const DOUBLE_FAULT_IST: u16 = 0;
 pub const PAGE_FAULT_IST: u16 = 1;
@@ -71,39 +72,43 @@ impl Gdt {
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[DOUBLE_FAULT_IST as usize] = {
             let (page_range, guard_page) = page_alloc::with_page_allocator(|page_allocator| {
-                page_allocator.allocate_guarded::<Size4KiB>(2).unwrap()
+                page_allocator.allocate_guarded::<M4KiB>(2).unwrap()
             });
 
             frame_alloc::with_frame_allocator(|frame_allocator| {
                 frame_allocator.map_pages(
                     page_range,
-                    PageTableFlags::WRITABLE | PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE,
+                    Flags::WRITABLE | Flags::PRESENT | Flags::NO_EXECUTE,
                 );
                 frame_allocator.map_pages(
                     Page::range_inclusive(guard_page, guard_page),
-                    PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE,
+                    Flags::PRESENT | Flags::NO_EXECUTE,
                 );
             });
 
-            (page_range.end.start_address() + (Size4KiB::SIZE - 1)).align_down(16_u64)
+            x86_64::VirtAddr::new(
+                (page_range.end.start_address().as_u64() + (M4KiB::SIZE - 1)) & !0xF,
+            )
         };
         tss.interrupt_stack_table[PAGE_FAULT_IST as usize] = {
             let (page_range, guard_page) = page_alloc::with_page_allocator(|page_allocator| {
-                page_allocator.allocate_guarded::<Size4KiB>(2).unwrap()
+                page_allocator.allocate_guarded::<M4KiB>(2).unwrap()
             });
 
             frame_alloc::with_frame_allocator(|frame_allocator| {
                 frame_allocator.map_pages(
                     page_range,
-                    PageTableFlags::WRITABLE | PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE,
+                    Flags::WRITABLE | Flags::PRESENT | Flags::NO_EXECUTE,
                 );
                 frame_allocator.map_pages(
                     Page::range_inclusive(guard_page, guard_page),
-                    PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE,
+                    Flags::PRESENT | Flags::NO_EXECUTE,
                 );
             });
 
-            (page_range.end.start_address() + (Size4KiB::SIZE - 1)).align_down(16_u64)
+            x86_64::VirtAddr::new(
+                (page_range.end.start_address().as_u64() + (M4KiB::SIZE - 1)) & !0xF,
+            )
         };
         tss
     }

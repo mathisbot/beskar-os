@@ -83,6 +83,6 @@ pub fn panic_test() {
 
 pub fn idle() {
     loop {
-        x86_64::instructions::hlt();
+        crate::arch::halt();
     }
 }

@@ -5,9 +5,13 @@ use core::{
     ptr::NonNull,
 };
 
-use x86_64::structures::paging::{PageSize, PageTableFlags, Size2MiB, page::PageRangeInclusive};
-
-use crate::mem::page_alloc;
+use crate::{
+    arch::{
+        commons::paging::{M2MiB, MemSize, PageRangeInclusive},
+        paging::page_table::Flags,
+    },
+    mem::page_alloc,
+};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::frame_alloc;
@@ -28,7 +32,7 @@ pub fn init() {
     frame_alloc::with_frame_allocator(|frame_allocator| {
         frame_allocator.map_pages(
             page_range,
-            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,
+            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
         );
     });
 
@@ -43,9 +47,9 @@ struct Heap {
 }
 
 impl Heap {
-    pub fn new(page_range: PageRangeInclusive<Size2MiB>) -> Self {
+    pub fn new(page_range: PageRangeInclusive<M2MiB>) -> Self {
         let start_address = page_range.start.start_address().as_u64();
-        let end_address = page_range.end.start_address().as_u64() + (Size2MiB::SIZE - 1);
+        let end_address = page_range.end.start_address().as_u64() + (M2MiB::SIZE - 1);
 
         let size = usize::try_from(end_address - start_address + 1).unwrap();
         let linked_list = unsafe {

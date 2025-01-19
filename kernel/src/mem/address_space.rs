@@ -1,7 +1,10 @@
-use x86_64::{
-    PhysAddr, VirtAddr,
-    registers::control::{Cr3, Cr3Flags},
-    structures::paging::{Mapper, Page, PageTable, PageTableFlags, RecursivePageTable, Size4KiB},
+use crate::arch::{
+    commons::{
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, M4KiB, Mapper as _, Page},
+    },
+    paging::page_table::{Entries, Flags, PageTable},
+    registers::Cr3,
 };
 
 use super::{frame_alloc, page_alloc, page_table};
@@ -28,7 +31,7 @@ pub fn init(recursive_index: u16, kernel_vaddr: VirtAddr) {
         AddressSpace {
             lvl4_vaddr: vaddr,
             lvl4_paddr: frame.start_address(),
-            cr3: flags,
+            cr3_flags: flags,
         }
     });
 }
@@ -40,7 +43,7 @@ pub struct AddressSpace {
     lvl4_paddr: PhysAddr,
     /// # WARNING
     /// Only updated when the address space is loaded.
-    cr3: Cr3Flags,
+    cr3_flags: u16,
 }
 
 impl Default for AddressSpace {
@@ -52,67 +55,62 @@ impl Default for AddressSpace {
 impl AddressSpace {
     #[must_use]
     pub fn new() -> Self {
-        let frame = frame_alloc::with_frame_allocator(|frame_allocator| {
-            frame_allocator.alloc::<Size4KiB>()
-        })
-        .unwrap();
+        let frame =
+            frame_alloc::with_frame_allocator(|frame_allocator| frame_allocator.alloc::<M4KiB>())
+                .unwrap();
 
         // The page is in the CURRENT address space.
         let page = page_alloc::with_page_allocator(|page_allocator| {
-            page_allocator.allocate_pages::<Size4KiB>(1)
+            page_allocator.allocate_pages::<M4KiB>(1)
         })
         .unwrap()
         .start;
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             page_table::with_page_table(|page_table| {
-                unsafe {
-                    page_table.map_to(
+                page_table
+                    .map(
                         page,
                         frame,
-                        PageTableFlags::PRESENT
-                            | PageTableFlags::WRITABLE
-                            | PageTableFlags::NO_EXECUTE,
+                        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
                         frame_allocator,
                     )
-                }
-                .unwrap()
-                .flush();
+                    .flush();
             });
         });
 
-        let mut pt = PageTable::new();
+        let mut pt = Entries::new();
 
         // Copy the kernel's page table entries to the new address space
         let kernel_start_page =
-            Page::<Size4KiB>::containing_address(*KERNEL_CODE_ADDRESS.get().unwrap());
+            Page::<M4KiB>::containing_address(*KERNEL_CODE_ADDRESS.get().unwrap());
         let kernel_page_range = kernel_start_page.p4_index().into()..512_usize;
 
         let current_page_table = KERNEL_ADDRESS_SPACE.get().unwrap().get_recursive_pt();
-        let current_pt = current_page_table.level_4_table();
+        let current_pt = current_page_table.entries();
         for (i, pte) in current_pt
             .iter()
             .enumerate()
             .skip(kernel_page_range.start)
             .take(512 - kernel_page_range.start)
         {
-            if pte.is_unused() {
+            if pte.is_null() {
                 continue;
             }
-            pt[i].set_addr(pte.addr(), pte.flags());
+            pt[i].set(pte.addr(), pte.flags());
         }
 
         let (index, pte) = pt
             .iter_mut()
             .enumerate()
-            .filter(|(_, e)| e.is_unused())
+            .filter(|(_, e)| e.is_null())
             .last()
             .unwrap();
         assert_ne!(index, 0, "No free PTEs in the new page table");
 
-        pte.set_frame(frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+        pte.set(frame.start_address(), Flags::PRESENT | Flags::WRITABLE);
 
-        unsafe { page.start_address().as_mut_ptr::<PageTable>().write(pt) };
+        unsafe { page.start_address().as_mut_ptr::<Entries>().write(pt) };
 
         // Unmap the page from the current address space as we're done with it
         page_table::with_page_table(|page_table| page_table.unmap(page).unwrap().1.flush());
@@ -129,7 +127,7 @@ impl AddressSpace {
         Self {
             lvl4_vaddr,
             lvl4_paddr: frame.start_address(),
-            cr3: Cr3Flags::empty(),
+            cr3_flags: 0,
         }
     }
 
@@ -138,21 +136,21 @@ impl AddressSpace {
         self.lvl4_paddr == frame.start_address()
     }
 
-    pub fn cr3_flags(&self) -> Cr3Flags {
+    pub fn cr3_flags(&self) -> u16 {
         if self.is_active() {
             Cr3::read().1
         } else {
-            self.cr3
+            self.cr3_flags
         }
     }
 
     pub fn cr3_raw(&self) -> usize {
-        usize::try_from(self.lvl4_paddr.as_u64() | self.cr3_flags().bits()).unwrap()
+        usize::try_from(self.lvl4_paddr.as_u64() | u64::from(self.cr3_flags())).unwrap()
     }
 
-    fn get_recursive_pt(&self) -> RecursivePageTable<'static> {
+    fn get_recursive_pt(&self) -> PageTable<'static> {
         assert!(self.is_active(), "Address space is not active");
-        unsafe { RecursivePageTable::new(&mut *self.lvl4_vaddr.as_mut_ptr()) }.unwrap()
+        PageTable::new(unsafe { &mut *self.lvl4_vaddr.as_mut_ptr() })
     }
 }
 

@@ -1,7 +1,6 @@
-use x86_64::{VirtAddr, structures::paging::Size4KiB};
-
 // FIXME: <https://wiki.osdev.org/AHCI#Determining_what_mode_the_controller_is_in>
 use crate::{
+    arch::commons::{VirtAddr, paging::M4KiB},
     drivers::pci::{self, Bar, Device},
     mem::page_alloc::pmap::{self, PhysicalMapping},
 };
@@ -20,7 +19,7 @@ pub fn init(ahci_controllers: &[Device]) {
     let ahci_paddr = bar.base_address();
 
     let flags = pmap::FLAGS_MMIO;
-    let pmap = PhysicalMapping::<Size4KiB>::new(ahci_paddr, 64, flags);
+    let pmap = PhysicalMapping::<M4KiB>::new(ahci_paddr, 64, flags);
 
     let ahci_base = pmap.translate(ahci_paddr).unwrap();
 

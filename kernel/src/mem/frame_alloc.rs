@@ -5,18 +5,19 @@
 //!
 //! Allocated frames do not need to be contiguous.
 
+use crate::arch::{
+    commons::{
+        PhysAddr,
+        paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, PageRangeInclusive},
+    },
+    paging::page_table::{Flags, PageTable},
+};
+
 use super::{
     page_table,
     ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
 };
 use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
-use x86_64::{
-    PhysAddr,
-    structures::paging::{
-        Mapper, PageSize, PageTableFlags, PhysFrame, RecursivePageTable, Size4KiB,
-        page::PageRangeInclusive,
-    },
-};
 
 use hyperdrive::locks::mcs::MUMcsLock;
 
@@ -62,27 +63,27 @@ pub struct FrameAllocator {
 impl FrameAllocator {
     #[must_use]
     #[inline]
-    pub fn alloc<S: PageSize>(&mut self) -> Option<PhysFrame<S>> {
+    pub fn alloc<S: MemSize>(&mut self) -> Option<Frame<S>> {
         self.alloc_request(&MemoryRangeRequest::<MAX_MEMORY_REGIONS>::DontCare)
     }
 
     #[must_use]
     #[inline]
-    pub fn alloc_request<S: PageSize, const M: usize>(
+    pub fn alloc_request<S: MemSize, const M: usize>(
         &mut self,
         req_range: &MemoryRangeRequest<M>,
-    ) -> Option<PhysFrame<S>> {
+    ) -> Option<Frame<S>> {
         let size = S::SIZE;
         let alignment = S::SIZE;
 
         let addr = self.memory_ranges.allocate(size, alignment, req_range)?;
-        Some(PhysFrame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
+        Some(Frame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
     }
 
     // FIXME: Keep track of allocated frames?
     // Here nothing ensures the caller has provided a valid frame
     // (valid as in "usable memory region provided by the bootloader")
-    pub fn free<S: PageSize>(&mut self, frame: PhysFrame<S>) {
+    pub fn free<S: MemSize>(&mut self, frame: Frame<S>) {
         self.memory_ranges.insert(MemoryRange::new(
             frame.start_address().as_u64(),
             frame.start_address().as_u64() + (frame.size() - 1),
@@ -90,35 +91,29 @@ impl FrameAllocator {
     }
 
     /// Given a range of pages, allocate whatever frames are needed and map them to the pages.
-    pub fn map_pages<S: PageSize + core::fmt::Debug>(
+    pub fn map_pages<S: MemSize + core::fmt::Debug>(
         &mut self,
         pages: PageRangeInclusive<S>,
-        flags: PageTableFlags,
+        flags: Flags,
     ) where
-        for<'a> RecursivePageTable<'a>: Mapper<S>,
+        for<'a> PageTable<'a>: Mapper<S>,
     {
         page_table::with_page_table(|page_table| {
             for page in pages {
                 let frame = self.alloc::<S>().unwrap();
-                unsafe {
-                    page_table.map_to_with_table_flags(
-                        page,
-                        frame,
-                        flags,
-                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                        self,
-                    )
-                }
-                .unwrap()
-                .flush();
+                page_table.map(page, frame, flags, self).flush();
             }
         });
     }
 }
 
-unsafe impl<S: PageSize> x86_64::structures::paging::FrameAllocator<S> for FrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
+impl<S: MemSize> crate::arch::commons::paging::FrameAllocator<S> for FrameAllocator {
+    fn allocate_frame(&mut self) -> Option<Frame<S>> {
         self.alloc::<S>()
+    }
+
+    fn deallocate_frame(&mut self, frame: Frame<S>) {
+        self.free(frame);
     }
 }
 
@@ -130,11 +125,11 @@ fn reserve_tramp_frame(allocator: &mut FrameAllocator) {
     let mut req_range = MemoryRanges::new();
     req_range.insert(MemoryRange::new(
         crate::arch::ap::AP_TRAMPOLINE_PADDR,
-        crate::arch::ap::AP_TRAMPOLINE_PADDR + Size4KiB::SIZE,
+        crate::arch::ap::AP_TRAMPOLINE_PADDR + M4KiB::SIZE,
     ));
 
     let _frame = allocator
-        .alloc_request::<Size4KiB, 1>(&MemoryRangeRequest::MustBeWithin(&req_range))
+        .alloc_request::<M4KiB, 1>(&MemoryRangeRequest::MustBeWithin(&req_range))
         .expect("Failed to allocate AP frame");
 }
 
