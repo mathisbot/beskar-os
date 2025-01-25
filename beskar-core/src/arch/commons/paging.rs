@@ -4,7 +4,7 @@ mod page;
 pub use page::{Page, PageRangeInclusive};
 
 // TODO: Architecture agnostic flags
-use crate::arch::paging::page_table::Flags;
+pub use crate::arch::x86_64::paging::page_table::Flags;
 
 use super::{PhysAddr, VirtAddr};
 
@@ -34,7 +34,6 @@ impl MemSize for M1GiB {
 }
 
 pub trait CacheFlush<S: MemSize> {
-    fn new(page: Page<S>) -> Self;
     fn flush(&self);
     #[allow(clippy::unused_self)]
     /// Ignore the flush operation on the TLB.
@@ -43,7 +42,7 @@ pub trait CacheFlush<S: MemSize> {
     ///
     /// The page table containing the page must not be used at the moment,
     /// otherwise the CPU will not be aware of the changes.
-    unsafe fn ignore_flush(self);
+    unsafe fn ignore_flush(&self) {}
     fn page(&self) -> Page<S>;
 }
 
@@ -56,7 +55,8 @@ pub trait Mapper<S: MemSize> {
         fralloc: &mut A,
     ) -> impl CacheFlush<S>;
     fn unmap(&mut self, page: Page<S>) -> Option<(Frame<S>, impl CacheFlush<S>)>;
-    fn translate(&self, page: Page<S>) -> Option<Frame<S>>;
+    fn update_flags(&mut self, page: Page<S>, flags: Flags) -> Option<impl CacheFlush<S>>;
+    fn translate(&self, page: Page<S>) -> Option<(Frame<S>, Flags)>;
 }
 
 pub trait Translator {

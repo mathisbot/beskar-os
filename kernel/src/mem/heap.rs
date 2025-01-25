@@ -5,13 +5,9 @@ use core::{
     ptr::NonNull,
 };
 
-use crate::{
-    arch::{
-        commons::paging::{M2MiB, MemSize, PageRangeInclusive},
-        paging::page_table::Flags,
-    },
-    mem::page_alloc,
-};
+use crate::mem::page_alloc;
+use beskar_core::arch::commons::paging::{M2MiB, MemSize, PageRangeInclusive};
+use beskar_core::arch::x86_64::paging::page_table::Flags;
 use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::frame_alloc;

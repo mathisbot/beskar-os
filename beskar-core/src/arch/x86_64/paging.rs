@@ -17,15 +17,6 @@ impl<S: MemSize> TlbFlush<S> {
         }
     }
 
-    #[inline]
-    /// Ignore the flush operation on the TLB.
-    ///
-    /// ## Safety
-    ///
-    /// The page table containing the page must not be used at the moment,
-    /// otherwise the CPU will not be aware of the changes.
-    pub const unsafe fn ignore_flush(self) {}
-
     #[must_use]
     #[inline]
     pub const fn page(&self) -> Page<S> {
@@ -34,18 +25,9 @@ impl<S: MemSize> TlbFlush<S> {
 }
 
 impl<S: MemSize> CacheFlush<S> for TlbFlush<S> {
-    fn new(page: Page<S>) -> Self {
-        Self::new(page)
-    }
-
     #[inline]
     fn flush(&self) {
         self.flush();
-    }
-
-    #[inline]
-    unsafe fn ignore_flush(self) {
-        unsafe { self.ignore_flush() };
     }
 
     #[inline]

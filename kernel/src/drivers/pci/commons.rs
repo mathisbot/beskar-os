@@ -1,6 +1,6 @@
 //! PCI common definitions
 
-use crate::arch::commons::PhysAddr;
+use beskar_core::arch::commons::PhysAddr;
 
 pub mod msi;
 pub mod msix;

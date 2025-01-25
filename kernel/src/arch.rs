@@ -1,7 +1,5 @@
 //! Architecture-specific code.
 
-pub mod commons;
-
 mod aarch64;
 mod x86_64;
 

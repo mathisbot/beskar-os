@@ -1,9 +1,9 @@
 // FIXME: <https://wiki.osdev.org/AHCI#Determining_what_mode_the_controller_is_in>
 use crate::{
-    arch::commons::{VirtAddr, paging::M4KiB},
     drivers::pci::{self, Bar, Device},
     mem::page_alloc::pmap::{self, PhysicalMapping},
 };
+use beskar_core::arch::commons::{VirtAddr, paging::M4KiB};
 
 pub fn init(ahci_controllers: &[Device]) {
     // TODO: Support for multiple AHCI controllers?

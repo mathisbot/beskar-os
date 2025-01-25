@@ -1,8 +1,8 @@
 use core::mem::offset_of;
 
-use crate::arch::{
+use beskar_core::arch::{
     commons::{PhysAddr, VirtAddr, paging::M4KiB},
-    paging::page_table::Flags,
+    x86_64::paging::page_table::Flags,
 };
 
 use super::AcpiRevision;
@@ -270,7 +270,7 @@ macro_rules! impl_sdt {
     ($name:ident) => {
         #[derive(Debug)]
         pub struct $name {
-            start_vaddr: $crate::arch::commons::VirtAddr,
+            start_vaddr: ::beskar_core::arch::commons::VirtAddr,
             _physical_mapping: $crate::mem::page_alloc::pmap::PhysicalMapping,
         }
 
@@ -282,7 +282,7 @@ macro_rules! impl_sdt {
 
         impl $name {
             #[must_use]
-            pub fn load(paddr: $crate::arch::commons::PhysAddr) -> Self {
+            pub fn load(paddr: ::beskar_core::arch::commons::PhysAddr) -> Self {
                 use $crate::drivers::acpi::sdt::Sdt;
 
                 let mapping = unsafe { $crate::drivers::acpi::sdt::map(paddr) };

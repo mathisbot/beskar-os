@@ -76,19 +76,20 @@ pub trait Queueable: Sized {
     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>>;
 }
 
+#[repr(transparent)]
 /// Describes a link between two elements in the queue.
 pub struct Link<T> {
     /// The next element in the queue.
     next: AtomicPtr<T>,
     /// A phantom field to pin the link.
-    _unpin: core::marker::PhantomPinned,
+    _pin: core::marker::PhantomPinned,
 }
 
 impl<T> Default for Link<T> {
     fn default() -> Self {
         Self {
             next: AtomicPtr::new(ptr::null_mut()),
-            _unpin: core::marker::PhantomPinned,
+            _pin: core::marker::PhantomPinned,
         }
     }
 }
@@ -196,7 +197,7 @@ impl<T: Queueable> MpscQueue<T> {
 
     pub fn dequeue(&self) -> Option<T::Handle> {
         let mut state = self.try_dequeue();
-        while matches!(state, DequeueResult::InUse) {
+        while !matches!(state, DequeueResult::Element(_)) {
             core::hint::spin_loop();
             state = self.try_dequeue();
         }

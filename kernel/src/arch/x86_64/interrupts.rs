@@ -66,7 +66,9 @@ pub fn init() {
     idt[Irq::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
     idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
     idt[Irq::Nic as u8].set_handler_fn(nic_interrupt_handler);
-    idt[Irq::Syscall as u8].set_handler_fn(syscall_interrupt_handler);
+    idt[Irq::Syscall as u8]
+        .set_handler_fn(syscall_interrupt_handler)
+        .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
 
     idt.load();
 

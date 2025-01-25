@@ -1,5 +1,5 @@
-use crate::arch::commons::PhysAddr;
 use alloc::vec::Vec;
+use beskar_core::arch::commons::PhysAddr;
 
 use super::{Sdt, SdtHeader};
 

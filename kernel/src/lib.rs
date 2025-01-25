@@ -14,6 +14,7 @@ pub mod network;
 pub mod process;
 pub mod screen;
 pub mod storage;
+pub mod syscall;
 pub mod time;
 
 extern crate alloc;

@@ -8,11 +8,11 @@
 
 use core::ptr::NonNull;
 
-use crate::arch::commons::{
+use alloc::vec::Vec;
+use beskar_core::arch::commons::{
     PhysAddr, VirtAddr,
     paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
 };
-use alloc::vec::Vec;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
     volatile::{ReadWrite, Volatile},

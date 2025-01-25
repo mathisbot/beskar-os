@@ -148,7 +148,8 @@ impl<S: MemSize> ExactSizeIterator for FrameIterator<S> {
             0
         } else {
             self.end - self.start + 1
-        }).unwrap()
+        })
+        .unwrap()
     }
 }
 

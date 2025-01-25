@@ -5,13 +5,11 @@
 //!
 //! Allocated frames do not need to be contiguous.
 
-use crate::arch::{
-    commons::{
-        PhysAddr,
-        paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, PageRangeInclusive},
-    },
-    paging::page_table::{Flags, PageTable},
+use beskar_core::arch::commons::{
+    PhysAddr,
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, PageRangeInclusive},
 };
+use beskar_core::arch::x86_64::paging::page_table::{Flags, PageTable};
 
 use super::{
     page_table,
@@ -107,7 +105,7 @@ impl FrameAllocator {
     }
 }
 
-impl<S: MemSize> crate::arch::commons::paging::FrameAllocator<S> for FrameAllocator {
+impl<S: MemSize> beskar_core::arch::commons::paging::FrameAllocator<S> for FrameAllocator {
     fn allocate_frame(&mut self) -> Option<Frame<S>> {
         self.alloc::<S>()
     }

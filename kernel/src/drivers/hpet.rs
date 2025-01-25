@@ -1,9 +1,9 @@
 // FIXME: Support for multiple HPET blocks?
 
-use crate::arch::commons::{PhysAddr, VirtAddr, paging::M4KiB};
-use crate::arch::paging::page_table::Flags;
 use crate::drivers::acpi::sdt::hpet_table::ParsedHpetTable;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
+use beskar_core::arch::commons::{PhysAddr, VirtAddr, paging::M4KiB};
+use beskar_core::arch::x86_64::paging::page_table::Flags;
 use hyperdrive::locks::mcs::MUMcsLock;
 
 static HPET: MUMcsLock<Hpet> = MUMcsLock::uninit();

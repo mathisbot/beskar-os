@@ -58,6 +58,15 @@ impl Cr3 {
         let frame = Frame::containing_address(addr);
         (frame, (value & 0xFFF) as u16)
     }
+
+    pub fn write(frame: Frame, flags: u16) {
+        assert_eq!(frame.start_address().as_u64() & 0xFFF0_0000_0000_0FFF, 0);
+        let value = frame.start_address().as_u64() | u64::from(flags);
+
+        unsafe {
+            core::arch::asm!("mov cr3, {}", in(reg) value, options(nomem, nostack, preserves_flags));
+        }
+    }
 }
 
 pub struct Efer;

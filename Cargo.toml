@@ -6,9 +6,11 @@ edition = "2024"
 [dependencies]
 
 [workspace]
-members = ["bootloader", "hyperdrive", "kernel"]
+members = ["beskar-core", "beskar-lib", "bootloader", "hyperdrive", "kernel", "userspace"]
 
 [workspace.dependencies]
+beskar-core = { path = "beskar-core" }
+beskar-lib = { path = "beskar-lib" }
 bootloader = { path = "bootloader" }
 hyperdrive = { path = "hyperdrive" }
 x86_64 = { version = "0.15.2", default-features = false, features = ["abi_x86_interrupt","instructions"] }
@@ -16,6 +18,7 @@ x86_64 = { version = "0.15.2", default-features = false, features = ["abi_x86_in
 [build-dependencies]
 bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }
 kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
+userspace = { path = "userspace", artifact = "bin", target = "x86_64-unknown-none" }
 
 [profile.release]
 panic = "abort"

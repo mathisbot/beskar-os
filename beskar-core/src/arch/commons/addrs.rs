@@ -44,6 +44,13 @@ impl VirtAddr {
 
     #[must_use]
     #[inline]
+    pub const fn align_up(self, align: u64) -> Self {
+        assert!(align.is_power_of_two());
+        Self::new(self.0 + (align - 1) & !(align - 1))
+    }
+
+    #[must_use]
+    #[inline]
     pub fn p4_index(self) -> u16 {
         u16::try_from((self.0 >> 39) & 0x1FF).unwrap()
     }
@@ -87,6 +94,13 @@ impl PhysAddr {
     pub const fn align_down(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
         Self::new(self.0 & !(align - 1))
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn align_up(self, align: u64) -> Self {
+        assert!(align.is_power_of_two());
+        Self::new(self.0 + (align - 1) & !(align - 1))
     }
 }
 

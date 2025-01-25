@@ -4,9 +4,9 @@ use core::ptr::NonNull;
 
 use hyperdrive::volatile::{ReadWrite, Volatile};
 
-use crate::arch::commons::paging::M4KiB;
 use crate::locals;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
+use beskar_core::arch::commons::paging::M4KiB;
 
 use super::super::{PciHandler, commons::CapabilityHeader, iter_capabilities};
 

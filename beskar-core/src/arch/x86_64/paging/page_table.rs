@@ -23,12 +23,13 @@ impl Flags {
     pub const DIRTY: Self = Self(1 << 6);
     pub const HUGE_PAGE: Self = Self(1 << 7);
     pub const GLOBAL: Self = Self(1 << 8);
+    pub const BIT_9: Self = Self(1 << 9);
     pub const NO_EXECUTE: Self = Self(1 << 63);
 
     pub const MMIO_SUITABLE: Self = Self(1 | (1 << 1) | (1 << 4) | (1 << 63));
 
     const ALL: Self = Self(0x8000_0000_0000_01FF);
-    const EMPTY: Self = Self(0);
+    pub const EMPTY: Self = Self(0);
     const PARENT: Self = Self(1 | (1 << 1));
 
     #[must_use]
@@ -53,6 +54,12 @@ impl Flags {
     #[inline]
     pub const fn intersection(self, other: Self) -> Self {
         Self(self.0 & other.0)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn without(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
     }
 }
 
@@ -193,6 +200,15 @@ impl<'t> PageTable<'t> {
         }
     }
 
+    #[must_use]
+    #[inline]
+    pub fn new_from_index(entries: &'t mut Entries, recursive_index: u16) -> Self {
+        Self {
+            entries,
+            recursive_index,
+        }
+    }
+
     #[inline]
     pub fn entries(&self) -> &Entries {
         self.entries
@@ -222,9 +238,9 @@ impl<'t> PageTable<'t> {
                 panic!("Out of memory");
             }
         } else {
-            if !insert_flags.is_empty() && !entry.flags().contains(insert_flags) {
-                entry.set(entry.addr(), entry.flags() | insert_flags);
-            }
+            // if !insert_flags.is_empty() && !entry.flags().contains(insert_flags) {
+            //     entry.set(entry.addr(), entry.flags() | insert_flags);
+            // }
             entry.update_flags(insert_flags);
         }
 
@@ -331,8 +347,11 @@ impl Mapper<M4KiB> for PageTable<'_> {
             )
         };
 
-        assert!(p1[usize::from(page.p1_index())].is_null(), "Page already mapped");
-        p1[usize::from(page.p1_index())].set(frame.start_address(), flags);
+        assert!(
+            p1[usize::from(page.p1_index())].is_null(),
+            "Page already mapped"
+        );
+        p1[usize::from(page.p1_index())].set(frame.start_address(), flags | Flags::PRESENT);
 
         super::TlbFlush::new(page)
     }
@@ -376,7 +395,53 @@ impl Mapper<M4KiB> for PageTable<'_> {
         Some((frame, super::TlbFlush::new(page)))
     }
 
-    fn translate(&self, page: Page<M4KiB>) -> Option<Frame<M4KiB>> {
+    fn update_flags(
+        &mut self,
+        page: Page<M4KiB>,
+        flags: Flags,
+    ) -> Option<impl crate::arch::commons::paging::CacheFlush<M4KiB>> {
+        let p4_entry = &self[usize::from(page.p4_index())];
+        if p4_entry.is_null() {
+            return None;
+        }
+
+        let p3 = unsafe {
+            &mut *get_p3(page, self.recursive_index)
+                .start_address()
+                .as_mut_ptr::<Entries>()
+        };
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
+        if p3_entry.is_null() {
+            return None;
+        }
+
+        let p2 = unsafe {
+            &mut *get_p2_4kib(page, self.recursive_index)
+                .start_address()
+                .as_mut_ptr::<Entries>()
+        };
+        let p2_entry = &mut p2[usize::from(page.p2_index())];
+        if p2_entry.is_null() {
+            return None;
+        }
+
+        let p1 = unsafe {
+            &mut *get_p1(page, self.recursive_index)
+                .start_address()
+                .as_mut_ptr::<Entries>()
+        };
+        let p1_entry = &mut p1[usize::from(page.p1_index())];
+        if p1_entry.is_null() {
+            return None;
+        }
+
+        let addr = p1_entry.addr();
+        p1_entry.set(addr, flags);
+
+        Some(super::TlbFlush::new(page))
+    }
+
+    fn translate(&self, page: Page<M4KiB>) -> Option<(Frame<M4KiB>, Flags)> {
         let p4_entry = &self[usize::from(page.p4_index())];
         if p4_entry.is_null() {
             return None;
@@ -408,7 +473,10 @@ impl Mapper<M4KiB> for PageTable<'_> {
         if p1_entry.is_null() {
             None
         } else {
-            Some(Frame::from_start_address(p1_entry.addr()).unwrap())
+            Some((
+                Frame::from_start_address(p1_entry.addr()).unwrap(),
+                p1_entry.flags(),
+            ))
         }
     }
 }
@@ -443,7 +511,10 @@ impl Mapper<M2MiB> for PageTable<'_> {
             )
         };
 
-        assert!(p2[usize::from(page.p2_index())].is_null(), "Page already mapped");
+        assert!(
+            p2[usize::from(page.p2_index())].is_null(),
+            "Page already mapped"
+        );
         p2[usize::from(page.p2_index())].set(frame.start_address(), Flags::HUGE_PAGE | flags);
 
         super::TlbFlush::new(page)
@@ -487,7 +558,43 @@ impl Mapper<M2MiB> for PageTable<'_> {
         Some((frame, super::TlbFlush::new(page)))
     }
 
-    fn translate(&self, page: Page<M2MiB>) -> Option<Frame<M2MiB>> {
+    fn update_flags(
+        &mut self,
+        page: Page<M2MiB>,
+        flags: Flags,
+    ) -> Option<impl crate::arch::commons::paging::CacheFlush<M2MiB>> {
+        let p4_entry = &self[usize::from(page.p4_index())];
+        if p4_entry.is_null() {
+            return None;
+        }
+
+        let p3 = unsafe {
+            &mut *get_p3(page, self.recursive_index)
+                .start_address()
+                .as_mut_ptr::<Entries>()
+        };
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
+        if p3_entry.is_null() {
+            return None;
+        }
+
+        let p2 = unsafe {
+            &mut *get_p2_2mib(page, self.recursive_index)
+                .start_address()
+                .as_mut_ptr::<Entries>()
+        };
+        let p2_entry = &mut p2[usize::from(page.p2_index())];
+        if p2_entry.is_null() {
+            return None;
+        }
+
+        let addr = p2_entry.addr();
+        p2_entry.set(addr, flags | Flags::HUGE_PAGE);
+
+        Some(super::TlbFlush::new(page))
+    }
+
+    fn translate(&self, page: Page<M2MiB>) -> Option<(Frame<M2MiB>, Flags)> {
         let p4_entry = &self[usize::from(page.p4_index())];
         if p4_entry.is_null() {
             return None;
@@ -510,7 +617,10 @@ impl Mapper<M2MiB> for PageTable<'_> {
         if p2_entry.is_null() {
             None
         } else {
-            Some(Frame::from_start_address(p2_entry.addr()).unwrap())
+            Some((
+                Frame::from_start_address(p2_entry.addr()).unwrap(),
+                p2_entry.flags(),
+            ))
         }
     }
 }
@@ -572,7 +682,33 @@ impl Mapper<M1GiB> for PageTable<'_> {
         Some((frame, super::TlbFlush::new(page)))
     }
 
-    fn translate(&self, page: Page<M1GiB>) -> Option<Frame<M1GiB>> {
+    fn update_flags(
+        &mut self,
+        page: Page<M1GiB>,
+        flags: Flags,
+    ) -> Option<impl crate::arch::commons::paging::CacheFlush<M1GiB>> {
+        let p4_entry = &self[usize::from(page.p4_index())];
+        if p4_entry.is_null() {
+            return None;
+        }
+
+        let p3 = unsafe {
+            &mut *get_p3(page, self.recursive_index)
+                .start_address()
+                .as_mut_ptr::<Entries>()
+        };
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
+        if p3_entry.is_null() {
+            return None;
+        }
+
+        let addr = p3_entry.addr();
+        p3_entry.set(addr, flags | Flags::HUGE_PAGE);
+
+        Some(super::TlbFlush::new(page))
+    }
+
+    fn translate(&self, page: Page<M1GiB>) -> Option<(Frame<M1GiB>, Flags)> {
         let p4_entry = &self[usize::from(page.p4_index())];
         if p4_entry.is_null() {
             return None;
@@ -586,7 +722,10 @@ impl Mapper<M1GiB> for PageTable<'_> {
         if p3_entry.is_null() {
             None
         } else {
-            Some(Frame::from_start_address(p3_entry.addr()).unwrap())
+            Some((
+                Frame::from_start_address(p3_entry.addr()).unwrap(),
+                p3_entry.flags(),
+            ))
         }
     }
 }

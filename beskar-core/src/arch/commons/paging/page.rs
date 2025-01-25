@@ -2,7 +2,7 @@ use super::super::VirtAddr;
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 
-use super::{M2MiB, M4KiB, MemSize};
+use super::{M1GiB, M2MiB, M4KiB, MemSize};
 
 /// A virtual memory page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -66,22 +66,66 @@ impl<S: MemSize> Page<S> {
     }
 }
 
+impl Page<M1GiB> {
+    #[must_use]
+    #[inline]
+    pub fn from_p4p3(p4: u16, p3: u16) -> Self {
+        let addr = (u64::from(p4) << 39) | (u64::from(p3) << 30);
+        let vaddr = VirtAddr::new(addr);
+
+        Self {
+            start_address: vaddr,
+            size: PhantomData,
+        }
+    }
+}
+
 impl Page<M2MiB> {
     #[must_use]
+    #[inline]
     pub fn p2_index(self) -> u16 {
         self.start_address().p2_index()
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn from_p4p3p2(p4: u16, p3: u16, p2: u16) -> Self {
+        let addr = (u64::from(p4) << 39) | (u64::from(p3) << 30) | (u64::from(p2) << 21);
+        let vaddr = VirtAddr::new(addr);
+
+        Self {
+            start_address: vaddr,
+            size: PhantomData,
+        }
     }
 }
 
 impl Page<M4KiB> {
     #[must_use]
+    #[inline]
     pub fn p2_index(self) -> u16 {
         self.start_address().p2_index()
     }
 
     #[must_use]
+    #[inline]
     pub fn p1_index(self) -> u16 {
         self.start_address().p1_index()
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn from_p4p3p2p1(p4: u16, p3: u16, p2: u16, p1: u16) -> Self {
+        let addr = (u64::from(p4) << 39)
+            | (u64::from(p3) << 30)
+            | (u64::from(p2) << 21)
+            | (u64::from(p1) << 12);
+        let vaddr = VirtAddr::new(addr);
+
+        Self {
+            start_address: vaddr,
+            size: PhantomData,
+        }
     }
 }
 
@@ -179,7 +223,8 @@ impl<S: MemSize> ExactSizeIterator for PageIterator<S> {
             0
         } else {
             self.end - self.start + 1
-        }).unwrap()
+        })
+        .unwrap()
     }
 }
 

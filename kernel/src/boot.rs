@@ -1,13 +1,10 @@
 use core::sync::atomic::AtomicUsize;
 
 use crate::{
-    arch::{
-        self, ap, apic,
-        commons::{PhysAddr, VirtAddr},
-        interrupts,
-    },
+    arch::{self, ap, apic, interrupts},
     drivers, locals, mem, process, screen, time,
 };
+use beskar_core::arch::commons::{PhysAddr, VirtAddr};
 use bootloader::BootInfo;
 
 /// Static reference to the kernel main function
