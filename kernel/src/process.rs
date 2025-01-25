@@ -9,6 +9,7 @@ use hyperdrive::once::Once;
 use crate::mem::address_space::AddressSpace;
 
 pub mod dummy;
+pub mod elf;
 pub mod scheduler;
 
 static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();

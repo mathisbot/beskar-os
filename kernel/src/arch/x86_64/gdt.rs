@@ -17,6 +17,8 @@ use beskar_core::arch::x86_64::paging::page_table::Flags;
 pub const DOUBLE_FAULT_IST: u16 = 0;
 pub const PAGE_FAULT_IST: u16 = 1;
 
+const RSP0_STACK_PAGE_COUNT: u64 = 16; // 64 KiB
+
 #[derive(Debug)]
 pub struct Gdt {
     // This field is needed to escalate from a borrow to a mutable borrow
@@ -52,14 +54,14 @@ impl Gdt {
         let kernel_data_selector =
             gdt.append(x86_64::structures::gdt::Descriptor::kernel_data_segment());
 
-        let user_code_selector =
-            gdt.append(x86_64::structures::gdt::Descriptor::user_code_segment());
         let user_data_selector =
             gdt.append(x86_64::structures::gdt::Descriptor::user_data_segment());
+        let user_code_selector =
+            gdt.append(x86_64::structures::gdt::Descriptor::user_code_segment());
         inner.kernel_code_selector.write(kernel_code_selector);
         inner.kernel_data_selector.write(kernel_data_selector);
-        inner.user_code_selector.write(user_code_selector);
         inner.user_data_selector.write(user_data_selector);
+        inner.user_code_selector.write(user_code_selector);
 
         let tss_selector = gdt.append(x86_64::structures::gdt::Descriptor::tss_segment(tss));
 
@@ -98,7 +100,7 @@ impl Gdt {
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[DOUBLE_FAULT_IST as usize] = alloc_stack(2);
         tss.interrupt_stack_table[PAGE_FAULT_IST as usize] = alloc_stack(2);
-        tss.privilege_stack_table[0] = alloc_stack(4);
+        tss.privilege_stack_table[0] = alloc_stack(RSP0_STACK_PAGE_COUNT);
         tss
     }
 

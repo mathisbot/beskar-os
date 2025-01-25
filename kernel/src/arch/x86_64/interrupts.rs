@@ -66,9 +66,6 @@ pub fn init() {
     idt[Irq::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
     idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
     idt[Irq::Nic as u8].set_handler_fn(nic_interrupt_handler);
-    idt[Irq::Syscall as u8]
-        .set_handler_fn(syscall_interrupt_handler)
-        .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
 
     idt.load();
 
@@ -211,17 +208,6 @@ extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFram
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
-extern "x86-interrupt" fn syscall_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    let code: u64;
-    unsafe { core::arch::asm!("", out("rax") code) };
-    crate::info!(
-        "Syscall {:#x} received on core {}",
-        code,
-        locals!().core_id()
-    );
-    unsafe { locals!().lapic().force_lock() }.send_eoi();
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 /// Represents a programmable interrupt index
@@ -232,7 +218,6 @@ pub enum Irq {
     Spurious = 33,
     Xhci = 34,
     Nic = 35,
-    Syscall = 0x80,
 }
 
 pub fn int_disable() {

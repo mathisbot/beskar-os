@@ -1,25 +1,31 @@
+pub fn init() {
+    crate::arch::syscall::init_syscalls();
+}
+
 pub enum Syscall {
     /// Print syscall.
     ///
     /// The first argument is a pointer to the string to print.
     /// The second argument is the length of the string.
     Print,
+    Exit,
     Invalid = 0xFF,
 }
 
-impl From<usize> for Syscall {
-    fn from(value: usize) -> Self {
+impl From<u64> for Syscall {
+    fn from(value: u64) -> Self {
         match value {
             0 => Self::Print,
+            1 => Self::Exit,
             _ => Self::Invalid,
         }
     }
 }
 
 pub struct Arguments {
-    pub one: usize,
-    pub two: usize,
-    pub three: usize,
+    pub one: u64,
+    pub two: u64,
+    pub three: u64,
 }
 
 #[repr(u8)]
@@ -34,10 +40,23 @@ pub fn syscall(syscall: Syscall, args: Arguments) -> SyscallExitCode {
             let string = unsafe {
                 core::str::from_utf8_unchecked(core::slice::from_raw_parts(
                     args.one as *const u8,
-                    args.two,
+                    args.two as usize,
                 ))
             };
             crate::info!("{}", string);
+            SyscallExitCode::Success
+        }
+        Syscall::Exit => {
+            let exit_code: usize;
+            unsafe {
+                core::arch::asm!(
+                    "mov {}, {}",
+                    out(reg) exit_code,
+                    in(reg) args.one,
+                )
+            };
+            let _ = exit_code; // TODO: Use exit code
+            unsafe { crate::process::scheduler::exit_current_thread() };
             SyscallExitCode::Success
         }
         Syscall::Invalid => SyscallExitCode::Failure,
