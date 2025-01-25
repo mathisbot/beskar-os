@@ -1,9 +1,12 @@
 #![no_main]
 #![no_std]
 
+use hyperdrive::once::Once;
 use kernel::locals;
 
 kernel::kernel_main!(kmain);
+
+static SPAWN_ONCE: Once<()> = Once::uninit();
 
 /// The kernel main function, where every core ends up after initialization
 ///
@@ -20,7 +23,7 @@ fn kmain() -> ! {
     // TODO: Start user-space processes
     // (GUI, ...)
 
-    if locals!().core_id() == 0 {
+    SPAWN_ONCE.call_once(|| {
         use kernel::process::{
             dummy,
             scheduler::{self, priority::Priority, thread::Thread},
@@ -63,7 +66,7 @@ fn kmain() -> ! {
             alloc::vec![0; 1024*256],
             dummy::floating_point as *const (),
         )));
-    }
+    });
 
     unsafe { kernel::process::scheduler::exit_current_thread() };
 

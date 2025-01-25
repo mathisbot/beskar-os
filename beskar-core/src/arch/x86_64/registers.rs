@@ -3,6 +3,8 @@ use crate::arch::commons::{PhysAddr, paging::Frame};
 pub struct Cr0;
 
 impl Cr0 {
+    #[must_use]
+    #[inline]
     pub fn read() -> u64 {
         let value: u64;
         unsafe {
@@ -12,6 +14,7 @@ impl Cr0 {
         value
     }
 
+    #[inline]
     /// ## Safety
     ///
     /// The value written must be a valid CR0 value.
@@ -25,6 +28,8 @@ impl Cr0 {
 pub struct Cr4;
 
 impl Cr4 {
+    #[must_use]
+    #[inline]
     pub fn read() -> u64 {
         let value: u64;
         unsafe {
@@ -34,6 +39,7 @@ impl Cr4 {
         value
     }
 
+    #[inline]
     /// ## Safety
     ///
     /// The value written must be a valid CR4 value.
@@ -47,6 +53,8 @@ impl Cr4 {
 pub struct Cr3;
 
 impl Cr3 {
+    #[must_use]
+    #[inline]
     pub fn read() -> (Frame, u16) {
         let value: u64;
 
@@ -59,6 +67,7 @@ impl Cr3 {
         (frame, (value & 0xFFF) as u16)
     }
 
+    #[inline]
     pub fn write(frame: Frame, flags: u16) {
         assert_eq!(frame.start_address().as_u64() & 0xFFF0_0000_0000_0FFF, 0);
         let value = frame.start_address().as_u64() | u64::from(flags);
@@ -72,6 +81,8 @@ impl Cr3 {
 pub struct Efer;
 
 impl Efer {
+    #[must_use]
+    #[inline]
     pub fn read() -> u64 {
         let low: u32;
         let high: u32;
@@ -82,6 +93,7 @@ impl Efer {
         (u64::from(high) << 32) | u64::from(low)
     }
 
+    #[inline]
     /// ## Safety
     ///
     /// The value written must be a valid EFER value.

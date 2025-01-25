@@ -46,7 +46,7 @@ impl VirtAddr {
     #[inline]
     pub const fn align_up(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
-        Self::new(self.0 + (align - 1) & !(align - 1))
+        Self::new((self.0 + (align - 1)) & !(align - 1))
     }
 
     #[must_use]
@@ -100,7 +100,7 @@ impl PhysAddr {
     #[inline]
     pub const fn align_up(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
-        Self::new(self.0 + (align - 1) & !(align - 1))
+        Self::new((self.0 + (align - 1)) & !(align - 1))
     }
 }
 

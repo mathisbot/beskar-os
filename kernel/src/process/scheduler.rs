@@ -300,7 +300,9 @@ pub unsafe fn exit_current_thread() {
         .exit_current_thread();
     // Wait for the next thread to be scheduled.
     loop {
-        core::hint::spin_loop();
+        // FIXME: Force reschedule now?
+        crate::arch::interrupts::int_enable();
+        crate::arch::halt();
     }
 }
 

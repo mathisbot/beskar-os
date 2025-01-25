@@ -111,40 +111,29 @@ impl<T> Once<T> {
     /// Initializes the value if it has not been initialized yet.
     ///
     /// Try to make the `initializer` function as less likely to panic as possible.
-    pub fn call_once<F>(&self, initializer: F) -> &T
+    pub fn call_once<F>(&self, initializer: F)
     where
         F: FnOnce() -> T,
     {
-        if self.state.load(Ordering::Acquire) != State::Initialized {
-            if self
-                .state
-                .compare_exchange(
-                    State::Uninitialized,
-                    State::Initializing,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
-                .is_ok()
-            {
-                // It is our job to initialize it
-                let initialized_value = initializer();
+        if self
+            .state
+            .compare_exchange(
+                State::Uninitialized,
+                State::Initializing,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_ok()
+        {
+            // It is our job to initialize it
+            let initialized_value = initializer();
 
-                // Safety:
-                // Thanks to `self.state`, we are the only one accessing the value right now.
-                unsafe { (*self.value.get()).write(initialized_value) };
+            // Safety:
+            // Thanks to `self.state`, we are the only one accessing the value right now.
+            unsafe { (*self.value.get()).write(initialized_value) };
 
-                self.state.store(State::Initialized, Ordering::Release);
-            } else {
-                // Wait for another thread to initialize the value
-                while self.state.load(Ordering::Acquire) == State::Initializing {
-                    core::hint::spin_loop();
-                }
-            }
+            self.state.store(State::Initialized, Ordering::Release);
         }
-
-        // Safety:
-        // We have ensured that the value is initialized.
-        unsafe { (*self.value.get()).assume_init_ref() }
     }
 
     #[must_use]
@@ -197,6 +186,14 @@ mod test {
 
         let value = once.get().unwrap();
         assert_eq!(*value, 42);
+    }
+
+    #[test]
+    fn test_once_only_once() {
+        let once = Once::uninit();
+
+        once.call_once(|| 42);
+        once.call_once(|| panic!("This should not be called"));
     }
 
     #[test]

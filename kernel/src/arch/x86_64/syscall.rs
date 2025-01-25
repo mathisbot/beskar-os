@@ -59,8 +59,8 @@ impl SyscallRegisters {
                 out("r11") r11,
                 out("r12") rsp,
                 options(nomem, nostack, preserves_flags)
-            )
-        };
+            );
+        }
 
         Self {
             rax,
@@ -92,8 +92,8 @@ impl SyscallRegisters {
                 in("r11") self.r11,
                 in("r12") self.rsp,
                 options(nomem, nostack, preserves_flags)
-            )
-        };
+            );
+        }
     }
 }
 
@@ -104,8 +104,9 @@ pub(super) extern "sysv64" fn syscall_handler_impl() {
     // Switch to kernel stack
     #[allow(static_mut_refs)]
     let stack = unsafe { &mut STACKS[locals!().core_id()] }.as_mut_ptr();
+    #[allow(clippy::pointers_in_nomem_asm_block)] // False positive
     unsafe {
-        core::arch::asm!("mov rsp, {}", in(reg) stack, options(nomem, nostack, preserves_flags))
+        core::arch::asm!("mov rsp, {}", in(reg) stack, options(nomem, nostack, preserves_flags));
     };
 
     let args = Arguments {
@@ -118,7 +119,7 @@ pub(super) extern "sysv64" fn syscall_handler_impl() {
     let rcx = regs.rcx;
     let r11 = regs.r11;
 
-    let res = syscall(Syscall::from(regs.rax), args);
+    let res = syscall(Syscall::from(regs.rax), &args);
 
     // Restore meaningful values
     regs.rax = res as u64;
@@ -131,7 +132,7 @@ pub(super) extern "sysv64" fn syscall_handler_impl() {
         return;
     }
 
-    unsafe { core::arch::asm!("sti", "sysret",) };
+    unsafe { core::arch::asm!("sti", "sysretq",) };
 }
 
 pub fn init_syscalls() {
@@ -150,6 +151,6 @@ pub fn init_syscalls() {
 
     #[allow(static_mut_refs)]
     unsafe {
-        STACKS[locals!().core_id()].reserve(4096 * 4)
+        STACKS[locals!().core_id()].reserve(4096 * 4);
     }; // 16 KiB
 }

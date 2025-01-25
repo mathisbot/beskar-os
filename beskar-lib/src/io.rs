@@ -1,3 +1,8 @@
+/// Print a message to the console
+///
+/// ## Panics
+///
+/// Panics if the syscall fails (should never happen)
 pub fn print(msg: &str) {
     let res_code: usize;
     unsafe {
@@ -7,7 +12,7 @@ pub fn print(msg: &str) {
             lateout("rax") res_code,
             in("rdi") msg.as_ptr(),
             in("rsi") msg.len(),
-        )
-    };
+        );
+    }
     assert_eq!(res_code, 0); // TODO: Automatically match syscall exit code
 }

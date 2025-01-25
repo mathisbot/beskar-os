@@ -30,7 +30,7 @@ pub fn init(ahci_controllers: &[Device]) {
 
     // TODO: Implement AHCI initialization
 
-    crate::debug!("AHCI controller initialized");
+    crate::debug!("AHCI controller found");
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

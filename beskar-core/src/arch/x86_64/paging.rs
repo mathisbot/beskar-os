@@ -5,6 +5,7 @@ pub mod page_table;
 pub struct TlbFlush<S: MemSize>(Page<S>);
 
 impl<S: MemSize> TlbFlush<S> {
+    #[must_use]
     #[inline]
     pub const fn new(page: Page<S>) -> Self {
         Self(page)
@@ -30,6 +31,7 @@ impl<S: MemSize> CacheFlush<S> for TlbFlush<S> {
         self.flush();
     }
 
+    #[must_use]
     #[inline]
     fn page(&self) -> Page<S> {
         self.page()

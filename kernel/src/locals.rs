@@ -39,18 +39,23 @@ pub fn init() {
     CORE_READY.fetch_add(1, core::sync::atomic::Ordering::Release);
 }
 
+#[must_use]
+#[inline]
 /// Returns the number of currently active cores
 pub fn get_ready_core_count() -> usize {
-    CORE_READY.load(core::sync::atomic::Ordering::Relaxed)
+    CORE_READY.load(core::sync::atomic::Ordering::Acquire)
 }
 
+#[must_use]
+#[inline]
 pub(crate) fn get_jumped_core_count() -> usize {
-    CORE_JUMPED.load(core::sync::atomic::Ordering::Relaxed)
+    CORE_JUMPED.load(core::sync::atomic::Ordering::Acquire)
 }
 
+#[inline]
 /// Increment the count of cores that jumped to Rust code
 pub(crate) fn core_jumped() {
-    CORE_JUMPED.fetch_add(1, core::sync::atomic::Ordering::Release);
+    CORE_JUMPED.fetch_add(1, core::sync::atomic::Ordering::Acquire);
 }
 
 pub struct CoreLocalsInfo {

@@ -2,6 +2,7 @@ pub fn init() {
     crate::arch::syscall::init_syscalls();
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Syscall {
     /// Print syscall.
     ///
@@ -34,28 +35,20 @@ pub enum SyscallExitCode {
     Failure,
 }
 
-pub fn syscall(syscall: Syscall, args: Arguments) -> SyscallExitCode {
+pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallExitCode {
     match syscall {
         Syscall::Print => {
             let string = unsafe {
                 core::str::from_utf8_unchecked(core::slice::from_raw_parts(
                     args.one as *const u8,
-                    args.two as usize,
+                    usize::try_from(args.two).unwrap(),
                 ))
             };
             crate::info!("{}", string);
             SyscallExitCode::Success
         }
         Syscall::Exit => {
-            let exit_code: usize;
-            unsafe {
-                core::arch::asm!(
-                    "mov {}, {}",
-                    out(reg) exit_code,
-                    in(reg) args.one,
-                )
-            };
-            let _ = exit_code; // TODO: Use exit code
+            // TODO: Use exit code in `args.one`
             unsafe { crate::process::scheduler::exit_current_thread() };
             SyscallExitCode::Success
         }

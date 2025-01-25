@@ -1,4 +1,4 @@
-//! Standard library for BeskarOS.
+//! Standard library for `BeskarOS`.
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
@@ -20,8 +20,8 @@ pub fn exit(code: ExitCode) -> ! {
             "syscall",
             in("rax") 1, // TODO: Automatically determine syscall number
             in("rdi") code as usize,
-        )
-    };
+        );
+    }
     unsafe { core::hint::unreachable_unchecked() }
 }
 

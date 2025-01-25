@@ -16,6 +16,6 @@ pub unsafe fn enter_usermode(entry: *const ()) {
             in(reg) usermode_data_selector,
             in(reg) usermode_code_selector,
             in(reg) entry,
-        )
+        );
     }
 }
