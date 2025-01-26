@@ -1,11 +1,12 @@
+//! Abstractions for default-sized and huge virtual memory pages.
 use super::super::VirtAddr;
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 
 use super::{M1GiB, M2MiB, M4KiB, MemSize};
 
-/// A virtual memory page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// A virtual memory page.
 #[repr(C)]
 pub struct Page<S: MemSize = M4KiB> {
     start_address: VirtAddr,
@@ -243,5 +244,31 @@ impl<S: MemSize> DoubleEndedIterator for PageIterator<S> {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_p() {
+        let page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1000)).unwrap();
+        assert_eq!(page.size(), M4KiB::SIZE);
+        assert_eq!(page.start_address(), VirtAddr::new(0x1000));
+    }
+
+    #[test]
+    fn test_p_unaligned() {
+        assert!(Page::<M4KiB>::from_start_address(VirtAddr::new(0x1001)).is_err());
+    }
+
+    #[test]
+    fn test_p_range() {
+        let start = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1000)).unwrap();
+        let end = Page::<M4KiB>::containing_address(VirtAddr::new(0x2FFF));
+        let range = Page::range_inclusive(start, end);
+        assert_eq!(range.len(), 2);
+        assert_eq!(range.size(), 2 * M4KiB::SIZE);
     }
 }

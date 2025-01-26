@@ -1,9 +1,12 @@
+//! Abstraction of physical and virtual addresses.
 use core::ops::{Add, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// A virtual address.
 pub struct VirtAddr(u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// A physical address.
 pub struct PhysAddr(u64);
 
 impl VirtAddr {
@@ -181,5 +184,57 @@ impl Sub<Self> for PhysAddr {
     #[inline]
     fn sub(self, rhs: Self) -> u64 {
         self.0 - rhs.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_p() {
+        let addr = PhysAddr::new(0x18000031060);
+        assert_eq!(addr.as_u64(), 0x18000031060);
+    }
+
+    #[test]
+    #[should_panic = "assertion failed: phys_addr == addr"]
+    fn test_p_reject() {
+        let _ = PhysAddr::new(0x1234567890ABCDEF);
+    }
+
+    #[test]
+    fn test_p_align() {
+        let addr = PhysAddr::new(0x18000031060);
+        assert_eq!(addr.align_down(0x1000).as_u64(), 0x18000031000);
+        assert_eq!(addr.align_up(0x1000).as_u64(), 0x18000032000);
+    }
+
+    #[test]
+    fn test_v() {
+        let addr = PhysAddr::new(0x18000031060);
+        assert_eq!(addr.as_u64(), 0x18000031060);
+    }
+
+    #[test]
+    #[should_panic = "assertion failed: virt_addr == addr"]
+    fn test_v_reject() {
+        let _ = VirtAddr::new(0x1234567890ABCDEF);
+    }
+
+    #[test]
+    fn test_v_align() {
+        let addr = VirtAddr::new(0x18000031060);
+        assert_eq!(addr.align_down(0x1000).as_u64(), 0x18000031000);
+        assert_eq!(addr.align_up(0x1000).as_u64(), 0x18000032000);
+    }
+
+    #[test]
+    fn test_v_page_index() {
+        let addr = VirtAddr::new(0x18000031060);
+        assert_eq!(addr.p4_index(), 3);
+        assert_eq!(addr.p3_index(), 0);
+        assert_eq!(addr.p2_index(), 0);
+        assert_eq!(addr.p1_index(), 49);
     }
 }

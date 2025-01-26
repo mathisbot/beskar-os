@@ -51,14 +51,17 @@ pub fn hello_world() {
 }
 
 pub fn alloc_intensive() {
+    use alloc::vec::Vec;
+
     loop {
         let sz = usize::from(unsafe { crate::arch::rand::rand::<u16>() }) * 32;
-        let vec = alloc::vec![0_u8; sz];
+        let vec = Vec::<u8>::with_capacity(sz);
         crate::info!(
             "Hello from core {}! Allocated {} bytes",
             crate::locals!().core_id(),
-            vec.len()
+            vec.capacity()
         );
+        drop(vec);
         crate::time::wait_ms(1_000);
     }
 }

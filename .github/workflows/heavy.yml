@@ -57,9 +57,9 @@ jobs:
       - name: Build
         run: cargo build
 
-      # No tests to run yet.
-      # - name: Run tests
-      #   run: cargo test
+      - name: Run tests
+        run: |
+          cargo test --package beskar-core
 
   fmt:
     name: Format

@@ -13,11 +13,11 @@ static SPAWN_ONCE: Once<()> = Once::uninit();
 /// BSP entry point (called by bootloader) is defined in `lib.rs`.
 fn kmain() -> ! {
     if locals!().core_id() == 0 {
-        kernel::debug!(
+        kernel::info!("Welcome to BeskarOS kernel!");
+        kernel::info!(
             "Started kernel in {:.1?}",
             kernel::time::tsc::time_since_startup()
         );
-        kernel::info!("Welcome to BeskarOS kernel!");
     }
 
     // TODO: Start user-space processes

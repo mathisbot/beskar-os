@@ -1,3 +1,7 @@
+//! Paging module for memory management.
+//!
+//! It defines the `Frame` and `Page` types, which represent physical memory frames and virtual memory pages, respectively,
+//! as well as traits for memory mapping and translation.
 mod frame;
 pub use frame::{Frame, FrameAllocator, FrameRangeInclusive};
 mod page;

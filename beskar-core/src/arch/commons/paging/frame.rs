@@ -1,13 +1,12 @@
 //! Abstractions for default-sized and huge physical memory frames.
-
 use super::super::PhysAddr;
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
 
 use super::{M4KiB, MemSize};
 
-/// A physical memory frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// A physical memory frame.
 pub struct Frame<S: MemSize = M4KiB> {
     start_address: PhysAddr,
     size: PhantomData<S>,
@@ -181,4 +180,30 @@ impl<S: MemSize> DoubleEndedIterator for FrameIterator<S> {
 pub trait FrameAllocator<S: MemSize> {
     fn allocate_frame(&mut self) -> Option<Frame<S>>;
     fn deallocate_frame(&mut self, frame: Frame<S>);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_f() {
+        let frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1000)).unwrap();
+        assert_eq!(frame.size(), M4KiB::SIZE);
+        assert_eq!(frame.start_address(), PhysAddr::new(0x1000));
+    }
+
+    #[test]
+    fn test_f_unaligned() {
+        assert!(Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1001)).is_err());
+    }
+
+    #[test]
+    fn test_f_range() {
+        let start = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1000)).unwrap();
+        let end = Frame::<M4KiB>::containing_address(PhysAddr::new(0x2FFF));
+        let range = Frame::range_inclusive(start, end);
+        assert_eq!(range.len(), 2);
+        assert_eq!(range.size(), 2 * M4KiB::SIZE);
+    }
 }
