@@ -2,7 +2,7 @@
 #![no_std]
 
 use hyperdrive::once::Once;
-use kernel::locals;
+use kernel::{locals, process::scheduler};
 
 kernel::kernel_main!(kmain);
 
@@ -19,6 +19,8 @@ fn kmain() -> ! {
             kernel::time::tsc::time_since_startup()
         );
     }
+
+    scheduler::set_scheduling(true);
 
     // TODO: Start user-space processes
     // (GUI, ...)

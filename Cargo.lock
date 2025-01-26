@@ -5,6 +5,9 @@ version = 4
 [[package]]
 name = "beskar-core"
 version = "0.1.0"
+dependencies = [
+ "noto-sans-mono-bitmap",
+]
 
 [[package]]
 name = "beskar-lib"
@@ -35,8 +38,8 @@ checksum = "8f68f53c83ab957f72c32642f3868eec03eb974d1fb82e453128456482613d36"
 name = "bootloader"
 version = "1.0.1"
 dependencies = [
+ "beskar-core",
  "hyperdrive",
- "noto-sans-mono-bitmap",
  "uefi",
  "x86_64",
  "xmas-elf",
@@ -60,7 +63,6 @@ dependencies = [
  "bootloader",
  "hyperdrive",
  "linked_list_allocator",
- "noto-sans-mono-bitmap",
  "x86_64",
 ]
 

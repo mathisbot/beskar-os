@@ -1,5 +1,6 @@
 //! Implementation of the serial communication interface
 
+use super::super::WriteOnly;
 use super::SerialPort;
 
 /// Port number for COM1
@@ -32,7 +33,7 @@ impl ComNumber {
     }
 }
 
-pub struct SerialCom(SerialPort);
+pub struct SerialCom(SerialPort<WriteOnly>);
 
 impl Default for SerialCom {
     fn default() -> Self {
@@ -52,24 +53,10 @@ impl SerialCom {
     }
 }
 
-impl core::ops::Deref for SerialCom {
-    type Target = SerialPort;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl core::ops::DerefMut for SerialCom {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl core::fmt::Write for SerialCom {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for byte in s.bytes() {
-            self.send(byte);
+            self.0.send(byte);
         }
         Ok(())
     }

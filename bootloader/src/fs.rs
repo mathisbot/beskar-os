@@ -1,3 +1,4 @@
+use beskar_core::arch::commons::paging::{M4KiB, MemSize as _};
 use boot::MemoryType;
 use uefi::{
     CStr16,
@@ -5,7 +6,6 @@ use uefi::{
     prelude::*,
     proto::media::file::{Directory, File, FileAttribute, FileHandle, FileInfo, FileMode},
 };
-use x86_64::structures::paging::{PageSize, Size4KiB};
 
 #[must_use]
 /// Loads a file from the filesystem.
@@ -63,7 +63,7 @@ pub fn load_file_from_efi_dir(filename: &CStr16) -> Option<&'static mut [u8]> {
     let ptr = boot::allocate_pages(
         boot::AllocateType::AnyPages,
         MemoryType::LOADER_DATA,
-        file_size.div_ceil(usize::try_from(Size4KiB::SIZE).unwrap()),
+        file_size.div_ceil(usize::try_from(M4KiB::SIZE).unwrap()),
     )
     .ok()?;
 

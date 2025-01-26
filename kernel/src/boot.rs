@@ -84,7 +84,6 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     time::hpet::init();
 
     apic::init_lapic();
-    process::scheduler::set_scheduling(true);
     apic::init_ioapic();
 
     drivers::init();
@@ -125,7 +124,6 @@ fn ap_init() {
     syscall::init();
 
     arch::apic::init_lapic();
-    process::scheduler::set_scheduling(true);
 }
 
 /// This function is called by each core once they're ready to start the kernel.

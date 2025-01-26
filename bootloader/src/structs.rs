@@ -1,4 +1,4 @@
-use x86_64::{PhysAddr, VirtAddr};
+use beskar_core::arch::commons::{PhysAddr, VirtAddr};
 
 use crate::video::FrameBuffer;
 

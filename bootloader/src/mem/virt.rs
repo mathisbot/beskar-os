@@ -1,3 +1,4 @@
+use beskar_core::arch::commons::paging::{Frame, M4KiB};
 use x86_64::{
     PhysAddr, VirtAddr,
     registers::segmentation::{self, Segment},
@@ -253,8 +254,8 @@ pub fn make_mappings(
 
     let framebuffer_virt_addr = {
         let (start_frame, end_frame, start_page) = crate::video::with_physical_framebuffer(|fb| {
-            let start_frame = PhysFrame::<Size4KiB>::containing_address(fb.start_addr());
-            let end_frame = PhysFrame::<Size4KiB>::containing_address(
+            let start_frame = Frame::<M4KiB>::containing_address(fb.start_addr());
+            let end_frame = Frame::<M4KiB>::containing_address(
                 fb.start_addr() + (u64::try_from(fb.info().size()).unwrap() - 1),
             );
 
@@ -266,14 +267,17 @@ pub fn make_mappings(
             (start_frame, end_frame, start_page)
         });
 
-        for (i, frame) in PhysFrame::range_inclusive(start_frame, end_frame).enumerate() {
+        for (i, frame) in Frame::range_inclusive(start_frame, end_frame)
+            .into_iter()
+            .enumerate()
+        {
             let page = start_page + u64::try_from(i).unwrap();
             let flags =
                 PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
             unsafe {
                 page_tables
                     .kernel
-                    .map_to(page, frame, flags, frame_allocator)
+                    .map_to(page, core::mem::transmute(frame), flags, frame_allocator)
             }
             .expect("Failed to map framebuffer page")
             .flush();

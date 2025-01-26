@@ -6,7 +6,6 @@ pub mod gdt;
 pub mod interrupts;
 pub mod locals;
 pub mod rand;
-pub mod serial;
 pub mod syscall;
 pub mod userspace;
 

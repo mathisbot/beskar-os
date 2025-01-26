@@ -5,21 +5,24 @@
 //! On a physical machine, the serial port can be connected to another machine
 //! to capture early debug messages in case of hard failure.
 
-use x86_64::instructions::port::Port;
+use core::marker::PhantomData;
+
+use super::{Access, Port, ReadAccess, ReadWrite, WriteAccess, WriteOnly};
 
 pub mod com;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// I/O port-mapped UART
-pub struct SerialPort {
-    data: Port<u8>,
-    interrupt_enable: Port<u8>,
-    fifo_control: Port<u8>,
-    line_control: Port<u8>,
-    modem_control: Port<u8>,
+pub struct SerialPort<A: Access> {
+    data: Port<u8, ReadWrite>,
+    interrupt_enable: Port<u8, WriteOnly>,
+    fifo_control: Port<u8, WriteOnly>,
+    line_control: Port<u8, WriteOnly>,
+    modem_control: Port<u8, WriteOnly>,
+    phantom: PhantomData<A>,
 }
 
-impl SerialPort {
+impl<A: Access> SerialPort<A> {
     #[must_use]
     #[inline]
     pub const fn new(base: u16) -> Self {
@@ -29,6 +32,7 @@ impl SerialPort {
             fifo_control: Port::new(base + 2),
             line_control: Port::new(base + 3),
             modem_control: Port::new(base + 4),
+            phantom: PhantomData,
         }
     }
 
@@ -57,7 +61,16 @@ impl SerialPort {
         // Enable interrupts
         unsafe { self.interrupt_enable.write(0x01) };
     }
+}
 
+impl<A: ReadAccess> SerialPort<A> {
+    /// Receive a single byte of data from the serial port.
+    pub fn recv(&mut self) -> u8 {
+        unsafe { self.data.read() }
+    }
+}
+
+impl<A: WriteAccess> SerialPort<A> {
     /// Sends a single byte of data through the serial port.
     pub fn send(&mut self, data: u8) {
         match data {

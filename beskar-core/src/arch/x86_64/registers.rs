@@ -3,6 +3,9 @@ use crate::arch::commons::{PhysAddr, paging::Frame};
 pub struct Cr0;
 
 impl Cr0 {
+    pub const WRITE_PROTECT: u64 = 1 << 16;
+    pub const CACHE_DISABLE: u64 = 1 << 30;
+
     #[must_use]
     #[inline]
     pub fn read() -> u64 {
@@ -22,6 +25,16 @@ impl Cr0 {
         unsafe {
             core::arch::asm!("mov cr0, {}", in(reg) value, options(nomem, nostack, preserves_flags));
         }
+    }
+
+    #[inline]
+    /// ## Safety
+    ///
+    /// The value written must be a valid CR0 flag.
+    pub unsafe fn insert_flags(flag: u64) {
+        let mut value = Self::read();
+        value |= flag;
+        unsafe { Self::write(value) };
     }
 }
 
@@ -81,6 +94,9 @@ impl Cr3 {
 pub struct Efer;
 
 impl Efer {
+    pub const SYSTEM_CALL_EXTENSIONS: u64 = 1 << 0;
+    pub const NO_EXECUTE_ENABLE: u64 = 1 << 11;
+
     #[must_use]
     #[inline]
     pub fn read() -> u64 {
@@ -104,5 +120,15 @@ impl Efer {
         unsafe {
             core::arch::asm!("wrmsr", in("ecx") 0xC000_0080_u32, in("eax") low, in("edx") high, options(nomem, nostack, preserves_flags));
         }
+    }
+
+    #[inline]
+    /// ## Safety
+    ///
+    /// The value written must be a valid EFER flag.
+    pub unsafe fn insert_flags(flag: u64) {
+        let mut value = Self::read();
+        value |= flag;
+        unsafe { Self::write(value) };
     }
 }

@@ -3,9 +3,6 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![allow(clippy::missing_panics_doc, clippy::similar_names)]
 
-#[cfg(not(target_arch = "x86_64"))]
-compile_error!("BeskarOS bootloader only supports x86_64 architecture");
-
 use mem::{EarlyFrameAllocator, Mappings, PageTables};
 use structs::MemoryRegion;
 use x86_64::structures::paging::{FrameAllocator, Mapper, Page, PageTableFlags};
@@ -16,7 +13,6 @@ pub mod video;
 pub use structs::BootInfo;
 pub mod fs;
 pub mod log;
-pub mod serial;
 pub mod system;
 
 mod kernel_elf;
@@ -124,13 +120,13 @@ pub fn create_boot_info(
         boot_info_addr.as_mut_ptr::<BootInfo>().write(BootInfo {
             memory_regions,
             framebuffer: crate::video::with_physical_framebuffer(|fb| {
-                fb.to_framebuffer(mappings.framebuffer())
+                fb.to_framebuffer(core::mem::transmute(mappings.framebuffer()))
             }),
             recursive_index: u16::from(mappings.recursive_index()),
             rsdp_paddr: crate::system::acpi::rsdp_paddr(),
-            kernel_paddr: mappings.kernel_addr(),
+            kernel_paddr: core::mem::transmute(mappings.kernel_addr()),
             kernel_len: mappings.kernel_len(),
-            kernel_vaddr: mappings.kernel_vaddr(),
+            kernel_vaddr: core::mem::transmute(mappings.kernel_vaddr()),
             tls_template: mappings.tls_template(),
             cpu_count: crate::system::core_count(),
         });

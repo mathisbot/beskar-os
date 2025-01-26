@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use beskar_core::arch::x86_64::registers::Efer;
 use x86_64::{
     VirtAddr,
     registers::{
@@ -136,6 +137,8 @@ pub(super) extern "sysv64" fn syscall_handler_impl() {
 }
 
 pub fn init_syscalls() {
+    unsafe { Efer::insert_flags(Efer::SYSTEM_CALL_EXTENSIONS) };
+
     LStar::write(VirtAddr::new(syscall_handler_impl as *const () as u64));
     Star::write(
         locals!().gdt().user_code_selector(),

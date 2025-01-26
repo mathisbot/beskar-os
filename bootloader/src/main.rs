@@ -2,9 +2,6 @@
 #![no_std]
 #![warn(clippy::pedantic, clippy::nursery)]
 
-#[cfg(not(target_arch = "x86_64"))]
-compile_error!("BeskarOS bootloader only supports x86_64 architecture");
-
 use bootloader::{debug, error, info, warn};
 use uefi::{mem::memory_map::MemoryMapMut as _, prelude::*};
 
