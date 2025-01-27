@@ -23,16 +23,17 @@ impl From<u64> for Syscall {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Arguments {
     pub one: u64,
     pub two: u64,
     pub three: u64,
 }
 
-#[repr(u8)]
+#[derive(Debug, Copy, Clone)]
 pub enum SyscallExitCode {
-    Success,
-    Failure,
+    Success = 0,
+    Failure = 1,
 }
 
 pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallExitCode {

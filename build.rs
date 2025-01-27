@@ -1,6 +1,13 @@
 use std::{env::var, fs};
 
 fn main() {
+    println!("cargo:rerun-if-changed=./beskar-core");
+    println!("cargo:rerun-if-changed=./beskar-lib");
+    println!("cargo:rerun-if-changed=./bootloader");
+    println!("cargo:rerun-if-changed=./hyperdrive");
+    println!("cargo:rerun-if-changed=./kernel");
+    println!("cargo:rerun-if-changed=./userspace");
+
     let bootloader_path = var("CARGO_BIN_FILE_BOOTLOADER").unwrap();
     let kernel_path = var("CARGO_BIN_FILE_KERNEL").unwrap();
     let userspace_path = var("CARGO_BIN_FILE_USERSPACE").unwrap();
@@ -13,11 +20,4 @@ fn main() {
         .expect("Failed to copy bootloader.efi");
     fs::copy(&kernel_path, "efi_disk/efi/kernelx64.elf").expect("Failed to copy kernel");
     fs::copy(&userspace_path, "efi_disk/bin/userspace.elf").expect("Failed to copy userspace");
-
-    println!("cargo:rerun-if-changed=./beskar-core");
-    println!("cargo:rerun-if-changed=./beskar-lib");
-    println!("cargo:rerun-if-changed=./bootloader");
-    println!("cargo:rerun-if-changed=./hyperdrive");
-    println!("cargo:rerun-if-changed=./kernel");
-    println!("cargo:rerun-if-changed=./userspace");
 }

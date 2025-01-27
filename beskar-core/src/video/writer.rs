@@ -1,5 +1,5 @@
-use crate::video::Info;
 use super::Pixel;
+use crate::video::Info;
 
 mod chars;
 use chars::{

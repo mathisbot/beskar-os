@@ -42,12 +42,9 @@ impl CapabilitiesRegisters {
         // According to the xHCI specification, these fields should allow 1-4 bytes reads,
         // so it is safe to do so even on real hardware.
         let qword = unsafe { self.base.read() };
-        let [_cap_len, _reserved, lo, hi] = qword.to_le_bytes();
+        let [_cap_len, _reserved, minor, major] = qword.to_le_bytes();
 
-        HciVersion {
-            major: hi,
-            minor: lo,
-        }
+        HciVersion { major, minor }
     }
 
     #[must_use]
@@ -89,6 +86,7 @@ impl CapabilitiesRegisters {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(C)]
 pub struct HciVersion {
     major: u8,
     minor: u8,

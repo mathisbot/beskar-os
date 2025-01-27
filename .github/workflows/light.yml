@@ -1,4 +1,4 @@
-name: BeskarOS dev
+name: BeskarOS light CI
 
 on:
   push:

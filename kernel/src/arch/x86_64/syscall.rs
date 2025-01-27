@@ -16,6 +16,7 @@ use crate::{
 static mut STACKS: [Vec<u8>; 256] = [const { Vec::new() }; 256];
 
 #[derive(Debug, Clone, Copy)]
+#[repr(C, align(8))]
 struct SyscallRegisters {
     rax: u64,
     rdi: u64,
@@ -28,118 +29,114 @@ struct SyscallRegisters {
     rcx: u64,
     /// Contains previous value of RFLAGS
     r11: u64,
-    rsp: u64,
 }
 
-impl SyscallRegisters {
-    #[must_use]
-    #[inline]
-    pub unsafe fn load() -> Self {
-        let rax: u64;
-        let rdi: u64;
-        let rsi: u64;
-        let rdx: u64;
-        let r10: u64;
-        let r8: u64;
-        let r9: u64;
-        let rcx: u64;
-        let r11: u64;
-        let rsp: u64;
-
-        unsafe {
-            core::arch::asm!(
-                "mov r12, rsp",
-                out("rax") rax,
-                out("rdi") rdi,
-                out("rsi") rsi,
-                out("rdx") rdx,
-                out("r10") r10,
-                out("r8") r8,
-                out("r9") r9,
-                out("rcx") rcx,
-                out("r11") r11,
-                out("r12") rsp,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
-
-        Self {
-            rax,
-            rdi,
-            rsi,
-            rdx,
-            r10,
-            r8,
-            r9,
-            rcx,
-            r11,
-            rsp,
-        }
-    }
-
-    #[inline]
-    pub unsafe fn store(&self) {
-        unsafe {
-            core::arch::asm!(
-                "mov rsp, r12",
-                in("rax") self.rax,
-                in("rdi") self.rdi,
-                in("rsi") self.rsi,
-                in("rdx") self.rdx,
-                in("r10") self.r10,
-                in("r8") self.r8,
-                in("r9") self.r9,
-                in("rcx") self.rcx,
-                in("r11") self.r11,
-                in("r12") self.rsp,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
-    }
+#[naked]
+pub(super) unsafe extern "sysv64" fn syscall_handler_arch() {
+    unsafe {
+        core::arch::naked_asm!(
+            "push r11", // Previous RFLAGS
+            "push rcx", // Previous RIP
+            "push r9",
+            "push r8",
+            "push r10",
+            "push rdx",
+            "push rsi",
+            "push rdi",
+            "push rax",
+            "mov rdi, rsp", // Regs pointer
+            "call {}",
+            "pop rax", // RAX now contains syscall exit code
+            "pop rdi",
+            "pop rsi",
+            "pop rdx",
+            "pop r10",
+            "pop r8",
+            "pop r9",
+            "pop rcx", // RIP used by sysret
+            "popfq", // r11 contains previous RFLAGS
+            "sysret",
+            sym syscall_handler_impl,
+        )
+    };
 }
 
 #[inline]
-pub(super) extern "sysv64" fn syscall_handler_impl() {
-    let mut regs = unsafe { SyscallRegisters::load() };
-
+extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
     // Switch to kernel stack
-    #[allow(static_mut_refs)]
-    let stack = unsafe { &mut STACKS[locals!().core_id()] }.as_mut_ptr();
-    #[allow(clippy::pointers_in_nomem_asm_block)] // False positive
-    unsafe {
-        core::arch::asm!("mov rsp, {}", in(reg) stack, options(nomem, nostack, preserves_flags));
-    };
+    {
+        // Get stack location
+        #[allow(static_mut_refs)]
+        let stack = unsafe { &mut STACKS[locals!().core_id()] };
+        let mut stack_ptr = unsafe { stack.as_mut_ptr().add(stack.capacity()) };
 
+        let regs = unsafe { regs.read_volatile() };
+
+        // Copy arguments to kernel stack
+        stack_ptr = unsafe { stack_ptr.byte_sub(size_of::<*mut u8>()) };
+        let current_rsp: *mut u8;
+        unsafe {
+            core::arch::asm!("mov {}, rsp", out(reg) current_rsp, options(nomem, nostack, preserves_flags))
+        };
+        unsafe { stack_ptr.cast::<*mut u8>().write_volatile(current_rsp) };
+        stack_ptr = unsafe { stack_ptr.byte_sub(size_of::<SyscallRegisters>()) };
+        unsafe { stack_ptr.cast::<SyscallRegisters>().write_volatile(regs) };
+
+        #[allow(clippy::pointers_in_nomem_asm_block)] // False positive
+        unsafe {
+            core::arch::asm!("mov rsp, {}", in(reg) stack_ptr, options(nomem, nostack, preserves_flags));
+        };
+    }
+
+    unsafe {
+        core::arch::asm!(
+        "mov rdi, rsp",
+        "call {}",
+        sym syscall_handler_inner,
+        );
+    }
+
+    // Switch back to user stack
+    {
+        let current_stack: *mut u8;
+        unsafe {
+            core::arch::asm!("mov {}, rsp", out(reg) current_stack, options(nomem, nostack, preserves_flags));
+        }
+
+        //  Read registers value and previous stack pointer
+        let regs = unsafe { current_stack.cast::<SyscallRegisters>().read_volatile() };
+        let current_sack = unsafe { current_stack.byte_add(size_of::<SyscallRegisters>()) };
+        let previous_rsp = unsafe { current_sack.cast::<*mut u8>().read_volatile() };
+
+        // Write register values back
+        unsafe {
+            previous_rsp.cast::<SyscallRegisters>().write_volatile(regs);
+        }
+
+        #[allow(clippy::pointers_in_nomem_asm_block)]
+        unsafe {
+            core::arch::asm!("mov rsp, {}", in(reg) previous_rsp, options(nomem, nostack, preserves_flags));
+        }
+    }
+}
+
+extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
     let args = Arguments {
         one: regs.rdi,
         two: regs.rsi,
         three: regs.rdx,
     };
 
-    // Save meaningful values
-    let rcx = regs.rcx;
-    let r11 = regs.r11;
+    let res: crate::syscall::SyscallExitCode = syscall(Syscall::from(regs.rax), &args);
 
-    let res = syscall(Syscall::from(regs.rax), &args);
-
-    // Restore meaningful values
+    // Store result
     regs.rax = res as u64;
-    regs.rcx = rcx;
-    regs.r11 = r11;
-
-    unsafe { regs.store() };
-
-    if r11 & RFlags::INTERRUPT_FLAG.bits() == 0 {
-        return;
-    }
-
-    unsafe { core::arch::asm!("sti", "sysretq",) };
 }
 
 pub fn init_syscalls() {
     unsafe { Efer::insert_flags(Efer::SYSTEM_CALL_EXTENSIONS) };
 
-    LStar::write(VirtAddr::new(syscall_handler_impl as *const () as u64));
+    LStar::write(VirtAddr::new(syscall_handler_arch as *const () as u64));
     Star::write(
         locals!().gdt().user_code_selector(),
         locals!().gdt().user_data_selector(),
@@ -154,6 +151,6 @@ pub fn init_syscalls() {
 
     #[allow(static_mut_refs)]
     unsafe {
-        STACKS[locals!().core_id()].reserve(4096 * 4);
-    }; // 16 KiB
+        STACKS[locals!().core_id()].reserve(4096 * 16);
+    }; // 64 KiB
 }

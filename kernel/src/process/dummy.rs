@@ -89,3 +89,20 @@ pub fn idle() {
         crate::arch::halt();
     }
 }
+
+pub fn syscall_test() {
+    let msg = "Hello, syscall!";
+
+    crate::debug!("Calling syscall with message: {}", msg);
+
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            in("rax") 0,
+            in("rdi") msg.as_ptr(),
+            in("rsi") msg.len(),
+        );
+    }
+
+    loop {} // Should return with a page fault
+}
