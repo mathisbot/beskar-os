@@ -67,7 +67,7 @@ impl<A: Access> SerialPort<A> {
         }
 
         // Enable IRQ and OUT1/2
-        unsafe { self.modem_control.write(0x0F); }
+        unsafe { self.modem_control.write(0x0F) };
     }
 }
 
