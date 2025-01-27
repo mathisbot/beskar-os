@@ -17,4 +17,5 @@ It has few features :
         - [x] Setup paging
         - [x] Early memory mapping
     - [ ] aarch64
+- [ ] Initial Ramdisk?
 - [x] Kernel ELF loading

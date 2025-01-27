@@ -58,8 +58,16 @@ impl<A: Access> SerialPort<A> {
         // Configure modem control: DTR, RTS, and OUT2 (for interrupts)
         unsafe { self.modem_control.write(0x0B) };
 
-        // Enable interrupts
-        unsafe { self.interrupt_enable.write(0x01) };
+        // Perform a self-test
+        unsafe {
+            self.modem_control.write(0x1E); // Set loopback mode
+            self.data.write(0xAE); // Send test pattern
+            // FIXME: Maybe do not panic?
+            assert_eq!(self.data.read(), 0xAE); // Check test pattern
+        }
+
+        // Enable IRQ and OUT1/2
+        unsafe { self.modem_control.write(0x0F) };
     }
 }
 

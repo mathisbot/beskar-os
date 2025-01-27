@@ -104,5 +104,8 @@ pub fn syscall_test() {
         );
     }
 
-    loop {} // Should return with a page fault
+    // `sysret` in the handler should result in a page fault
+    // with `PROTECTION_VIOLATION` and `USER_MODE` bits set.
+
+    loop {}
 }

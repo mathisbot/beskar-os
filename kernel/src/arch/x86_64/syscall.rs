@@ -55,7 +55,7 @@ pub(super) unsafe extern "sysv64" fn syscall_handler_arch() {
             "pop r9",
             "pop rcx", // RIP used by sysret
             "popfq", // r11 contains previous RFLAGS
-            "sysret",
+            "sysretq",
             sym syscall_handler_impl,
         )
     };

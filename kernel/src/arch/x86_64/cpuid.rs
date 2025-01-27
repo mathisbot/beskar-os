@@ -61,6 +61,7 @@ impl core::fmt::Display for CpuFeature {
 }
 
 // TODO: Add more features!
+// TODO: Support extended features (0x8000_000x)
 impl CpuFeature {
     // LEAF 0
 
@@ -174,6 +175,7 @@ pub fn check_cpuid() {
     let highest_supported_leaf = cpuid_res.eax;
     CPUID_MAX_LEAF.store(highest_supported_leaf, Ordering::Relaxed);
 
+    // TODO: Check syscall/sysret support (extended features)
     for feature in REQUIRED_FEATURES {
         // Avoid calling CPUID multiple times for the same leaf
         if current_leaf != feature.leaf {
