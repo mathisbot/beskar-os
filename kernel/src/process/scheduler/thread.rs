@@ -223,8 +223,16 @@ impl Default for ThreadId {
 }
 
 impl ThreadId {
+    #[must_use]
+    #[inline]
     pub fn new() -> Self {
         Self(TID_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn as_u64(self) -> u64 {
+        self.0
     }
 }
 

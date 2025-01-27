@@ -2,6 +2,8 @@
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
+
+use beskar_core::syscall::Syscall;
 pub mod io;
 
 #[panic_handler]
@@ -18,7 +20,7 @@ pub fn exit(code: ExitCode) -> ! {
     unsafe {
         core::arch::asm!(
             "syscall",
-            in("rax") 1, // TODO: Automatically determine syscall number
+            in("rax") Syscall::Exit as u64,
             in("rdi") code as usize,
         );
     }

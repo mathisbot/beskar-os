@@ -12,6 +12,9 @@ dependencies = [
 [[package]]
 name = "beskar-lib"
 version = "0.1.0"
+dependencies = [
+ "beskar-core",
+]
 
 [[package]]
 name = "beskar-os"

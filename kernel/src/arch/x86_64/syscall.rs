@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use beskar_core::arch::x86_64::registers::Efer;
+use beskar_core::{arch::x86_64::registers::Efer, syscall::Syscall};
 use x86_64::{
     VirtAddr,
     registers::{
@@ -10,7 +10,7 @@ use x86_64::{
 
 use crate::{
     locals,
-    syscall::{Arguments, Syscall, syscall},
+    syscall::{Arguments, syscall},
 };
 
 static mut STACKS: [Vec<u8>; 256] = [const { Vec::new() }; 256];
@@ -127,7 +127,7 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
         three: regs.rdx,
     };
 
-    let res: crate::syscall::SyscallExitCode = syscall(Syscall::from(regs.rax), &args);
+    let res = syscall(Syscall::from(regs.rax), &args);
 
     // Store result
     regs.rax = res as u64;
