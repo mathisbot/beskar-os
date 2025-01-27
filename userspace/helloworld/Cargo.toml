@@ -1,0 +1,7 @@
+[package]
+name = "userspace"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+beskar-lib = { workspace = true }

@@ -9,15 +9,16 @@ use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
 use timer::LapicTimer;
 use x86_64::instructions::port::Port;
 
-use super::{cpuid, paging::page_table::Flags};
+use super::cpuid;
 use crate::{
-    arch::commons::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Translator as _},
-    },
     locals,
     mem::{frame_alloc, page_alloc, page_table},
 };
+use beskar_core::arch::commons::{
+    PhysAddr, VirtAddr,
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Translator as _},
+};
+use beskar_core::arch::x86_64::paging::page_table::Flags;
 
 use super::interrupts::Irq;
 

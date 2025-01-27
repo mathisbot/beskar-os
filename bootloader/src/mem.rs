@@ -1,10 +1,10 @@
+use beskar_core::arch::x86_64::registers::Cr3;
 use uefi::{
     boot::MemoryType,
     mem::memory_map::{MemoryMap, MemoryMapOwned},
 };
 use x86_64::{
     VirtAddr,
-    registers::control::Cr3,
     structures::paging::{
         FrameAllocator, OffsetPageTable, PageSize, PageTable, PhysFrame, Size4KiB,
     },
@@ -119,10 +119,7 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
         info!("Switching to a new level 4 page table");
 
         unsafe {
-            x86_64::registers::control::Cr3::write(
-                frame,
-                x86_64::registers::control::Cr3Flags::empty(),
-            );
+            Cr3::write(core::mem::transmute(frame), 0);
             OffsetPageTable::new(&mut *table, physical_offset)
         }
     };

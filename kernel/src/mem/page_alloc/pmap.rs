@@ -2,13 +2,11 @@
 //!
 //! It is useful as ACPI tables must me mapped before being read, but are not needed after that.
 
-use crate::arch::{
-    commons::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, Page},
-    },
-    paging::page_table::{Flags, PageTable},
+use beskar_core::arch::commons::{
+    PhysAddr, VirtAddr,
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, Page},
 };
+use beskar_core::arch::x86_64::paging::page_table::{Flags, PageTable};
 
 use crate::mem::{frame_alloc, page_alloc, page_table};
 
@@ -58,7 +56,7 @@ where
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             page_table::with_page_table(|page_table| {
-                for (frame, page) in frame_range.zip(page_range) {
+                for (frame, page) in frame_range.into_iter().zip(page_range) {
                     page_table
                         .map(page, frame, flags | Flags::PRESENT, frame_allocator)
                         .flush();

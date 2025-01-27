@@ -1,8 +1,8 @@
-use crate::arch::{
-    commons::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, M4KiB, Mapper as _, Page},
-    },
+use beskar_core::arch::commons::{
+    PhysAddr, VirtAddr,
+    paging::{CacheFlush as _, M4KiB, Mapper as _, Page},
+};
+use beskar_core::arch::x86_64::{
     paging::page_table::{Entries, Flags, PageTable},
     registers::Cr3,
 };
@@ -56,8 +56,7 @@ impl AddressSpace {
     #[must_use]
     pub fn new() -> Self {
         let frame =
-            frame_alloc::with_frame_allocator(|frame_allocator| frame_allocator.alloc::<M4KiB>())
-                .unwrap();
+            frame_alloc::with_frame_allocator(super::frame_alloc::FrameAllocator::alloc).unwrap();
 
         // The page is in the CURRENT address space.
         let page = page_alloc::with_page_allocator(|page_allocator| {
@@ -104,7 +103,7 @@ impl AddressSpace {
             .iter_mut()
             .enumerate()
             .filter(|(_, e)| e.is_null())
-            .last()
+            .next_back()
             .unwrap();
         assert_ne!(index, 0, "No free PTEs in the new page table");
 

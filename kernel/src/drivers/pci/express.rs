@@ -4,10 +4,10 @@ use alloc::vec::Vec;
 use hyperdrive::locks::mcs::MUMcsLock;
 
 use crate::{
-    arch::commons::{PhysAddr, paging::M2MiB},
     drivers::acpi::sdt::mcfg::ParsedConfigurationSpace,
     mem::page_alloc::pmap::{self, PhysicalMapping},
 };
+use beskar_core::arch::commons::{PhysAddr, paging::M2MiB};
 
 use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 

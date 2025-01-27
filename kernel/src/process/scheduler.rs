@@ -237,6 +237,20 @@ pub(crate) unsafe fn reschedule() {
 }
 
 #[must_use]
+/// Returns the current thread ID.
+pub fn current_thread_id() -> thread::ThreadId {
+    // FIXME: Find a workaround for static mutable references.
+    #[allow(static_mut_refs)]
+    unsafe {
+        SCHEDULERS[locals!().core_id()]
+            .as_mut()
+            .unwrap()
+            .current_thread()
+            .id()
+    }
+}
+
+#[must_use]
 /// Returns the current process.
 ///
 /// ## Safety
@@ -300,7 +314,9 @@ pub unsafe fn exit_current_thread() {
         .exit_current_thread();
     // Wait for the next thread to be scheduled.
     loop {
-        core::hint::spin_loop();
+        // FIXME: Force reschedule now?
+        crate::arch::interrupts::int_enable();
+        crate::arch::halt();
     }
 }
 

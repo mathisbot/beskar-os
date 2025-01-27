@@ -1,15 +1,17 @@
 use super::apic::ipi::{self, Ipi};
 use crate::{
-    arch::{
-        commons::{
-            PhysAddr, VirtAddr,
-            paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
-        },
+    locals,
+    mem::{frame_alloc, page_alloc, page_table},
+};
+use beskar_core::arch::{
+    commons::{
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
+    },
+    x86_64::{
         paging::page_table::Flags,
         registers::{Cr0, Cr3, Cr4, Efer},
     },
-    locals,
-    mem::{frame_alloc, page_alloc, page_table},
 };
 
 use core::sync::atomic::{AtomicU64, Ordering};

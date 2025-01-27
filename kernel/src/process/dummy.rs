@@ -51,14 +51,17 @@ pub fn hello_world() {
 }
 
 pub fn alloc_intensive() {
+    use alloc::vec::Vec;
+
     loop {
         let sz = usize::from(unsafe { crate::arch::rand::rand::<u16>() }) * 32;
-        let vec = alloc::vec![0_u8; sz];
+        let vec = Vec::<u8>::with_capacity(sz);
         crate::info!(
             "Hello from core {}! Allocated {} bytes",
             crate::locals!().core_id(),
-            vec.len()
+            vec.capacity()
         );
+        drop(vec);
         crate::time::wait_ms(1_000);
     }
 }
@@ -85,4 +88,21 @@ pub fn idle() {
     loop {
         crate::arch::halt();
     }
+}
+
+pub fn syscall_test() {
+    let msg = "Hello, syscall!";
+
+    crate::debug!("Calling syscall with message: {}", msg);
+
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            in("rax") 0,
+            in("rdi") msg.as_ptr(),
+            in("rsi") msg.len(),
+        );
+    }
+
+    loop {} // Should return with a page fault
 }

@@ -1,10 +1,10 @@
+use crate::screen::with_screen;
+use beskar_core::{
+    arch::x86_64::port::serial::com::{ComNumber, SerialCom},
+    video::writer::FramebufferWriter,
+};
 use core::{fmt::Write, sync::atomic::AtomicBool};
 use hyperdrive::locks::mcs::{MUMcsLock, McsLock};
-
-use crate::arch::serial::com::{ComNumber, SerialCom};
-
-mod writer;
-use writer::ScreenWriter;
 
 static SERIAL: McsLock<SerialCom> = McsLock::new(SerialCom::new(ComNumber::Com1));
 
@@ -71,4 +71,25 @@ macro_rules! error {
     ($($arg:tt)*) => {
         $crate::log::log(format_args!("[ERROR] {}\n", format_args!($($arg)*)))
     };
+}
+
+/// Allows logging text to a pixel-based framebuffer.
+pub struct ScreenWriter(FramebufferWriter);
+
+impl ScreenWriter {
+    #[must_use]
+    #[inline]
+    pub fn new() -> Self {
+        let info = with_screen(|screen| screen.info());
+        Self(FramebufferWriter::new(info))
+    }
+}
+
+impl core::fmt::Write for ScreenWriter {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        with_screen(|screen| {
+            self.0.write_str(screen.buffer_mut(), s);
+        });
+        Ok(())
+    }
 }

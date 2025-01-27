@@ -4,9 +4,9 @@ use core::ptr::NonNull;
 
 use hyperdrive::volatile::{ReadWrite, Volatile};
 
-use crate::arch::commons::paging::M4KiB;
 use crate::locals;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
+use beskar_core::arch::commons::paging::M4KiB;
 
 use super::super::{PciHandler, commons::CapabilityHeader, iter_capabilities};
 
@@ -128,7 +128,7 @@ impl MsiX {
         offset_0x068.msg_ctrl |= 1 << (31 - 16);
         offset_0x068.msg_ctrl &= !(1 << (30 - 16));
         handler.write_raw(offset_0x068_addr, unsafe {
-            core::mem::transmute(offset_0x068)
+            core::mem::transmute::<MsiX068, u32>(offset_0x068)
         });
     }
 }

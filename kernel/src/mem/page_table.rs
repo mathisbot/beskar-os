@@ -1,7 +1,6 @@
-use crate::arch::commons::VirtAddr;
-use crate::arch::commons::paging::Translator;
-use crate::arch::paging::page_table::PageTable;
-use crate::arch::registers::Cr3;
+use beskar_core::arch::commons::VirtAddr;
+use beskar_core::arch::commons::paging::Translator;
+use beskar_core::arch::x86_64::{paging::page_table::PageTable, registers::Cr3};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 static KERNEL_PAGE_TABLE: MUMcsLock<PageTable> = MUMcsLock::uninit();

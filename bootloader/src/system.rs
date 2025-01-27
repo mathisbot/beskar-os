@@ -1,8 +1,8 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{debug, info, warn};
+use beskar_core::arch::x86_64::registers::{Cr0, Efer};
 use uefi::{proto::pi::mp::MpServices, system};
-use x86_64::registers::control::{Cr0, Cr0Flags, Efer, EferFlags};
 
 pub mod acpi;
 
@@ -37,7 +37,7 @@ fn enable_and_count_cores() {
         uefi::boot::open_protocol_exclusive::<MpServices>(mp_handle).unwrap()
     };
 
-    debug!("Making sure all processors are enabled...");
+    debug!("Enabling all cores...");
     for i in 0..mps.get_number_of_processors().unwrap().total {
         if i != mps.who_am_i().unwrap() {
             let info = mps.get_processor_info(i).unwrap();
@@ -67,17 +67,6 @@ pub fn core_count() -> usize {
 }
 
 fn enable_cpu_features() {
-    // Enable support for no execute pages.
-    unsafe {
-        Efer::update(|efer| {
-            efer.insert(EferFlags::NO_EXECUTE_ENABLE);
-        });
-    };
-
-    // Enable support for write protection in Ring-0.
-    unsafe {
-        Cr0::update(|cr0| {
-            cr0.insert(Cr0Flags::WRITE_PROTECT);
-        });
-    };
+    unsafe { Efer::insert_flags(Efer::NO_EXECUTE_ENABLE) };
+    unsafe { Cr0::insert_flags(Cr0::WRITE_PROTECT) };
 }

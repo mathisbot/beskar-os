@@ -3,11 +3,26 @@
 version = 4
 
 [[package]]
+name = "beskar-core"
+version = "0.1.0"
+dependencies = [
+ "noto-sans-mono-bitmap",
+]
+
+[[package]]
+name = "beskar-lib"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+]
+
+[[package]]
 name = "beskar-os"
 version = "0.1.0"
 dependencies = [
  "bootloader",
  "kernel",
+ "userspace",
 ]
 
 [[package]]
@@ -26,8 +41,8 @@ checksum = "8f68f53c83ab957f72c32642f3868eec03eb974d1fb82e453128456482613d36"
 name = "bootloader"
 version = "1.0.1"
 dependencies = [
+ "beskar-core",
  "hyperdrive",
- "noto-sans-mono-bitmap",
  "uefi",
  "x86_64",
  "xmas-elf",
@@ -47,10 +62,10 @@ version = "0.1.0"
 name = "kernel"
 version = "0.1.0"
 dependencies = [
+ "beskar-core",
  "bootloader",
  "hyperdrive",
  "linked_list_allocator",
- "noto-sans-mono-bitmap",
  "x86_64",
 ]
 
@@ -193,9 +208,16 @@ checksum = "ab14ea9660d240e7865ce9d54ecdbd1cd9fa5802ae6f4512f093c7907e921533"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.14"
+version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adb9e6ca4f869e1180728b7950e35922a7fc6397f7b641499e8f3ef06e50dc83"
+checksum = "11cd88e12b17c6494200a9c1b683a04fcac9573ed74cd1b62aeb2727c5592243"
+
+[[package]]
+name = "userspace"
+version = "0.1.0"
+dependencies = [
+ "beskar-lib",
+]
 
 [[package]]
 name = "volatile"

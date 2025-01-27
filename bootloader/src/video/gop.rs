@@ -1,10 +1,11 @@
 //! Handles the Graphical Output Protocol (GOP) provided by the UEFI firmware.
 
+use beskar_core::arch::commons::PhysAddr;
+use beskar_core::video::{Info, PixelBitmask, PixelFormat};
 use uefi::{
     boot,
-    proto::console::gop::{GraphicsOutput, PixelFormat},
+    proto::console::gop::{self, GraphicsOutput},
 };
-use x86_64::PhysAddr;
 
 use super::PhysicalFrameBuffer;
 
@@ -22,7 +23,7 @@ pub fn init() -> PhysicalFrameBuffer {
         .max_by(|a, b| {
             // BltOnly pixel format is not supported
             // as it won't be available for the kernel.
-            if a.info().pixel_format() == PixelFormat::BltOnly {
+            if a.info().pixel_format() == gop::PixelFormat::BltOnly {
                 return core::cmp::Ordering::Less;
             }
 
@@ -39,10 +40,18 @@ pub fn init() -> PhysicalFrameBuffer {
     let mode_info = best_mode.info();
 
     let pixel_format = match mode_info.pixel_format() {
-        PixelFormat::Rgb => super::PixelFormat::Rgb,
-        PixelFormat::Bgr => super::PixelFormat::Bgr,
-        PixelFormat::Bitmask => super::PixelFormat::Bitmask(mode_info.pixel_bitmask().unwrap()),
-        PixelFormat::BltOnly => {
+        gop::PixelFormat::Rgb => PixelFormat::Rgb,
+        gop::PixelFormat::Bgr => PixelFormat::Bgr,
+        gop::PixelFormat::Bitmask => {
+            let info_bm = mode_info.pixel_bitmask().unwrap();
+            let bitmask = PixelBitmask {
+                red: info_bm.red,
+                green: info_bm.green,
+                blue: info_bm.blue,
+            };
+            PixelFormat::Bitmask(bitmask)
+        }
+        gop::PixelFormat::BltOnly => {
             panic!("BltOnly pixel format is not supported");
         }
     };
@@ -62,7 +71,7 @@ pub fn init() -> PhysicalFrameBuffer {
 
     PhysicalFrameBuffer {
         start_addr: PhysAddr::new(fb_slice.as_mut_ptr() as u64),
-        info: super::FrameBufferInfo {
+        info: Info {
             size: gop_fb.size(),
             width: mode_info.resolution().0,
             height: mode_info.resolution().1,

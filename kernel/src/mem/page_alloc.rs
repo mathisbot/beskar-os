@@ -1,12 +1,9 @@
-use crate::arch::{
-    commons::{
-        VirtAddr,
-        paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
-    },
-    paging::page_table::{Entries, Flags},
-};
-
 use crate::mem::{page_table, ranges::MemoryRange};
+use beskar_core::arch::commons::{
+    VirtAddr,
+    paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
+};
+use beskar_core::arch::x86_64::paging::page_table::{Entries, Flags};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::ranges::MemoryRanges;
@@ -60,14 +57,14 @@ pub fn init(recursive_index: u16) {
             }
 
             if level == 1 {
-                pte.frame_start().map(|_| {
+                if pte.frame_start().is_some() {
                     let l4 = u64::from(level_indices[0]);
                     let l3 = u64::from(level_indices[1]);
                     let l2 = u64::from(level_indices[2]);
                     let l1 = u64::from(level_indices[3]);
                     let vaddr = (l4 << 39) | (l3 << 30) | (l2 << 21) | (l1 << 12);
                     vaddrs.remove(MemoryRange::new(vaddr, vaddr + (M4KiB::SIZE - 1)));
-                });
+                }
             } else {
                 let l4 = u64::from(level_indices[0]);
                 let l3 = u64::from(level_indices[1]);

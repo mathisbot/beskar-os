@@ -5,13 +5,9 @@ use core::{
     ptr::NonNull,
 };
 
-use crate::{
-    arch::{
-        commons::paging::{M2MiB, MemSize, PageRangeInclusive},
-        paging::page_table::Flags,
-    },
-    mem::page_alloc,
-};
+use crate::mem::page_alloc;
+use beskar_core::arch::commons::paging::{M2MiB, MemSize, PageRangeInclusive};
+use beskar_core::arch::x86_64::paging::page_table::Flags;
 use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::frame_alloc;
@@ -64,9 +60,6 @@ impl Heap {
     }
 
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        // According to the safety requirements of the `GlobalAlloc trait`, we need to ensure that
-        // this function doesn't panic. Therefore, we need to return null if the allocation fails.
-
         self.linked_list
             .allocate_first_fit(layout)
             .ok()
@@ -74,16 +67,13 @@ impl Heap {
     }
 
     pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        if ptr.is_null() {
+        let Some(ptr) = NonNull::new(ptr) else {
             return;
-        }
-        // Panics:
-        // The pointer is not null.
-        let non_null_ptr = NonNull::new(ptr).unwrap();
+        };
 
         // Safety:
         // `GlobalAlloc` guarantees that the pointer is valid and the layout is correct.
-        unsafe { self.linked_list.deallocate(non_null_ptr, layout) };
+        unsafe { self.linked_list.deallocate(ptr, layout) };
     }
 }
 

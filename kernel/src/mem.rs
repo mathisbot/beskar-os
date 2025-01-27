@@ -1,4 +1,4 @@
-use crate::arch::commons::VirtAddr;
+use beskar_core::arch::commons::VirtAddr;
 use bootloader::structs::MemoryRegion;
 
 pub mod address_space;

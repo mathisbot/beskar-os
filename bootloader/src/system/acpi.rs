@@ -1,5 +1,5 @@
+use beskar_core::arch::commons::PhysAddr;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use x86_64::PhysAddr;
 
 use crate::{debug, info};
 

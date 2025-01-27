@@ -8,11 +8,11 @@
 
 use core::ptr::NonNull;
 
-use crate::arch::commons::{
+use alloc::vec::Vec;
+use beskar_core::arch::commons::{
     PhysAddr, VirtAddr,
     paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
 };
-use alloc::vec::Vec;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
     volatile::{ReadWrite, Volatile},
@@ -197,7 +197,7 @@ impl E1000e<'_> {
         nb_rx: usize,
         nb_tx: usize,
     ) {
-        assert!(rxdesc_paddr.as_u64() & 0xF == 0);
+        assert!(rxdesc_paddr.as_u64().trailing_zeros() >= 4);
         let rx_hi = u32::try_from(rxdesc_paddr.as_u64() >> 32).unwrap();
         let rx_lo = u32::try_from(rxdesc_paddr.as_u64() & u64::from(u32::MAX)).unwrap();
 
@@ -221,7 +221,7 @@ impl E1000e<'_> {
             | Self::RCTL_SECRC;
         self.write_reg(Self::RCTL, rctl_value);
 
-        assert!(txdesc_paddr.as_u64() & 0xF == 0);
+        assert!(txdesc_paddr.as_u64().trailing_zeros() >= 4);
         let tx_hi = u32::try_from(rxdesc_paddr.as_u64() >> 32).unwrap();
         let tx_lo = u32::try_from(rxdesc_paddr.as_u64() & u64::from(u32::MAX)).unwrap();
 
@@ -368,7 +368,7 @@ impl BufferSet<'_> {
             palloc.allocate_pages(nb_rx as u64 + nb_tx as u64).unwrap()
         });
 
-        for (i, page) in page_range.take(nb_rx).enumerate() {
+        for (i, page) in page_range.into_iter().take(nb_rx).enumerate() {
             let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
                 let frame = fralloc.alloc::<M4KiB>().unwrap();
                 crate::mem::page_table::with_page_table(|page_table| {
@@ -393,7 +393,7 @@ impl BufferSet<'_> {
             };
         }
 
-        for (i, page) in page_range.skip(nb_rx).take(nb_tx).enumerate() {
+        for (i, page) in page_range.into_iter().skip(nb_rx).take(nb_tx).enumerate() {
             let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
                 let frame = fralloc.alloc::<M4KiB>().unwrap();
                 crate::mem::page_table::with_page_table(|page_table| {

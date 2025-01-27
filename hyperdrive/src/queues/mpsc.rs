@@ -76,19 +76,20 @@ pub trait Queueable: Sized {
     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>>;
 }
 
+#[repr(transparent)]
 /// Describes a link between two elements in the queue.
 pub struct Link<T> {
     /// The next element in the queue.
     next: AtomicPtr<T>,
     /// A phantom field to pin the link.
-    _unpin: core::marker::PhantomPinned,
+    _pin: core::marker::PhantomPinned,
 }
 
 impl<T> Default for Link<T> {
     fn default() -> Self {
         Self {
             next: AtomicPtr::new(ptr::null_mut()),
-            _unpin: core::marker::PhantomPinned,
+            _pin: core::marker::PhantomPinned,
         }
     }
 }
@@ -196,7 +197,7 @@ impl<T: Queueable> MpscQueue<T> {
 
     pub fn dequeue(&self) -> Option<T::Handle> {
         let mut state = self.try_dequeue();
-        while matches!(state, DequeueResult::InUse) {
+        while !matches!(state, DequeueResult::Element(_)) {
             core::hint::spin_loop();
             state = self.try_dequeue();
         }
@@ -223,7 +224,7 @@ impl<T: Queueable> MpscQueue<T> {
     ///
     /// The caller must make sure that the queue is not being dequeued by another thread.
     unsafe fn dequeue_impl(&self) -> Option<T::Handle> {
-        let mut tail_node = NonNull::new(self.tail.load(Ordering::Relaxed))?;
+        let mut tail_node = unsafe { NonNull::new_unchecked(self.tail.load(Ordering::Relaxed)) };
         let mut next = unsafe { T::get_link(tail_node).as_ref() }
             .next
             .load(Ordering::Acquire);
@@ -249,10 +250,17 @@ impl<T: Queueable> MpscQueue<T> {
         unsafe { self.enqueue_ptr(self.stub) };
 
         // We still have to check the next node because it is possible that
-        // another node has been enqueued before the stub
-        next = unsafe { T::get_link(tail_node).as_ref() }
-            .next
-            .load(Ordering::Acquire);
+        // another node has been enqueued before the stub.
+        // It is also possible that the enqueueing thread hasn't had time to update the next pointer.
+        // We need to wait for it (should be rare).
+        let next_link = unsafe { T::get_link(tail_node).as_ref() };
+        let next = loop {
+            let next = next_link.next.load(Ordering::Acquire);
+            if !next.is_null() {
+                break next;
+            }
+            core::hint::spin_loop();
+        };
 
         self.tail.store(next, Ordering::Relaxed);
 

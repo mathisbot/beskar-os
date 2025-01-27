@@ -1,13 +1,10 @@
 use core::sync::atomic::AtomicUsize;
 
 use crate::{
-    arch::{
-        self, ap, apic,
-        commons::{PhysAddr, VirtAddr},
-        interrupts,
-    },
-    drivers, locals, mem, process, screen, time,
+    arch::{self, ap, apic, interrupts},
+    drivers, locals, mem, process, screen, syscall, time,
 };
+use beskar_core::arch::commons::{PhysAddr, VirtAddr};
 use bootloader::BootInfo;
 
 /// Static reference to the kernel main function
@@ -80,12 +77,13 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     interrupts::init();
 
+    syscall::init();
+
     // If the bootloader provided an RSDP address, we can initialize ACPI.
     rsdp_paddr.map(|rsdp_paddr| drivers::acpi::init(PhysAddr::new(rsdp_paddr.as_u64())));
     time::hpet::init();
 
     apic::init_lapic();
-    process::scheduler::set_scheduling(true);
     apic::init_ioapic();
 
     drivers::init();
@@ -121,10 +119,11 @@ fn ap_init() {
 
     process::init();
 
-    arch::interrupts::init();
+    interrupts::init();
+
+    syscall::init();
 
     arch::apic::init_lapic();
-    process::scheduler::set_scheduling(true);
 }
 
 /// This function is called by each core once they're ready to start the kernel.
