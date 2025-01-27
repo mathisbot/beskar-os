@@ -19,8 +19,16 @@ impl From<u64> for Syscall {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SyscallExitCode {
     Success = 0,
     Failure = 1,
+}
+
+impl SyscallExitCode {
+    pub fn unwrap(self) {
+        if self == Self::Failure {
+            panic!("Syscall failed!");
+        }
+    }
 }

@@ -23,8 +23,14 @@ fn sc_print(args: &Arguments) -> SyscallExitCode {
     let msg_addr = args.one as *const u8;
     let msg_len = usize::try_from(args.two).unwrap();
 
-    let msg =
-        unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(msg_addr, msg_len)) };
+    // FIXME: Validate arguments (user is evil)
+    // i.e. buffer is in user space, length is valid, etc.
+
+    let buf = unsafe { core::slice::from_raw_parts(msg_addr, msg_len) };
+    let msg = match core::str::from_utf8(buf) {
+        Ok(msg) => msg,
+        Err(_) => return SyscallExitCode::Failure,
+    };
 
     let tid = crate::process::scheduler::current_thread_id();
     crate::info!("[Thread {}] {}", tid.as_u64(), msg);

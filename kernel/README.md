@@ -1,10 +1,10 @@
 # BeskarOS Kernel
 
-BeskarOS is a basic kernel for the x86-64 architecture.
+BeskarOS is a basic kernel for the x86_64 architecture.
 
 ## Architecture
 
-The kernel is a monolithic x86-64 kernel written in pure Rust (with the exception of a single x86 ASM file for bootstrapping APs).
+The kernel is a monolithic x86_64 kernel written in pure Rust (with the exception of a single x86 ASM file for bootstrapping APs).
 I am not planning on writing a kernel close to Linux, as I am focusing on learning the basics of x86.
 
 ## Features
@@ -17,7 +17,7 @@ I am not planning on writing a kernel close to Linux, as I am focusing on learni
             - [ ] IOAPIC
         - [x] AP startup
         - [x] Randomness
-        - [ ] Systemcalls
+        - [x] Systemcalls
     - [ ] aarch64
 - Drivers
     - [ ] ACPI
