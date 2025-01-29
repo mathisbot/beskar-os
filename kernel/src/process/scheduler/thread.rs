@@ -114,16 +114,16 @@ impl Thread {
         let rsp = u64::try_from(stack_ptr).unwrap();
         let thread_regs = ThreadRegisters {
             rflags: (RFlags::IOPL_LOW | RFlags::INTERRUPT_FLAG).bits(),
-            rsp,
             rbp: rsp,
             rip: entry_point as u64,
             ..ThreadRegisters::default()
         };
-        debug_assert_eq!(size_of::<ThreadRegisters>(), 144);
-        let thread_regs_bytes =
-            unsafe { core::mem::transmute::<ThreadRegisters, [u8; 144]>(thread_regs) };
-        stack[stack_bottom - 144..stack_bottom].copy_from_slice(&thread_regs_bytes);
-        stack_bottom -= 144;
+        let thread_regs_bytes = unsafe {
+            core::mem::transmute::<ThreadRegisters, [u8; size_of::<ThreadRegisters>()]>(thread_regs)
+        };
+        stack[stack_bottom - size_of::<ThreadRegisters>()..stack_bottom]
+            .copy_from_slice(&thread_regs_bytes);
+        stack_bottom -= size_of::<ThreadRegisters>();
 
         debug_assert!(stack_bottom >= MINIMUM_LEFTOVER_STACK);
         stack_bottom
@@ -236,7 +236,7 @@ impl ThreadId {
     }
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThreadRegisters {
     r15: u64,
@@ -250,12 +250,10 @@ pub struct ThreadRegisters {
     rdi: u64,
     rsi: u64,
     rbp: u64,
-    rsp: u64,
     rbx: u64,
     rdx: u64,
     rcx: u64,
     rax: u64,
     rflags: u64,
     rip: u64,
-    // FIXME: SSE/FPU registers?
 }

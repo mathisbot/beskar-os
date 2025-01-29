@@ -1,8 +1,13 @@
-use crate::{drivers::pci, network::l2::ethernet::MacAddress};
+use crate::{
+    drivers::{DriverError, pci},
+    network::l2::ethernet::MacAddress,
+};
+
+use super::DriverResult;
 
 mod e1000e;
 
-pub fn init() {
+pub fn init() -> DriverResult<()> {
     let Some(network_controller) = pci::with_pci_handler(|handler| {
         let mut iter = handler
             .devices()
@@ -16,23 +21,29 @@ pub fn init() {
         device
     }) else {
         crate::warn!("No network controller found");
-        return;
+        return Err(DriverError::Absent);
     };
 
     match (network_controller.vendor_id(), network_controller.id()) {
         // TODO: Add more e1000e network controllers
         (0x8086, 0x10D3) => e1000e::init(network_controller),
-        (0x8086, _) => crate::warn!(
-            // Most Intel network controllers should be either e1000 or e1000e
-            // so they should all be supported :/
-            "Unsupported Intel network controller found. ID: {}",
-            network_controller.id()
-        ),
-        (vendor, id) => crate::warn!(
-            "Unsupported network controller found. VendorID: {}; ID: {}",
-            vendor,
-            id
-        ),
+        (0x8086, _) => {
+            crate::warn!(
+                // Most Intel network controllers should be either e1000 or e1000e
+                // so they should all be supported :/
+                "Unsupported Intel network controller found. ID: {}",
+                network_controller.id()
+            );
+            Err(DriverError::Invalid)
+        }
+        (vendor, id) => {
+            crate::warn!(
+                "Unsupported network controller found. VendorID: {}; ID: {}",
+                vendor,
+                id
+            );
+            Err(DriverError::Invalid)
+        }
     }
 }
 

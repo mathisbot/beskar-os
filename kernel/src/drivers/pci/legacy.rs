@@ -1,11 +1,10 @@
 //! Legacy PCI handling module.
 
 use alloc::vec::Vec;
+use beskar_core::arch::x86_64::port::{Port, ReadWrite, WriteOnly};
 use hyperdrive::locks::mcs::McsLock;
-use x86_64::{
-    instructions::port::{Port, PortWriteOnly},
-    structures::port::PortWrite,
-};
+
+use crate::drivers::{DriverError, DriverResult};
 
 use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 
@@ -21,15 +20,17 @@ pub struct LegacyPciHandler {
     devices: Vec<super::commons::Device>,
 }
 
-pub fn init() {
-    with_legacy_pci_handler(|handler| {
+pub fn init() -> DriverResult<usize> {
+    let device_count = with_legacy_pci_handler(|handler| {
         handler.update_devices();
-        if handler.devices.is_empty() {
-            crate::warn!("No PCI devices found");
-        } else {
-            crate::debug!("Found {} PCI devices", handler.devices.len());
-        }
+        handler.devices.len()
     });
+
+    if device_count == 0 {
+        Err(DriverError::Invalid)
+    } else {
+        Ok(device_count)
+    }
 }
 
 impl LegacyPciHandler {
@@ -220,15 +221,7 @@ impl super::PciHandler for LegacyPciHandler {
 /// Configuration address PCI register
 ///
 /// This is a write-only register that is used to select the register to access.
-pub struct ConfigAddress(PortWriteOnly<u32>);
-
-impl PortWrite for PciAddress {
-    unsafe fn write_to_port(port: u16, value: Self) {
-        unsafe {
-            u32::write_to_port(port, ConfigAddress::build_value(value));
-        }
-    }
-}
+pub struct ConfigAddress(Port<u32, WriteOnly>);
 
 impl Default for ConfigAddress {
     fn default() -> Self {
@@ -240,7 +233,7 @@ impl ConfigAddress {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
-        Self(PortWriteOnly::new(CONFIG_ADDRESS))
+        Self(Port::new(CONFIG_ADDRESS))
     }
 
     #[must_use]
@@ -256,7 +249,7 @@ impl ConfigAddress {
 }
 
 impl core::ops::Deref for ConfigAddress {
-    type Target = PortWriteOnly<u32>;
+    type Target = Port<u32, WriteOnly>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -273,7 +266,7 @@ impl core::ops::DerefMut for ConfigAddress {
 /// Configuration address PCI register
 ///
 /// This is a write-only register that is used to select the register to access.
-struct ConfigData(Port<u32>);
+struct ConfigData(Port<u32, ReadWrite>);
 
 impl Default for ConfigData {
     fn default() -> Self {
@@ -288,7 +281,7 @@ impl ConfigData {
 }
 
 impl core::ops::Deref for ConfigData {
-    type Target = Port<u32>;
+    type Target = Port<u32, ReadWrite>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

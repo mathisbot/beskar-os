@@ -14,10 +14,6 @@ static SPAWN_ONCE: Once<()> = Once::uninit();
 fn kmain() -> ! {
     if locals!().core_id() == 0 {
         kernel::info!("Welcome to BeskarOS kernel!");
-        kernel::info!(
-            "Started kernel in {:.1?}",
-            kernel::time::tsc::time_since_startup()
-        );
     }
 
     scheduler::set_scheduling(true);

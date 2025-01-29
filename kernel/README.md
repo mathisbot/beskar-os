@@ -38,9 +38,9 @@ I am not planning on writing a kernel close to Linux, as I am focusing on learni
             - [x] TSC
             - [x] APIC Timer
     - Network
+        - [ ] NICs
+            - [ ] Intel e1000e
         - [ ] Network stack
-            - [ ] NIC drivers
-                - [ ] Intel e1000e
             - [ ] ARP
             - [ ] ICMP
             - [ ] IPv4

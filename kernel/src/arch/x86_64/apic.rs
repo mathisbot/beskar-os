@@ -7,18 +7,21 @@ use core::{
 
 use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
 use timer::LapicTimer;
-use x86_64::instructions::port::Port;
 
 use super::cpuid;
 use crate::{
     locals,
     mem::{frame_alloc, page_alloc, page_table},
 };
-use beskar_core::arch::commons::{
-    PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Translator as _},
-};
 use beskar_core::arch::x86_64::paging::page_table::Flags;
+use beskar_core::arch::{
+    commons::{
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Translator as _},
+    },
+    x86_64::port::{self, Port},
+};
+use x86_64::registers::model_specific::Msr;
 
 use super::interrupts::Irq;
 
@@ -104,7 +107,7 @@ pub struct LocalApic {
 impl LocalApic {
     #[must_use]
     fn get_paddr_from_msr() -> PhysAddr {
-        let msr = x86_64::registers::model_specific::Msr::new(0x1B);
+        let msr = Msr::new(0x1B);
         let base = unsafe { msr.read() };
 
         assert!((base >> 11) & 1 == 1, "APIC not enabled");
@@ -184,13 +187,13 @@ impl LocalApic {
 /// This a mandatory step before enabling the APIC.
 fn ensure_pic_disabled() {
     unsafe {
-        let mut cmd1 = Port::<u8>::new(0x20);
-        let mut data1 = Port::<u8>::new(0x21);
+        let cmd1 = Port::<u8, port::WriteOnly>::new(0x20);
+        let data1 = Port::<u8, port::ReadWrite>::new(0x21);
 
-        let mut cmd2 = Port::<u8>::new(0xA0);
-        let mut data2 = Port::<u8>::new(0xA1);
+        let cmd2 = Port::<u8, port::WriteOnly>::new(0xA0);
+        let data2 = Port::<u8, port::ReadWrite>::new(0xA1);
 
-        let mut fence = Port::<u8>::new(0x80);
+        let fence = Port::<u8, port::ReadWrite>::new(0x80);
 
         // Reinitialize the PIC controllers
         cmd1.write(0x11);

@@ -41,6 +41,8 @@ impl Cr0 {
 pub struct Cr4;
 
 impl Cr4 {
+    pub const FSGSBASE: u64 = 1 << 16;
+
     #[must_use]
     #[inline]
     pub fn read() -> u64 {
@@ -60,6 +62,16 @@ impl Cr4 {
         unsafe {
             core::arch::asm!("mov cr4, {}", in(reg) value, options(nomem, nostack, preserves_flags));
         }
+    }
+
+    #[inline]
+    /// ## Safety
+    ///
+    /// The value written must be a valid CR4 flag.
+    pub unsafe fn insert_flags(flag: u64) {
+        let mut value = Self::read();
+        value |= flag;
+        unsafe { Self::write(value) };
     }
 }
 

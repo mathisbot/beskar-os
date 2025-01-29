@@ -1,8 +1,11 @@
-use crate::drivers::pci::{self, Bar, Device};
+use crate::drivers::{
+    DriverResult,
+    pci::{self, Bar, Device},
+};
 
 mod xhci;
 
-pub fn init(usb_controllers: &[Device]) {
+pub fn init(usb_controllers: &[Device]) -> DriverResult<()> {
     // Filter out xHCI controllers and get their base addresses
     let xhci_paddrs = usb_controllers
         .iter()
@@ -17,5 +20,5 @@ pub fn init(usb_controllers: &[Device]) {
             }
         });
 
-    xhci::init(xhci_paddrs);
+    xhci::init(xhci_paddrs)
 }

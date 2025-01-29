@@ -95,6 +95,7 @@ impl MsiX {
         })
     }
 
+    // TODO: Understand MSI-X and finish this function
     pub fn setup_int(&self, vector: u8, table_idx: u16) {
         assert!(table_idx < self.capability.size);
 
@@ -118,6 +119,8 @@ impl MsiX {
         };
 
         unsafe { self.table.add(table_idx.into()).write(table) };
+
+        // todo!("MSI-X: Finish setup_int");
     }
 
     pub fn enable(&self, handler: &mut dyn PciHandler) {

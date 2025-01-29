@@ -3,7 +3,10 @@
 
 use beskar_core::arch::commons::{PhysAddr, paging::M4KiB};
 
-use crate::mem::page_alloc::pmap::{self, PhysicalMapping};
+use crate::{
+    drivers::{DriverError, DriverResult},
+    mem::page_alloc::pmap::{self, PhysicalMapping},
+};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 mod cap;
@@ -19,16 +22,18 @@ use db::DoorbellRegistersSet;
 
 static XHCI: MUMcsLock<Xhci> = MUMcsLock::uninit();
 
-pub fn init(mut xhci_paddrs: impl Iterator<Item = PhysAddr>) {
+pub fn init(mut xhci_paddrs: impl Iterator<Item = PhysAddr>) -> DriverResult<()> {
     // TODO: Support multiple xHCI controllers
     let Some(first_xhci_paddr) = xhci_paddrs.next() else {
         crate::warn!("No xHCI controller found");
-        return;
+        return Err(DriverError::Absent);
     };
 
     let xhci = Xhci::new(first_xhci_paddr);
     xhci.reinitialize();
     XHCI.init(xhci);
+
+    Ok(())
 }
 
 /// See <https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf>

@@ -1,16 +1,12 @@
+use beskar_core::arch::x86_64::registers::Cr4;
 use x86_64::{
     VirtAddr,
-    registers::{
-        control::{Cr4, Cr4Flags},
-        segmentation::{GS, Segment64},
-    },
+    registers::segmentation::{GS, Segment64},
 };
 
 #[cold]
 pub fn store_locals(locals: &crate::locals::CoreLocalsInfo) {
-    unsafe {
-        Cr4::update(|cr4| cr4.insert(Cr4Flags::FSGSBASE));
-    }
+    unsafe { Cr4::insert_flags(Cr4::FSGSBASE) };
 
     unsafe {
         GS::write_base(VirtAddr::new(core::ptr::from_ref(locals) as u64));

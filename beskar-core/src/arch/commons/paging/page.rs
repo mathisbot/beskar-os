@@ -14,7 +14,6 @@ pub struct Page<S: MemSize = M4KiB> {
 }
 
 impl<S: MemSize> Page<S> {
-    #[must_use]
     #[inline]
     pub fn from_start_address(address: VirtAddr) -> Result<Self, ()> {
         // Check that the address is correctly aligned.

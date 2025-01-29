@@ -173,7 +173,7 @@ panic_isr!(breakpoint_handler);
 panic_isr!(overflow_handler);
 panic_isr!(bound_range_exceeded_handler);
 panic_isr!(invalid_opcode_handler);
-panic_isr!(device_not_available_handler);
+panic_isr!(device_not_available_handler); // TODO: Save FPU/SIMD state
 panic_isr_with_errcode!(invalid_tss_handler);
 panic_isr_with_errcode!(segment_not_present_handler);
 panic_isr_with_errcode!(stack_segment_fault_handler);

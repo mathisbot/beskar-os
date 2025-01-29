@@ -3,15 +3,23 @@
 mod commons;
 pub use commons::{Bar, Class, Device, msi, msix};
 use commons::{CapabilityHeader, MemoryBarType, PciAddress, RegisterOffset};
+
+use crate::drivers::DriverError;
+
+use super::DriverResult;
 mod express;
 mod legacy;
 
-pub fn init() {
-    express::init();
-
-    if !express::pcie_available() {
-        crate::info!("PCIe not available, falling back to legacy PCI");
-        legacy::init();
+pub fn init() -> DriverResult<()> {
+    if let Ok(device_count) = express::init() {
+        crate::info!("PCIe initialized with {} devices", device_count);
+        Ok(())
+    } else if let Ok(device_count) = legacy::init() {
+        crate::info!("Legacy PCI initialized with {} devices", device_count);
+        Ok(())
+    } else {
+        crate::warn!("No PCI devices found");
+        Err(DriverError::Invalid)
     }
 }
 

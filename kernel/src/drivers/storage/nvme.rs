@@ -14,41 +14,34 @@ use hyperdrive::{
 };
 
 use crate::{
-    drivers::pci::{self, Bar, Device},
+    drivers::{
+        DriverError, DriverResult,
+        pci::{self, Bar, Device, msix::MsiX},
+    },
     mem::page_alloc::pmap::PhysicalMapping,
 };
 
 static NVME_CONTROLLER: MUMcsLock<NvmeControllers> = MUMcsLock::uninit();
 
-pub fn init(nvme: &[Device]) {
+pub fn init(nvme: &[Device]) -> DriverResult<()> {
     if nvme.len() > 1 {
         crate::warn!("Multiple NVMe controllers found, using the first one");
     }
     let Some(nvme) = nvme.first() else {
-        return;
+        return Err(DriverError::Absent);
     };
 
-    let Some(Bar::Memory(bar)) = pci::with_pci_handler(|handler| handler.read_bar(nvme, 0)) else {
-        unreachable!("NVMe controller without memory BAR");
-    };
-    let paddr = bar.base_address();
-
-    let flags = Flags::MMIO_SUITABLE;
-    let physical_mapping = PhysicalMapping::<M4KiB>::new(paddr, 0x38, flags);
-    let registers_base = physical_mapping.translate(paddr).unwrap();
-
-    let controller = NvmeControllers {
-        registers_base,
-        _pmap: physical_mapping,
-    };
+    let controller = NvmeControllers::new(nvme);
     controller.init();
 
     crate::debug!(
-        "NVMe controller found with version {}",
+        "NVMe controller initialized with version {}",
         controller.version()
     );
 
     NVME_CONTROLLER.init(controller);
+
+    Ok(())
 }
 
 pub struct NvmeControllers {
@@ -57,6 +50,26 @@ pub struct NvmeControllers {
 }
 
 impl NvmeControllers {
+    // TODO: Custom error type
+    pub fn new(dev: &Device) -> Self {
+        let (Some(Bar::Memory(bar)), Some(msix)) =
+            pci::with_pci_handler(|handler| (handler.read_bar(&dev, 0), MsiX::new(handler, &dev)))
+        else {
+            unreachable!("NVMe controller either have no memory BAR or no MSI-X capability");
+        };
+
+        let paddr = bar.base_address();
+
+        let flags = Flags::MMIO_SUITABLE;
+        let physical_mapping = PhysicalMapping::<M4KiB>::new(paddr, 0x38, flags);
+        let registers_base = physical_mapping.translate(paddr).unwrap();
+
+        Self {
+            registers_base,
+            _pmap: physical_mapping,
+        }
+    }
+
     pub fn init(&self) {
         // TODO: Initialize the controller
     }

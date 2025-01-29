@@ -60,8 +60,6 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     crate::info!("BeskarOS kernel starting...");
 
-    time::tsc::calibrate();
-
     mem::init(
         *recursive_index,
         memory_regions,
@@ -73,15 +71,15 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     locals!().gdt().init_load();
 
-    process::init();
+    // If the bootloader provided an RSDP address, we can initialize ACPI.
+    rsdp_paddr.map(|rsdp_paddr| drivers::acpi::init(PhysAddr::new(rsdp_paddr.as_u64())));
+
+    time::init();
 
     interrupts::init();
 
+    process::init();
     syscall::init();
-
-    // If the bootloader provided an RSDP address, we can initialize ACPI.
-    rsdp_paddr.map(|rsdp_paddr| drivers::acpi::init(PhysAddr::new(rsdp_paddr.as_u64())));
-    time::hpet::init();
 
     apic::init_lapic();
     apic::init_ioapic();

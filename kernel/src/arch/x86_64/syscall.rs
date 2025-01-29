@@ -54,7 +54,7 @@ pub(super) unsafe extern "sysv64" fn syscall_handler_arch() {
             "pop r8",
             "pop r9",
             "pop rcx", // RIP used by sysret
-            "popfq", // r11 contains previous RFLAGS
+            "pop r11", // r11 contains previous RFLAGS
             "sysretq",
             sym syscall_handler_impl,
         )
@@ -134,8 +134,6 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
 }
 
 pub fn init_syscalls() {
-    unsafe { Efer::insert_flags(Efer::SYSTEM_CALL_EXTENSIONS) };
-
     LStar::write(VirtAddr::new(syscall_handler_arch as *const () as u64));
     Star::write(
         locals!().gdt().user_code_selector(),
@@ -151,6 +149,8 @@ pub fn init_syscalls() {
 
     #[allow(static_mut_refs)]
     unsafe {
-        STACKS[locals!().core_id()].reserve(4096 * 16);
-    }; // 64 KiB
+        STACKS[locals!().core_id()].reserve(4096 * 8); // 32 KiB
+    }
+
+    unsafe { Efer::insert_flags(Efer::SYSTEM_CALL_EXTENSIONS) };
 }

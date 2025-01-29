@@ -28,8 +28,8 @@
 //! If you need a more fine-grained control over the lock, you can use the `lock` method,
 //! which lets you handle the guard manually.
 //!
-//! `McsNode` is a structure used to queue the locks, and they must only be used on once lock
-//! at once. This is ensured by Rust's borrow checker.
+//! `McsNode` is a structure used to queue the locks, and they must only be used on one lock
+//! at once. Rust's borrow checker won't let you do otherwise anyway.
 //!
 //! Note that guards will unlock the lock automatically on drop.
 //!
@@ -42,6 +42,9 @@
 //! let mut guard = lock.lock(&mut node);
 //! *guard = 42;
 //! assert_eq!(*guard, 42);
+//! drop(guard);
+//!
+//! // The lock is free again!
 //! ```
 //!
 //! ### `MUMcsLock`
@@ -56,9 +59,24 @@
 //!
 //! MY_STATIC_STRUCT.init(42);
 //!
-//! MY_STATIC_STRUCT.with_locked(|value| {
-//!     // ...
+//! let current_value = MY_STATIC_STRUCT.with_locked(|value| {
+//!     *value
 //! });
+//! assert_eq!(current_value, 42);
+//! ```
+//!
+//! There is a new method, `try_with_locked`, that allows to try to lock the lock if it has been initialized,
+//! returning an `Option` instead of panicking.
+//!
+//! ```rust
+//! # use hyperdrive::locks::mcs::{MUMcsLock, McsNode};
+//! #
+//! static MY_STATIC_STRUCT: MUMcsLock<u16> = MUMcsLock::uninit();
+//!
+//! let current_value = MY_STATIC_STRUCT.try_with_locked(|value| {
+//!     *value
+//! });
+//! assert!(current_value.is_none());
 //! ```
 
 use core::cell::UnsafeCell;

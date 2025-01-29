@@ -1,10 +1,12 @@
 use crate::drivers::pci;
 use alloc::vec::Vec;
 
+use super::{DriverError, DriverResult};
+
 pub mod ahci;
 pub mod nvme;
 
-pub fn init() {
+pub fn init() -> DriverResult<()> {
     let mut ahci_controllers = Vec::new();
     let mut nvme = Vec::new();
 
@@ -23,6 +25,12 @@ pub fn init() {
             });
     });
 
-    ahci::init(&ahci_controllers);
-    nvme::init(&nvme);
+    let ahci_res = ahci::init(&ahci_controllers);
+    let nvme_res = nvme::init(&nvme);
+
+    if matches!(ahci_res, Err(_)) && matches!(nvme_res, Err(_)) {
+        Err(DriverError::Absent)
+    } else {
+        Ok(())
+    }
 }

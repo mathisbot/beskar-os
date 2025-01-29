@@ -27,8 +27,6 @@ pub enum SyscallExitCode {
 
 impl SyscallExitCode {
     pub fn unwrap(self) {
-        if self == Self::Failure {
-            panic!("Syscall failed!");
-        }
+        assert_ne!(self, Self::Failure, "Syscall failed!");
     }
 }

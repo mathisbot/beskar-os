@@ -20,7 +20,10 @@ use hyperdrive::{
 
 use super::Nic;
 use crate::{
-    drivers::pci::{self, Bar, with_pci_handler},
+    drivers::{
+        DriverError, DriverResult,
+        pci::{self, Bar, with_pci_handler},
+    },
     mem::page_alloc::pmap::{self, PhysicalMapping},
     network::l2::ethernet::MacAddress,
 };
@@ -30,13 +33,13 @@ const TX_BUFFERS: usize = 8;
 
 static E1000E: MUMcsLock<E1000e<'static>> = MUMcsLock::uninit();
 
-pub fn init(network_controller: pci::Device) {
+pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     let Some(Bar::Memory(bar_reg)) =
         with_pci_handler(|handler| handler.read_bar(&network_controller, 0))
     else {
         // TODO: Apparently, some network controllers use IO BARs
         crate::warn!("Network controller does not have a memory BAR");
-        return;
+        return Err(DriverError::Absent);
     };
 
     let reg_paddr = bar_reg.base_address();
@@ -70,6 +73,8 @@ pub fn init(network_controller: pci::Device) {
     );
 
     E1000E.init(e1000e);
+
+    Ok(())
 }
 
 pub struct E1000e<'a> {

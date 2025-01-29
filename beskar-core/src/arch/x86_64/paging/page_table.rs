@@ -209,11 +209,13 @@ impl<'t> PageTable<'t> {
         }
     }
 
+    #[must_use]
     #[inline]
     pub fn entries(&self) -> &Entries {
         self.entries
     }
 
+    #[must_use]
     #[inline]
     pub fn entries_mut(&mut self) -> &mut Entries {
         self.entries

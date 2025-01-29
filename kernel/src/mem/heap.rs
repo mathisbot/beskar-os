@@ -66,13 +66,10 @@ impl Heap {
             .map_or(core::ptr::null_mut(), core::ptr::NonNull::as_ptr)
     }
 
-    pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+    pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         let Some(ptr) = NonNull::new(ptr) else {
             return;
         };
-
-        // Safety:
-        // `GlobalAlloc` guarantees that the pointer is valid and the layout is correct.
         unsafe { self.linked_list.deallocate(ptr, layout) };
     }
 }
@@ -90,6 +87,8 @@ unsafe impl GlobalAlloc for HeapGA {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        KERNEL_HEAP.try_with_locked(|heap| heap.dealloc(ptr, layout));
+        // Safety:
+        // `GlobalAlloc` guarantees that the pointer is valid and the layout is correct.
+        KERNEL_HEAP.try_with_locked(|heap| unsafe { heap.dealloc(ptr, layout) });
     }
 }

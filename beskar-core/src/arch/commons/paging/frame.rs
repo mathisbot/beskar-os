@@ -13,7 +13,6 @@ pub struct Frame<S: MemSize = M4KiB> {
 }
 
 impl<S: MemSize> Frame<S> {
-    #[must_use]
     #[inline]
     pub fn from_start_address(address: PhysAddr) -> Result<Self, ()> {
         // Check that the address is correctly aligned.
