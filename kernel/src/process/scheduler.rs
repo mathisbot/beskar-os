@@ -313,9 +313,9 @@ pub unsafe fn exit_current_thread() {
         .unwrap()
         .exit_current_thread();
     // Wait for the next thread to be scheduled.
+    crate::arch::interrupts::int_enable();
+    // FIXME: Force reschedule now?
     loop {
-        // FIXME: Force reschedule now?
-        crate::arch::interrupts::int_enable();
         crate::arch::halt();
     }
 }

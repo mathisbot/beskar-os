@@ -168,7 +168,7 @@ macro_rules! info_isr_eoi {
 
 panic_isr!(divide_error_handler);
 info_isr!(debug_handler);
-panic_isr!(non_maskable_interrupt_handler);
+panic_isr!(non_maskable_interrupt_handler); // TODO: If another core has panicked on a kernel thread, halt the system
 panic_isr!(breakpoint_handler);
 panic_isr!(overflow_handler);
 panic_isr!(bound_range_exceeded_handler);
@@ -220,14 +220,16 @@ pub enum Irq {
     Nic = 35,
 }
 
+#[inline]
 pub fn int_disable() {
     unsafe {
-        core::arch::asm!("cli", options(preserves_flags, nostack));
+        core::arch::asm!("cli", options(nomem, preserves_flags, nostack));
     }
 }
 
+#[inline]
 pub fn int_enable() {
     unsafe {
-        core::arch::asm!("sti", options(preserves_flags, nostack));
+        core::arch::asm!("sti", options(nomem, preserves_flags, nostack));
     }
 }

@@ -66,25 +66,45 @@ impl Pixel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Info {
     /// The total size in bytes.
-    pub size: usize,
+    size: usize,
     /// The width in pixels.
-    pub width: usize,
+    width: usize,
     /// The height in pixels.
-    pub height: usize,
+    height: usize,
     /// The color format of each pixel.
-    pub pixel_format: PixelFormat,
+    pixel_format: PixelFormat,
     /// The number of bytes per pixel.
     ///
     /// Should be 4.
-    pub bytes_per_pixel: usize,
+    bytes_per_pixel: usize,
     /// Number of "virtual" pixels between the start of a line and the start of the next.
     ///
     /// The stride must be used to compute the start address of a next line as some framebuffers
     /// use additional padding at the end of a line.
-    pub stride: usize,
+    stride: usize,
 }
 
 impl Info {
+    #[must_use]
+    #[inline]
+    pub const fn new(
+        size: usize,
+        width: usize,
+        height: usize,
+        pixel_format: PixelFormat,
+        bytes_per_pixel: usize,
+        stride: usize,
+    ) -> Self {
+        Self {
+            size,
+            width,
+            height,
+            pixel_format,
+            bytes_per_pixel,
+            stride,
+        }
+    }
+
     #[must_use]
     #[inline]
     /// The total size in bytes.

@@ -46,7 +46,7 @@ impl PhysicalFrameBuffer {
         unsafe {
             core::slice::from_raw_parts_mut(
                 self.start_addr_as_virtual().as_mut_ptr::<Pixel>(),
-                self.info().size / self.info().bytes_per_pixel(),
+                self.info().size() / self.info().bytes_per_pixel(),
             )
         }
     }
@@ -102,7 +102,10 @@ impl FrameBuffer {
     /// Access the raw bytes of the framebuffer as a mutable slice.
     pub const fn buffer_mut(&mut self) -> &mut [u8] {
         unsafe {
-            core::slice::from_raw_parts_mut(self.buffer_start.as_mut_ptr::<u8>(), self.info().size)
+            core::slice::from_raw_parts_mut(
+                self.buffer_start.as_mut_ptr::<u8>(),
+                self.info().size(),
+            )
         }
     }
 }

@@ -1,24 +1,26 @@
-use core::{mem::MaybeUninit, sync::atomic::AtomicU8};
-
 use super::cpuid;
-use core::sync::atomic::Ordering;
+use core::mem::MaybeUninit;
+use hyperdrive::once::Once;
 
-static IS_SUPPORTED: AtomicU8 = AtomicU8::new(2); // 2 = Uninitialized, 1 = Supported, 0 = Not Supported
+static RDRAND_SUPPORT: Once<bool> = Once::uninit();
 
-#[cold]
-fn check_support() -> bool {
-    let rdrand_supported = cpuid::check_feature(cpuid::CpuFeature::RDRAND);
-    IS_SUPPORTED.store(u8::from(rdrand_supported), Ordering::Relaxed);
-    rdrand_supported
-}
+/// The maximum number of retries for RDRAND
+/// 
+/// The value is Intel's recommendation
+const RETRY_LIMIT: u8 = 10;
 
-/// "Safe" wrapper around the RDRAND instruction
 fn rdrand(dst: &mut u64) {
-    // TODO: Do not check support every time
-    assert!(rdrand_supported(), "RDRAND not supported");
+    #[cold]
+    fn fail() -> ! {
+        panic!("RDRAND failed to generate random number");
+    }
 
-    let res = unsafe { core::arch::x86_64::_rdrand64_step(dst) };
-    assert_eq!(res, 1, "RDRAND failed");
+    for _ in 0..RETRY_LIMIT {
+        if unsafe { core::arch::x86_64::_rdrand64_step(dst) } == 1 {
+            return;
+        }
+    }
+    fail();
 }
 
 #[must_use]
@@ -27,6 +29,11 @@ fn rdrand(dst: &mut u64) {
 /// ## Safety
 ///
 /// Every random sequence of bits must be a valid instance of the given type
+/// 
+/// ## Panics
+/// 
+/// Panics if RDRAND is not supported or if it fails to generate random data.
+/// See `rand_bytes`.
 pub unsafe fn rand<T: Sized>() -> T {
     let mut res = MaybeUninit::<T>::uninit();
 
@@ -44,41 +51,15 @@ pub unsafe fn rand<T: Sized>() -> T {
     unsafe { res.assume_init() }
 }
 
-/// Randomly fills memory with RDRAND.
-///
-/// This function is a shortcut for `core::slice::from_raw_parts_mut`
-/// followed by `rand_bytes`.
-///
-/// ## Safety
-///
-/// Every random sequence of bits must be a valid instance of the given type
-/// and the given pointer and length must be valid
-///
-/// ## Example
-///
-/// Please note that in this example, it may be safer to use `rand_bytes` directly.
-/// This function could be used for complex structs that are not `Sized`.
-///
-/// ```rust,no_run
-/// # use kernel::cpu::rand::rand_unsized;
-/// # extern crate alloc;
-/// # use alloc::vec::Vec;
-/// #
-/// let mut buffer = vec![0_u32; 256];
-///
-/// unsafe {
-///     rand_unsized(buffer.as_mut_ptr(), buffer.len());
-/// }
-/// ```
-pub unsafe fn rand_unsized<T>(ptr: *mut T, len: usize) {
-    let slice = unsafe { core::slice::from_raw_parts_mut(ptr.cast(), len * size_of::<T>()) };
-
-    rand_bytes(slice);
-}
-
 /// Generates random bytes using RDRAND
+/// 
+/// ## Panics
+/// 
+/// Panics if RDRAND is not supported or if it fails to generate random data
 pub fn rand_bytes(bytes: &mut [u8]) {
-    // It is safe to cast 8 `u8`s to a `u64`
+    assert!(rdrand_supported(), "RDRAND is not supported");
+
+    // It is safe to cast 8 packed `u8`s to a `u64`
     let (start_u8, middle_u64, end_u8) = unsafe { bytes.align_to_mut::<u64>() };
 
     // Quickly fill the middle part of the slice with random u64s
@@ -104,10 +85,6 @@ pub fn rand_bytes(bytes: &mut [u8]) {
 
 #[inline]
 pub fn rdrand_supported() -> bool {
-    match IS_SUPPORTED.load(Ordering::Acquire) {
-        0 => false,
-        1 => true,
-        2 => check_support(),
-        _ => unreachable!(),
-    }
+    RDRAND_SUPPORT.call_once(|| cpuid::check_feature(cpuid::CpuFeature::RDRAND));
+    *RDRAND_SUPPORT.get().unwrap()
 }
