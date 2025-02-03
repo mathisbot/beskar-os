@@ -1,5 +1,8 @@
-use crate::{arch::cpuid, drivers::DriverError};
-use beskar_core::arch::x86_64::port::{Port, ReadWrite, WriteOnly};
+use crate::arch::cpuid;
+use beskar_core::{
+    arch::x86_64::port::{Port, ReadWrite, WriteOnly},
+    drivers::{DriverError, DriverResult},
+};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// The TSC value at startup, when the TSC has been calibrated.
@@ -113,7 +116,7 @@ fn calibrate_with_hpet() -> bool {
     true
 }
 
-pub fn init() -> super::DriverResult<()> {
+pub fn init() -> DriverResult<()> {
     if !cfg!(target_arch = "x86_64") {
         return Err(DriverError::Absent);
     }

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use beskar_core::arch::x86_64::port::{Port, ReadWrite, WriteOnly};
 use hyperdrive::locks::mcs::McsLock;
 
-use crate::drivers::{DriverError, DriverResult};
+use beskar_core::drivers::{DriverError, DriverResult};
 
 use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 

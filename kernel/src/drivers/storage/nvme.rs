@@ -4,9 +4,12 @@
 
 use core::ptr::NonNull;
 
-use beskar_core::arch::commons::{
-    VirtAddr,
-    paging::{Flags, M4KiB},
+use beskar_core::{
+    arch::commons::{
+        VirtAddr,
+        paging::{Flags, M4KiB},
+    },
+    drivers::{DriverError, DriverResult},
 };
 use hyperdrive::{
     locks::mcs::MUMcsLock,
@@ -14,10 +17,7 @@ use hyperdrive::{
 };
 
 use crate::{
-    drivers::{
-        DriverError, DriverResult,
-        pci::{self, Bar, Device, msix::MsiX},
-    },
+    drivers::pci::{self, Bar, Device, msix::MsiX},
     mem::page_alloc::pmap::PhysicalMapping,
 };
 

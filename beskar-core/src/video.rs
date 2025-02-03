@@ -46,7 +46,7 @@ impl Pixel {
         match format {
             PixelFormat::Rgb => Self::new_rgb(red, green, blue),
             PixelFormat::Bgr => Self::new_bgr(red, green, blue),
-            PixelFormat::Bitmask(_mask) => unimplemented!(),
+            PixelFormat::Bitmask(_mask) => todo!("Bitmask pixel format"),
         }
     }
 

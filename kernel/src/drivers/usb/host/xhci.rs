@@ -3,10 +3,8 @@
 
 use beskar_core::arch::commons::{PhysAddr, paging::M4KiB};
 
-use crate::{
-    drivers::{DriverError, DriverResult},
-    mem::page_alloc::pmap::{self, PhysicalMapping},
-};
+use crate::mem::page_alloc::pmap::{self, PhysicalMapping};
+use beskar_core::drivers::{DriverError, DriverResult};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 mod cap;

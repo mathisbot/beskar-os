@@ -4,9 +4,8 @@ mod commons;
 pub use commons::{Bar, Class, Device, msi, msix};
 use commons::{CapabilityHeader, MemoryBarType, PciAddress, RegisterOffset};
 
-use crate::drivers::DriverError;
+use beskar_core::drivers::{DriverError, DriverResult};
 
-use super::DriverResult;
 mod express;
 mod legacy;
 

@@ -42,6 +42,8 @@ static FINISHED_QUEUE: Once<MpscQueue<Thread>> = Once::uninit();
 ///
 /// This function should only be called once, and only by the kernel, with the kernel thread.
 pub unsafe fn init(kernel_thread: thread::Thread) {
+    static SPAWN_CLEAN_THREAD: Once<()> = Once::uninit();
+
     let kernel_process = kernel_thread.process();
 
     QUEUE.call_once(|| priority::RoundRobinQueues::create(kernel_process.clone()));
@@ -50,25 +52,27 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
     let scheduler = Scheduler::new(kernel_thread);
     // Safety:
     // Function safety guards.
+    #[allow(static_mut_refs)]
     unsafe {
         SCHEDULERS[locals!().core_id()] = Some(scheduler);
     }
 
-    // Spawn the cleaning thread.
-    if locals!().core_id() == 0 {
-        spawn_thread(Box::pin(Thread::new(
+    SPAWN_CLEAN_THREAD.call_once(|| {
+        let clean_thread = Thread::new(
             kernel_process,
             priority::Priority::Low,
-            vec![0; 1024 * 512],
+            vec![0; 1024 * 128],
             clean_thread as *const (),
-        )));
-    }
+        );
+
+        spawn_thread(Box::pin(clean_thread));
+    });
 }
 
 #[derive(Debug, Clone, Copy)]
 struct ContextSwitch {
-    old_stack: *mut usize,
-    new_stack: *const usize,
+    old_stack: *mut *mut u8,
+    new_stack: *const u8,
     cr3: usize,
 }
 
@@ -161,8 +165,9 @@ impl Scheduler {
                 crate::arch::interrupts::int_enable();
                 return None;
             });
-        core::mem::swap(self.current_thread.as_mut(), &mut new_thread);
-        let mut old_thread = new_thread; // Yes...
+
+        core::mem::swap(self.current_thread.as_mut(), new_thread.as_mut());
+        let mut old_thread = new_thread; // Renaming for clarity.
 
         // Gather information about the old thread.
         let old_priority = self
@@ -195,7 +200,25 @@ impl Scheduler {
     }
 }
 
+fn get_scheduler() -> &'static Scheduler {
+    // FIXME: Find a workaround for static mutable references.
+    #[allow(static_mut_refs)]
+    unsafe { SCHEDULERS[locals!().core_id()].as_ref() }.unwrap()
+}
+
+fn get_scheduler_mut() -> &'static mut Scheduler {
+    // FIXME: Find a workaround for static mutable references.
+    #[allow(static_mut_refs)]
+    unsafe { SCHEDULERS[locals!().core_id()].as_mut() }.unwrap()
+}
+
 fn clean_thread() {
+    // FIXME: If the cleaning process starts very soon,
+    // it often results in a bad free.
+    // idk what happens, so let's wait for a bit.
+    crate::time::wait(crate::time::Duration::from_millis(
+        u64::from(SCHEDULER_QUANTUM_MS) * 2,
+    ));
     loop {
         if let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
             drop(thread);
@@ -213,16 +236,7 @@ fn clean_thread() {
 /// This function must only be called inside of the timer interrupt handler,
 /// and EOI is sent to the APIC in the function.
 pub(crate) unsafe fn reschedule() {
-    // Safety:
-    // Data races are avoided by the `Scheduler::reschedule` function.
-    // FIXME: Find a workaround for static mutable references.
-    #[allow(static_mut_refs)]
-    let rescheduling_result = unsafe {
-        SCHEDULERS[locals!().core_id()]
-            .as_mut()
-            .unwrap()
-            .reschedule()
-    };
+    let rescheduling_result = get_scheduler_mut().reschedule();
 
     // Safety:
     // We are only writing a single `u32` to MMIO.
@@ -239,15 +253,7 @@ pub(crate) unsafe fn reschedule() {
 #[must_use]
 /// Returns the current thread ID.
 pub fn current_thread_id() -> thread::ThreadId {
-    // FIXME: Find a workaround for static mutable references.
-    #[allow(static_mut_refs)]
-    unsafe {
-        SCHEDULERS[locals!().core_id()]
-            .as_mut()
-            .unwrap()
-            .current_thread()
-            .id()
-    }
+    get_scheduler().current_thread().id()
 }
 
 #[must_use]
@@ -258,14 +264,7 @@ pub fn current_thread_id() -> thread::ThreadId {
 /// Scheduling must be disabled.
 // TODO: Process tree?
 pub unsafe fn current_process() -> Arc<Process> {
-    // FIXME: Find a workaround for static mutable references.
-    #[allow(static_mut_refs)]
-    unsafe {
-        SCHEDULERS[locals!().core_id()]
-            .as_mut()
-            .unwrap()
-            .current_process()
-    }
+    get_scheduler().current_process()
 }
 
 pub fn spawn_thread(thread: Pin<Box<Thread>>) {
@@ -295,10 +294,7 @@ pub fn set_scheduling(enable: bool) {
 }
 
 pub fn change_current_thread_priority(priority: priority::Priority) {
-    #[allow(static_mut_refs)]
-    unsafe { SCHEDULERS[locals!().core_id()].as_ref() }
-        .unwrap()
-        .change_current_thread_priority(priority);
+    get_scheduler().change_current_thread_priority(priority);
 }
 
 /// Exits the current thread.
@@ -308,10 +304,8 @@ pub fn change_current_thread_priority(priority: priority::Priority) {
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.
 pub unsafe fn exit_current_thread() {
-    #[allow(static_mut_refs)]
-    unsafe { SCHEDULERS[locals!().core_id()].as_ref() }
-        .unwrap()
-        .exit_current_thread();
+    get_scheduler().exit_current_thread();
+
     // Wait for the next thread to be scheduled.
     crate::arch::interrupts::int_enable();
     // FIXME: Force reschedule now?
@@ -321,5 +315,9 @@ pub unsafe fn exit_current_thread() {
 }
 
 pub fn is_scheduling_init() -> bool {
-    unsafe { SCHEDULERS[locals!().core_id()].is_some() }
+    // FIXME: Find a workaround for static mutable references.
+    #[allow(static_mut_refs)]
+    unsafe {
+        SCHEDULERS[locals!().core_id()].is_some()
+    }
 }

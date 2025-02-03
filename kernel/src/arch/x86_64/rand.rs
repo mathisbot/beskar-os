@@ -5,7 +5,7 @@ use hyperdrive::once::Once;
 static RDRAND_SUPPORT: Once<bool> = Once::uninit();
 
 /// The maximum number of retries for RDRAND
-/// 
+///
 /// The value is Intel's recommendation
 const RETRY_LIMIT: u8 = 10;
 
@@ -29,9 +29,9 @@ fn rdrand(dst: &mut u64) {
 /// ## Safety
 ///
 /// Every random sequence of bits must be a valid instance of the given type
-/// 
+///
 /// ## Panics
-/// 
+///
 /// Panics if RDRAND is not supported or if it fails to generate random data.
 /// See `rand_bytes`.
 pub unsafe fn rand<T: Sized>() -> T {
@@ -52,9 +52,9 @@ pub unsafe fn rand<T: Sized>() -> T {
 }
 
 /// Generates random bytes using RDRAND
-/// 
+///
 /// ## Panics
-/// 
+///
 /// Panics if RDRAND is not supported or if it fails to generate random data
 pub fn rand_bytes(bytes: &mut [u8]) {
     assert!(rdrand_supported(), "RDRAND is not supported");

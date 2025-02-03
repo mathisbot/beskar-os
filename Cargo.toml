@@ -15,6 +15,7 @@ beskar-core = { path = "beskar-core" }
 beskar-lib = { path = "beskar-lib" }
 bootloader = { path = "bootloader" }
 hyperdrive = { path = "hyperdrive" }
+thiserror = { version = "2.0.11", default-features = false }
 x86_64 = { version = "0.15.2", default-features = false, features = ["abi_x86_interrupt","instructions"] }
 
 [build-dependencies]

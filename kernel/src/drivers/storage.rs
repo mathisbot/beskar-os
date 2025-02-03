@@ -1,7 +1,7 @@
 use crate::drivers::pci;
 use alloc::vec::Vec;
 
-use super::{DriverError, DriverResult};
+use beskar_core::drivers::{DriverError, DriverResult};
 
 pub mod ahci;
 pub mod nvme;

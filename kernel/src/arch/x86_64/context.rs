@@ -5,7 +5,7 @@
 ///
 /// Interrupts must be disabled when calling this function.
 /// This function will re-enable interrupts before returning.
-pub unsafe extern "C" fn switch(old_stack: *mut usize, new_stack: *const usize, cr3: usize) {
+pub unsafe extern "C" fn switch(old_stack: *mut *mut u8, new_stack: *const u8, cr3: usize) {
     // Thanks to the C calling convention,
     // the arguments are in the correct registers:
     // RDI = old_stack
@@ -21,7 +21,6 @@ pub unsafe extern "C" fn switch(old_stack: *mut usize, new_stack: *const usize, 
             "push rcx",
             "push rdx",
             "push rbx",
-            // "sub rsp, {}",
             "push rbp",
             "push rsi",
             "push rdi",
@@ -54,7 +53,6 @@ pub unsafe extern "C" fn switch(old_stack: *mut usize, new_stack: *const usize, 
             "pop rdi",
             "pop rsi",
             "pop rbp",
-            // "add rsp, {}",
             "pop rbx",
             "pop rdx",
             "pop rcx",
@@ -63,8 +61,6 @@ pub unsafe extern "C" fn switch(old_stack: *mut usize, new_stack: *const usize, 
             // Finally, return to the new stack
             "sti",
             "ret",
-            // const size_of::<usize>(),
-            // const size_of::<usize>(),
         );
     }
 }

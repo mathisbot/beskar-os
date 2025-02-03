@@ -9,9 +9,12 @@
 use core::ptr::NonNull;
 
 use alloc::vec::Vec;
-use beskar_core::arch::commons::{
-    PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
+use beskar_core::{
+    arch::commons::{
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
+    },
+    drivers::{DriverError, DriverResult},
 };
 use hyperdrive::{
     locks::mcs::MUMcsLock,
@@ -20,10 +23,7 @@ use hyperdrive::{
 
 use super::Nic;
 use crate::{
-    drivers::{
-        DriverError, DriverResult,
-        pci::{self, Bar, with_pci_handler},
-    },
+    drivers::pci::{self, Bar, with_pci_handler},
     mem::page_alloc::pmap::{self, PhysicalMapping},
     network::l2::ethernet::MacAddress,
 };

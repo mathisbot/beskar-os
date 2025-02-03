@@ -1,7 +1,5 @@
-use crate::drivers::{
-    DriverResult,
-    pci::{self, Bar, Device},
-};
+use crate::drivers::pci::{self, Bar, Device};
+use beskar_core::drivers::DriverResult;
 
 mod xhci;
 

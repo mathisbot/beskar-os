@@ -4,5 +4,6 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
 pub mod arch;
+pub mod drivers;
 pub mod syscall;
 pub mod video;

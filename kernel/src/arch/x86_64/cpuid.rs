@@ -132,6 +132,12 @@ impl CpuFeature {
         bit: 21,
         name: "X2APIC",
     };
+    pub const XSAVE: Self = Self {
+        leaf: 1,
+        reg: CpuidReg::Ecx,
+        bit: 26,
+        name: "XSAVE",
+    };
     pub const RDRAND: Self = Self {
         leaf: 1,
         reg: CpuidReg::Ecx,
@@ -152,7 +158,7 @@ impl CpuFeature {
 /// List of required features for the kernel to run
 ///
 /// Please keep the list sorted by leaf number
-const REQUIRED_FEATURES: [CpuFeature; 4] = [
+const REQUIRED_FEATURES: [CpuFeature; 5] = [
     // Leaf 1
     // CpuFeature::FPU,
     CpuFeature::PSE,
@@ -160,6 +166,7 @@ const REQUIRED_FEATURES: [CpuFeature; 4] = [
     CpuFeature::APIC,
     // CpuFeature::PAT,
     // CpuFeature::FXSR,
+    CpuFeature::XSAVE,
     // Leaf 7
     CpuFeature::FSGSBASE, // TLS support
 ];

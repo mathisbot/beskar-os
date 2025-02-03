@@ -2,11 +2,17 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::drivers::acpi::sdt::hpet_table::ParsedHpetTable;
-use crate::drivers::{DriverError, acpi};
-use crate::mem::page_alloc::pmap::PhysicalMapping;
-use beskar_core::arch::commons::{PhysAddr, VirtAddr, paging::M4KiB};
-use beskar_core::arch::x86_64::paging::page_table::Flags;
+use crate::{
+    drivers::acpi::{self, sdt::hpet_table::ParsedHpetTable},
+    mem::page_alloc::pmap::PhysicalMapping,
+};
+use beskar_core::{
+    arch::{
+        commons::{PhysAddr, VirtAddr, paging::M4KiB},
+        x86_64::paging::page_table::Flags,
+    },
+    drivers::{DriverError, DriverResult},
+};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 static HPET: MUMcsLock<Hpet> = MUMcsLock::uninit();
@@ -424,7 +430,7 @@ impl TimerCompValue {
     const fn validate(&self) {}
 }
 
-pub fn init() -> super::DriverResult<()> {
+pub fn init() -> DriverResult<()> {
     let Some(hpet_info) = acpi::ACPI.get().and_then(acpi::Acpi::hpet) else {
         return Err(DriverError::Absent);
     };

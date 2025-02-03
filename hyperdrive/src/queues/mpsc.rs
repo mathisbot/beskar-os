@@ -254,12 +254,12 @@ impl<T: Queueable> MpscQueue<T> {
     }
 
     pub fn dequeue(&self) -> Option<T::Handle> {
-        let mut state = self.try_dequeue();
-        while !matches!(state, DequeueResult::Element(_)) {
-            core::hint::spin_loop();
-            state = self.try_dequeue();
+        loop {
+            match self.try_dequeue() {
+                DequeueResult::Element(e) => break e,
+                DequeueResult::InUse => core::hint::spin_loop(),
+            }
         }
-        unsafe { state.unwrap_unchecked() }
     }
 
     pub fn try_dequeue(&self) -> DequeueResult<T> {

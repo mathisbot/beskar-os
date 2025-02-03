@@ -1,4 +1,5 @@
-use super::{DriverResult, pci::Class};
+use super::pci::Class;
+use beskar_core::drivers::DriverResult;
 
 use alloc::vec::Vec;
 

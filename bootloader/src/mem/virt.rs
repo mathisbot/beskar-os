@@ -1,6 +1,9 @@
-use beskar_core::arch::commons::paging::{Frame, M4KiB};
+use beskar_core::arch::commons::{
+    PhysAddr,
+    paging::{Frame, M1GiB, M4KiB, MemSize as _},
+};
 use x86_64::{
-    PhysAddr, VirtAddr,
+    VirtAddr,
     registers::segmentation::{self, Segment},
     structures::{
         gdt::GlobalDescriptorTable,
@@ -117,7 +120,7 @@ impl Level4Entries {
     ///
     /// Panics if no contiguous free memory is found.
     pub fn get_free_address(&mut self, size: u64) -> VirtAddr {
-        let needed_lvl4_entries = size.div_ceil(512 * 512 * 512 * Size4KiB::SIZE);
+        let needed_lvl4_entries = size.div_ceil(512 * M1GiB::SIZE);
 
         // TODO: ASLR (add random offset, need to manage alignment)
         Page::from_page_table_indices_1gib(
@@ -192,7 +195,7 @@ pub fn make_mappings(
     info!("Setup stack");
     debug!("Stack top at {:#x}", stack_end_addr);
 
-    let chg_ctx_function_addr = PhysAddr::new(chg_ctx as *const () as u64);
+    let chg_ctx_function_addr = x86_64::PhysAddr::new(chg_ctx as *const () as u64);
     let chg_ctx_function_frame = PhysFrame::<Size4KiB>::containing_address(chg_ctx_function_addr);
 
     for frame in PhysFrame::range_inclusive(chg_ctx_function_frame, chg_ctx_function_frame + 1) {

@@ -1,12 +1,13 @@
 use crate::structs::{MemoryRegion, MemoryRegionUsage};
+use beskar_core::arch::commons::{
+    PhysAddr,
+    paging::{Frame, M4KiB, MemSize as _},
+};
 use uefi::{
     boot::{MemoryDescriptor, MemoryType},
     mem::memory_map::{MemoryMap, MemoryMapOwned},
 };
-use x86_64::{
-    PhysAddr,
-    structures::paging::{FrameAllocator, PageSize, PhysFrame, Size4KiB},
-};
+use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
 
 /// A physical frame allocator based on a UEFI provided memory map.
 ///
@@ -17,9 +18,9 @@ pub struct EarlyFrameAllocator {
     memory_map: MemoryMapOwned,
     current_entry_index: usize,
     /// Keeps track of the current maximum allocated frame.
-    next_frame: PhysFrame,
+    next_frame: Frame,
     /// Keeps track of the first allocated frame.
-    min_frame: PhysFrame,
+    min_frame: Frame,
     /// The largest detected physical memory address.
     max_physical_address: PhysAddr,
 }
@@ -33,11 +34,11 @@ impl EarlyFrameAllocator {
     pub fn new(memory_map: MemoryMapOwned) -> Self {
         // Skip the lower 1 MiB of frames by convention.
         // This also skips `0x00` because Rust assumes that null references are not valid.
-        let frame = PhysFrame::containing_address(PhysAddr::new(0x10_0000));
+        let frame = Frame::containing_address(PhysAddr::new(0x10_0000));
 
         let max = memory_map
             .entries()
-            .map(|r| PhysAddr::new(r.phys_start) + r.page_count * Size4KiB::SIZE)
+            .map(|r| PhysAddr::new(r.phys_start) + r.page_count * M4KiB::SIZE)
             .max()
             .unwrap();
 
@@ -55,15 +56,12 @@ impl EarlyFrameAllocator {
     }
 
     #[must_use]
-    fn allocate_frame_from_descriptor(
-        &mut self,
-        descriptor: &MemoryDescriptor,
-    ) -> Option<PhysFrame> {
+    fn allocate_frame_from_descriptor(&mut self, descriptor: &MemoryDescriptor) -> Option<Frame> {
         let start_paddr = PhysAddr::new(descriptor.phys_start);
-        let end_paddr = start_paddr + descriptor.page_count * Size4KiB::SIZE;
+        let end_paddr = start_paddr + descriptor.page_count * M4KiB::SIZE;
 
-        let start_frame = PhysFrame::containing_address(start_paddr);
-        let end_frame = PhysFrame::containing_address(end_paddr - 1u64);
+        let start_frame = Frame::containing_address(start_paddr);
+        let end_frame = Frame::containing_address(end_paddr - 1u64);
 
         if self.next_frame < start_frame {
             self.next_frame = start_frame;
@@ -71,7 +69,7 @@ impl EarlyFrameAllocator {
 
         if self.next_frame <= end_frame {
             let ret = self.next_frame;
-            self.next_frame += 1;
+            self.next_frame = self.next_frame + 1;
 
             Some(ret)
         } else {
@@ -124,7 +122,7 @@ impl EarlyFrameAllocator {
             };
 
             let start = PhysAddr::new(descriptor.phys_start);
-            let end = PhysAddr::new(descriptor.phys_start) + descriptor.page_count * Size4KiB::SIZE;
+            let end = PhysAddr::new(descriptor.phys_start) + descriptor.page_count * M4KiB::SIZE;
 
             let region = MemoryRegion {
                 start: start.as_u64(),
@@ -206,7 +204,7 @@ unsafe impl FrameAllocator<Size4KiB> for EarlyFrameAllocator {
         while let Some(&descriptor) = self.memory_map.get(self.current_entry_index) {
             if descriptor.ty == MemoryType::CONVENTIONAL {
                 if let Some(frame) = self.allocate_frame_from_descriptor(&descriptor) {
-                    return Some(frame);
+                    return Some(unsafe { core::mem::transmute(frame) });
                 }
             }
             self.current_entry_index += 1;

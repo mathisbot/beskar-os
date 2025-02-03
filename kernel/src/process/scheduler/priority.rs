@@ -83,7 +83,8 @@ pub unsafe trait ThreadQueue {
 
 pub struct RoundRobinQueues {
     current: AtomicUsize,
-    cycle: Box<[Priority]>,
+    cycle: [Priority; 6],
+    null: MpscQueue<Thread>,
     low: MpscQueue<Thread>,
     normal: MpscQueue<Thread>,
     high: MpscQueue<Thread>,
@@ -100,16 +101,16 @@ impl RoundRobinQueues {
 unsafe impl ThreadQueue for RoundRobinQueues {
     fn create(root_proc: Arc<Process>) -> Self {
         Self {
-            cycle: alloc::vec![
+            cycle: [
                 Priority::High,
                 Priority::Normal,
                 Priority::High,
                 Priority::Low,
                 Priority::High,
                 Priority::Normal,
-            ]
-            .into_boxed_slice(),
+            ],
             current: AtomicUsize::default(),
+            null: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
             low: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
             normal: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
             high: MpscQueue::new(Box::pin(Thread::new_stub(root_proc))),
@@ -119,7 +120,8 @@ unsafe impl ThreadQueue for RoundRobinQueues {
     fn append(&self, thread: Pin<Box<Thread>>) {
         match thread.priority() {
             Priority::Null => {
-                // TODO: Queue them so they can still be accessed and woken up.
+                // TODO: Make them available for reuse (wake up).
+                self.null.enqueue(thread);
             }
             Priority::Low => {
                 self.low.enqueue(thread);

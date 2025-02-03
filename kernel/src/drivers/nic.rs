@@ -1,9 +1,6 @@
-use crate::{
-    drivers::{DriverError, pci},
-    network::l2::ethernet::MacAddress,
-};
+use crate::{drivers::pci, network::l2::ethernet::MacAddress};
 
-use super::DriverResult;
+use beskar_core::drivers::{DriverError, DriverResult};
 
 mod e1000e;
 
