@@ -41,10 +41,3 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         crate::arch::halt();
     }
 }
-
-#[macro_export]
-macro_rules! static_assert {
-    ($assertion:expr $(, $($arg:tt)+)?) => {
-        const _: () = assert!($assertion $(, $($arg)+)?);
-    };
-}

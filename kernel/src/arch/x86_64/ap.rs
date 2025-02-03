@@ -35,7 +35,7 @@ static BSP_EFER: AtomicU64 = AtomicU64::new(0);
 /// Manually compiled with nasm from `ap_tramp.asm`.
 /// Must be manually recompiled if the code changes.
 const AP_TRAMPOLINE_CODE: &[u8] = include_bytes!("ap/ap_tramp");
-crate::static_assert!(
+const _: () = assert!(
     AP_TRAMPOLINE_CODE.len() <= 4096,
     "AP trampoline code is too big"
 );
@@ -71,10 +71,6 @@ pub fn start_up_aps(core_count: usize) {
     });
 
     // Load code
-    assert!(
-        AP_TRAMPOLINE_CODE.len() <= usize::try_from(M4KiB::SIZE).unwrap(),
-        "AP trampoline code is too big"
-    );
     unsafe {
         core::ptr::copy_nonoverlapping(
             AP_TRAMPOLINE_CODE.as_ptr(),
@@ -182,9 +178,9 @@ fn allocate_stack() {
 
 pub unsafe fn load_ap_regs() {
     unsafe {
-        Cr0::write(BSP_CR0.load(Ordering::Acquire));
-        Cr4::write(BSP_CR4.load(Ordering::Acquire));
-        Efer::write(BSP_EFER.load(Ordering::Acquire));
+        Cr0::write(BSP_CR0.load(Ordering::Relaxed));
+        Cr4::write(BSP_CR4.load(Ordering::Relaxed));
+        Efer::write(BSP_EFER.load(Ordering::Relaxed));
     }
 }
 

@@ -5,7 +5,7 @@
 ![GitHub Repo stars](https://img.shields.io/github/stars/mathisbot/beskar-os?style=flat)
 ![](https://tokei.rs/b1/github/mathisbot/beskar-os?category=code&style=flat)
 
-This repository contains the Beskar hobby OS: a very basic x86_64 hobby OS written in pure Rust that boots on UEFI 2.0 and has support for SMP.
+This repository contains the Beskar hobby OS: a very basic x86_64 hobby OS written in pure Rust that boots on UEFI 2 and has support for SMP.
 It is named after the alloy used to forge Mandalorian armors, which cannot rust.
 
 ## Project goals
