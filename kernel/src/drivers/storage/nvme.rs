@@ -1,24 +1,24 @@
 //! NVM Express Controller driver, according to
 //! <https://nvmexpress.org/wp-content/uploads/NVM-Express-Base-Specification-Revision-2.1-2024.08.05-Ratified.pdf>
-//! (NVM Express Base Specification Revision 2.1)
-
-use core::ptr::NonNull;
-
-use beskar_core::{
-    arch::commons::{
-        VirtAddr,
-        paging::{Flags, M4KiB},
-    },
-    drivers::{DriverError, DriverResult},
-};
-use hyperdrive::{
-    locks::mcs::MUMcsLock,
-    volatile::{ReadOnly, Volatile, WriteOnly},
-};
+//! (NVM Express Base Specification Revision 2.1) as well as
+//! <https://nvmexpress.org/wp-content/uploads/NVM-Express-PCI-Express-Transport-Specification-Revision-1.1-2024.08.05-Ratified.pdf>
+//! (NVMe over PCIe Transport Specification Revision 1.1).
 
 use crate::{
     drivers::pci::{self, Bar, Device, msix::MsiX},
     mem::page_alloc::pmap::PhysicalMapping,
+};
+use beskar_core::{
+    arch::commons::{
+        PhysAddr, VirtAddr,
+        paging::{Flags, M4KiB, MemSize},
+    },
+    drivers::{DriverError, DriverResult},
+};
+use core::ptr::NonNull;
+use hyperdrive::{
+    locks::mcs::MUMcsLock,
+    volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
 };
 
 static NVME_CONTROLLER: MUMcsLock<NvmeControllers> = MUMcsLock::uninit();
@@ -32,7 +32,7 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
     };
 
     let controller = NvmeControllers::new(nvme);
-    controller.init();
+    controller.init()?;
 
     crate::debug!(
         "NVMe controller initialized with version {}",
@@ -46,16 +46,16 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
 
 pub struct NvmeControllers {
     registers_base: VirtAddr,
+    msix: MsiX,
     _pmap: PhysicalMapping,
 }
 
 impl NvmeControllers {
-    // TODO: Custom error type
     pub fn new(dev: &Device) -> Self {
         let (Some(Bar::Memory(bar)), Some(msix)) =
             pci::with_pci_handler(|handler| (handler.read_bar(&dev, 0), MsiX::new(handler, &dev)))
         else {
-            unreachable!("NVMe controller either have no memory BAR or no MSI-X capability");
+            panic!("NVMe controller either have no memory BAR or no MSI-X capability");
         };
 
         let paddr = bar.base_address();
@@ -66,12 +66,54 @@ impl NvmeControllers {
 
         Self {
             registers_base,
+            msix,
             _pmap: physical_mapping,
         }
     }
 
-    pub fn init(&self) {
-        // TODO: Initialize the controller
+    pub fn init(&self) -> DriverResult<()> {
+        self.cc().disable();
+        while self.csts().ready() {
+            core::hint::spin_loop();
+        }
+
+        self.msix.setup_int(crate::arch::interrupts::Irq::Nvme, 0);
+        pci::with_pci_handler(|handler| self.msix.enable(handler));
+
+        if self.capabilities().mpsmin() > u32::try_from(M4KiB::SIZE).unwrap() {
+            return Err(DriverError::Invalid);
+        }
+        self.cc().set_mps(M4KiB::SIZE.try_into().unwrap());
+
+        // FIXME: Free on drop
+        let (Some(frame_asq), Some(frame_acq)) =
+            crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
+                (fralloc.alloc::<M4KiB>(), fralloc.alloc::<M4KiB>())
+            })
+        else {
+            return Err(DriverError::Unknown);
+        };
+        self.set_asq(frame_asq.start_address());
+        self.set_acq(frame_acq.start_address());
+
+        let max_sz = u16::try_from(M4KiB::SIZE / 64).unwrap() - 1;
+        self.set_aqa(max_sz, max_sz);
+
+        self.cc().set_iosqes(64);
+        self.cc().set_iocqes(16);
+
+        // TODO: Configure I/O queues
+
+        self.cc().enable();
+        while !self.csts().ready() {
+            if self.csts().fatal() {
+                crate::warn!("NVMe controller has encountered a fatal error when initializing");
+                return Err(DriverError::Unknown);
+            }
+            core::hint::spin_loop();
+        }
+
+        Ok(())
     }
 
     #[must_use]
@@ -108,6 +150,40 @@ impl NvmeControllers {
     pub const fn intmc(&self) -> Volatile<WriteOnly, u32> {
         let ptr = unsafe { self.registers_base.as_mut_ptr::<u32>().byte_add(0x10) };
         Volatile::new(NonNull::new(ptr).unwrap())
+    }
+
+    #[must_use]
+    #[inline]
+    /// This property modifies settings for the controller.
+    pub const fn cc(&self) -> Configuration {
+        let ptr = unsafe { self.registers_base.as_mut_ptr::<u32>().byte_add(0x14) };
+        Configuration(Volatile::new(NonNull::new(ptr).unwrap()))
+    }
+
+    #[must_use]
+    #[inline]
+    /// This property is used to read the controller status.
+    pub const fn csts(&self) -> Status {
+        let ptr = unsafe { self.registers_base.as_mut_ptr::<u32>().byte_add(0x1C) };
+        Status(Volatile::new(NonNull::new(ptr).unwrap()))
+    }
+
+    fn set_aqa(&self, acqs: u16, asqs: u16) {
+        assert!(acqs <= 0xFFF);
+        assert!(asqs <= 0xFFF);
+        let value = u32::from(asqs) | (u32::from(acqs) << 16);
+        let ptr = unsafe { self.registers_base.as_mut_ptr::<u32>().byte_add(0x24) };
+        unsafe { ptr.write_volatile(value) };
+    }
+
+    fn set_asq(&self, addr: PhysAddr) {
+        let ptr = unsafe { self.registers_base.as_mut_ptr::<u64>().byte_add(0x28) };
+        unsafe { ptr.write_volatile(addr.as_u64() & !0xFFF) };
+    }
+
+    fn set_acq(&self, addr: PhysAddr) {
+        let ptr = unsafe { self.registers_base.as_mut_ptr::<u64>().byte_add(0x30) };
+        unsafe { ptr.write_volatile(addr.as_u64() & !0xFFF) };
     }
 }
 
@@ -232,4 +308,97 @@ impl Capabilities {
         let power = (self.read() >> 52) & 0xF;
         1 << (power + 12)
     }
+}
+
+/// Controller Configuration
+///
+/// Fields specified page 79 of the specification
+pub struct Configuration(Volatile<ReadWrite, u32>);
+
+impl Configuration {
+    #[must_use]
+    #[inline]
+    fn read(&self) -> u32 {
+        unsafe { self.0.read() }
+    }
+
+    #[inline]
+    fn write(&self, value: u32) {
+        unsafe { self.0.write(value) }
+    }
+
+    #[inline]
+    /// Enable the controller
+    pub fn enable(&self) {
+        self.write(self.read() | 1);
+    }
+
+    #[inline]
+    /// Disable the controller
+    pub fn disable(&self) {
+        self.write(self.read() & !1);
+    }
+
+    #[inline]
+    /// Set the IO Submission Queue Entry Size
+    fn set_iosqes(&self, iosqes: u16) {
+        const IOSQES_MASK: u32 = 0xF << 16;
+
+        assert!(iosqes.is_power_of_two());
+        let iosqes = iosqes.trailing_zeros();
+        assert!(iosqes <= 0xF);
+
+        self.write((self.read() & !IOSQES_MASK) | ((iosqes << 16) & IOSQES_MASK));
+    }
+
+    #[inline]
+    /// Set the IO Completion Queue Entry Size
+    fn set_iocqes(&self, iocqes: u16) {
+        const IOCQES_MASK: u32 = 0xF << 20;
+
+        assert!(iocqes.is_power_of_two());
+        let iocqes = iocqes.trailing_zeros();
+        assert!(iocqes <= 0xF);
+
+        self.write((self.read() & !IOCQES_MASK) | ((iocqes << 20) & IOCQES_MASK));
+    }
+
+    /// Set the Memory Page Size
+    pub fn set_mps(&self, mps: u32) {
+        const MPS_MASK: u32 = 0xF << 7;
+
+        assert!(mps.is_power_of_two());
+        let mps = mps.trailing_zeros();
+        assert!(mps <= 0xF);
+
+        self.write((self.read() & !MPS_MASK) | ((mps << 7) & MPS_MASK));
+    }
+
+    // TODO: Implement the rest of the fields
+}
+
+pub struct Status(Volatile<ReadOnly, u32>);
+
+impl Status {
+    #[must_use]
+    #[inline]
+    fn read(&self) -> u32 {
+        unsafe { self.0.read() }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Controller Ready
+    pub fn ready(&self) -> bool {
+        (self.read() & 1) != 0
+    }
+
+    #[must_use]
+    #[inline]
+    /// Controller has encounter a fatal error
+    pub fn fatal(&self) -> bool {
+        (self.read() & (1 << 1)) != 0
+    }
+
+    // TODO: Implement the rest of the fields
 }

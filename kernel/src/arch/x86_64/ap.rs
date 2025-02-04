@@ -35,7 +35,7 @@ static BSP_EFER: AtomicU64 = AtomicU64::new(0);
 /// Manually compiled with nasm from `ap_tramp.asm`.
 /// Must be manually recompiled if the code changes.
 const AP_TRAMPOLINE_CODE: &[u8] = include_bytes!("ap/ap_tramp");
-const _: () = assert!(
+beskar_core::static_assert!(
     AP_TRAMPOLINE_CODE.len() <= 4096,
     "AP trampoline code is too big"
 );

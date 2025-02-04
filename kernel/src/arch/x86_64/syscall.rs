@@ -33,6 +33,8 @@ struct SyscallRegisters {
 
 #[naked]
 pub(super) unsafe extern "sysv64" fn syscall_handler_arch() {
+    // FIXME: It is very likely that interrupts are allowed here
+    // so maybe add sti instruction
     unsafe {
         core::arch::naked_asm!(
             "push r11", // Previous RFLAGS

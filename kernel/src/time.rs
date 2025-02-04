@@ -16,7 +16,9 @@ pub fn init() {
     TSC_AVAILABLE.store(tsc_res.is_ok(), Ordering::Relaxed);
 }
 
-/// Wait AT LEAST the given number of milliseconds.
+/// Waits for AT LEAST the given number of milliseconds.
+///
+/// The real amount of time waited is usually longer than the given duration.
 pub fn wait(duration: Duration) {
     if TSC_AVAILABLE.load(Ordering::Relaxed) {
         TscClock.wait(duration);

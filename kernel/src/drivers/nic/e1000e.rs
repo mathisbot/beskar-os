@@ -185,7 +185,7 @@ impl E1000e<'_> {
         };
 
         if let Some(msix) = msix {
-            msix.setup_int(crate::arch::interrupts::Irq::Nic as u8, 0);
+            msix.setup_int(crate::arch::interrupts::Irq::Nic, 0);
             pci::with_pci_handler(|handler| msix.enable(handler));
         } else if let Some(_msi) = msi {
             // TODO: Enable MSI
