@@ -85,6 +85,13 @@ impl NvmeControllers {
         }
         self.cc().set_mps(M4KiB::SIZE.try_into().unwrap());
 
+        let css = self.capabilities().css();
+        if css & 1 == 1 && css & (1 << 6) == 0 {
+            self.cc().set_css(0);
+        } else {
+            return Err(DriverError::Invalid);
+        }
+
         // FIXME: Free on drop
         let (Some(frame_asq), Some(frame_acq)) =
             crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
@@ -368,10 +375,18 @@ impl Configuration {
         const MPS_MASK: u32 = 0xF << 7;
 
         assert!(mps.is_power_of_two());
-        let mps = mps.trailing_zeros();
+        assert!(mps >= 4096);
+        let mps = mps.trailing_zeros() - 12;
         assert!(mps <= 0xF);
 
         self.write((self.read() & !MPS_MASK) | ((mps << 7) & MPS_MASK));
+    }
+
+    /// Set the Command Set Selected
+    fn set_css(&self, value: u8) {
+        const CSS_MASK: u32 = 0x7 << 4;
+        assert!(value <= 0x7);
+        self.write((self.read() & !CSS_MASK) | ((u32::from(value) << 4) & CSS_MASK));
     }
 
     // TODO: Implement the rest of the fields
