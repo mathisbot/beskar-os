@@ -3,17 +3,15 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![allow(clippy::missing_panics_doc, clippy::similar_names)]
 
+use beskar_core::{boot::BootInfo, mem::MemoryRegion};
 use mem::{EarlyFrameAllocator, Mappings, PageTables};
-use structs::MemoryRegion;
 use x86_64::structures::paging::{FrameAllocator, Mapper, Page, PageTableFlags};
 
-pub mod mem;
-pub mod structs;
-pub mod video;
-pub use structs::BootInfo;
 pub mod fs;
 pub mod log;
+pub mod mem;
 pub mod system;
+pub mod video;
 
 mod kernel_elf;
 
@@ -23,7 +21,9 @@ const KERNEL_STACK_SIZE: u64 = 64 * 4096; // 256 KiB
 macro_rules! entry_point {
     ($path:path) => {
         #[unsafe(export_name = "_start")]
-        pub extern "C" fn __kernel_entry(boot_info: &'static mut $crate::BootInfo) -> ! {
+        pub extern "C" fn __kernel_entry(
+            boot_info: &'static mut ::beskar_core::boot::BootInfo,
+        ) -> ! {
             ($path)(boot_info)
         }
     };

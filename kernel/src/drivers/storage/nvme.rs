@@ -21,6 +21,8 @@ use hyperdrive::{
     volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
 };
 
+mod queue;
+
 static NVME_CONTROLLER: MUMcsLock<NvmeControllers> = MUMcsLock::uninit();
 
 pub fn init(nvme: &[Device]) -> DriverResult<()> {
@@ -109,8 +111,6 @@ impl NvmeControllers {
         self.cc().set_iosqes(64);
         self.cc().set_iocqes(16);
 
-        // TODO: Configure I/O queues
-
         self.cc().enable();
         while !self.csts().ready() {
             if self.csts().fatal() {
@@ -119,6 +119,14 @@ impl NvmeControllers {
             }
             core::hint::spin_loop();
         }
+
+        // TODO: Send identify command
+        // let identify_cmd = queue::admin::AdminSubmissionEntry::new_identify(
+        //     queue::admin::IdentifyTarget::Controller,
+        //     todo!("Buffer"),
+        // );
+
+        // TODO: Configure I/O queues
 
         Ok(())
     }
@@ -410,7 +418,7 @@ impl Status {
 
     #[must_use]
     #[inline]
-    /// Controller has encounter a fatal error
+    /// Controller has encountered a fatal error
     pub fn fatal(&self) -> bool {
         (self.read() & (1 << 1)) != 0
     }

@@ -5,17 +5,16 @@
 //!
 //! Allocated frames do not need to be contiguous.
 
+use super::{
+    page_table,
+    ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
+};
 use beskar_core::arch::commons::{
     PhysAddr,
     paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, PageRangeInclusive},
 };
 use beskar_core::arch::x86_64::paging::page_table::{Flags, PageTable};
-
-use super::{
-    page_table,
-    ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
-};
-use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
+use beskar_core::mem::{MemoryRegion, MemoryRegionUsage};
 
 use hyperdrive::locks::mcs::MUMcsLock;
 
@@ -27,7 +26,7 @@ pub fn init(regions: &[MemoryRegion]) {
     // Count usable memory regions
     let mut usable_regions = 0;
     for region in regions {
-        if region.kind == MemoryRegionUsage::Usable {
+        if region.kind() == MemoryRegionUsage::Usable {
             usable_regions += 1;
         }
     }

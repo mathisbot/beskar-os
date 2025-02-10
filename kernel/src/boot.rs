@@ -4,8 +4,10 @@ use crate::{
     arch::{self, ap, apic, interrupts},
     drivers, locals, mem, process, screen, syscall, time,
 };
-use beskar_core::arch::commons::{PhysAddr, VirtAddr};
-use bootloader::BootInfo;
+use beskar_core::{
+    arch::commons::{PhysAddr, VirtAddr},
+    boot::BootInfo,
+};
 
 /// Static reference to the kernel main function
 ///
@@ -149,7 +151,7 @@ macro_rules! kernel_main {
         /// Entry of the kernel called by the bootloader.
         ///
         /// This should only be the entry point for the BSP.
-        fn __bootloader_entry_point(boot_info: &'static mut bootloader::BootInfo) -> ! {
+        fn __bootloader_entry_point(boot_info: &'static mut beskar_core::boot::BootInfo) -> ! {
             $crate::boot::kbsp_entry(boot_info, $path);
         }
         ::bootloader::entry_point!(__bootloader_entry_point);

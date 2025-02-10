@@ -1,5 +1,7 @@
 //! Video related types and functions.
 
+use crate::arch::commons::VirtAddr;
+
 pub mod writer;
 
 /// Bitmask used to indicate which bits of a pixel represent a given color.
@@ -150,5 +152,49 @@ impl Info {
     /// use additional padding at the end of a line.
     pub const fn stride(&self) -> usize {
         self.stride
+    }
+}
+
+/// Represents a frambuffer.
+///
+/// This is the struct that is sent to the kernel.
+#[derive(Debug)]
+pub struct FrameBuffer {
+    buffer_start: VirtAddr,
+    info: Info,
+}
+
+impl FrameBuffer {
+    #[must_use]
+    #[inline]
+    /// Creates a new framebuffer instance.
+    ///
+    /// ## Safety
+    ///
+    /// The given start address and info must describe a valid framebuffer.
+    pub const unsafe fn new(start_addr: VirtAddr, info: Info) -> Self {
+        Self {
+            buffer_start: start_addr,
+            info,
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns layout and pixel format information of the framebuffer.
+    pub const fn info(&self) -> Info {
+        self.info
+    }
+
+    #[must_use]
+    #[inline]
+    /// Access the raw bytes of the framebuffer as a mutable slice.
+    pub const fn buffer_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self.buffer_start.as_mut_ptr::<u8>(),
+                self.info().size(),
+            )
+        }
     }
 }

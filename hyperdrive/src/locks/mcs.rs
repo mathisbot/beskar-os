@@ -136,6 +136,7 @@ impl McsNode {
 
 impl<T> McsLock<T> {
     #[must_use]
+    #[inline]
     /// Creates a new MCS lock.
     pub const fn new(value: T) -> Self {
         Self {
@@ -180,6 +181,8 @@ impl<T> McsLock<T> {
         f(&mut guard)
     }
 
+    #[must_use]
+    #[inline]
     #[allow(clippy::mut_from_ref)]
     /// Force access to the data.
     ///
@@ -321,6 +324,7 @@ impl<T> MUMcsLock<T> {
         });
     }
 
+    #[must_use]
     /// Locks the lock and returns a guard.
     ///
     /// ## Panics
@@ -342,6 +346,7 @@ impl<T> MUMcsLock<T> {
         MUMcsGuard { inner_guard: guard }
     }
 
+    #[must_use]
     /// Try to lock the lock if it has been initialized.
     ///
     /// Returns `None` if the lock has not been initialized.
@@ -382,6 +387,8 @@ impl<T> MUMcsLock<T> {
         self.lock_if_init(&mut node).map(|mut guard| f(&mut guard))
     }
 
+    #[must_use]
+    #[inline]
     #[allow(clippy::mut_from_ref)]
     /// Force access to the data.
     ///
@@ -512,6 +519,7 @@ mod tests {
     fn test_mumcs_drop() {
         let lock = MUMcsLock::uninit();
         lock.init(Box::new(42));
+        let _uninit = MUMcsLock::<Box<[u64]>>::uninit();
     }
 
     #[test]

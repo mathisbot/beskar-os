@@ -1,6 +1,9 @@
-use beskar_core::arch::commons::{
-    PhysAddr,
-    paging::{Frame, M1GiB, M4KiB, MemSize as _},
+use beskar_core::{
+    arch::commons::{
+        PhysAddr,
+        paging::{Frame, M1GiB, M4KiB, MemSize as _},
+    },
+    boot::TlsTemplate,
 };
 use x86_64::{
     VirtAddr,
@@ -15,7 +18,7 @@ use x86_64::{
 };
 use xmas_elf::{ElfFile, program::ProgramHeader};
 
-use crate::{KERNEL_STACK_SIZE, chg_ctx, debug, info, kernel_elf, structs::TlsTemplate};
+use crate::{KERNEL_STACK_SIZE, chg_ctx, debug, info, kernel_elf};
 
 use super::{EarlyFrameAllocator, PageTables};
 

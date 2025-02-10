@@ -1,3 +1,4 @@
+use beskar_core::boot::TlsTemplate;
 use x86_64::structures::paging::{
     FrameAllocator, Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB, Translate,
     mapper::{MappedFrame, TranslateResult},
@@ -12,7 +13,6 @@ use xmas_elf::{
 };
 
 use crate::mem::{EarlyFrameAllocator, Level4Entries};
-use crate::structs::TlsTemplate;
 
 pub struct KernelLoadingUtils<'a> {
     kernel: &'a ElfFile<'a>,

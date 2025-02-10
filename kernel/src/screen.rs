@@ -1,7 +1,6 @@
 // TODO: Move into a `video` module (driver?)
 
-use beskar_core::video::{Info, Pixel};
-use bootloader::video::FrameBuffer;
+use beskar_core::video::{FrameBuffer, Info, Pixel};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 static SCREEN: MUMcsLock<Screen> = MUMcsLock::uninit();

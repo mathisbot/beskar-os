@@ -1,8 +1,8 @@
-use crate::structs::{MemoryRegion, MemoryRegionUsage};
 use beskar_core::arch::commons::{
     PhysAddr,
     paging::{Frame, M4KiB, MemSize as _},
 };
+use beskar_core::mem::{MemoryRegion, MemoryRegionUsage};
 use uefi::{
     boot::{MemoryDescriptor, MemoryType},
     mem::memory_map::{MemoryMap, MemoryMapOwned},
@@ -124,13 +124,9 @@ impl EarlyFrameAllocator {
             let start = PhysAddr::new(descriptor.phys_start);
             let end = PhysAddr::new(descriptor.phys_start) + descriptor.page_count * M4KiB::SIZE;
 
-            let region = MemoryRegion {
-                start: start.as_u64(),
-                end: end.as_u64(),
-                kind,
-            };
+            let region = MemoryRegion::new(start.as_u64(), end.as_u64(), kind);
 
-            if region.kind == MemoryRegionUsage::Usable {
+            if kind == MemoryRegionUsage::Usable {
                 Self::split_region(region, regions, &mut next_index, &used_slices);
             } else {
                 Self::add_region(region, regions, &mut next_index);
@@ -146,13 +142,13 @@ impl EarlyFrameAllocator {
         next_index: &mut usize,
         used_slices: &[(u64, u64)],
     ) {
-        while region.start != region.end {
+        while region.start() != region.end() {
             // Check for overlaps with used slices.
             if let Some((overlap_start, overlap_end)) = used_slices
                 .iter()
                 .filter_map(|(start, end)| {
-                    let overlap_start = region.start.max(*start);
-                    let overlap_end = region.end.min(*end);
+                    let overlap_start = region.start().max(*start);
+                    let overlap_end = region.end().min(*end);
                     if overlap_start < overlap_end {
                         Some((overlap_start, overlap_end))
                     } else {
@@ -161,21 +157,15 @@ impl EarlyFrameAllocator {
                 })
                 .min_by_key(|&(overlap_start, _)| overlap_start)
             {
-                let usable = MemoryRegion {
-                    start: region.start,
-                    end: overlap_start,
-                    kind: MemoryRegionUsage::Usable,
-                };
-                let bootloader = MemoryRegion {
-                    start: overlap_start,
-                    end: overlap_end,
-                    kind: MemoryRegionUsage::Bootloader,
-                };
+                let usable =
+                    MemoryRegion::new(region.start(), overlap_start, MemoryRegionUsage::Usable);
+                let bootloader =
+                    MemoryRegion::new(overlap_start, overlap_end, MemoryRegionUsage::Bootloader);
 
                 Self::add_region(usable, regions, next_index);
                 Self::add_region(bootloader, regions, next_index);
 
-                region.start = overlap_end;
+                region = MemoryRegion::new(overlap_end, region.end(), region.kind());
             } else {
                 Self::add_region(region, regions, next_index);
                 break;
@@ -184,7 +174,7 @@ impl EarlyFrameAllocator {
     }
 
     fn add_region(region: MemoryRegion, regions: &mut [MemoryRegion], next_index: &mut usize) {
-        if region.start == region.end {
+        if region.start() == region.end() {
             return;
         }
 
