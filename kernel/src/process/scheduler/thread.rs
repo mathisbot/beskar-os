@@ -5,8 +5,8 @@ use core::{
 };
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use beskar_core::arch::x86_64::registers::Rflags;
 use hyperdrive::queues::mpsc::{Link, Queueable};
-use x86_64::registers::rflags::RFlags;
 
 use super::{super::Process, priority::Priority};
 
@@ -112,7 +112,7 @@ impl Thread {
 
         // Push the thread registers
         let thread_regs = ThreadRegisters {
-            rflags: (RFlags::IOPL_LOW | RFlags::INTERRUPT_FLAG).bits(),
+            rflags: (Rflags::IOPL_LOW | Rflags::IF),
             rbp: stack_ptr as u64,
             rip: entry_point as u64,
             ..ThreadRegisters::default()

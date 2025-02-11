@@ -144,3 +144,42 @@ impl Efer {
         unsafe { Self::write(value) };
     }
 }
+
+pub struct Rflags;
+
+impl Rflags {
+    pub const ID: u64 = 1 << 21;
+    pub const IF: u64 = 1 << 9;
+    pub const IOPL_LOW: u64 = 1 << 12;
+    pub const IOPL_HIGH: u64 = 1 << 13;
+
+    #[must_use]
+    #[inline]
+    pub fn read() -> u64 {
+        let rf: u64;
+        unsafe {
+            core::arch::asm!("pushfq", "pop {}", lateout(reg) rf, options(nomem, preserves_flags));
+        }
+        rf
+    }
+
+    #[inline]
+    /// ## Safety
+    ///
+    /// The value written must be a valid RFLAGS value.
+    pub unsafe fn write(value: u64) {
+        unsafe {
+            core::arch::asm!("push {}", "popfq", in(reg) value, options(nomem, preserves_flags));
+        }
+    }
+
+    #[inline]
+    /// ## Safety
+    ///
+    /// The value written must be a valid RFLAGS flag.
+    pub unsafe fn insert_flags(flag: u64) {
+        let mut value = Self::read();
+        value |= flag;
+        unsafe { Self::write(value) };
+    }
+}

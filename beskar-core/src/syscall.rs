@@ -28,9 +28,9 @@ pub enum SyscallExitCode {
 impl SyscallExitCode {
     #[inline]
     /// Unwraps the syscall exit code, panicking if it is a failure.
-    /// 
+    ///
     /// ## Panics
-    /// 
+    ///
     /// Panics if the syscall exit code is not a success.
     pub fn unwrap(self) {
         assert_ne!(self, Self::Failure, "Syscall failed!");
