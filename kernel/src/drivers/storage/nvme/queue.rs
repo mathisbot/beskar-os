@@ -1,20 +1,79 @@
-use core::sync::atomic::{AtomicU16, Ordering};
+use core::{
+    ptr::NonNull,
+    sync::atomic::{AtomicU16, Ordering},
+};
 
+use beskar_core::{
+    arch::commons::{
+        PhysAddr,
+        paging::{Flags, M4KiB},
+    },
+    drivers::{DriverError, DriverResult},
+};
 use hyperdrive::volatile::{ReadWrite, Volatile};
+
+use crate::mem::page_alloc::pmap::PhysicalMapping;
 
 pub mod admin;
 pub mod io;
 
 struct Queue<T> {
     base: Volatile<ReadWrite, T>,
+    _pmap: PhysicalMapping,
     size: u16,
     tail: u16,
     head: u16,
 }
 
+impl<T> Queue<T> {
+    fn new() -> DriverResult<Self> {
+        let Some(frame) =
+            crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.alloc::<M4KiB>())
+        else {
+            return Err(DriverError::Unknown);
+        };
+
+        let flags = Flags::MMIO_SUITABLE;
+        let pmap = PhysicalMapping::new(
+            frame.start_address(),
+            frame.size().try_into().unwrap(),
+            flags,
+        );
+        let base = pmap.translate(frame.start_address()).unwrap();
+
+        Ok(Self {
+            base: Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap()),
+            _pmap: pmap,
+            size: u16::try_from(frame.size()).unwrap(),
+            tail: 0,
+            head: 0,
+        })
+    }
+}
+
+impl<T> Drop for Queue<T> {
+    fn drop(&mut self) {
+        let frame = self._pmap.start_frame();
+        crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.free(frame));
+    }
+}
+
 struct SubmissionQueue(Queue<SubmissionEntry>);
 
 impl SubmissionQueue {
+    #[inline]
+    pub fn new() -> DriverResult<Self> {
+        Ok(Self(Queue::new()?))
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn paddr(&self) -> PhysAddr {
+        self.0._pmap.start_frame().start_address()
+    }
+
+    #[must_use]
+    #[inline]
     fn is_full(&self) -> bool {
         self.0.tail.wrapping_add(1) % self.0.size == self.0.head
     }
@@ -45,6 +104,18 @@ impl SubmissionQueue {
 struct CompletionQueue(Queue<CompletionEntry>);
 
 impl CompletionQueue {
+    #[inline]
+    pub fn new() -> DriverResult<Self> {
+        Ok(Self(Queue::new()?))
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn paddr(&self) -> PhysAddr {
+        self.0._pmap.start_frame().start_address()
+    }
+
+    #[must_use]
     pub fn pop(&mut self) -> Option<CompletionEntry> {
         let inner_queue = &mut self.0;
 
@@ -74,6 +145,8 @@ struct SubmissionEntry {
 }
 
 impl SubmissionEntry {
+    #[must_use]
+    #[inline]
     /// Create a new submission entry with the given opcode
     ///
     /// The first DWORD (DWORD 0) is already set.
@@ -102,6 +175,8 @@ impl SubmissionEntry {
 struct CommandDwordZero(u32);
 
 impl CommandDwordZero {
+    #[must_use]
+    #[inline]
     pub fn new(opcode: u8) -> Self {
         let opcode = u32::from(opcode);
         let fused_op = 0;
@@ -113,6 +188,8 @@ impl CommandDwordZero {
         Self(value)
     }
 
+    #[must_use]
+    #[inline]
     pub fn id(&self) -> u16 {
         u16::try_from(self.0 >> 16).unwrap()
     }
@@ -144,6 +221,8 @@ struct CommandIdentifier(u16);
 static ID_CNTR: AtomicU16 = AtomicU16::new(0);
 
 impl CommandIdentifier {
+    #[must_use]
+    #[inline]
     pub fn new() -> Self {
         let mut raw_id = ID_CNTR.fetch_add(1, Ordering::Relaxed);
 

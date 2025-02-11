@@ -20,6 +20,7 @@ use hyperdrive::{
     locks::mcs::MUMcsLock,
     volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
 };
+use queue::admin::{AdminCompletionQueue, AdminSubmissionQueue};
 
 mod queue;
 
@@ -33,7 +34,7 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
         return Err(DriverError::Absent);
     };
 
-    let controller = NvmeControllers::new(nvme);
+    let controller = NvmeControllers::new(nvme)?;
     controller.init()?;
 
     crate::debug!(
@@ -49,11 +50,13 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
 pub struct NvmeControllers {
     registers_base: VirtAddr,
     msix: MsiX,
+    acq: AdminCompletionQueue,
+    asq: AdminSubmissionQueue,
     _pmap: PhysicalMapping,
 }
 
 impl NvmeControllers {
-    pub fn new(dev: &Device) -> Self {
+    pub fn new(dev: &Device) -> DriverResult<Self> {
         let (Some(Bar::Memory(bar)), Some(msix)) =
             pci::with_pci_handler(|handler| (handler.read_bar(&dev, 0), MsiX::new(handler, &dev)))
         else {
@@ -66,11 +69,16 @@ impl NvmeControllers {
         let physical_mapping = PhysicalMapping::<M4KiB>::new(paddr, 0x38, flags);
         let registers_base = physical_mapping.translate(paddr).unwrap();
 
-        Self {
+        let completion_queue = queue::admin::AdminCompletionQueue::new()?;
+        let submission_queue = queue::admin::AdminSubmissionQueue::new()?;
+
+        Ok(Self {
             registers_base,
             msix,
+            acq: completion_queue,
+            asq: submission_queue,
             _pmap: physical_mapping,
-        }
+        })
     }
 
     pub fn init(&self) -> DriverResult<()> {
@@ -94,16 +102,8 @@ impl NvmeControllers {
             return Err(DriverError::Invalid);
         }
 
-        // FIXME: Free on drop
-        let (Some(frame_asq), Some(frame_acq)) =
-            crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-                (fralloc.alloc::<M4KiB>(), fralloc.alloc::<M4KiB>())
-            })
-        else {
-            return Err(DriverError::Unknown);
-        };
-        self.set_asq(frame_asq.start_address());
-        self.set_acq(frame_acq.start_address());
+        self.set_asq(self.asq.paddr());
+        self.set_acq(self.acq.paddr());
 
         let max_sz = u16::try_from(M4KiB::SIZE / 64).unwrap() - 1;
         self.set_aqa(max_sz, max_sz);

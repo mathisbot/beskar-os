@@ -1,7 +1,30 @@
-use super::{CompletionEntry, CompletionQueue, SubmissionEntry, SubmissionQueue};
+use beskar_core::{arch::commons::PhysAddr, drivers::DriverResult};
+
+use super::{CompletionQueue, SubmissionEntry, SubmissionQueue};
 
 pub struct AdminCompletionQueue(CompletionQueue);
+
+impl AdminCompletionQueue {
+    pub fn new() -> DriverResult<Self> {
+        Ok(Self(CompletionQueue::new()?))
+    }
+
+    pub fn paddr(&self) -> PhysAddr {
+        self.0.paddr()
+    }
+}
+
 pub struct AdminSubmissionQueue(SubmissionQueue);
+
+impl AdminSubmissionQueue {
+    pub fn new() -> DriverResult<Self> {
+        Ok(Self(SubmissionQueue::new()?))
+    }
+
+    pub fn paddr(&self) -> PhysAddr {
+        self.0.paddr()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
