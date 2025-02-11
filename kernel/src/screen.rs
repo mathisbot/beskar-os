@@ -12,7 +12,7 @@ pub fn init(frame_buffer: &'static mut FrameBuffer) {
         4,
         "Only 32-bit pixels are supported"
     );
-    let screen = Screen::new(frame_buffer.buffer_mut(), info.into());
+    let screen = Screen::new(frame_buffer.buffer_mut(), info);
 
     SCREEN.init(screen);
 
@@ -55,7 +55,7 @@ impl Screen {
     #[must_use]
     #[inline]
     /// Returns a reference to the raw buffer.
-    pub fn buffer_mut(&mut self) -> &mut [Pixel] {
+    pub const fn buffer_mut(&mut self) -> &mut [Pixel] {
         self.raw_buffer
     }
 

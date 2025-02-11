@@ -28,7 +28,7 @@ pub fn init() -> DriverResult<()> {
     let ahci_res = ahci::init(&ahci_controllers);
     let nvme_res = nvme::init(&nvme);
 
-    if matches!(ahci_res, Err(_)) && matches!(nvme_res, Err(_)) {
+    if ahci_res.is_err() && nvme_res.is_err() {
         Err(DriverError::Absent)
     } else {
         Ok(())

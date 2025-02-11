@@ -364,7 +364,7 @@ impl TimerConfigCap {
     ///
     /// Even if this bit is disabled, the timer will still set the corresponding bit
     /// in the General Interrupt Status register.
-    pub fn set_interrupts_trig(&mut self, value: bool) {
+    pub const fn set_interrupts_trig(&mut self, value: bool) {
         let ptr = self.as_mut();
         if value {
             *ptr |= 1 << 2;
@@ -384,7 +384,7 @@ impl TimerConfigCap {
     }
 
     #[inline]
-    pub fn set_int_type(&mut self, int_type: &InterruptTriggerType) {
+    pub const fn set_int_type(&mut self, int_type: &InterruptTriggerType) {
         let ptr = self.as_mut();
         match int_type {
             InterruptTriggerType::Edge => *ptr &= !(1 << 1),

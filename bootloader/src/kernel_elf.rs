@@ -22,7 +22,9 @@ pub struct KernelLoadingUtils<'a> {
 }
 
 impl<'a> KernelLoadingUtils<'a> {
-    pub fn new(
+    #[must_use]
+    #[inline]
+    pub const fn new(
         kernel: &'a ElfFile<'a>,
         level_4_entries: &'a mut Level4Entries,
         page_table: &'a mut x86_64::structures::paging::OffsetPageTable<'static>,

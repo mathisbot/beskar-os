@@ -9,6 +9,7 @@ use beskar_core::drivers::{DriverError, DriverResult};
 mod express;
 mod legacy;
 
+#[allow(clippy::option_if_let_else)]
 pub fn init() -> DriverResult<()> {
     if let Ok(device_count) = express::init() {
         crate::info!("PCIe initialized with {} devices", device_count);

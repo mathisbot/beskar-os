@@ -146,7 +146,7 @@ impl Thread {
     ///
     /// This function should only be called on a currently active thread,
     /// as queues in the scheduler are sorted by priority.
-    pub(super) unsafe fn set_priority(&mut self, priority: Priority) {
+    pub(super) const unsafe fn set_priority(&mut self, priority: Priority) {
         self.priority = priority;
     }
 
@@ -230,7 +230,7 @@ impl ThreadId {
 
     #[must_use]
     #[inline]
-    pub fn as_u64(self) -> u64 {
+    pub const fn as_u64(self) -> u64 {
         self.0
     }
 }

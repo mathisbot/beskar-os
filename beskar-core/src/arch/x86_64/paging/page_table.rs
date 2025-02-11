@@ -138,6 +138,14 @@ impl Entry {
 #[repr(transparent)]
 pub struct Entries([Entry; 512]);
 
+impl Default for Entries {
+    #[must_use]
+    #[inline]
+    fn default() -> Self {
+        Self([Entry(0); 512])
+    }
+}
+
 impl Entries {
     #[must_use]
     #[inline]
@@ -202,7 +210,7 @@ impl<'t> PageTable<'t> {
 
     #[must_use]
     #[inline]
-    pub fn new_from_index(entries: &'t mut Entries, recursive_index: u16) -> Self {
+    pub const fn new_from_index(entries: &'t mut Entries, recursive_index: u16) -> Self {
         Self {
             entries,
             recursive_index,
@@ -211,13 +219,13 @@ impl<'t> PageTable<'t> {
 
     #[must_use]
     #[inline]
-    pub fn entries(&self) -> &Entries {
+    pub const fn entries(&self) -> &Entries {
         self.entries
     }
 
     #[must_use]
     #[inline]
-    pub fn entries_mut(&mut self) -> &mut Entries {
+    pub const fn entries_mut(&mut self) -> &mut Entries {
         self.entries
     }
 

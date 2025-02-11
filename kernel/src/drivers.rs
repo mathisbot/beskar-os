@@ -7,9 +7,8 @@ pub mod tsc;
 pub mod usb;
 
 pub fn init() {
-    if matches!(pci::init(), Err(_)) {
-        panic!("No PCI devices found");
-    }
+    let pci_init_result = pci::init();
+    assert!(pci_init_result.is_ok(), "No PCI devices found");
 
     let _ = storage::init();
     let _ = usb::init();

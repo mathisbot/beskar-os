@@ -84,7 +84,9 @@ where
         Some(self.start_page.start_address() + offset)
     }
 
-    pub fn start_frame(&self) -> Frame<S> {
+    #[must_use]
+    #[inline]
+    pub const fn start_frame(&self) -> Frame<S> {
         self.start_frame
     }
 }

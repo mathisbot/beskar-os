@@ -124,7 +124,7 @@ pub fn create_boot_info(
             }),
             recursive_index: u16::from(mappings.recursive_index()),
             rsdp_paddr: crate::system::acpi::rsdp_paddr(),
-            kernel_paddr: core::mem::transmute(mappings.kernel_addr()),
+            kernel_paddr: mappings.kernel_addr(),
             kernel_len: mappings.kernel_len(),
             kernel_vaddr: core::mem::transmute(mappings.kernel_vaddr()),
             tls_template: mappings.tls_template(),

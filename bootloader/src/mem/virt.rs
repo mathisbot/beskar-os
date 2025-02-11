@@ -377,7 +377,7 @@ impl Mappings {
 
     #[must_use]
     #[inline]
-    pub(crate) fn level_4_entries_mut(&mut self) -> &mut Level4Entries {
+    pub(crate) const fn level_4_entries_mut(&mut self) -> &mut Level4Entries {
         &mut self.level_4_entries
     }
 

@@ -61,6 +61,8 @@ fn pit_period() -> f64 {
 }
 
 fn calibrate_with_pit() -> bool {
+    assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
+
     let start = read_tsc_fenced();
     let elapsed = pit_period();
     let end = read_tsc_fenced();
@@ -77,6 +79,8 @@ fn calibrate_with_pit() -> bool {
 }
 
 fn calibrate_with_rdtsc() -> bool {
+    assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
+
     let highest_leaf = cpuid::get_highest_supported_leaf();
     if highest_leaf >= 0x15 {
         let cpuid_res = cpuid::cpuid(0x15);
@@ -95,6 +99,8 @@ fn calibrate_with_hpet() -> bool {
     const MS_PER_S: u64 = 1_000;
     const CALIBRATION_TIME_MS: u64 = 50;
     const HZ_PER_MHZ: u64 = 1_000_000;
+
+    assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
 
     let Some(diff) = crate::drivers::hpet::try_with_hpet(|hpet| {
         let start = read_tsc_fenced();
@@ -127,22 +133,22 @@ pub fn init() -> DriverResult<()> {
 
     STARTUP_TIME.store(unsafe { core::arch::x86_64::_rdtsc() }, Ordering::Relaxed);
 
-    if calibrate_with_rdtsc() {
-    } else if calibrate_with_hpet() {
-    } else if calibrate_with_pit() {
+    if calibrate_with_rdtsc() || calibrate_with_hpet() || calibrate_with_pit() {
+        crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
+        Ok(())
     } else {
-        return Err(DriverError::Unknown);
+        Err(DriverError::Unknown)
     }
-
-    crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
-
-    Ok(())
 }
 
+#[must_use]
+#[inline]
 pub fn main_counter_value() -> u64 {
     read_tsc_fenced()
 }
 
+#[must_use]
+#[inline]
 pub fn ticks_per_ms() -> u64 {
     const HZ_PER_MHZ: u64 = 1_000_000;
     const MS_PER_S: u64 = 1_000;

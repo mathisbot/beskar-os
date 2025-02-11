@@ -68,6 +68,12 @@ impl ScreenWriter {
     }
 }
 
+impl Default for ScreenWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl core::fmt::Write for ScreenWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         crate::video::with_physical_framebuffer(|screen| {

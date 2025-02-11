@@ -12,14 +12,14 @@ use beskar_core::{
 };
 use hyperdrive::volatile::{ReadWrite, Volatile};
 
-use crate::mem::page_alloc::pmap::PhysicalMapping;
+use crate::mem::{frame_alloc, page_alloc::pmap::PhysicalMapping};
 
 pub mod admin;
 pub mod io;
 
 struct Queue<T> {
     base: Volatile<ReadWrite, T>,
-    _pmap: PhysicalMapping,
+    pmap: PhysicalMapping,
     size: u16,
     tail: u16,
     head: u16,
@@ -28,7 +28,7 @@ struct Queue<T> {
 impl<T> Queue<T> {
     fn new() -> DriverResult<Self> {
         let Some(frame) =
-            crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.alloc::<M4KiB>())
+            frame_alloc::with_frame_allocator(frame_alloc::FrameAllocator::alloc::<M4KiB>)
         else {
             return Err(DriverError::Unknown);
         };
@@ -43,7 +43,7 @@ impl<T> Queue<T> {
 
         Ok(Self {
             base: Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap()),
-            _pmap: pmap,
+            pmap,
             size: u16::try_from(frame.size()).unwrap(),
             tail: 0,
             head: 0,
@@ -53,8 +53,8 @@ impl<T> Queue<T> {
 
 impl<T> Drop for Queue<T> {
     fn drop(&mut self) {
-        let frame = self._pmap.start_frame();
-        crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.free(frame));
+        let frame = self.pmap.start_frame();
+        frame_alloc::with_frame_allocator(|fralloc| fralloc.free(frame));
     }
 }
 
@@ -68,13 +68,13 @@ impl SubmissionQueue {
 
     #[must_use]
     #[inline]
-    pub fn paddr(&self) -> PhysAddr {
-        self.0._pmap.start_frame().start_address()
+    pub const fn paddr(&self) -> PhysAddr {
+        self.0.pmap.start_frame().start_address()
     }
 
     #[must_use]
     #[inline]
-    fn is_full(&self) -> bool {
+    const fn is_full(&self) -> bool {
         self.0.tail.wrapping_add(1) % self.0.size == self.0.head
     }
 
@@ -111,8 +111,8 @@ impl CompletionQueue {
 
     #[must_use]
     #[inline]
-    pub fn paddr(&self) -> PhysAddr {
-        self.0._pmap.start_frame().start_address()
+    pub const fn paddr(&self) -> PhysAddr {
+        self.0.pmap.start_frame().start_address()
     }
 
     #[must_use]
@@ -181,7 +181,7 @@ impl CommandDwordZero {
         let opcode = u32::from(opcode);
         let fused_op = 0;
         let prp = 0;
-        let id = u32::from(CommandIdentifier::new());
+        let id = CommandIdentifier::new().as_u32();
 
         let value = opcode | (fused_op << 8) | (prp << 14) | (id << 16);
 
@@ -190,7 +190,7 @@ impl CommandDwordZero {
 
     #[must_use]
     #[inline]
-    pub fn id(&self) -> u16 {
+    pub fn id(self) -> u16 {
         u16::try_from(self.0 >> 16).unwrap()
     }
 }
@@ -212,6 +212,7 @@ struct CompletionEntry {
     status: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Unique identifier for a command
 ///
 /// Used to match completion entries to submission entries.
@@ -233,10 +234,10 @@ impl CommandIdentifier {
 
         Self(raw_id)
     }
-}
 
-impl From<CommandIdentifier> for u32 {
-    fn from(id: CommandIdentifier) -> u32 {
-        u32::from(id.0)
+    #[must_use]
+    #[inline]
+    pub fn as_u32(self) -> u32 {
+        u32::from(self.0)
     }
 }

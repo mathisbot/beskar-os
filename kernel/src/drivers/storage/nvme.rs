@@ -58,7 +58,7 @@ pub struct NvmeControllers {
 impl NvmeControllers {
     pub fn new(dev: &Device) -> DriverResult<Self> {
         let (Some(Bar::Memory(bar)), Some(msix)) =
-            pci::with_pci_handler(|handler| (handler.read_bar(&dev, 0), MsiX::new(handler, &dev)))
+            pci::with_pci_handler(|handler| (handler.read_bar(dev, 0), MsiX::new(handler, dev)))
         else {
             panic!("NVMe controller either have no memory BAR or no MSI-X capability");
         };

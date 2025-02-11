@@ -69,25 +69,32 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
     {
         // Get stack location
         #[allow(static_mut_refs)]
-        let stack = unsafe { &mut STACKS[locals!().core_id()] };
-        let mut stack_ptr = unsafe { stack.as_mut_ptr().add(stack.capacity()) };
-
-        let regs = unsafe { regs.read_volatile() };
+        let mut stack_ptr = unsafe {
+            let stack = &mut STACKS[locals!().core_id()];
+            stack.as_mut_ptr().add(stack.capacity())
+        };
 
         // Copy arguments to kernel stack
         stack_ptr = unsafe { stack_ptr.byte_sub(size_of::<*mut u8>()) };
         let current_rsp: *mut u8;
         unsafe {
-            core::arch::asm!("mov {}, rsp", out(reg) current_rsp, options(nomem, nostack, preserves_flags))
-        };
+            core::arch::asm!("mov {}, rsp", lateout(reg) current_rsp, options(nomem, nostack, preserves_flags));
+        }
+        assert!(stack_ptr.cast::<*mut u8>().is_aligned());
         unsafe { stack_ptr.cast::<*mut u8>().write_volatile(current_rsp) };
+
         stack_ptr = unsafe { stack_ptr.byte_sub(size_of::<SyscallRegisters>()) };
-        unsafe { stack_ptr.cast::<SyscallRegisters>().write_volatile(regs) };
+        assert!(stack_ptr.cast::<SyscallRegisters>().is_aligned());
+        unsafe {
+            stack_ptr
+                .cast::<SyscallRegisters>()
+                .write_volatile(regs.read())
+        };
 
         #[allow(clippy::pointers_in_nomem_asm_block)] // False positive
         unsafe {
             core::arch::asm!("mov rsp, {}", in(reg) stack_ptr, options(nomem, nostack, preserves_flags));
-        };
+        }
     }
 
     unsafe {
@@ -100,19 +107,19 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
 
     // Switch back to user stack
     {
-        let current_stack: *mut u8;
+        let current_stack: *mut SyscallRegisters;
         unsafe {
             core::arch::asm!("mov {}, rsp", out(reg) current_stack, options(nomem, nostack, preserves_flags));
         }
 
         //  Read registers value and previous stack pointer
-        let regs = unsafe { current_stack.cast::<SyscallRegisters>().read_volatile() };
-        let current_sack = unsafe { current_stack.byte_add(size_of::<SyscallRegisters>()) };
-        let previous_rsp = unsafe { current_sack.cast::<*mut u8>().read_volatile() };
+        let regs = unsafe { current_stack.read() };
+        let current_stack = unsafe { current_stack.add(1) };
+        let previous_rsp = unsafe { current_stack.cast::<*mut SyscallRegisters>().read() };
 
         // Write register values back
         unsafe {
-            previous_rsp.cast::<SyscallRegisters>().write_volatile(regs);
+            previous_rsp.write_volatile(regs);
         }
 
         #[allow(clippy::pointers_in_nomem_asm_block)]
