@@ -66,6 +66,7 @@ pub fn init() {
     idt[Irq::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
     idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
     idt[Irq::Nic as u8].set_handler_fn(nic_interrupt_handler);
+    idt[Irq::Nvme as u8].set_handler_fn(nvme_interrupt_handler);
 
     idt.load();
 
@@ -168,19 +169,18 @@ macro_rules! info_isr_eoi {
 
 panic_isr!(divide_error_handler);
 info_isr!(debug_handler);
-panic_isr!(non_maskable_interrupt_handler);
+panic_isr!(non_maskable_interrupt_handler); // TODO: If another core has panicked on a kernel thread, halt the system
 panic_isr!(breakpoint_handler);
 panic_isr!(overflow_handler);
 panic_isr!(bound_range_exceeded_handler);
 panic_isr!(invalid_opcode_handler);
-panic_isr!(device_not_available_handler);
+panic_isr!(device_not_available_handler); // TODO: Save FPU/SIMD state
 panic_isr_with_errcode!(invalid_tss_handler);
 panic_isr_with_errcode!(segment_not_present_handler);
 panic_isr_with_errcode!(stack_segment_fault_handler);
 panic_isr_with_errcode!(general_protection_fault_handler);
 panic_isr!(x87_floating_point_handler);
 panic_isr_with_errcode!(alignment_check_handler);
-// panic_isr!(machine_check_handler); // Special case: return type must be `!`
 panic_isr!(simd_floating_point_handler);
 panic_isr!(virtualization_handler);
 panic_isr_with_errcode!(cp_protection_handler);
@@ -208,6 +208,11 @@ extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFram
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
+extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("NVMe INTERRUPT on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 /// Represents a programmable interrupt index
@@ -218,16 +223,19 @@ pub enum Irq {
     Spurious = 33,
     Xhci = 34,
     Nic = 35,
+    Nvme = 36,
 }
 
+#[inline]
 pub fn int_disable() {
     unsafe {
-        core::arch::asm!("cli", options(preserves_flags, nostack));
+        core::arch::asm!("cli", options(nomem, preserves_flags, nostack));
     }
 }
 
+#[inline]
 pub fn int_enable() {
     unsafe {
-        core::arch::asm!("sti", options(preserves_flags, nostack));
+        core::arch::asm!("sti", options(nomem, preserves_flags, nostack));
     }
 }

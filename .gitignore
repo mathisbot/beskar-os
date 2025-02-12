@@ -8,3 +8,6 @@
 
 # Forgotten backup files
 /*.bak
+
+# Specifications
+/specs

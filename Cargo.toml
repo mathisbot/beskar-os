@@ -2,8 +2,10 @@
 name = "beskar-os"
 version = "0.1.0"
 edition = "2024"
-
-[dependencies]
+authors = ["mathisbot"]
+description = "Basic 64-bit hobby OS that supports SMP and UEFI 2 booting"
+license = "MIT"
+repository = "https://github.com/mathisbot/beskar-os/"
 
 [workspace]
 members = ["beskar-core", "beskar-lib", "bootloader", "hyperdrive", "kernel", "userspace/helloworld"]
@@ -13,6 +15,7 @@ beskar-core = { path = "beskar-core" }
 beskar-lib = { path = "beskar-lib" }
 bootloader = { path = "bootloader" }
 hyperdrive = { path = "hyperdrive" }
+thiserror = { version = "2.0.11", default-features = false }
 x86_64 = { version = "0.15.2", default-features = false, features = ["abi_x86_interrupt","instructions"] }
 
 [build-dependencies]

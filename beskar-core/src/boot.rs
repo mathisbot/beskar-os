@@ -1,10 +1,11 @@
-use beskar_core::arch::commons::{PhysAddr, VirtAddr};
-
-use crate::video::FrameBuffer;
+use crate::{
+    arch::commons::{PhysAddr, VirtAddr},
+    mem::MemoryRegion,
+    video::FrameBuffer,
+};
 
 /// This structure represents the information that the bootloader passes to the kernel.
 #[derive(Debug)]
-#[non_exhaustive]
 pub struct BootInfo {
     /// A map of the physical memory regions.
     pub memory_regions: &'static mut [MemoryRegion],
@@ -24,28 +25,6 @@ pub struct BootInfo {
     pub tls_template: Option<TlsTemplate>,
     /// Number of enabled and healthy CPU cores in the system.
     pub cpu_count: usize,
-}
-
-/// Represent a physical memory region.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct MemoryRegion {
-    /// The physical start address of the region.
-    pub start: u64,
-    /// The physical end address (exclusive) of the region.
-    pub end: u64,
-    /// The memory usage of the memory region.
-    pub kind: MemoryRegionUsage,
-}
-
-/// Represents the different usage of memory.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum MemoryRegionUsage {
-    /// Unused conventional memory, can be used by the kernel.
-    Usable,
-    /// Memory mappings created by the bootloader, including the page table and boot info mappings.
-    Bootloader,
-    /// An unknown memory region reported by the firmware, containing the UEFI memory type tag.
-    Unknown(u32),
 }
 
 /// Information about the thread local storage template.

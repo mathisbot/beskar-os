@@ -1,4 +1,5 @@
 use super::pci::Class;
+use beskar_core::drivers::DriverResult;
 
 use alloc::vec::Vec;
 
@@ -7,7 +8,7 @@ pub mod driver;
 pub mod host;
 pub mod hub;
 
-pub fn init() {
+pub fn init() -> DriverResult<()> {
     // Get all USB controllers from PCI
     let usb_controllers = super::pci::with_pci_handler(|handler| {
         handler
@@ -20,7 +21,7 @@ pub fn init() {
             .collect::<Vec<_>>()
     });
 
-    host::init(&usb_controllers);
+    host::init(&usb_controllers)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

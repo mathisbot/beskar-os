@@ -6,13 +6,13 @@ These are intended for use by BeskarOS components, in particular the kernel.
 ## Structures
 
 It defines:
-- Pointers
-    - Volatile Pointers with compile-time Access Rights
+- Laziness
+    - Once
 - Locks
     - Mellor, Crumley and Scott
     - Read-Write
-- Flow control
-    - Once
+- Pointers
+    - Volatile Pointers with compile-time Access Rights
 - Queues
     - Multiple Producer, Single Consumer and intrusive
 - Sync

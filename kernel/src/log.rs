@@ -76,6 +76,12 @@ macro_rules! error {
 /// Allows logging text to a pixel-based framebuffer.
 pub struct ScreenWriter(FramebufferWriter);
 
+impl Default for ScreenWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ScreenWriter {
     #[must_use]
     #[inline]

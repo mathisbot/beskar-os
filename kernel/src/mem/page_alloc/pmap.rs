@@ -83,6 +83,12 @@ where
 
         Some(self.start_page.start_address() + offset)
     }
+
+    #[must_use]
+    #[inline]
+    pub const fn start_frame(&self) -> Frame<S> {
+        self.start_frame
+    }
 }
 
 impl<S: MemSize> Drop for PhysicalMapping<S>

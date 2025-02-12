@@ -3,7 +3,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use bootloader::structs::{MemoryRegion, MemoryRegionUsage};
+use beskar_core::mem::{MemoryRegion, MemoryRegionUsage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Represents a range of memory addresses.
@@ -53,12 +53,12 @@ impl MemoryRange {
 impl From<MemoryRegion> for MemoryRange {
     fn from(region: MemoryRegion) -> Self {
         assert_eq!(
-            region.kind,
+            region.kind(),
             MemoryRegionUsage::Usable,
             "Memory region is not usable"
         );
-        assert!(region.start < region.end, "Invalid memory region");
-        Self::new(region.start, region.end - 1)
+        assert!(region.start() < region.end(), "Invalid memory region");
+        Self::new(region.start(), region.end() - 1)
     }
 }
 
@@ -108,7 +108,7 @@ impl<const N: usize> MemoryRanges<N> {
 
         for &region in regions
             .iter()
-            .filter(|region| region.kind == MemoryRegionUsage::Usable)
+            .filter(|region| region.kind() == MemoryRegionUsage::Usable)
             .take(N)
         {
             ranges.insert(region.into());

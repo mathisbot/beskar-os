@@ -1,5 +1,4 @@
-use beskar_core::arch::commons::VirtAddr;
-use bootloader::structs::MemoryRegion;
+use beskar_core::{arch::commons::VirtAddr, mem::MemoryRegion};
 
 pub mod address_space;
 pub mod frame_alloc;

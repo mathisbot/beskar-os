@@ -4,8 +4,10 @@ use crate::{
     arch::{self, ap, apic, interrupts},
     drivers, locals, mem, process, screen, syscall, time,
 };
-use beskar_core::arch::commons::{PhysAddr, VirtAddr};
-use bootloader::BootInfo;
+use beskar_core::{
+    arch::commons::{PhysAddr, VirtAddr},
+    boot::BootInfo,
+};
 
 /// Static reference to the kernel main function
 ///
@@ -60,8 +62,6 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     crate::info!("BeskarOS kernel starting...");
 
-    time::tsc::calibrate();
-
     mem::init(
         *recursive_index,
         memory_regions,
@@ -73,15 +73,15 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     locals!().gdt().init_load();
 
-    process::init();
+    // If the bootloader provided an RSDP address, we can initialize ACPI.
+    rsdp_paddr.map(|rsdp_paddr| drivers::acpi::init(PhysAddr::new(rsdp_paddr.as_u64())));
+
+    time::init();
 
     interrupts::init();
 
+    process::init();
     syscall::init();
-
-    // If the bootloader provided an RSDP address, we can initialize ACPI.
-    rsdp_paddr.map(|rsdp_paddr| drivers::acpi::init(PhysAddr::new(rsdp_paddr.as_u64())));
-    time::hpet::init();
 
     apic::init_lapic();
     apic::init_ioapic();
@@ -151,7 +151,7 @@ macro_rules! kernel_main {
         /// Entry of the kernel called by the bootloader.
         ///
         /// This should only be the entry point for the BSP.
-        fn __bootloader_entry_point(boot_info: &'static mut bootloader::BootInfo) -> ! {
+        fn __bootloader_entry_point(boot_info: &'static mut beskar_core::boot::BootInfo) -> ! {
             $crate::boot::kbsp_entry(boot_info, $path);
         }
         ::bootloader::entry_point!(__bootloader_entry_point);

@@ -21,7 +21,7 @@ pub fn exit(code: ExitCode) -> ! {
         core::arch::asm!(
             "syscall",
             in("rax") Syscall::Exit as u64,
-            in("rdi") code as usize,
+            in("rdi") code as u64,
         );
     }
     unsafe { core::hint::unreachable_unchecked() }

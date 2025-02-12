@@ -3,7 +3,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use x86_64::registers::rflags;
+use beskar_core::arch::x86_64::registers::Rflags;
 
 static CPUID_MAX_LEAF: AtomicU32 = AtomicU32::new(0);
 
@@ -132,6 +132,12 @@ impl CpuFeature {
         bit: 21,
         name: "X2APIC",
     };
+    pub const XSAVE: Self = Self {
+        leaf: 1,
+        reg: CpuidReg::Ecx,
+        bit: 26,
+        name: "XSAVE",
+    };
     pub const RDRAND: Self = Self {
         leaf: 1,
         reg: CpuidReg::Ecx,
@@ -152,7 +158,7 @@ impl CpuFeature {
 /// List of required features for the kernel to run
 ///
 /// Please keep the list sorted by leaf number
-const REQUIRED_FEATURES: [CpuFeature; 4] = [
+const REQUIRED_FEATURES: [CpuFeature; 5] = [
     // Leaf 1
     // CpuFeature::FPU,
     CpuFeature::PSE,
@@ -160,6 +166,7 @@ const REQUIRED_FEATURES: [CpuFeature; 4] = [
     CpuFeature::APIC,
     // CpuFeature::PAT,
     // CpuFeature::FXSR,
+    CpuFeature::XSAVE,
     // Leaf 7
     CpuFeature::FSGSBASE, // TLS support
 ];
@@ -195,18 +202,22 @@ pub fn check_cpuid() {
 #[must_use]
 /// Check if the CPU supports the CPUID instruction
 fn cpuid_supported() -> bool {
-    let mut rflags = rflags::read();
-    let old_id_flag = rflags.intersection(rflags::RFlags::ID);
+    let mut rflags = Rflags::read();
+    let old_id_flag = rflags & Rflags::ID;
 
-    rflags.toggle(rflags::RFlags::ID);
+    if old_id_flag != 0 {
+        rflags &= !Rflags::ID;
+    } else {
+        rflags |= Rflags::ID;
+    }
 
     // Depending on the CPU, this line can cause an invalid opcode exception, crashing the whole system.
     //
     // This is not a real problem, as CPUs that don't support CPUID don't support much required features,
     // so the kernel can't run on them anyway.
-    unsafe { rflags::write(rflags) };
+    unsafe { Rflags::write(rflags) };
 
-    let new_id_flag = rflags::read().intersection(rflags::RFlags::ID);
+    let new_id_flag = Rflags::read() & Rflags::ID;
 
     new_id_flag != old_id_flag
 }

@@ -1,12 +1,13 @@
-use crate::structs::{MemoryRegion, MemoryRegionUsage};
+use beskar_core::arch::commons::{
+    PhysAddr,
+    paging::{Frame, M4KiB, MemSize as _},
+};
+use beskar_core::mem::{MemoryRegion, MemoryRegionUsage};
 use uefi::{
     boot::{MemoryDescriptor, MemoryType},
     mem::memory_map::{MemoryMap, MemoryMapOwned},
 };
-use x86_64::{
-    PhysAddr,
-    structures::paging::{FrameAllocator, PageSize, PhysFrame, Size4KiB},
-};
+use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
 
 /// A physical frame allocator based on a UEFI provided memory map.
 ///
@@ -17,9 +18,9 @@ pub struct EarlyFrameAllocator {
     memory_map: MemoryMapOwned,
     current_entry_index: usize,
     /// Keeps track of the current maximum allocated frame.
-    next_frame: PhysFrame,
+    next_frame: Frame,
     /// Keeps track of the first allocated frame.
-    min_frame: PhysFrame,
+    min_frame: Frame,
     /// The largest detected physical memory address.
     max_physical_address: PhysAddr,
 }
@@ -33,11 +34,11 @@ impl EarlyFrameAllocator {
     pub fn new(memory_map: MemoryMapOwned) -> Self {
         // Skip the lower 1 MiB of frames by convention.
         // This also skips `0x00` because Rust assumes that null references are not valid.
-        let frame = PhysFrame::containing_address(PhysAddr::new(0x10_0000));
+        let frame = Frame::containing_address(PhysAddr::new(0x10_0000));
 
         let max = memory_map
             .entries()
-            .map(|r| PhysAddr::new(r.phys_start) + r.page_count * Size4KiB::SIZE)
+            .map(|r| PhysAddr::new(r.phys_start) + r.page_count * M4KiB::SIZE)
             .max()
             .unwrap();
 
@@ -55,15 +56,12 @@ impl EarlyFrameAllocator {
     }
 
     #[must_use]
-    fn allocate_frame_from_descriptor(
-        &mut self,
-        descriptor: &MemoryDescriptor,
-    ) -> Option<PhysFrame> {
+    fn allocate_frame_from_descriptor(&mut self, descriptor: &MemoryDescriptor) -> Option<Frame> {
         let start_paddr = PhysAddr::new(descriptor.phys_start);
-        let end_paddr = start_paddr + descriptor.page_count * Size4KiB::SIZE;
+        let end_paddr = start_paddr + descriptor.page_count * M4KiB::SIZE;
 
-        let start_frame = PhysFrame::containing_address(start_paddr);
-        let end_frame = PhysFrame::containing_address(end_paddr - 1u64);
+        let start_frame = Frame::containing_address(start_paddr);
+        let end_frame = Frame::containing_address(end_paddr - 1u64);
 
         if self.next_frame < start_frame {
             self.next_frame = start_frame;
@@ -71,7 +69,7 @@ impl EarlyFrameAllocator {
 
         if self.next_frame <= end_frame {
             let ret = self.next_frame;
-            self.next_frame += 1;
+            self.next_frame = self.next_frame + 1;
 
             Some(ret)
         } else {
@@ -124,15 +122,11 @@ impl EarlyFrameAllocator {
             };
 
             let start = PhysAddr::new(descriptor.phys_start);
-            let end = PhysAddr::new(descriptor.phys_start) + descriptor.page_count * Size4KiB::SIZE;
+            let end = PhysAddr::new(descriptor.phys_start) + descriptor.page_count * M4KiB::SIZE;
 
-            let region = MemoryRegion {
-                start: start.as_u64(),
-                end: end.as_u64(),
-                kind,
-            };
+            let region = MemoryRegion::new(start.as_u64(), end.as_u64(), kind);
 
-            if region.kind == MemoryRegionUsage::Usable {
+            if kind == MemoryRegionUsage::Usable {
                 Self::split_region(region, regions, &mut next_index, &used_slices);
             } else {
                 Self::add_region(region, regions, &mut next_index);
@@ -148,13 +142,13 @@ impl EarlyFrameAllocator {
         next_index: &mut usize,
         used_slices: &[(u64, u64)],
     ) {
-        while region.start != region.end {
+        while region.start() != region.end() {
             // Check for overlaps with used slices.
             if let Some((overlap_start, overlap_end)) = used_slices
                 .iter()
                 .filter_map(|(start, end)| {
-                    let overlap_start = region.start.max(*start);
-                    let overlap_end = region.end.min(*end);
+                    let overlap_start = region.start().max(*start);
+                    let overlap_end = region.end().min(*end);
                     if overlap_start < overlap_end {
                         Some((overlap_start, overlap_end))
                     } else {
@@ -163,21 +157,15 @@ impl EarlyFrameAllocator {
                 })
                 .min_by_key(|&(overlap_start, _)| overlap_start)
             {
-                let usable = MemoryRegion {
-                    start: region.start,
-                    end: overlap_start,
-                    kind: MemoryRegionUsage::Usable,
-                };
-                let bootloader = MemoryRegion {
-                    start: overlap_start,
-                    end: overlap_end,
-                    kind: MemoryRegionUsage::Bootloader,
-                };
+                let usable =
+                    MemoryRegion::new(region.start(), overlap_start, MemoryRegionUsage::Usable);
+                let bootloader =
+                    MemoryRegion::new(overlap_start, overlap_end, MemoryRegionUsage::Bootloader);
 
                 Self::add_region(usable, regions, next_index);
                 Self::add_region(bootloader, regions, next_index);
 
-                region.start = overlap_end;
+                region = MemoryRegion::new(overlap_end, region.end(), region.kind());
             } else {
                 Self::add_region(region, regions, next_index);
                 break;
@@ -186,7 +174,7 @@ impl EarlyFrameAllocator {
     }
 
     fn add_region(region: MemoryRegion, regions: &mut [MemoryRegion], next_index: &mut usize) {
-        if region.start == region.end {
+        if region.start() == region.end() {
             return;
         }
 
@@ -206,7 +194,7 @@ unsafe impl FrameAllocator<Size4KiB> for EarlyFrameAllocator {
         while let Some(&descriptor) = self.memory_map.get(self.current_entry_index) {
             if descriptor.ty == MemoryType::CONVENTIONAL {
                 if let Some(frame) = self.allocate_frame_from_descriptor(&descriptor) {
-                    return Some(frame);
+                    return Some(unsafe { core::mem::transmute(frame) });
                 }
             }
             self.current_entry_index += 1;

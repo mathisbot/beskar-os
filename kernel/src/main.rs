@@ -10,14 +10,10 @@ static SPAWN_ONCE: Once<()> = Once::uninit();
 
 /// The kernel main function, where every core ends up after initialization
 ///
-/// BSP entry point (called by bootloader) is defined in `lib.rs`.
+/// BSP entry point (called by bootloader) is defined in `boot.rs`.
 fn kmain() -> ! {
     if locals!().core_id() == 0 {
         kernel::info!("Welcome to BeskarOS kernel!");
-        kernel::info!(
-            "Started kernel in {:.1?}",
-            kernel::time::tsc::time_since_startup()
-        );
     }
 
     scheduler::set_scheduling(true);

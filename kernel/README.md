@@ -5,7 +5,7 @@ BeskarOS is a basic kernel for the x86_64 architecture.
 ## Architecture
 
 The kernel is a monolithic x86_64 kernel written in pure Rust (with the exception of a single x86 ASM file for bootstrapping APs).
-I am not planning on writing a kernel close to Linux, as I am focusing on learning the basics of x86.
+I am not planning on writing a Linux-like kernel, as I am mainly focusing on learning the basics.
 
 ## Features
 
@@ -38,9 +38,9 @@ I am not planning on writing a kernel close to Linux, as I am focusing on learni
             - [x] TSC
             - [x] APIC Timer
     - Network
+        - [ ] NICs
+            - [ ] Intel e1000e
         - [ ] Network stack
-            - [ ] NIC drivers
-                - [ ] Intel e1000e
             - [ ] ARP
             - [ ] ICMP
             - [ ] IPv4

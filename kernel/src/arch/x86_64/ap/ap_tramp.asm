@@ -24,23 +24,21 @@ __startup:
     ; Minimal CR4 bit setup, will be overwritten at startup
     ; with BSP's CR4 value
     mov eax, cr4
-    or eax, 0b1010110000 ; Set FXSAVE/FXRSTOR, PGE, PAE, PSE
+    or eax, 1 << 5 ; Enable PAE
     mov cr4, eax
 
     lgdt [gdtr]
- 
-    ; Store a cumulative mask to disable bits in CR0
-    mov eax, 1 << 30 | 1 << 29
-    not eax
 
-    ; Enable long mode
+    ; Minimal EFER bit setup, will be overwritten at startup
+    ; with BSP's EFER value
     mov ecx, 0xC0000080 ; Read from EFER MSR
     rdmsr
     or eax,  1 << 8 | 1 << 11 ; Set Long-Mode-Enable and NXE
     wrmsr
 
+    ; Minimal CR0 bit setup, will be overwritten at startup
+    ; with BSP's CR0 value
     mov ebx, cr0
-    and ebx, eax
     or ebx, 1 << 31  | 1 ; Set paging and write protection
     mov cr0, ebx
     
@@ -78,8 +76,6 @@ stack_lookup:
     ; Past this point, the stack is ours and its address is in rax
 
     mov rsp, rax
-    
-    mov rbx, [trampoline.ap_entry]
     jmp [trampoline.ap_entry]
 
 section .data

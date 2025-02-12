@@ -4,7 +4,8 @@ use beskar_core::syscall::{Syscall, SyscallExitCode};
 ///
 /// ## Panics
 ///
-/// Panics if the syscall fails (should never happen)
+/// Panics if the syscall fails (should never happen
+/// for valid input).
 pub fn print(msg: &str) {
     let res_code: u64;
     unsafe {
