@@ -6,7 +6,7 @@
 
 use crate::{
     drivers::pci::{self, Bar, Device, msix::MsiX},
-    mem::page_alloc::pmap::PhysicalMapping,
+    mem::{frame_alloc, page_alloc::pmap::PhysicalMapping},
 };
 use beskar_core::{
     arch::commons::{
@@ -26,6 +26,8 @@ mod queue;
 
 static NVME_CONTROLLER: MUMcsLock<NvmeControllers> = MUMcsLock::uninit();
 
+const MAX_QUEUES: usize = 3;
+
 pub fn init(nvme: &[Device]) -> DriverResult<()> {
     if nvme.len() > 1 {
         crate::warn!("Multiple NVMe controllers found, using the first one");
@@ -34,7 +36,7 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
         return Err(DriverError::Absent);
     };
 
-    let controller = NvmeControllers::new(nvme)?;
+    let mut controller = NvmeControllers::new(nvme)?;
     controller.init()?;
 
     crate::debug!(
@@ -52,6 +54,8 @@ pub struct NvmeControllers {
     msix: MsiX,
     acq: AdminCompletionQueue,
     asq: AdminSubmissionQueue,
+    /// Maximum data transfer size in bytes
+    max_transfer_sz: u64,
     _pmap: PhysicalMapping,
 }
 
@@ -66,22 +70,54 @@ impl NvmeControllers {
         let paddr = bar.base_address();
 
         let flags = Flags::MMIO_SUITABLE;
-        let physical_mapping = PhysicalMapping::<M4KiB>::new(paddr, 0x38, flags);
+
+        let doorbell_stride = {
+            let physical_mapping = PhysicalMapping::<M4KiB>::new(paddr, size_of::<u64>(), flags);
+            let cap_ptr = NonNull::new(
+                physical_mapping
+                    .translate(paddr)
+                    .unwrap()
+                    .as_mut_ptr::<u64>(),
+            )
+            .unwrap();
+            let cap = Capabilities(Volatile::new(cap_ptr));
+            cap.dstrd()
+        };
+
+        let physical_mapping = PhysicalMapping::<M4KiB>::new(
+            paddr,
+            0x1000 + 2 * (MAX_QUEUES + 1) * doorbell_stride,
+            flags,
+        );
         let registers_base = physical_mapping.translate(paddr).unwrap();
 
-        let completion_queue = queue::admin::AdminCompletionQueue::new()?;
-        let submission_queue = queue::admin::AdminSubmissionQueue::new()?;
+        let asq_doorbell = Volatile::new(
+            NonNull::new(unsafe { registers_base.as_mut_ptr::<u16>().byte_add(0x1000) }).unwrap(),
+        );
+        let acq_doorbell = Volatile::new(
+            NonNull::new(unsafe {
+                registers_base
+                    .as_mut_ptr::<u16>()
+                    .byte_add(0x1000 + doorbell_stride)
+            })
+            .unwrap(),
+        );
+        let submission_queue = queue::admin::AdminSubmissionQueue::new(asq_doorbell)?;
+        let completion_queue = queue::admin::AdminCompletionQueue::new(acq_doorbell)?;
 
         Ok(Self {
             registers_base,
             msix,
             acq: completion_queue,
             asq: submission_queue,
+            max_transfer_sz: 0,
             _pmap: physical_mapping,
         })
     }
 
-    pub fn init(&self) -> DriverResult<()> {
+    pub fn init(&mut self) -> DriverResult<()> {
+        // --- Part One: Controller Bare Initialization ---
+
         self.cc().disable();
         while self.csts().ready() {
             core::hint::spin_loop();
@@ -105,7 +141,7 @@ impl NvmeControllers {
         self.set_asq(self.asq.paddr());
         self.set_acq(self.acq.paddr());
 
-        let max_sz = u16::try_from(M4KiB::SIZE / 64).unwrap() - 1;
+        let max_sz = u16::try_from(M4KiB::SIZE / 64).unwrap() - 1; // 0-based
         self.set_aqa(max_sz, max_sz);
 
         self.cc().set_iosqes(64);
@@ -120,15 +156,54 @@ impl NvmeControllers {
             core::hint::spin_loop();
         }
 
-        // TODO: Send identify command
-        // let identify_cmd = queue::admin::AdminSubmissionEntry::new_identify(
-        //     queue::admin::IdentifyTarget::Controller,
-        //     todo!("Buffer"),
-        // );
+        // --- Part Two: Controller Identification ---
+
+        let frame =
+            frame_alloc::with_frame_allocator(frame_alloc::FrameAllocator::alloc::<M4KiB>).unwrap();
+        let identify_cmd = queue::admin::AdminSubmissionEntry::new_identify(
+            queue::admin::IdentifyTarget::Controller,
+            frame,
+        );
+
+        self.asq.push(&identify_cmd);
+
+        let identify_result = {
+            let pmap = PhysicalMapping::<M4KiB>::new(
+                frame.start_address(),
+                size_of::<queue::admin::IdentifyController>(),
+                Flags::PRESENT | Flags::NO_EXECUTE | Flags::CACHE_DISABLED,
+            );
+            let vaddr = pmap.translate(frame.start_address()).unwrap();
+            let ptr = vaddr.as_ptr::<queue::admin::IdentifyController>();
+            // Wait for command completion
+            // Completion also triggers and interrupt!
+            // TODO: On interrupt, dequeue the completion queue into another Rustier queue/tree
+            // intended to be browsed by command identifier
+            while self.acq.pop().is_none() {
+                core::hint::spin_loop();
+            }
+            unsafe { ptr.read_volatile() }
+        };
+
+        self.max_transfer_sz = {
+            let raw = identify_result.maximum_data_transfer_size();
+            let mps_min = u64::from(self.capabilities().mpsmin());
+            mps_min.checked_mul(1 << raw).unwrap_or(u64::MAX)
+        };
+
+        // --- Part Three: I/O queues creation ---
 
         // TODO: Configure I/O queues
 
         Ok(())
+    }
+
+    pub fn shutdown(&mut self) {
+        // TODO: Delete IO queues
+        self.cc().disable();
+        while self.csts().ready() {
+            core::hint::spin_loop();
+        }
     }
 
     #[must_use]

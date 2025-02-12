@@ -23,10 +23,11 @@ struct Queue<T> {
     size: u16,
     tail: u16,
     head: u16,
+    doorbell: Volatile<ReadWrite, u16>,
 }
 
 impl<T> Queue<T> {
-    fn new() -> DriverResult<Self> {
+    fn new(doorbell: Volatile<ReadWrite, u16>) -> DriverResult<Self> {
         let Some(frame) =
             frame_alloc::with_frame_allocator(frame_alloc::FrameAllocator::alloc::<M4KiB>)
         else {
@@ -47,6 +48,7 @@ impl<T> Queue<T> {
             size: u16::try_from(frame.size()).unwrap(),
             tail: 0,
             head: 0,
+            doorbell,
         })
     }
 }
@@ -62,8 +64,8 @@ struct SubmissionQueue(Queue<SubmissionEntry>);
 
 impl SubmissionQueue {
     #[inline]
-    pub fn new() -> DriverResult<Self> {
-        Ok(Self(Queue::new()?))
+    pub fn new(doorbell: Volatile<ReadWrite, u16>) -> DriverResult<Self> {
+        Ok(Self(Queue::new(doorbell)?))
     }
 
     #[must_use]
@@ -93,11 +95,13 @@ impl SubmissionQueue {
         unsafe { entry_ptr.write(entry) };
 
         inner_queue.tail = inner_queue.tail.wrapping_add(1) % inner_queue.size;
+
+        self.flush();
     }
 
     /// Report the entries to the controller
-    pub fn flush(&mut self) {
-        todo!("Write to the doorbell register")
+    fn flush(&mut self) {
+        unsafe { self.0.doorbell.write(self.0.tail) };
     }
 }
 
@@ -105,8 +109,8 @@ struct CompletionQueue(Queue<CompletionEntry>);
 
 impl CompletionQueue {
     #[inline]
-    pub fn new() -> DriverResult<Self> {
-        Ok(Self(Queue::new()?))
+    pub fn new(doorbell: Volatile<ReadWrite, u16>) -> DriverResult<Self> {
+        Ok(Self(Queue::new(doorbell)?))
     }
 
     #[must_use]
@@ -116,19 +120,29 @@ impl CompletionQueue {
     }
 
     #[must_use]
+    // TODO: Find some entry with some CommandIdentifier
     pub fn pop(&mut self) -> Option<CompletionEntry> {
         let inner_queue = &mut self.0;
-
-        if inner_queue.head == inner_queue.tail {
-            return None;
-        }
 
         let entry_ptr = unsafe { inner_queue.base.add(usize::from(inner_queue.head)) };
         let entry = unsafe { entry_ptr.read() };
 
-        inner_queue.head = inner_queue.head.wrapping_add(1) % inner_queue.size;
+        if !entry.has_finished() {
+            return None;
+        }
+
+        assert!(entry.is_success());
+
+        self.flush();
+
+        self.0.head = self.0.head.wrapping_add(1) % self.0.size;
 
         Some(entry)
+    }
+
+    /// Tell the controller that the entries have been read
+    fn flush(&mut self) {
+        unsafe { self.0.doorbell.write(self.0.head) };
     }
 }
 
@@ -203,7 +217,7 @@ struct CompletionEntry {
     s_queue_head: u16,
     s_queue_id: u16,
     /// Similar to the one in `SubmissionEntry`
-    cid: u16,
+    cid: CommandIdentifier,
     /// Status of the command
     ///
     /// Format:
@@ -212,7 +226,30 @@ struct CompletionEntry {
     status: u16,
 }
 
+impl CompletionEntry {
+    #[must_use]
+    #[inline]
+    pub const fn has_finished(self) -> bool {
+        self.status & 1 != 0
+    }
+
+    #[must_use]
+    #[inline]
+    /// Check if the command was successful
+    ///
+    /// This value only has meaning if `has_finished` returns true.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the command has not finished.
+    pub const fn is_success(self) -> bool {
+        assert!(self.has_finished());
+        self.status & (u16::MAX - 1) == 0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
 /// Unique identifier for a command
 ///
 /// Used to match completion entries to submission entries.
@@ -239,5 +276,11 @@ impl CommandIdentifier {
     #[inline]
     pub fn as_u32(self) -> u32 {
         u32::from(self.0)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn as_u16(self) -> u16 {
+        u16::from(self.0)
     }
 }
