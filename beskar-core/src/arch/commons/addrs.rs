@@ -110,7 +110,6 @@ impl PhysAddr {
 impl Add<u64> for VirtAddr {
     type Output = Self;
 
-    #[must_use]
     #[inline]
     fn add(self, rhs: u64) -> Self {
         Self::new(self.0 + rhs)
@@ -120,7 +119,6 @@ impl Add<u64> for VirtAddr {
 impl Add<Self> for VirtAddr {
     type Output = Self;
 
-    #[must_use]
     #[inline]
     fn add(self, rhs: Self) -> Self {
         Self::new(self.0 + rhs.0)
@@ -130,7 +128,6 @@ impl Add<Self> for VirtAddr {
 impl Sub<u64> for VirtAddr {
     type Output = Self;
 
-    #[must_use]
     #[inline]
     fn sub(self, rhs: u64) -> Self {
         Self::new(self.0 - rhs)
@@ -140,7 +137,6 @@ impl Sub<u64> for VirtAddr {
 impl Sub<Self> for VirtAddr {
     type Output = u64;
 
-    #[must_use]
     #[inline]
     fn sub(self, rhs: Self) -> u64 {
         self.0 - rhs.0
@@ -150,7 +146,6 @@ impl Sub<Self> for VirtAddr {
 impl Add<u64> for PhysAddr {
     type Output = Self;
 
-    #[must_use]
     #[inline]
     fn add(self, rhs: u64) -> Self {
         Self::new(self.0 + rhs)
@@ -160,7 +155,6 @@ impl Add<u64> for PhysAddr {
 impl Add<Self> for PhysAddr {
     type Output = Self;
 
-    #[must_use]
     #[inline]
     fn add(self, rhs: Self) -> Self {
         Self::new(self.0 + rhs.0)
@@ -170,7 +164,6 @@ impl Add<Self> for PhysAddr {
 impl Sub<u64> for PhysAddr {
     type Output = Self;
 
-    #[must_use]
     #[inline]
     fn sub(self, rhs: u64) -> Self {
         Self::new(self.0 - rhs)
@@ -180,7 +173,6 @@ impl Sub<u64> for PhysAddr {
 impl Sub<Self> for PhysAddr {
     type Output = u64;
 
-    #[must_use]
     #[inline]
     fn sub(self, rhs: Self) -> u64 {
         self.0 - rhs.0

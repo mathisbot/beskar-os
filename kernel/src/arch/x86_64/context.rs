@@ -12,7 +12,6 @@ pub unsafe extern "C" fn switch(old_stack: *mut *mut u8, new_stack: *const u8, c
     // RSI = new_stack
     // RDX = cr3
 
-    // FIXME: SIMD regs?
     unsafe {
         core::arch::naked_asm!(
             // Push the current context to the stack

@@ -188,7 +188,6 @@ impl<S: MemSize> IntoIterator for PageRangeInclusive<S> {
     type Item = Page<S>;
     type IntoIter = PageIterator<S>;
 
-    #[must_use]
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         PageIterator {
@@ -220,7 +219,6 @@ impl<S: MemSize> Iterator for PageIterator<S> {
 }
 
 impl<S: MemSize> ExactSizeIterator for PageIterator<S> {
-    #[must_use]
     #[inline]
     fn len(&self) -> usize {
         usize::try_from(if self.start > self.end {

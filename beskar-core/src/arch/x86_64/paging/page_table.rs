@@ -139,7 +139,6 @@ impl Entry {
 pub struct Entries([Entry; 512]);
 
 impl Default for Entries {
-    #[must_use]
     #[inline]
     fn default() -> Self {
         Self([Entry(0); 512])

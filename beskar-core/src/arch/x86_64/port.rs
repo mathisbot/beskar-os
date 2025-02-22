@@ -36,7 +36,6 @@ pub trait PortAccessible: Sealed {
 
 impl Sealed for u8 {}
 impl PortAccessible for u8 {
-    #[must_use]
     #[inline]
     unsafe fn read_from_port(port: u16) -> Self {
         let value: Self;
@@ -55,7 +54,6 @@ impl PortAccessible for u8 {
 }
 impl Sealed for u16 {}
 impl PortAccessible for u16 {
-    #[must_use]
     #[inline]
     unsafe fn read_from_port(port: u16) -> Self {
         let value: Self;
@@ -74,7 +72,6 @@ impl PortAccessible for u16 {
 }
 impl Sealed for u32 {}
 impl PortAccessible for u32 {
-    #[must_use]
     #[inline]
     unsafe fn read_from_port(port: u16) -> Self {
         let value: Self;

@@ -31,7 +31,6 @@ impl<S: MemSize> CacheFlush<S> for TlbFlush<S> {
         self.flush();
     }
 
-    #[must_use]
     #[inline]
     fn page(&self) -> Page<S> {
         self.page()

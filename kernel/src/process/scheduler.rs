@@ -62,7 +62,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
             kernel_process,
             priority::Priority::Low,
             vec![0; 1024 * 128],
-            clean_thread as *const (),
+            clean_thread,
         );
 
         spawn_thread(Box::pin(clean_thread));

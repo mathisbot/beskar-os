@@ -90,7 +90,7 @@ pub fn start_up_aps(core_count: usize) {
     );
 
     // Entry Point address
-    write_sipi(payload_vaddr, 1, crate::boot::kap_entry as *const () as u64);
+    write_sipi(payload_vaddr, 1, crate::boot::kap_entry as u64);
 
     // Base virtual address
     write_sipi(payload_vaddr, 0, payload_vaddr.as_u64());

@@ -114,7 +114,6 @@ impl<S: MemSize> IntoIterator for FrameRangeInclusive<S> {
     type Item = Frame<S>;
     type IntoIter = FrameIterator<S>;
 
-    #[must_use]
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         FrameIterator {
@@ -146,7 +145,6 @@ impl<S: MemSize> Iterator for FrameIterator<S> {
 }
 
 impl<S: MemSize> ExactSizeIterator for FrameIterator<S> {
-    #[must_use]
     #[inline]
     fn len(&self) -> usize {
         usize::try_from(if self.start > self.end {

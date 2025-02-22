@@ -32,37 +32,37 @@ fn kmain() -> ! {
             unsafe { scheduler::current_process() },
             Priority::Normal,
             alloc::vec![0; 1024*256],
-            dummy::fibonacci as *const (),
+            dummy::fibonacci,
         )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             unsafe { scheduler::current_process() },
             Priority::Normal,
             alloc::vec![0; 1024*256],
-            dummy::counter as *const (),
+            dummy::counter,
         )));
         // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
         //     unsafe { scheduler::current_process() },
         //     Priority::Low,
         //     alloc::vec![0; 1024*1024],
-        //     dummy::alloc_intensive as *const (),
+        //     dummy::alloc_intensive,
         // )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             unsafe { scheduler::current_process() },
             Priority::Low,
             alloc::vec![0; 1024*256],
-            dummy::panic_test as *const (),
+            dummy::panic_test,
         )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             unsafe { scheduler::current_process() },
             Priority::Normal,
             alloc::vec![0; 1024*256],
-            dummy::floating_point as *const (),
+            dummy::floating_point,
         )));
         // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
         //     unsafe { scheduler::current_process() },
         //     Priority::Low,
         //     alloc::vec![0; 1024*256],
-        //     dummy::syscall_test as *const (),
+        //     dummy::syscall_test,
         // )));
     });
 

@@ -1,11 +1,11 @@
-use core::{
-    arch::x86_64::CpuidResult,
-    sync::atomic::{AtomicU32, Ordering},
-};
-
 use beskar_core::arch::x86_64::registers::Rflags;
+pub use core::arch::x86_64::CpuidResult;
+use core::sync::atomic::{AtomicU32, Ordering};
+
+const EXTENDED_MASK: u32 = 0x8000_0000;
 
 static CPUID_MAX_LEAF: AtomicU32 = AtomicU32::new(0);
+static EXTENDED_MAX_LEAF: AtomicU32 = AtomicU32::new(EXTENDED_MASK);
 
 #[must_use]
 #[inline]
@@ -14,12 +14,19 @@ static CPUID_MAX_LEAF: AtomicU32 = AtomicU32::new(0);
 /// # Panics
 ///
 /// Panics if the CPUID leaf is not supported.
-/// Check `get_highest_supported_leaf` to get the highest supported leaf.
+/// Check `get_highest_supported_leaf` and `get_highest_supported_xleaf`
+/// to get the highest supported leaves.
 pub fn cpuid(leaf: u32) -> CpuidResult {
+    let extended = leaf & EXTENDED_MASK != 0;
+
     // No need to check for CPUID support.
     // It is the first thing getting checked in the kernel.
     assert!(
-        leaf <= CPUID_MAX_LEAF.load(Ordering::Acquire),
+        if extended {
+            leaf <= EXTENDED_MAX_LEAF.load(Ordering::Acquire)
+        } else {
+            leaf <= CPUID_MAX_LEAF.load(Ordering::Acquire)
+        },
         "CPUID leaf is not supported"
     );
     unsafe { core::arch::x86_64::__cpuid(leaf) }
@@ -28,7 +35,7 @@ pub fn cpuid(leaf: u32) -> CpuidResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Every meaningful CPUID register
 pub enum CpuidReg {
-    Eax,
+    // Eax,
     Ebx,
     Ecx,
     Edx,
@@ -38,7 +45,7 @@ impl CpuidReg {
     #[must_use]
     pub const fn extract_from(self, cpuid_res: CpuidResult) -> u32 {
         match self {
-            Self::Eax => cpuid_res.eax,
+            // Self::Eax => cpuid_res.eax,
             Self::Ebx => cpuid_res.ebx,
             Self::Ecx => cpuid_res.ecx,
             Self::Edx => cpuid_res.edx,
@@ -61,7 +68,7 @@ impl core::fmt::Display for CpuFeature {
 }
 
 // TODO: Add more features!
-// TODO: Support extended features (0x8000_000x)
+#[allow(dead_code)]
 impl CpuFeature {
     // LEAF 0
 
@@ -153,12 +160,21 @@ impl CpuFeature {
         bit: 0,
         name: "FSGSBASE",
     };
+
+    // XLEAF 1
+
+    pub const SYSCALL: Self = Self {
+        leaf: 0x8000_0001,
+        reg: CpuidReg::Edx,
+        bit: 11,
+        name: "SYSCALL",
+    };
 }
 
 /// List of required features for the kernel to run
 ///
 /// Please keep the list sorted by leaf number
-const REQUIRED_FEATURES: [CpuFeature; 5] = [
+const REQUIRED_FEATURES: [CpuFeature; 6] = [
     // Leaf 1
     // CpuFeature::FPU,
     CpuFeature::PSE,
@@ -169,6 +185,8 @@ const REQUIRED_FEATURES: [CpuFeature; 5] = [
     CpuFeature::XSAVE,
     // Leaf 7
     CpuFeature::FSGSBASE, // TLS support
+    // XLeaf 1
+    CpuFeature::SYSCALL,
 ];
 
 /// Routine to check if the CPU supports all required features,
@@ -177,12 +195,13 @@ pub fn check_cpuid() {
     assert!(cpuid_supported(), "CPUID instruction is not supported");
 
     let mut current_leaf = 0;
-    let mut cpuid_res = cpuid(0);
+    let mut cpuid_res = cpuid(current_leaf);
+    CPUID_MAX_LEAF.store(cpuid_res.eax, Ordering::Release);
 
-    let highest_supported_leaf = cpuid_res.eax;
-    CPUID_MAX_LEAF.store(highest_supported_leaf, Ordering::Relaxed);
+    current_leaf = EXTENDED_MASK;
+    cpuid_res = cpuid(current_leaf);
+    EXTENDED_MAX_LEAF.store(cpuid_res.eax, Ordering::Release);
 
-    // TODO: Check syscall/sysret support (extended features)
     for feature in REQUIRED_FEATURES {
         // Avoid calling CPUID multiple times for the same leaf
         if current_leaf != feature.leaf {
@@ -267,6 +286,15 @@ pub fn check_feature(feature: CpuFeature) -> bool {
 
 #[must_use]
 #[inline]
+/// Get the highest supported leaf
 pub fn get_highest_supported_leaf() -> u32 {
     CPUID_MAX_LEAF.load(Ordering::Acquire)
+}
+
+#[must_use]
+#[inline]
+/// Get the highest supported extended leaf
+/// (EAX >= 0x8000_0000)
+pub fn get_highest_supported_xleaf() -> u32 {
+    EXTENDED_MAX_LEAF.load(Ordering::Acquire)
 }

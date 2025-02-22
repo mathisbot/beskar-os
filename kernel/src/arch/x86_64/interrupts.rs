@@ -169,7 +169,6 @@ macro_rules! info_isr_eoi {
 
 panic_isr!(divide_error_handler);
 info_isr!(debug_handler);
-panic_isr!(non_maskable_interrupt_handler); // TODO: If another core has panicked on a kernel thread, halt the system
 panic_isr!(breakpoint_handler);
 panic_isr!(overflow_handler);
 panic_isr!(bound_range_exceeded_handler);
@@ -187,6 +186,14 @@ panic_isr_with_errcode!(cp_protection_handler);
 panic_isr!(hv_injection_handler);
 panic_isr_with_errcode!(vmm_communication_handler);
 panic_isr_with_errcode!(security_exception_handler);
+
+extern "x86-interrupt" fn non_maskable_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    if crate::kernel_has_panicked() {
+        panic!("Another Core has panicked in a kernel thread");
+    } else {
+        panic!("EXCEPTION: NON MASKABLE INTERRUPT");
+    }
+}
 
 extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFrame) -> ! {
     panic!("EXCEPTION: MACHINE CHECK");

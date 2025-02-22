@@ -232,6 +232,7 @@ pub struct IoApic {
     gsi_base: u32,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IoApicReg {
     Id,
@@ -261,6 +262,7 @@ impl IoApicReg {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Destination {
     /// Physical destination
@@ -277,18 +279,21 @@ pub enum Destination {
     Logical(u8),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerMode {
     Edge = 0,
     Level = 1,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PinPolarity {
     High = 0,
     Low = 1,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeliveryMode {
     Fixed = 0b000,

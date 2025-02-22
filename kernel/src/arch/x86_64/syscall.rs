@@ -143,7 +143,7 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
 }
 
 pub fn init_syscalls() {
-    LStar::write(VirtAddr::new(syscall_handler_arch as *const () as u64));
+    LStar::write(VirtAddr::new(syscall_handler_arch as u64));
     Star::write(
         locals!().gdt().user_code_selector(),
         locals!().gdt().user_data_selector(),

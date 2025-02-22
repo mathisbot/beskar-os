@@ -198,7 +198,7 @@ pub fn make_mappings(
     info!("Setup stack");
     debug!("Stack top at {:#x}", stack_end_addr);
 
-    let chg_ctx_function_addr = x86_64::PhysAddr::new(chg_ctx as *const () as u64);
+    let chg_ctx_function_addr = x86_64::PhysAddr::new(chg_ctx as u64);
     let chg_ctx_function_frame = PhysFrame::<Size4KiB>::containing_address(chg_ctx_function_addr);
 
     for frame in PhysFrame::range_inclusive(chg_ctx_function_frame, chg_ctx_function_frame + 1) {

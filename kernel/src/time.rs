@@ -11,18 +11,18 @@ struct TscClock;
 
 pub fn init() {
     let hpet_res = crate::drivers::hpet::init();
-    HPET_AVAILABLE.store(hpet_res.is_ok(), Ordering::Relaxed);
+    HPET_AVAILABLE.store(hpet_res.is_ok(), Ordering::Release);
     let tsc_res = crate::drivers::tsc::init();
-    TSC_AVAILABLE.store(tsc_res.is_ok(), Ordering::Relaxed);
+    TSC_AVAILABLE.store(tsc_res.is_ok(), Ordering::Release);
 }
 
 /// Waits for AT LEAST the given number of milliseconds.
 ///
 /// The real amount of time waited is usually longer than the given duration.
 pub fn wait(duration: Duration) {
-    if TSC_AVAILABLE.load(Ordering::Relaxed) {
+    if TSC_AVAILABLE.load(Ordering::Acquire) {
         TscClock.wait(duration);
-    } else if HPET_AVAILABLE.load(Ordering::Relaxed) {
+    } else if HPET_AVAILABLE.load(Ordering::Acquire) {
         HpetClock.wait(duration);
     } else {
         panic!("No timer available");
@@ -30,7 +30,9 @@ pub fn wait(duration: Duration) {
 }
 
 trait Clock {
+    #[must_use]
     fn now(&self) -> u64;
+    #[must_use]
     fn ticks_per_ms(&self) -> u64;
     fn wait(&self, duration: Duration) {
         let ms = u64::try_from(duration.as_millis()).expect("Duration too large");
@@ -42,20 +44,24 @@ trait Clock {
 }
 
 impl Clock for HpetClock {
+    #[inline]
     fn now(&self) -> u64 {
         hpet::main_counter_value()
     }
 
+    #[inline]
     fn ticks_per_ms(&self) -> u64 {
         hpet::ticks_per_ms()
     }
 }
 
 impl Clock for TscClock {
+    #[inline]
     fn now(&self) -> u64 {
         tsc::main_counter_value()
     }
 
+    #[inline]
     fn ticks_per_ms(&self) -> u64 {
         tsc::ticks_per_ms()
     }
