@@ -41,6 +41,8 @@ impl Cr0 {
 pub struct Cr4;
 
 impl Cr4 {
+    pub const FSGSBASE: u64 = 1 << 16;
+
     #[must_use]
     #[inline]
     pub fn read() -> u64 {
@@ -61,11 +63,27 @@ impl Cr4 {
             core::arch::asm!("mov cr4, {}", in(reg) value, options(nomem, nostack, preserves_flags));
         }
     }
+
+    #[inline]
+    /// ## Safety
+    ///
+    /// The value written must be a valid CR4 flag.
+    pub unsafe fn insert_flags(flag: u64) {
+        let mut value = Self::read();
+        value |= flag;
+        unsafe { Self::write(value) };
+    }
 }
 
 pub struct Cr3;
 
 impl Cr3 {
+    /// Use a writethrough caching policy
+    /// (default to writeback).
+    pub const CACHE_WRITETHROUGH: u16 = 1 << 3;
+    /// Completely disable caching for the whole table.
+    pub const CACHE_DISABLE: u16 = 1 << 4;
+
     #[must_use]
     #[inline]
     pub fn read() -> (Frame, u16) {
@@ -126,6 +144,45 @@ impl Efer {
     /// ## Safety
     ///
     /// The value written must be a valid EFER flag.
+    pub unsafe fn insert_flags(flag: u64) {
+        let mut value = Self::read();
+        value |= flag;
+        unsafe { Self::write(value) };
+    }
+}
+
+pub struct Rflags;
+
+impl Rflags {
+    pub const ID: u64 = 1 << 21;
+    pub const IF: u64 = 1 << 9;
+    pub const IOPL_LOW: u64 = 1 << 12;
+    pub const IOPL_HIGH: u64 = 1 << 13;
+
+    #[must_use]
+    #[inline]
+    pub fn read() -> u64 {
+        let rf: u64;
+        unsafe {
+            core::arch::asm!("pushfq", "pop {}", lateout(reg) rf, options(nomem, preserves_flags));
+        }
+        rf
+    }
+
+    #[inline]
+    /// ## Safety
+    ///
+    /// The value written must be a valid RFLAGS value.
+    pub unsafe fn write(value: u64) {
+        unsafe {
+            core::arch::asm!("push {}", "popfq", in(reg) value, options(nomem, preserves_flags));
+        }
+    }
+
+    #[inline]
+    /// ## Safety
+    ///
+    /// The value written must be a valid RFLAGS flag.
     pub unsafe fn insert_flags(flag: u64) {
         let mut value = Self::read();
         value |= flag;

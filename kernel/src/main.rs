@@ -10,14 +10,10 @@ static SPAWN_ONCE: Once<()> = Once::uninit();
 
 /// The kernel main function, where every core ends up after initialization
 ///
-/// BSP entry point (called by bootloader) is defined in `lib.rs`.
+/// BSP entry point (called by bootloader) is defined in `boot.rs`.
 fn kmain() -> ! {
     if locals!().core_id() == 0 {
         kernel::info!("Welcome to BeskarOS kernel!");
-        kernel::info!(
-            "Started kernel in {:.1?}",
-            kernel::time::tsc::time_since_startup()
-        );
     }
 
     scheduler::set_scheduling(true);
@@ -32,41 +28,43 @@ fn kmain() -> ! {
         };
         extern crate alloc;
 
+        let root_proc = scheduler::current_process();
+
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            unsafe { scheduler::current_process() },
+            root_proc.clone(),
             Priority::Normal,
             alloc::vec![0; 1024*256],
-            dummy::fibonacci as *const (),
+            dummy::fibonacci,
         )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            unsafe { scheduler::current_process() },
+            root_proc.clone(),
             Priority::Normal,
             alloc::vec![0; 1024*256],
-            dummy::counter as *const (),
+            dummy::counter,
         )));
         // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-        //     unsafe { scheduler::current_process() },
+        //     root_proc.clone(),
         //     Priority::Low,
         //     alloc::vec![0; 1024*1024],
-        //     dummy::alloc_intensive as *const (),
+        //     dummy::alloc_intensive,
         // )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            unsafe { scheduler::current_process() },
+            root_proc.clone(),
             Priority::Low,
             alloc::vec![0; 1024*256],
-            dummy::panic_test as *const (),
+            dummy::panic_test,
         )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            unsafe { scheduler::current_process() },
+            root_proc.clone(),
             Priority::Normal,
             alloc::vec![0; 1024*256],
-            dummy::floating_point as *const (),
+            dummy::floating_point,
         )));
         // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-        //     unsafe { scheduler::current_process() },
+        //     root_proc.clone(),
         //     Priority::Low,
         //     alloc::vec![0; 1024*256],
-        //     dummy::syscall_test as *const (),
+        //     dummy::syscall_test,
         // )));
     });
 

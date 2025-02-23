@@ -66,6 +66,7 @@ pub fn init() {
     idt[Irq::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
     idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
     idt[Irq::Nic as u8].set_handler_fn(nic_interrupt_handler);
+    idt[Irq::Nvme as u8].set_handler_fn(nvme_interrupt_handler);
 
     idt.load();
 
@@ -168,25 +169,31 @@ macro_rules! info_isr_eoi {
 
 panic_isr!(divide_error_handler);
 info_isr!(debug_handler);
-panic_isr!(non_maskable_interrupt_handler);
 panic_isr!(breakpoint_handler);
 panic_isr!(overflow_handler);
 panic_isr!(bound_range_exceeded_handler);
 panic_isr!(invalid_opcode_handler);
-panic_isr!(device_not_available_handler);
+panic_isr!(device_not_available_handler); // TODO: Save FPU/SIMD state
 panic_isr_with_errcode!(invalid_tss_handler);
 panic_isr_with_errcode!(segment_not_present_handler);
 panic_isr_with_errcode!(stack_segment_fault_handler);
 panic_isr_with_errcode!(general_protection_fault_handler);
 panic_isr!(x87_floating_point_handler);
 panic_isr_with_errcode!(alignment_check_handler);
-// panic_isr!(machine_check_handler); // Special case: return type must be `!`
 panic_isr!(simd_floating_point_handler);
 panic_isr!(virtualization_handler);
 panic_isr_with_errcode!(cp_protection_handler);
 panic_isr!(hv_injection_handler);
 panic_isr_with_errcode!(vmm_communication_handler);
 panic_isr_with_errcode!(security_exception_handler);
+
+extern "x86-interrupt" fn non_maskable_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    if crate::kernel_has_panicked() {
+        panic!("Another Core has panicked in a kernel thread");
+    } else {
+        panic!("EXCEPTION: NON MASKABLE INTERRUPT");
+    }
+}
 
 extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFrame) -> ! {
     panic!("EXCEPTION: MACHINE CHECK");
@@ -195,7 +202,18 @@ extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFram
 info_isr_eoi!(spurious_interrupt_handler);
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    unsafe { crate::process::scheduler::reschedule() };
+    let rescheduling_result = crate::process::scheduler::reschedule();
+
+    // Safety:
+    // `send_eoi` is safe to use on locked LAPICs (see its documentation).
+    // Also, the LAPIC is initialized if the interrupt has been received ;).
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+
+    if let Some(context_switch) = rescheduling_result {
+        // Safety:
+        // If rescheduling happened, interrupts were disabled.
+        unsafe { context_switch.perform() };
+    }
 }
 
 extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFrame) {
@@ -205,6 +223,11 @@ extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFra
 
 extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
     crate::info!("NIC INTERRUPT on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
+extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("NVMe INTERRUPT on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
@@ -218,16 +241,19 @@ pub enum Irq {
     Spurious = 33,
     Xhci = 34,
     Nic = 35,
+    Nvme = 36,
 }
 
+#[inline]
 pub fn int_disable() {
     unsafe {
-        core::arch::asm!("cli", options(preserves_flags, nostack));
+        core::arch::asm!("cli", options(nomem, preserves_flags, nostack));
     }
 }
 
+#[inline]
 pub fn int_enable() {
     unsafe {
-        core::arch::asm!("sti", options(preserves_flags, nostack));
+        core::arch::asm!("sti", options(nomem, preserves_flags, nostack));
     }
 }

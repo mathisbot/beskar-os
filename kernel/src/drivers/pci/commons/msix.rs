@@ -4,6 +4,7 @@ use core::ptr::NonNull;
 
 use hyperdrive::volatile::{ReadWrite, Volatile};
 
+use crate::arch::interrupts::Irq;
 use crate::locals;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 use beskar_core::arch::commons::paging::M4KiB;
@@ -23,7 +24,7 @@ pub struct MsiX {
 #[derive(Debug, Clone, Copy)]
 pub struct MsiXCapability {
     base: PciAddress,
-    size: u16,
+    table_size: u16,
     table_bar_nb: u8,
     table_offset: u32,
     pba_bar_nb: u8,
@@ -52,10 +53,10 @@ struct MsiX070 {
 
 impl MsiX {
     pub fn new(handler: &mut dyn PciHandler, device: &super::Device) -> Option<Self> {
-        let msix = MsiXCapability::find(handler, device)?;
+        let msix_cap = MsiXCapability::find(handler, device)?;
 
-        let table_bar = handler.read_bar(device, msix.table_bar_nb);
-        let pba_bar = handler.read_bar(device, msix.pba_bar_nb);
+        let table_bar = handler.read_bar(device, msix_cap.table_bar_nb);
+        let pba_bar = handler.read_bar(device, msix_cap.pba_bar_nb);
 
         let Some(super::Bar::Memory(table_bar)) = table_bar else {
             panic!("MSI-X: Table BAR is not a memory BAR");
@@ -66,28 +67,28 @@ impl MsiX {
 
         let flags = crate::mem::page_alloc::pmap::FLAGS_MMIO;
 
-        let table_size = usize::from(msix.size) * size_of::<TableEntry>();
+        let table_size = usize::from(msix_cap.table_size) * size_of::<TableEntry>();
         let pmap_table = PhysicalMapping::<M4KiB>::new(
-            table_bar.base_address() + u64::from(msix.table_offset),
+            table_bar.base_address() + u64::from(msix_cap.table_offset),
             table_size,
             flags,
         );
         let table_vaddr = pmap_table
-            .translate(table_bar.base_address() + u64::from(msix.table_offset))
+            .translate(table_bar.base_address() + u64::from(msix_cap.table_offset))
             .unwrap();
 
-        let pba_size = usize::from(msix.size) * size_of::<u64>();
+        let pba_size = usize::from(msix_cap.table_size) * size_of::<u64>();
         let pmap_pba = PhysicalMapping::<M4KiB>::new(
-            pba_bar.base_address() + u64::from(msix.pba_offset),
+            pba_bar.base_address() + u64::from(msix_cap.pba_offset),
             pba_size,
             flags,
         );
         let pba_vaddr = pmap_pba
-            .translate(pba_bar.base_address() + u64::from(msix.pba_offset))
+            .translate(pba_bar.base_address() + u64::from(msix_cap.pba_offset))
             .unwrap();
 
         Some(Self {
-            capability: msix,
+            capability: msix_cap,
             table: Volatile::new(NonNull::new(table_vaddr.as_mut_ptr()).unwrap()),
             pba: Volatile::new(NonNull::new(pba_vaddr.as_mut_ptr()).unwrap()),
             pmap_table,
@@ -95,11 +96,12 @@ impl MsiX {
         })
     }
 
-    pub fn setup_int(&self, vector: u8, table_idx: u16) {
-        assert!(table_idx < self.capability.size);
+    pub fn setup_int(&self, vector: Irq, table_idx: u16) {
+        assert!(table_idx < self.capability.table_size);
+        let endry_ptr = unsafe { self.table.byte_add(usize::from(table_idx) * 16) };
 
         let lapic_paddr = unsafe { locals!().lapic().force_lock().paddr() };
-        let lapic_id = locals!().apic_id();
+        let lapic_id = locals!().apic_id(); // TODO: Load balance between APs?
 
         let msg_addr = lapic_paddr.as_u64() | (u64::from(lapic_id) << 12);
 
@@ -109,15 +111,16 @@ impl MsiX {
         // Bit 11: Edge/Level
         // Bits 12-15: Reserved
         // Bits 16-31: Destination ID (x2APIC ID)
-        let msg_data = vector.into();
+        let msg_data = vector as u32;
 
         let table = TableEntry {
-            msg_addr,
+            msg_addr_low: u32::try_from(msg_addr & 0xFFFF_FFFC).unwrap(),
+            msg_addr_high: u32::try_from(msg_addr >> 32).unwrap(),
             msg_data,
             vector_ctrl: 0,
         };
 
-        unsafe { self.table.add(table_idx.into()).write(table) };
+        unsafe { endry_ptr.write(table) };
     }
 
     pub fn enable(&self, handler: &mut dyn PciHandler) {
@@ -172,7 +175,7 @@ impl MsiXCapability {
 
         Some(Self {
             base: c.pci_addr(),
-            size: size + 1,
+            table_size: size + 1,
             table_bar_nb,
             table_offset,
             pba_bar_nb,
@@ -184,7 +187,8 @@ impl MsiXCapability {
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 struct TableEntry {
-    msg_addr: u64,
+    msg_addr_low: u32,
+    msg_addr_high: u32,
     msg_data: u32,
     vector_ctrl: u32,
 }

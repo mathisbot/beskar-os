@@ -14,7 +14,6 @@ pub struct Page<S: MemSize = M4KiB> {
 }
 
 impl<S: MemSize> Page<S> {
-    #[must_use]
     #[inline]
     pub fn from_start_address(address: VirtAddr) -> Result<Self, ()> {
         // Check that the address is correctly aligned.
@@ -189,7 +188,6 @@ impl<S: MemSize> IntoIterator for PageRangeInclusive<S> {
     type Item = Page<S>;
     type IntoIter = PageIterator<S>;
 
-    #[must_use]
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         PageIterator {
@@ -221,7 +219,6 @@ impl<S: MemSize> Iterator for PageIterator<S> {
 }
 
 impl<S: MemSize> ExactSizeIterator for PageIterator<S> {
-    #[must_use]
     #[inline]
     fn len(&self) -> usize {
         usize::try_from(if self.start > self.end {

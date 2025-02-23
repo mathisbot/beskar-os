@@ -13,7 +13,6 @@ pub struct Frame<S: MemSize = M4KiB> {
 }
 
 impl<S: MemSize> Frame<S> {
-    #[must_use]
     #[inline]
     pub fn from_start_address(address: PhysAddr) -> Result<Self, ()> {
         // Check that the address is correctly aligned.
@@ -115,7 +114,6 @@ impl<S: MemSize> IntoIterator for FrameRangeInclusive<S> {
     type Item = Frame<S>;
     type IntoIter = FrameIterator<S>;
 
-    #[must_use]
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         FrameIterator {
@@ -147,7 +145,6 @@ impl<S: MemSize> Iterator for FrameIterator<S> {
 }
 
 impl<S: MemSize> ExactSizeIterator for FrameIterator<S> {
-    #[must_use]
     #[inline]
     fn len(&self) -> usize {
         usize::try_from(if self.start > self.end {

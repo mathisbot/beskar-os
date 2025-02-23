@@ -21,15 +21,16 @@ pub fn exit(code: ExitCode) -> ! {
         core::arch::asm!(
             "syscall",
             in("rax") Syscall::Exit as u64,
-            in("rdi") code as usize,
+            in("rdi") code as u64,
+            options(noreturn),
         );
     }
-    unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[macro_export]
 macro_rules! entry_point {
     ($path:path) => {
+        #[inline]
         #[unsafe(export_name = "_start")]
         pub extern "C" fn __program_entry() {
             ($path)()

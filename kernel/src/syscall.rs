@@ -11,6 +11,7 @@ pub struct Arguments {
     pub three: u64,
 }
 
+#[must_use]
 pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallExitCode {
     match syscall {
         Syscall::Print => sc_print(args),
@@ -19,6 +20,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallExitCode {
     }
 }
 
+#[must_use]
 fn sc_print(args: &Arguments) -> SyscallExitCode {
     let msg_addr = args.one as *const u8;
     let msg_len = usize::try_from(args.two).unwrap();
@@ -27,9 +29,8 @@ fn sc_print(args: &Arguments) -> SyscallExitCode {
     // i.e. buffer is in user space, length is valid, etc.
 
     let buf = unsafe { core::slice::from_raw_parts(msg_addr, msg_len) };
-    let msg = match core::str::from_utf8(buf) {
-        Ok(msg) => msg,
-        Err(_) => return SyscallExitCode::Failure,
+    let Ok(msg) = core::str::from_utf8(buf) else {
+        return SyscallExitCode::Failure;
     };
 
     let tid = crate::process::scheduler::current_thread_id();

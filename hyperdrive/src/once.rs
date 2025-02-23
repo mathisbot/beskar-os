@@ -1,11 +1,13 @@
 //! A wrapper around lazily-initialized data.
 //!
-//! This structure is similar to `std::sync::Once`, but it does not provide interior mutability.
+//! This structure is somewhat similar to `std::sync::Once`, and it does not provide interior mutability.
 //! It is used to perform a one-time initialization of a value, and then provide a reference to it.
 //!
 //! If you need one-time initialization with interior mutability, use `hyperdrive::locks::mcs::MUMcsLock` instead.
 //!
 //! ## Examples
+//!
+//! `Once` can obviously be used to perform one-time initialization:
 //!
 //! ```rust
 //! # use hyperdrive::once::Once;
@@ -18,6 +20,29 @@
 //! let value = ONCE.get().unwrap();
 //! assert_eq!(*value, 42);
 //! ```
+//!
+//! But it can also be used as a trick to ensure that an operation is only performed once:
+//!
+//! ```rust
+//! # use hyperdrive::once::Once;
+//! #
+//! static PERFORM_ONCE: Once<()> = Once::uninit();
+//!
+//! fn perform_once() {
+//!     PERFORM_ONCE.call_once(|| {
+//!         // Perform the operation
+//!     });
+//! }
+//!
+//! // This could be called on many threads,
+//! // but the operation will only be performed once.
+//! perform_once();
+//! ```
+//!
+//! Note that, in this case, if every thread calls the function `perform_once` at the same time,
+//! non-executing threads won't block on the operation.
+//! If you want to ensure the operation is complete before proceeding, you can either use a `Barrier`
+//! or call `get` on the `Once`.
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -194,6 +219,13 @@ mod test {
 
         once.call_once(|| 42);
         once.call_once(|| panic!("This should not be called"));
+    }
+
+    #[test]
+    fn test_once_drop() {
+        let once = Once::uninit();
+
+        once.call_once(|| Box::new(42));
     }
 
     #[test]

@@ -38,7 +38,7 @@ pub fn log(args: core::fmt::Arguments) {
         serial.write_fmt(args).unwrap();
     });
     if LOG_ON_SCREEN.load(core::sync::atomic::Ordering::Acquire) {
-        SCREEN_LOGGER.try_with_locked(|writer| {
+        SCREEN_LOGGER.with_locked_if_init(|writer| {
             writer.write_fmt(args).unwrap();
         });
     }
@@ -75,6 +75,12 @@ macro_rules! error {
 
 /// Allows logging text to a pixel-based framebuffer.
 pub struct ScreenWriter(FramebufferWriter);
+
+impl Default for ScreenWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ScreenWriter {
     #[must_use]

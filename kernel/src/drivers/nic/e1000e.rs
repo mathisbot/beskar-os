@@ -9,9 +9,12 @@
 use core::ptr::NonNull;
 
 use alloc::vec::Vec;
-use beskar_core::arch::commons::{
-    PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
+use beskar_core::{
+    arch::commons::{
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
+    },
+    drivers::{DriverError, DriverResult},
 };
 use hyperdrive::{
     locks::mcs::MUMcsLock,
@@ -30,13 +33,13 @@ const TX_BUFFERS: usize = 8;
 
 static E1000E: MUMcsLock<E1000e<'static>> = MUMcsLock::uninit();
 
-pub fn init(network_controller: pci::Device) {
+pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     let Some(Bar::Memory(bar_reg)) =
         with_pci_handler(|handler| handler.read_bar(&network_controller, 0))
     else {
         // TODO: Apparently, some network controllers use IO BARs
         crate::warn!("Network controller does not have a memory BAR");
-        return;
+        return Err(DriverError::Absent);
     };
 
     let reg_paddr = bar_reg.base_address();
@@ -70,6 +73,8 @@ pub fn init(network_controller: pci::Device) {
     );
 
     E1000E.init(e1000e);
+
+    Ok(())
 }
 
 pub struct E1000e<'a> {
@@ -180,7 +185,7 @@ impl E1000e<'_> {
         };
 
         if let Some(msix) = msix {
-            msix.setup_int(crate::arch::interrupts::Irq::Nic as u8, 0);
+            msix.setup_int(crate::arch::interrupts::Irq::Nic, 0);
             pci::with_pci_handler(|handler| msix.enable(handler));
         } else if let Some(_msi) = msi {
             // TODO: Enable MSI

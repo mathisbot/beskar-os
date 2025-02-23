@@ -28,7 +28,7 @@
 //!     fn new(ptr: *mut u32) -> Self {
 //!         let non_null = NonNull::new(ptr).unwrap();
 //!         Self {
-//!             ptr: Volatile::new(non_null),
+//!             ptr: Volatile::new(non_null), // Compiler infers `<ReadWrite, u32>`
 //!         }
 //!     }
 //! }

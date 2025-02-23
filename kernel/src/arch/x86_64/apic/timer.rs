@@ -75,8 +75,7 @@ impl LapicTimer {
             duration: u32::MAX - 1,
         }));
 
-        // FIXME: More precise calibration?
-        crate::time::wait_ms(50);
+        crate::time::wait(crate::time::Duration::from_millis(50));
 
         let ticks = self.read_curr_count_reg();
 

@@ -7,7 +7,10 @@ use crate::{
     drivers::acpi::sdt::mcfg::ParsedConfigurationSpace,
     mem::page_alloc::pmap::{self, PhysicalMapping},
 };
-use beskar_core::arch::commons::{PhysAddr, paging::M2MiB};
+use beskar_core::{
+    arch::commons::{PhysAddr, paging::M2MiB},
+    drivers::{DriverError, DriverResult},
+};
 
 use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 
@@ -19,23 +22,25 @@ pub struct PciExpressHandler {
     devices: Vec<Device>,
 }
 
-pub fn init() {
+pub fn init() -> DriverResult<usize> {
     let Some(mcfg) = crate::drivers::acpi::ACPI.get().unwrap().mcfg() else {
-        return;
+        return Err(DriverError::Absent);
     };
 
     let pcie_handler = PciExpressHandler::new(mcfg.configuration_spaces());
     PCIE_HANDLER.init(pcie_handler);
 
-    with_pcie_handler(|handler| {
+    let device_count = with_pcie_handler(|handler| {
         handler.update_devices();
-        if handler.devices.is_empty() {
-            crate::warn!("No PCI Express devices found");
-        } else {
-            crate::debug!("Found {} PCI Express devices", handler.devices.len());
-        }
+        handler.devices.len()
     })
     .unwrap();
+
+    if device_count == 0 {
+        Err(DriverError::Invalid)
+    } else {
+        Ok(device_count)
+    }
 }
 
 impl PciExpressHandler {
@@ -243,7 +248,7 @@ impl super::PciHandler for PciExpressHandler {
 
 #[inline]
 pub fn with_pcie_handler<T, F: FnOnce(&mut PciExpressHandler) -> T>(f: F) -> Option<T> {
-    PCIE_HANDLER.try_with_locked(f)
+    PCIE_HANDLER.with_locked_if_init(f)
 }
 
 pub fn pcie_available() -> bool {

@@ -71,13 +71,13 @@ pub fn init() -> PhysicalFrameBuffer {
 
     PhysicalFrameBuffer {
         start_addr: PhysAddr::new(fb_slice.as_mut_ptr() as u64),
-        info: Info {
-            size: gop_fb.size(),
-            width: mode_info.resolution().0,
-            height: mode_info.resolution().1,
+        info: Info::new(
+            gop_fb.size(),
+            mode_info.resolution().0,
+            mode_info.resolution().1,
             pixel_format,
-            bytes_per_pixel: 4, // In every mode supported, each pixel is 4 bytes
-            stride: mode_info.stride(),
-        },
+            4,
+            mode_info.stride(),
+        ),
     }
 }

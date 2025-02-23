@@ -3,12 +3,15 @@ use crate::{
     drivers::pci::{self, Bar, Device},
     mem::page_alloc::pmap::{self, PhysicalMapping},
 };
-use beskar_core::arch::commons::{VirtAddr, paging::M4KiB};
+use beskar_core::{
+    arch::commons::{VirtAddr, paging::M4KiB},
+    drivers::{DriverError, DriverResult},
+};
 
-pub fn init(ahci_controllers: &[Device]) {
+pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
     // TODO: Support for multiple AHCI controllers?
     let Some(controller) = ahci_controllers.first() else {
-        return;
+        return Err(DriverError::Absent);
     };
 
     let Some(Bar::Memory(bar)) = pci::with_pci_handler(|handler| handler.read_bar(controller, 5))
@@ -31,6 +34,8 @@ pub fn init(ahci_controllers: &[Device]) {
     // TODO: Implement AHCI initialization
 
     crate::debug!("AHCI controller found");
+
+    Ok(())
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -1,12 +1,24 @@
 // FIXME: Support for multiple HPET blocks?
 
-use crate::drivers::acpi::sdt::hpet_table::ParsedHpetTable;
-use crate::mem::page_alloc::pmap::PhysicalMapping;
-use beskar_core::arch::commons::{PhysAddr, VirtAddr, paging::M4KiB};
-use beskar_core::arch::x86_64::paging::page_table::Flags;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+use crate::{
+    drivers::acpi::{self, sdt::hpet_table::ParsedHpetTable},
+    mem::page_alloc::pmap::PhysicalMapping,
+};
+use beskar_core::{
+    arch::{
+        commons::{PhysAddr, VirtAddr, paging::M4KiB},
+        x86_64::paging::page_table::Flags,
+    },
+    drivers::{DriverError, DriverResult},
+};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 static HPET: MUMcsLock<Hpet> = MUMcsLock::uninit();
+
+/// HPET Period in pico-seconds
+static HPET_PERIOD_PS: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 /// High Precision Event Timer (HPET) configuration.
@@ -352,7 +364,7 @@ impl TimerConfigCap {
     ///
     /// Even if this bit is disabled, the timer will still set the corresponding bit
     /// in the General Interrupt Status register.
-    pub fn set_interrupts_trig(&mut self, value: bool) {
+    pub const fn set_interrupts_trig(&mut self, value: bool) {
         let ptr = self.as_mut();
         if value {
             *ptr |= 1 << 2;
@@ -372,7 +384,7 @@ impl TimerConfigCap {
     }
 
     #[inline]
-    pub fn set_int_type(&mut self, int_type: &InterruptTriggerType) {
+    pub const fn set_int_type(&mut self, int_type: &InterruptTriggerType) {
         let ptr = self.as_mut();
         match int_type {
             InterruptTriggerType::Edge => *ptr &= !(1 << 1),
@@ -418,7 +430,11 @@ impl TimerCompValue {
     const fn validate(&self) {}
 }
 
-pub fn init(hpet_info: &ParsedHpetTable) {
+pub fn init() -> DriverResult<()> {
+    let Some(hpet_info) = acpi::ACPI.get().and_then(acpi::Acpi::hpet) else {
+        return Err(DriverError::Absent);
+    };
+
     assert_eq!(
         hpet_info.base_address().address_space(),
         crate::drivers::acpi::sdt::AdressSpace::SystemMemory
@@ -437,7 +453,7 @@ pub fn init(hpet_info: &ParsedHpetTable) {
 
     let mut general_configuration =
         GeneralConfiguration::new(PhysAddr::new(hpet_info.general_configuration().address()));
-    general_configuration.validate();
+    general_configuration.validate(); // TODO: Change valide: return a Result instead of panicking
     general_configuration.set_enable_cnf(false);
 
     let general_interrupt_status = GeneralInterruptStatus::new(
@@ -479,6 +495,11 @@ pub fn init(hpet_info: &ParsedHpetTable) {
     general_configuration.set_enable_cnf(true);
     crate::debug!("HPET enabled");
 
+    HPET_PERIOD_PS.store(
+        u64::from(general_capabilities.period()) / 1_000,
+        Ordering::Relaxed,
+    );
+
     let hpet = Hpet {
         general_capabilities,
         general_configuration,
@@ -489,17 +510,24 @@ pub fn init(hpet_info: &ParsedHpetTable) {
     };
 
     HPET.init(hpet);
+
+    Ok(())
 }
 
 impl Hpet {
     // TODO: Implement methods!
 }
 
-pub fn with_hpet<R>(f: impl FnOnce(&mut Hpet) -> R) -> R {
-    HPET.with_locked(f)
+pub fn try_with_hpet<R>(f: impl FnOnce(&mut Hpet) -> R) -> Option<R> {
+    HPET.with_locked_if_init(f)
 }
 
 pub fn main_counter_value() -> u64 {
     let hpet = unsafe { HPET.force_lock() };
     hpet.main_counter_value().get_value()
+}
+
+pub fn ticks_per_ms() -> u64 {
+    const PS_PER_MS: u64 = 1_000_000_000;
+    PS_PER_MS / HPET_PERIOD_PS.load(Ordering::Relaxed)
 }

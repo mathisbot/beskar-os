@@ -1,5 +1,7 @@
 //! Video related types and functions.
 
+use crate::arch::commons::VirtAddr;
+
 pub mod writer;
 
 /// Bitmask used to indicate which bits of a pixel represent a given color.
@@ -46,7 +48,7 @@ impl Pixel {
         match format {
             PixelFormat::Rgb => Self::new_rgb(red, green, blue),
             PixelFormat::Bgr => Self::new_bgr(red, green, blue),
-            PixelFormat::Bitmask(_mask) => unimplemented!(),
+            PixelFormat::Bitmask(_mask) => todo!("Bitmask pixel format"),
         }
     }
 
@@ -66,25 +68,45 @@ impl Pixel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Info {
     /// The total size in bytes.
-    pub size: usize,
+    size: usize,
     /// The width in pixels.
-    pub width: usize,
+    width: usize,
     /// The height in pixels.
-    pub height: usize,
+    height: usize,
     /// The color format of each pixel.
-    pub pixel_format: PixelFormat,
+    pixel_format: PixelFormat,
     /// The number of bytes per pixel.
     ///
     /// Should be 4.
-    pub bytes_per_pixel: usize,
+    bytes_per_pixel: usize,
     /// Number of "virtual" pixels between the start of a line and the start of the next.
     ///
     /// The stride must be used to compute the start address of a next line as some framebuffers
     /// use additional padding at the end of a line.
-    pub stride: usize,
+    stride: usize,
 }
 
 impl Info {
+    #[must_use]
+    #[inline]
+    pub const fn new(
+        size: usize,
+        width: usize,
+        height: usize,
+        pixel_format: PixelFormat,
+        bytes_per_pixel: usize,
+        stride: usize,
+    ) -> Self {
+        Self {
+            size,
+            width,
+            height,
+            pixel_format,
+            bytes_per_pixel,
+            stride,
+        }
+    }
+
     #[must_use]
     #[inline]
     /// The total size in bytes.
@@ -130,5 +152,49 @@ impl Info {
     /// use additional padding at the end of a line.
     pub const fn stride(&self) -> usize {
         self.stride
+    }
+}
+
+/// Represents a frambuffer.
+///
+/// This is the struct that is sent to the kernel.
+#[derive(Debug)]
+pub struct FrameBuffer {
+    buffer_start: VirtAddr,
+    info: Info,
+}
+
+impl FrameBuffer {
+    #[must_use]
+    #[inline]
+    /// Creates a new framebuffer instance.
+    ///
+    /// ## Safety
+    ///
+    /// The given start address and info must describe a valid framebuffer.
+    pub const unsafe fn new(start_addr: VirtAddr, info: Info) -> Self {
+        Self {
+            buffer_start: start_addr,
+            info,
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns layout and pixel format information of the framebuffer.
+    pub const fn info(&self) -> Info {
+        self.info
+    }
+
+    #[must_use]
+    #[inline]
+    /// Access the raw bytes of the framebuffer as a mutable slice.
+    pub const fn buffer_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self.buffer_start.as_mut_ptr::<u8>(),
+                self.info().size(),
+            )
+        }
     }
 }

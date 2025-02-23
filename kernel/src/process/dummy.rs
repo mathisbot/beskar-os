@@ -20,12 +20,12 @@ pub fn fibonacci() {
         a = b;
         b = next;
         n += 1;
-        crate::time::wait_ms(1_000);
+        crate::time::wait(crate::time::Duration::from_secs(1));
     }
 
     loop {
         crate::error!("Fibonacci sequence overflowed");
-        crate::time::wait_ms(1_000);
+        crate::time::wait(crate::time::Duration::from_secs(1));
     }
 }
 
@@ -39,14 +39,14 @@ pub fn counter() {
             counter
         );
         counter = counter.wrapping_add(1);
-        crate::time::wait_ms(1_000);
+        crate::time::wait(crate::time::Duration::from_secs(1));
     }
 }
 
 pub fn hello_world() {
     loop {
         crate::info!("Hello from core {}!", crate::locals!().core_id());
-        crate::time::wait_ms(1_000);
+        crate::time::wait(crate::time::Duration::from_secs(1));
     }
 }
 
@@ -62,7 +62,7 @@ pub fn alloc_intensive() {
             vec.capacity()
         );
         drop(vec);
-        crate::time::wait_ms(1_000);
+        crate::time::wait(crate::time::Duration::from_secs(1));
     }
 }
 
@@ -76,36 +76,10 @@ pub fn floating_point() {
             x
         );
         x = x * x;
-        crate::time::wait_ms(1_000);
+        crate::time::wait(crate::time::Duration::from_secs(1));
     }
 }
 
 pub fn panic_test() {
     panic!("This is a panic test");
-}
-
-pub fn idle() {
-    loop {
-        crate::arch::halt();
-    }
-}
-
-pub fn syscall_test() {
-    let msg = "Hello, syscall!";
-
-    crate::debug!("Calling syscall with message: {}", msg);
-
-    unsafe {
-        core::arch::asm!(
-            "syscall",
-            in("rax") 0,
-            in("rdi") msg.as_ptr(),
-            in("rsi") msg.len(),
-        );
-    }
-
-    // `sysret` in the handler should result in a page fault
-    // with `PROTECTION_VIOLATION` and `USER_MODE` bits set.
-
-    loop {}
 }

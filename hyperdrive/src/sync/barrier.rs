@@ -1,43 +1,43 @@
 //! A barrier that allows a fixed number of threads to synchronize.
+//!
+//! ## Example
+//!
+//! `Barrier` only has two useful methods: `new` and `wait`.
+//!
+//! ```rust
+//! # use hyperdrive::sync::barrier::Barrier;
+//! #
+//! let barrier = Barrier::new(1);
+//! barrier.wait();
+//! ```
+//!
+//! If you want to synchronize multiple threads, simply initialize
+//! the barrier with the number of threads you want to synchronize.
+//!
+//! ```rust
+//! # use hyperdrive::sync::barrier::Barrier;
+//! # use std::sync::Arc;
+//! # use std::thread::spawn;
+//! #
+//! let num_threads = 10;
+//! let barrier = Arc::new(Barrier::new(num_threads));
+//!
+//! let handles = (0..num_threads)
+//!     .map(|_| spawn({
+//!         let barrier = barrier.clone();
+//!         move || {
+//!             barrier.wait();
+//!         }
+//!     }))
+//!     .collect::<Vec<_>>();
+//!
+//! for handle in handles {
+//!     handle.join().unwrap();
+//! }
+//! ```
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// A barrier that allows a fixed number of threads to synchronize.
-///
-/// ## Example
-///
-/// `Barrier` only has two useful methods: `new` and `wait`.
-///
-/// ```rust
-/// # use hyperdrive::sync::barrier::Barrier;
-/// #
-/// let barrier = Barrier::new(1);
-/// barrier.wait();
-/// ```
-///
-/// If you want to synchronize multiple threads, simply initialize
-/// the barrier with the number of threads you want to synchronize.
-///
-/// ```rust
-/// # use hyperdrive::sync::barrier::Barrier;
-/// # use std::sync::Arc;
-/// # use std::thread::spawn;
-/// #
-/// let num_threads = 10;
-/// let barrier = Arc::new(Barrier::new(num_threads));
-///
-/// let handles = (0..num_threads)
-///     .map(|_| spawn({
-///         let barrier = barrier.clone();
-///         move || {
-///             barrier.wait();
-///         }
-///     }))
-///     .collect::<Vec<_>>();
-///
-/// for handle in handles {
-///     handle.join().unwrap();
-/// }
-/// ```
 pub struct Barrier {
     /// Amount of threads that need to reach the barrier.
     count: usize,
@@ -51,7 +51,7 @@ pub struct Barrier {
     out: AtomicUsize,
 }
 
-// Safety: Barrier is a synchronization primitive.
+// Safety: The only non-Send/Sync field is `count`, which is a constant.
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for Barrier {}
 unsafe impl Sync for Barrier {}

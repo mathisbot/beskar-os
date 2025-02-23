@@ -25,11 +25,25 @@
 //! assert_eq!(res, 42);
 //! ```
 //!
+//! If you want to avoid blocking locks, you can use the `try_with_locked` method.
+//!
+//! ```rust
+//! # use hyperdrive::locks::mcs::McsLock;
+//! #
+//! let lock = McsLock::new(0);
+//!
+//! let res = lock.try_with_locked(|value| {
+//!     *value = 42;
+//!     *value
+//! });
+//! assert_eq!(res, Some(42));
+//! ```
+//!
 //! If you need a more fine-grained control over the lock, you can use the `lock` method,
 //! which lets you handle the guard manually.
 //!
-//! `McsNode` is a structure used to queue the locks, and they must only be used on once lock
-//! at once. This is ensured by Rust's borrow checker.
+//! `McsNode` is a structure used to queue the locks, and they must only be used on one lock
+//! at once. Rust's borrow checker won't let you do otherwise anyway.
 //!
 //! Note that guards will unlock the lock automatically on drop.
 //!
@@ -42,6 +56,9 @@
 //! let mut guard = lock.lock(&mut node);
 //! *guard = 42;
 //! assert_eq!(*guard, 42);
+//! drop(guard);
+//!
+//! // The lock is free again!
 //! ```
 //!
 //! ### `MUMcsLock`
@@ -56,9 +73,24 @@
 //!
 //! MY_STATIC_STRUCT.init(42);
 //!
-//! MY_STATIC_STRUCT.with_locked(|value| {
-//!     // ...
+//! let current_value = MY_STATIC_STRUCT.with_locked(|value| {
+//!     *value
 //! });
+//! assert_eq!(current_value, 42);
+//! ```
+//!
+//! There is a new method, `with_locked_if_init`, that allows to try to lock the lock if it has been initialized,
+//! returning an `Option` instead of panicking.
+//!
+//! ```rust
+//! # use hyperdrive::locks::mcs::{MUMcsLock, McsNode};
+//! #
+//! static MY_STATIC_STRUCT: MUMcsLock<u16> = MUMcsLock::uninit();
+//!
+//! let current_value = MY_STATIC_STRUCT.with_locked_if_init(|value| {
+//!     *value
+//! });
+//! assert!(current_value.is_none());
 //! ```
 
 use core::cell::UnsafeCell;
@@ -118,6 +150,7 @@ impl McsNode {
 
 impl<T> McsLock<T> {
     #[must_use]
+    #[inline]
     /// Creates a new MCS lock.
     pub const fn new(value: T) -> Self {
         Self {
@@ -151,6 +184,30 @@ impl<T> McsLock<T> {
         McsGuard { lock: self, node }
     }
 
+    #[must_use]
+    /// Tries to lock the MCS lock and returns a guard.
+    /// If it is already in use, does nothing.
+    ///
+    /// For single operations, prefer `try_with_locked`.
+    /// This function allows for a more fine-grained control over the duration of the lock.
+    pub fn try_lock<'s, 'node>(
+        &'s self,
+        node: &'node mut McsNode,
+    ) -> Option<McsGuard<'node, 's, T>> {
+        // Assert the node is ready to be used
+        node.locked.store(true, Ordering::Release);
+        node.set_next(ptr::null_mut());
+
+        // Try to place the node at the end of the queue
+        self.tail
+            .compare_exchange(ptr::null_mut(), node, Ordering::AcqRel, Ordering::Relaxed)
+            .ok()?;
+
+        node.locked.store(false, Ordering::Release);
+
+        Some(McsGuard { lock: self, node })
+    }
+
     #[inline]
     /// Locks the lock and calls the closure with the guard.
     pub fn with_locked<F, R>(&self, f: F) -> R
@@ -162,6 +219,19 @@ impl<T> McsLock<T> {
         f(&mut guard)
     }
 
+    #[inline]
+    /// Locks the lock and calls the closure with the guard.
+    pub fn try_with_locked<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let mut node = McsNode::new();
+        let mut guard = self.try_lock(&mut node)?;
+        Some(f(&mut guard))
+    }
+
+    #[must_use]
+    #[inline]
     #[allow(clippy::mut_from_ref)]
     /// Force access to the data.
     ///
@@ -303,6 +373,7 @@ impl<T> MUMcsLock<T> {
         });
     }
 
+    #[must_use]
     /// Locks the lock and returns a guard.
     ///
     /// ## Panics
@@ -324,9 +395,35 @@ impl<T> MUMcsLock<T> {
         MUMcsGuard { inner_guard: guard }
     }
 
-    /// Try to lock the lock if it has been initialized.
+    #[must_use]
+    /// Tries to lock the lock and returns a guard.
+    /// If it is already in use or isn't initialized, does nothing.
     ///
+    /// If you need a function that only abort if the lock is not initialized, use `lock_if_init`.
+    pub fn try_lock<'s, 'node>(
+        &'s self,
+        node: &'node mut McsNode,
+    ) -> Option<MUMcsGuard<'node, 's, T>> {
+        if !self.is_initialized() {
+            return None;
+        }
+
+        let guard = self.inner_lock.try_lock(node)?;
+
+        // If de-initialization is implemented, this line should be uncommented.
+        // if !self.is_initialized() {
+        //     drop(guard);
+        //     return None;
+        // }
+
+        Some(MUMcsGuard { inner_guard: guard })
+    }
+
+    #[must_use]
+    /// Try to lock the lock if it has been initialized.
     /// Returns `None` if the lock has not been initialized.
+    ///
+    /// If you need a function that also aborts if the lock is in use, use `try_lock`.
     pub fn lock_if_init<'s, 'node>(
         &'s self,
         node: &'node mut McsNode,
@@ -334,6 +431,7 @@ impl<T> MUMcsLock<T> {
         if self.is_initialized() {
             // If anyone de-initializes the lock exactly between these two lines,
             // there could still be a panic.
+            // If de-initialization is implemented, `compare_exchange` should be used.
             Some(self.lock(node))
         } else {
             None
@@ -356,7 +454,7 @@ impl<T> MUMcsLock<T> {
     #[inline]
     /// Try to lock the lock and call the closure with the guard if the lock
     /// is initialized.
-    pub fn try_with_locked<F, R>(&self, f: F) -> Option<R>
+    pub fn with_locked_if_init<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R,
     {
@@ -364,6 +462,19 @@ impl<T> MUMcsLock<T> {
         self.lock_if_init(&mut node).map(|mut guard| f(&mut guard))
     }
 
+    #[inline]
+    /// Try to lock the lock and call the closure with the guard if the lock
+    /// is initialized.
+    pub fn try_with_locked<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let mut node = McsNode::new();
+        self.try_lock(&mut node).map(|mut guard| f(&mut guard))
+    }
+
+    #[must_use]
+    #[inline]
     #[allow(clippy::mut_from_ref)]
     /// Force access to the data.
     ///
@@ -414,6 +525,19 @@ mod tests {
     }
 
     #[test]
+    fn test_mcs_try_lock() {
+        let lock = McsLock::new(0);
+        let mut node = McsNode::new();
+        let mut failed_node = McsNode::new();
+
+        let guard = lock.try_lock(&mut node);
+        let failed_guard = lock.try_lock(&mut failed_node);
+        assert!(guard.is_some());
+        assert!(failed_guard.is_none());
+        drop(guard);
+    }
+
+    #[test]
     fn test_mcs_lock_with_locked() {
         let lock = McsLock::new(0);
 
@@ -422,6 +546,20 @@ mod tests {
             *value
         });
         assert_eq!(res, 42);
+    }
+
+    #[test]
+    fn test_mcs_lock_try_with_locked() {
+        let lock = McsLock::new(0);
+        let mut node = McsNode::new();
+
+        let guard = lock.lock(&mut node);
+        let failed_guard = lock.try_with_locked(|value| {
+            *value = 42;
+            *value
+        });
+        assert!(failed_guard.is_none());
+        drop(guard);
     }
 
     #[test]
@@ -458,6 +596,42 @@ mod tests {
     }
 
     #[test]
+    fn test_mumcs_try_lock() {
+        let lock = MUMcsLock::uninit();
+        let mut node = McsNode::new();
+        let mut failed_node = McsNode::new();
+
+        let failed_guard = lock.try_lock(&mut failed_node);
+        assert!(failed_guard.is_none());
+        drop(failed_guard);
+
+        lock.init(42);
+
+        let guard = lock.try_lock(&mut node);
+        let failed_guard = lock.try_lock(&mut failed_node);
+        assert!(guard.is_some());
+        assert!(failed_guard.is_none());
+        drop(guard);
+    }
+
+    #[test]
+    fn test_mumcs_lock_if_init() {
+        let lock = MUMcsLock::uninit();
+        let mut node = McsNode::new();
+        let mut failed_node = McsNode::new();
+
+        let failed_guard = lock.lock_if_init(&mut failed_node);
+        assert!(failed_guard.is_none());
+        drop(failed_guard);
+
+        lock.init(42);
+
+        let guard = lock.lock_if_init(&mut node);
+        assert!(guard.is_some());
+        drop(guard);
+    }
+
+    #[test]
     fn test_mumcs_lock_with_locked() {
         let lock = MUMcsLock::uninit();
 
@@ -468,6 +642,25 @@ mod tests {
             *value
         });
         assert_eq!(res, 0);
+    }
+
+    #[test]
+    fn test_mumcs_lock_with_locked_if_init() {
+        let lock = MUMcsLock::uninit();
+
+        let res = lock.with_locked_if_init(|value| {
+            *value = 0;
+            *value
+        });
+        assert!(res.is_none());
+
+        lock.init(42);
+
+        let res = lock.with_locked_if_init(|value| {
+            *value = 0;
+            *value
+        });
+        assert_eq!(res, Some(0));
     }
 
     #[test]
@@ -482,11 +675,14 @@ mod tests {
 
         lock.init(42);
 
+        let mut node = McsNode::new();
+        let guard = lock.try_lock(&mut node);
         let res = lock.try_with_locked(|value| {
             *value = 0;
             *value
         });
-        assert_eq!(res, Some(0));
+        assert!(guard.is_some());
+        assert!(res.is_none());
     }
 
     #[cfg(miri)]
@@ -494,6 +690,7 @@ mod tests {
     fn test_mumcs_drop() {
         let lock = MUMcsLock::uninit();
         lock.init(Box::new(42));
+        let _uninit = MUMcsLock::<Box<[u64]>>::uninit();
     }
 
     #[test]

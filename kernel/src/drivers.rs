@@ -3,12 +3,14 @@ pub mod hpet;
 pub mod nic;
 pub mod pci;
 pub mod storage;
+pub mod tsc;
 pub mod usb;
 
 pub fn init() {
-    pci::init();
+    let pci_init_result = pci::init();
+    assert!(pci_init_result.is_ok(), "No PCI devices found");
 
-    storage::init();
-    usb::init();
-    nic::init();
+    let _ = storage::init();
+    let _ = usb::init();
+    let _ = nic::init();
 }

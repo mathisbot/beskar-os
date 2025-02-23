@@ -22,7 +22,7 @@ pub fn log(args: core::fmt::Arguments) {
     SERIAL.with_locked(|serial| {
         serial.write_fmt(args).unwrap();
     });
-    SCREEN_LOGGER.try_with_locked(|writer| {
+    SCREEN_LOGGER.with_locked_if_init(|writer| {
         writer.write_fmt(args).unwrap();
     });
 }
@@ -65,6 +65,12 @@ impl ScreenWriter {
     pub fn new() -> Self {
         let info = crate::video::with_physical_framebuffer(|screen| screen.info());
         Self(FramebufferWriter::new(info))
+    }
+}
+
+impl Default for ScreenWriter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

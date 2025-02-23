@@ -1,11 +1,12 @@
 use core::{
+    mem::offset_of,
     pin::Pin,
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use beskar_core::arch::x86_64::registers::Rflags;
 use hyperdrive::queues::mpsc::{Link, Queueable};
-use x86_64::registers::rflags::RFlags;
 
 use super::{super::Process, priority::Priority};
 
@@ -26,7 +27,7 @@ pub struct Thread {
     /// The usize is the last stack pointer.
     /// The reason it is a pinned `Box` is so that we can easily get a reference to it
     /// and update it when switching contexts.
-    pub(super) last_stack_ptr: Pin<Box<usize>>,
+    pub(super) last_stack_ptr: Pin<Box<*mut u8>>,
 
     /// Link to the next thread in the queue.
     pub(super) link: Link<Self>,
@@ -47,8 +48,7 @@ impl Queueable for Thread {
     }
 
     unsafe fn get_link(ptr: core::ptr::NonNull<Self>) -> core::ptr::NonNull<Link<Self>> {
-        let ptr = unsafe { &raw mut (*ptr.as_ptr()).link };
-        unsafe { core::ptr::NonNull::new_unchecked(ptr) }
+        unsafe { ptr.byte_add(offset_of!(Self, link)) }.cast()
     }
 }
 
@@ -62,7 +62,7 @@ impl Thread {
             priority: Priority::High,
             stack: None,
             // Will be overwritten before being used.
-            last_stack_ptr: Box::pin(0),
+            last_stack_ptr: Box::pin(core::ptr::null_mut()),
             link: Link::default(),
         }
     }
@@ -73,12 +73,12 @@ impl Thread {
         root_proc: Arc<Process>,
         priority: Priority,
         mut stack: Vec<u8>,
-        entry_point: *const (),
+        entry_point: fn(),
     ) -> Self {
-        let mut stack_ptr = stack.as_ptr() as usize; // Stack grows downwards
+        let mut stack_ptr = stack.as_mut_ptr(); // Stack grows downwards
 
         let stack_unused = Self::setup_stack(stack_ptr, &mut stack, entry_point);
-        stack_ptr += stack_unused; // Move stack pointer to the end of the stack
+        stack_ptr = unsafe { stack_ptr.byte_add(stack_unused) }; // Move stack pointer to the end of the stack
 
         // FIXME: Stack doesn't have guard page
 
@@ -93,7 +93,7 @@ impl Thread {
     }
 
     /// Setup the stack and move stack pointer to the end of the stack.
-    fn setup_stack(stack_ptr: usize, stack: &mut [u8], entry_point: *const ()) -> usize {
+    fn setup_stack(stack_ptr: *mut u8, stack: &mut [u8], entry_point: fn()) -> usize {
         // Can be used to detect stack overflow
         stack.fill(0xCD);
 
@@ -111,19 +111,18 @@ impl Thread {
         stack_bottom -= size_of::<usize>();
 
         // Push the thread registers
-        let rsp = u64::try_from(stack_ptr).unwrap();
         let thread_regs = ThreadRegisters {
-            rflags: (RFlags::IOPL_LOW | RFlags::INTERRUPT_FLAG).bits(),
-            rsp,
-            rbp: rsp,
+            rflags: (Rflags::IOPL_LOW | Rflags::IF),
+            rbp: stack_ptr as u64,
             rip: entry_point as u64,
             ..ThreadRegisters::default()
         };
-        debug_assert_eq!(size_of::<ThreadRegisters>(), 144);
-        let thread_regs_bytes =
-            unsafe { core::mem::transmute::<ThreadRegisters, [u8; 144]>(thread_regs) };
-        stack[stack_bottom - 144..stack_bottom].copy_from_slice(&thread_regs_bytes);
-        stack_bottom -= 144;
+        let thread_regs_bytes = unsafe {
+            core::mem::transmute::<ThreadRegisters, [u8; size_of::<ThreadRegisters>()]>(thread_regs)
+        };
+        stack[stack_bottom - size_of::<ThreadRegisters>()..stack_bottom]
+            .copy_from_slice(&thread_regs_bytes);
+        stack_bottom -= size_of::<ThreadRegisters>();
 
         debug_assert!(stack_bottom >= MINIMUM_LEFTOVER_STACK);
         stack_bottom
@@ -134,9 +133,9 @@ impl Thread {
         Self {
             id: ThreadId::new(),
             root_proc,
-            priority: Priority::Low,
+            priority: Priority::Null,
             stack: None,
-            last_stack_ptr: Box::pin(0),
+            last_stack_ptr: Box::pin(core::ptr::null_mut()),
             link: Link::default(),
         }
     }
@@ -147,7 +146,7 @@ impl Thread {
     ///
     /// This function should only be called on a currently active thread,
     /// as queues in the scheduler are sorted by priority.
-    pub(super) unsafe fn set_priority(&mut self, priority: Priority) {
+    pub(super) const unsafe fn set_priority(&mut self, priority: Priority) {
         self.priority = priority;
     }
 
@@ -191,14 +190,14 @@ impl Thread {
     #[must_use]
     #[inline]
     /// Returns the value of the last stack pointer.
-    pub fn last_stack_ptr(&self) -> *const usize {
-        *self.last_stack_ptr.as_ref() as *const usize
+    pub fn last_stack_ptr(&self) -> *const u8 {
+        *self.last_stack_ptr.as_ref()
     }
 
     #[must_use]
     #[inline]
     /// Returns a mutable pointer to the last stack pointer.
-    pub fn last_stack_ptr_mut(&mut self) -> *mut usize {
+    pub fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
         self.last_stack_ptr.as_mut().get_mut()
     }
 }
@@ -231,12 +230,12 @@ impl ThreadId {
 
     #[must_use]
     #[inline]
-    pub fn as_u64(self) -> u64 {
+    pub const fn as_u64(self) -> u64 {
         self.0
     }
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThreadRegisters {
     r15: u64,
@@ -250,12 +249,10 @@ pub struct ThreadRegisters {
     rdi: u64,
     rsi: u64,
     rbp: u64,
-    rsp: u64,
     rbx: u64,
     rdx: u64,
     rcx: u64,
     rax: u64,
     rflags: u64,
     rip: u64,
-    // FIXME: SSE/FPU registers?
 }
