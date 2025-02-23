@@ -202,7 +202,18 @@ extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFram
 info_isr_eoi!(spurious_interrupt_handler);
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    unsafe { crate::process::scheduler::reschedule() };
+    let rescheduling_result = unsafe { crate::process::scheduler::reschedule() };
+
+    // Safety:
+    // `send_eoi` is safe to use on locked LAPICs (see its documentation).
+    // Also, the LAPIC is initialized if the interrupt has been received ;).
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+
+    if let Some(context_switch) = rescheduling_result {
+        // Safety:
+        // If rescheduling happened, interrupts were disabled.
+        unsafe { context_switch.perform() };
+    }
 }
 
 extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFrame) {

@@ -70,7 +70,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ContextSwitch {
+pub struct ContextSwitch {
     old_stack: *mut *mut u8,
     new_stack: *const u8,
     cr3: usize,
@@ -83,7 +83,7 @@ impl ContextSwitch {
     /// ## Safety
     ///
     /// See `kernel::arch::context::context_switch`.
-    unsafe fn perform(&self) {
+    pub unsafe fn perform(&self) {
         unsafe { crate::arch::context::switch(self.old_stack, self.new_stack, self.cr3) };
     }
 }
@@ -200,12 +200,14 @@ impl Scheduler {
     }
 }
 
+#[inline]
 fn get_scheduler() -> &'static Scheduler {
     // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]
     unsafe { SCHEDULERS[locals!().core_id()].as_ref() }.unwrap()
 }
 
+#[inline]
 fn get_scheduler_mut() -> &'static mut Scheduler {
     // FIXME: Find a workaround for static mutable references.
     #[allow(static_mut_refs)]
@@ -227,25 +229,17 @@ fn clean_thread() {
     }
 }
 
+#[must_use]
+#[inline]
 /// Reschedules the scheduler.
 ///
-/// ## Safety
+/// If rescheduling happens, interrupts are disabled.
 ///
-/// This function must only be called inside of the timer interrupt handler,
-/// and EOI is sent to the APIC in the function.
-pub(crate) unsafe fn reschedule() {
-    let rescheduling_result = get_scheduler_mut().reschedule();
-
-    // Safety:
-    // We are only writing a single `u32` to MMIO.
-    // Also, APIC is initialized if the scheduler is initialized.
-    unsafe { locals!().lapic().force_lock() }.send_eoi();
-
-    if let Some(context_switch) = rescheduling_result {
-        // Safety:
-        // Interrupts are indeed disabled at the start of the function.
-        unsafe { context_switch.perform() };
-    }
+/// ## Warning
+///
+/// This function does not perform the context switch.
+pub(crate) unsafe fn reschedule() -> Option<ContextSwitch> {
+    get_scheduler_mut().reschedule()
 }
 
 #[must_use]

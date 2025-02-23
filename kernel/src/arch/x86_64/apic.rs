@@ -163,6 +163,14 @@ impl LocalApic {
     }
 
     #[inline]
+    /// Inform the LAPIC that the last signaled interrupt has been handled.
+    ///
+    /// This step is mandatory to allow the LAPIC to signal other pending interrupts.
+    ///
+    /// ## Notes
+    ///
+    /// It is safe to call this function in threaded environments, even if the LAPIC is
+    /// currently locked.
     pub fn send_eoi(&mut self) {
         unsafe { self.base.byte_add(0xB0).write(0) };
     }
