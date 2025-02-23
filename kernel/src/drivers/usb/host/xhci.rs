@@ -105,5 +105,5 @@ impl Xhci {
 
 #[inline]
 pub fn with_xhci<T, F: FnOnce(&mut Xhci) -> T>(f: F) -> Option<T> {
-    XHCI.try_with_locked(f)
+    XHCI.with_locked_if_init(f)
 }

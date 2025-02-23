@@ -4,7 +4,7 @@ use core::{
 };
 
 use alloc::{boxed::Box, sync::Arc, vec};
-use hyperdrive::{once::Once, queues::mpsc::MpscQueue};
+use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
 use thread::Thread;
 
@@ -25,7 +25,7 @@ pub const SCHEDULER_QUANTUM_MS: u32 = 60;
 //
 // Because scheduler will be playing with context switching, we cannot acquire locks.
 // Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
-static mut SCHEDULERS: [Option<Scheduler>; 256] = [const { None }; 256];
+static SCHEDULERS: [Once<Scheduler>; 256] = [const { Once::uninit() }; 256];
 
 // It is backed by a Multiple Producer Single Consumer queue.
 // It would be a better choice to use a Multiple Producer Multiple Consumer queue,
@@ -50,12 +50,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
     FINISHED_QUEUE.call_once(|| MpscQueue::new(Box::pin(Thread::new_stub(kernel_process.clone()))));
 
     let scheduler = Scheduler::new(kernel_thread);
-    // Safety:
-    // Function safety guards.
-    #[allow(static_mut_refs)]
-    unsafe {
-        SCHEDULERS[locals!().core_id()] = Some(scheduler);
-    }
+    SCHEDULERS[locals!().core_id()].call_once(|| scheduler);
 
     SPAWN_CLEAN_THREAD.call_once(|| {
         let clean_thread = Thread::new(
@@ -89,11 +84,10 @@ impl ContextSwitch {
 }
 
 pub struct Scheduler {
-    current_thread: Box<Thread>,
+    current_thread: McsLock<Box<Thread>>,
     /// A local, atomic, priority for the current thread.
     current_priority: priority::AtomicPriority,
     should_exit_thread: AtomicBool,
-    in_reschedule: AtomicBool,
 }
 
 impl Scheduler {
@@ -102,10 +96,9 @@ impl Scheduler {
         let current_priority = priority::AtomicPriority::new(kernel_thread.priority());
 
         Self {
-            current_thread: Box::new(kernel_thread),
+            current_thread: McsLock::new(Box::new(kernel_thread)),
             current_priority,
             should_exit_thread: AtomicBool::new(false),
-            in_reschedule: AtomicBool::new(false),
         }
     }
 
@@ -115,20 +108,8 @@ impl Scheduler {
 
     #[must_use]
     #[inline]
-    pub const fn current_thread(&self) -> &Thread {
-        &self.current_thread
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn current_process(&self) -> Arc<Process> {
-        self.current_thread.process()
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn current_priority(&self) -> &priority::AtomicPriority {
-        &self.current_priority
+    pub fn current_priority(&self) -> priority::Priority {
+        self.current_priority.load(Ordering::Relaxed)
     }
 
     #[inline]
@@ -141,77 +122,55 @@ impl Scheduler {
     ///
     /// This function does not change the context, but will disable interrupts
     /// if scheduling was successful.
-    fn reschedule(&mut self) -> Option<ContextSwitch> {
-        // We cannot acquire locks, so we imitate one with an `AtomicBool`.
-        // It is tempting to use a spin loop here, but it is better to use the CPU for the last thread
-        // than to waste it on a spin loop.
-        // It is also a better solution if `yield` is implemented.
-        if self
-            .in_reschedule
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            return None;
-        }
+    fn reschedule(&self) -> Option<ContextSwitch> {
+        self.current_thread.try_with_locked(|thread| {
+            crate::arch::interrupts::int_disable();
 
-        crate::arch::interrupts::int_disable();
+            // Swap the current thread with the next one.
+            let mut new_thread =
+                Pin::into_inner(if let Some(new_thread) = QUEUE.get().unwrap().next() {
+                    new_thread
+                } else {
+                    crate::arch::interrupts::int_enable();
+                    return None;
+                });
 
-        // Swap the current thread with the next one.
-        let mut new_thread =
-            Pin::into_inner(if let Some(new_thread) = QUEUE.get().unwrap().next() {
-                new_thread
+            core::mem::swap(thread.as_mut(), new_thread.as_mut());
+            let mut old_thread = new_thread; // Renaming for clarity.
+
+            // Gather information about the old thread.
+            let old_priority = self
+                .current_priority
+                .swap(thread.priority(), Ordering::Relaxed);
+            unsafe { old_thread.set_priority(old_priority) };
+            let old_should_exit = self.should_exit_thread.swap(false, Ordering::Relaxed);
+
+            // Handle stack pointers.
+            let old_stack = old_thread.last_stack_ptr_mut();
+            let new_stack = thread.last_stack_ptr();
+
+            if old_should_exit {
+                // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
+                // This job should be done by a cleaning thread.
+                FINISHED_QUEUE.get().unwrap().enqueue(Pin::new(old_thread));
             } else {
-                self.in_reschedule.store(false, Ordering::Release);
-                crate::arch::interrupts::int_enable();
-                return None;
-            });
+                QUEUE.get().unwrap().append(Pin::new(old_thread));
+            }
 
-        core::mem::swap(self.current_thread.as_mut(), new_thread.as_mut());
-        let mut old_thread = new_thread; // Renaming for clarity.
+            let cr3 = thread.process().address_space().cr3_raw();
 
-        // Gather information about the old thread.
-        let old_priority = self
-            .current_priority
-            .swap(self.current_thread().priority(), Ordering::Relaxed);
-        unsafe { old_thread.set_priority(old_priority) };
-        let old_should_exit = self.should_exit_thread.swap(false, Ordering::Relaxed);
-
-        // Handle stack pointers.
-        let old_stack = old_thread.last_stack_ptr_mut();
-        let new_stack = self.current_thread().last_stack_ptr();
-
-        if old_should_exit {
-            // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
-            // This job should be done by a cleaning thread.
-            FINISHED_QUEUE.get().unwrap().enqueue(Pin::new(old_thread));
-        } else {
-            QUEUE.get().unwrap().append(Pin::new(old_thread));
-        }
-
-        let cr3 = self.current_process().address_space().cr3_raw();
-
-        self.in_reschedule.store(false, Ordering::Release);
-
-        Some(ContextSwitch {
-            old_stack,
-            new_stack,
-            cr3,
-        })
+            Some(ContextSwitch {
+                old_stack,
+                new_stack,
+                cr3,
+            })
+        })?
     }
 }
 
 #[inline]
 fn get_scheduler() -> &'static Scheduler {
-    // FIXME: Find a workaround for static mutable references.
-    #[allow(static_mut_refs)]
-    unsafe { SCHEDULERS[locals!().core_id()].as_ref() }.unwrap()
-}
-
-#[inline]
-fn get_scheduler_mut() -> &'static mut Scheduler {
-    // FIXME: Find a workaround for static mutable references.
-    #[allow(static_mut_refs)]
-    unsafe { SCHEDULERS[locals!().core_id()].as_mut() }.unwrap()
+    SCHEDULERS[locals!().core_id()].get().unwrap()
 }
 
 fn clean_thread() {
@@ -239,24 +198,25 @@ fn clean_thread() {
 ///
 /// This function does not perform the context switch.
 pub(crate) fn reschedule() -> Option<ContextSwitch> {
-    get_scheduler_mut().reschedule()
+    get_scheduler().reschedule()
 }
 
 #[must_use]
 /// Returns the current thread ID.
 pub fn current_thread_id() -> thread::ThreadId {
-    get_scheduler().current_thread().id()
+    // Safety:
+    // Swapping current thread is done using a memory swap of a `Box` (pointer), so it is impossible
+    // that the current thread is "partly" read before swap and "partly" after swap.
+    unsafe { get_scheduler().current_thread.force_lock() }.id()
 }
 
 #[must_use]
 /// Returns the current process.
-///
-/// ## Safety
-///
-/// Scheduling must be disabled.
-// TODO: Process tree?
-pub unsafe fn current_process() -> Arc<Process> {
-    get_scheduler().current_process()
+pub fn current_process() -> Arc<Process> {
+    // Safety:
+    // Swapping current thread is done using a memory swap of a `Box` (pointer), so it is impossible
+    // that the current thread is "partly" read before swap and "partly" after swap.
+    unsafe { get_scheduler().current_thread.force_lock() }.process()
 }
 
 pub fn spawn_thread(thread: Pin<Box<Thread>>) {
@@ -269,7 +229,7 @@ pub fn spawn_thread(thread: Pin<Box<Thread>>) {
 pub fn set_scheduling(enable: bool) {
     use crate::arch::apic::timer;
 
-    locals!().lapic().try_with_locked(|lapic| {
+    locals!().lapic().with_locked_if_init(|lapic| {
         const TIMER_DIVIDER: timer::Divider = timer::Divider::Eight;
 
         let timer = lapic.timer();
@@ -317,9 +277,5 @@ pub fn thread_yield() {
 }
 
 pub fn is_scheduling_init() -> bool {
-    // FIXME: Find a workaround for static mutable references.
-    #[allow(static_mut_refs)]
-    unsafe {
-        SCHEDULERS[locals!().core_id()].is_some()
-    }
+    SCHEDULERS[locals!().core_id()].get().is_some()
 }

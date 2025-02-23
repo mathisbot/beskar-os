@@ -82,13 +82,13 @@ struct HeapGA;
 unsafe impl GlobalAlloc for HeapGA {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
         KERNEL_HEAP
-            .try_with_locked(|heap| heap.alloc(layout))
+            .with_locked_if_init(|heap| heap.alloc(layout))
             .unwrap_or(core::ptr::null_mut())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
         // Safety:
         // `GlobalAlloc` guarantees that the pointer is valid and the layout is correct.
-        KERNEL_HEAP.try_with_locked(|heap| unsafe { heap.dealloc(ptr, layout) });
+        KERNEL_HEAP.with_locked_if_init(|heap| unsafe { heap.dealloc(ptr, layout) });
     }
 }

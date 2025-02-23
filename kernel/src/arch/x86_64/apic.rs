@@ -84,7 +84,7 @@ pub fn init_ioapic() {
 ///
 /// This function will panic if the APIC is not enabled.
 fn enable_disable_interrupts(enable: bool) {
-    locals!().lapic().try_with_locked(|lapic| {
+    locals!().lapic().with_locked_if_init(|lapic| {
         unsafe {
             lapic.base.byte_add(0xF0).update(|value| {
                 if enable {

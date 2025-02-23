@@ -28,38 +28,40 @@ fn kmain() -> ! {
         };
         extern crate alloc;
 
+        let root_proc = scheduler::current_process();
+
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            unsafe { scheduler::current_process() },
+            root_proc.clone(),
             Priority::Normal,
             alloc::vec![0; 1024*256],
             dummy::fibonacci,
         )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            unsafe { scheduler::current_process() },
+            root_proc.clone(),
             Priority::Normal,
             alloc::vec![0; 1024*256],
             dummy::counter,
         )));
         // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-        //     unsafe { scheduler::current_process() },
+        //     root_proc.clone(),
         //     Priority::Low,
         //     alloc::vec![0; 1024*1024],
         //     dummy::alloc_intensive,
         // )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            unsafe { scheduler::current_process() },
+            root_proc.clone(),
             Priority::Low,
             alloc::vec![0; 1024*256],
             dummy::panic_test,
         )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            unsafe { scheduler::current_process() },
+            root_proc.clone(),
             Priority::Normal,
             alloc::vec![0; 1024*256],
             dummy::floating_point,
         )));
         // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-        //     unsafe { scheduler::current_process() },
+        //     root_proc.clone(),
         //     Priority::Low,
         //     alloc::vec![0; 1024*256],
         //     dummy::syscall_test,

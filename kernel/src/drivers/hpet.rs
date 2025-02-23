@@ -519,7 +519,7 @@ impl Hpet {
 }
 
 pub fn try_with_hpet<R>(f: impl FnOnce(&mut Hpet) -> R) -> Option<R> {
-    HPET.try_with_locked(f)
+    HPET.with_locked_if_init(f)
 }
 
 pub fn main_counter_value() -> u64 {

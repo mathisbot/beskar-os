@@ -248,7 +248,7 @@ impl super::PciHandler for PciExpressHandler {
 
 #[inline]
 pub fn with_pcie_handler<T, F: FnOnce(&mut PciExpressHandler) -> T>(f: F) -> Option<T> {
-    PCIE_HANDLER.try_with_locked(f)
+    PCIE_HANDLER.with_locked_if_init(f)
 }
 
 pub fn pcie_available() -> bool {
