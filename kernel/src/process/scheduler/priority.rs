@@ -135,7 +135,6 @@ unsafe impl ThreadQueue for RoundRobinQueues {
         }
     }
 
-    #[must_use]
     fn next(&self) -> Option<Pin<Box<Thread>>> {
         match self.cycle_priority() {
             Priority::Null => unreachable!(),

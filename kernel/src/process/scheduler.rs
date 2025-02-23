@@ -224,7 +224,7 @@ fn clean_thread() {
             drop(thread);
         } else {
             core::hint::spin_loop();
-            // TODO: Yield
+            thread_yield();
         }
     }
 }
@@ -238,7 +238,7 @@ fn clean_thread() {
 /// ## Warning
 ///
 /// This function does not perform the context switch.
-pub(crate) unsafe fn reschedule() -> Option<ContextSwitch> {
+pub(crate) fn reschedule() -> Option<ContextSwitch> {
     get_scheduler_mut().reschedule()
 }
 
@@ -303,6 +303,16 @@ pub unsafe fn exit_current_thread() {
     // FIXME: Force reschedule now?
     loop {
         crate::arch::halt();
+    }
+}
+
+pub fn thread_yield() {
+    let context_switch = reschedule();
+
+    // If no other thread is waiting, then we can't continue doing nothing
+    // in the current thread.
+    if let Some(context_switch) = context_switch {
+        unsafe { context_switch.perform() };
     }
 }
 

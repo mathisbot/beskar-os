@@ -38,6 +38,7 @@ trait Clock {
         let ms = u64::try_from(duration.as_millis()).expect("Duration too large");
         let end = self.now() + ms * self.ticks_per_ms();
         while self.now() < end {
+            // TODO: Yield?
             core::hint::spin_loop();
         }
     }

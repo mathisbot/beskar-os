@@ -78,6 +78,12 @@ impl Cr4 {
 pub struct Cr3;
 
 impl Cr3 {
+    /// Use a writethrough caching policy
+    /// (default to writeback).
+    pub const CACHE_WRITETHROUGH: u16 = 1 << 3;
+    /// Completely disable caching for the whole table.
+    pub const CACHE_DISABLE: u16 = 1 << 4;
+
     #[must_use]
     #[inline]
     pub fn read() -> (Frame, u16) {
