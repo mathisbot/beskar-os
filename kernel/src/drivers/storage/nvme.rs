@@ -176,7 +176,7 @@ impl NvmeControllers {
             let vaddr = pmap.translate(frame.start_address()).unwrap();
             let ptr = vaddr.as_ptr::<queue::admin::IdentifyController>();
             // Wait for command completion
-            // Completion also triggers and interrupt!
+            // Completion also triggers an interrupt!
             // TODO: On interrupt, dequeue the completion queue into another Rustier queue/tree
             // intended to be browsed by command identifier
             while self.acq.pop().is_none() {

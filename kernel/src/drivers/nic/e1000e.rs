@@ -179,7 +179,7 @@ impl E1000e<'_> {
         // FIXME: Only one pass over the capabilities is needed
         let msix = pci::with_pci_handler(|handler| pci::msix::MsiX::new(handler, &self.pci_device));
         let msi = if msix.is_none() {
-            pci::with_pci_handler(|handler| pci::msi::find_msi_cap(handler, &self.pci_device))
+            pci::with_pci_handler(|handler| pci::msi::Msi::new(handler, &self.pci_device))
         } else {
             None
         };
