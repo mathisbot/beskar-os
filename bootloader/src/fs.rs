@@ -17,7 +17,7 @@ pub fn load_file_from_efi_dir(filename: &CStr16) -> Option<&'static mut [u8]> {
     let mut current_fs = boot::get_image_file_system(boot::image_handle()).unwrap();
     let mut root = current_fs.open_volume().unwrap();
 
-    // Search for efi_dir
+    // Search for `efi` directory
     let mut efi_dir: Directory = {
         let mut buffer = [0_u8; 512];
         let fi_buffer = FileInfo::align_buf(&mut buffer)?;

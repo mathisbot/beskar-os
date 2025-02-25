@@ -3,7 +3,7 @@ use beskar_core::{
         PhysAddr,
         paging::{Frame, M1GiB, M4KiB, MemSize as _},
     },
-    boot::TlsTemplate,
+    boot::{KernelInfo, RamdiskInfo},
 };
 use x86_64::{
     VirtAddr,
@@ -141,123 +141,183 @@ impl Level4Entries {
 /// These mappings will be sent to and used by the kernel.
 pub fn make_mappings(
     kernel: &ElfFile,
+    ramdisk: Option<&[u8]>,
     frame_allocator: &mut EarlyFrameAllocator,
     page_tables: &mut PageTables,
 ) -> Mappings {
     let mut level_4_entries = Level4Entries::new(frame_allocator.max_physical_address());
 
-    let kernel_paddr = PhysAddr::new(kernel.input.as_ptr() as u64);
-    let kernel_len = u64::try_from(kernel.input.len()).unwrap();
+    // Map kernel
+    let (kernel_entry_point, kernel_info) = {
+        let kernel_paddr = PhysAddr::new(kernel.input.as_ptr() as u64);
+        let kernel_len = u64::try_from(kernel.input.len()).unwrap();
 
-    let kernel_elf::KernelInfo {
-        image_offset: kernel_vaddr,
-        entry_point: kernel_entry_point,
-        tls_template,
-    } = crate::kernel_elf::load_kernel_elf(kernel_elf::KernelLoadingUtils::new(
-        kernel,
-        &mut level_4_entries,
-        &mut page_tables.kernel,
-        frame_allocator,
-    ));
+        let kernel_elf::LoadedKernelInfo {
+            image_offset: kernel_vaddr,
+            entry_point: kernel_entry_point,
+        } = crate::kernel_elf::load_kernel_elf(kernel_elf::KernelLoadingUtils::new(
+            kernel,
+            &mut level_4_entries,
+            &mut page_tables.kernel,
+            frame_allocator,
+        ));
 
-    info!("Kernel loaded");
-    debug!("Kernel entry point at {:#x}", kernel_entry_point.as_u64());
-    debug!("Kernel image offset: {:#x}", kernel_vaddr.as_u64());
-    if tls_template.is_some() {
-        info!("TLS template found");
+        info!("Kernel loaded");
+        debug!("Kernel entry point at {:#x}", kernel_entry_point.as_u64());
+        debug!("Kernel image offset: {:#x}", kernel_vaddr.as_u64());
+
+        (
+            kernel_entry_point,
+            KernelInfo::new(
+                kernel_paddr,
+                unsafe { core::mem::transmute(kernel_vaddr) },
+                kernel_len,
+            ),
+        )
+    };
+
+    // Map ramdisk
+    let ramdisk_info = ramdisk.map(|ramdisk| {
+        let size = u64::try_from(ramdisk.len()).unwrap();
+
+        let start_frame = {
+            let paddr = x86_64::PhysAddr::new(ramdisk.as_ptr() as u64);
+            PhysFrame::from_start_address(paddr).unwrap()
+        };
+        let end_frame = start_frame + (size / M4KiB::SIZE);
+
+        let start_page = {
+            let start_addr = level_4_entries.get_free_address(size);
+            Page::<Size4KiB>::from_start_address(start_addr).unwrap()
+        };
+        let end_page = start_page + (size / Size4KiB::SIZE);
+
+        for (page, frame) in Page::range_inclusive(start_page, end_page)
+            .zip(PhysFrame::range_inclusive(start_frame, end_frame))
+        {
+            let flags = PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE;
+
+            unsafe {
+                page_tables
+                    .kernel
+                    .map_to(page, frame, flags, frame_allocator)
+            }
+            .expect("Failed to map ramdisk page")
+            .flush();
+        }
+
+        RamdiskInfo::new(
+            unsafe { core::mem::transmute(start_page.start_address()) },
+            size,
+        )
+    });
+
+    let stack_end_addr = {
+        let stack_start_page = {
+            let guard_page = Page::<Size4KiB>::from_start_address(
+                // Allocate a guard page
+                level_4_entries.get_free_address(Size4KiB::SIZE + KERNEL_STACK_SIZE),
+            )
+            .unwrap();
+
+            guard_page + 1
+        };
+        let stack_end_addr =
+            (stack_start_page.start_address() + KERNEL_STACK_SIZE).align_down(16_u64);
+        let stack_end_page = Page::containing_address(stack_end_addr - 1);
+
+        for page in Page::range_inclusive(stack_start_page, stack_end_page) {
+            let frame = frame_allocator
+                .allocate_frame()
+                .expect("Failed to allocate a frame");
+
+            let flags =
+                PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+
+            unsafe {
+                page_tables
+                    .kernel
+                    .map_to(page, frame, flags, frame_allocator)
+            }
+            .expect("Failed to map stack page")
+            .flush();
+        }
+
+        info!("Setup stack");
+        debug!("Stack top at {:#x}", stack_end_addr);
+
+        stack_end_addr
+    };
+
+    // Identity map the jump code
+    {
+        let chg_ctx_function_addr = x86_64::PhysAddr::new(chg_ctx as u64);
+        let chg_ctx_function_frame =
+            PhysFrame::<Size4KiB>::containing_address(chg_ctx_function_addr);
+
+        for frame in PhysFrame::range_inclusive(chg_ctx_function_frame, chg_ctx_function_frame + 1)
+        {
+            let page = Page::containing_address(VirtAddr::new(frame.start_address().as_u64()));
+
+            unsafe {
+                page_tables.kernel.map_to_with_table_flags(
+                    page,
+                    frame,
+                    PageTableFlags::PRESENT,
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    frame_allocator,
+                )
+            }
+            .expect("Failed to map chg_ctx page")
+            .flush();
+        }
+
+        info!("Mapped jump code");
+        debug!("chg_ctx function at {:#x}", chg_ctx_function_addr.as_u64());
     }
 
-    let stack_start_page = {
-        let guard_page = Page::<Size4KiB>::from_start_address(
-            // Allocate a guard page
-            level_4_entries.get_free_address(Size4KiB::SIZE + KERNEL_STACK_SIZE),
-        )
-        .unwrap();
-
-        guard_page + 1
-    };
-    let stack_end_addr = (stack_start_page.start_address() + KERNEL_STACK_SIZE).align_down(16_u64);
-    let stack_end_page = Page::containing_address(stack_end_addr - 1);
-
-    for page in Page::range_inclusive(stack_start_page, stack_end_page) {
-        let frame = frame_allocator
+    // Handle GDT
+    {
+        let gdt_frame = frame_allocator
             .allocate_frame()
             .expect("Failed to allocate a frame");
 
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+        let gdt_virt_addr = VirtAddr::new(gdt_frame.start_address().as_u64());
+        let ptr: *mut GlobalDescriptorTable = gdt_virt_addr.as_mut_ptr();
+        let mut gdt = GlobalDescriptorTable::new();
+
+        let code_selector = gdt.append(x86_64::structures::gdt::Descriptor::kernel_code_segment());
+        let data_selector = gdt.append(x86_64::structures::gdt::Descriptor::kernel_data_segment());
 
         unsafe {
-            page_tables
-                .kernel
-                .map_to(page, frame, flags, frame_allocator)
+            ptr.write(gdt);
+            &*ptr
         }
-        .expect("Failed to map stack page")
-        .flush();
-    }
+        .load();
 
-    info!("Setup stack");
-    debug!("Stack top at {:#x}", stack_end_addr);
+        unsafe {
+            segmentation::CS::set_reg(code_selector);
+            segmentation::SS::set_reg(data_selector);
+        }
 
-    let chg_ctx_function_addr = x86_64::PhysAddr::new(chg_ctx as u64);
-    let chg_ctx_function_frame = PhysFrame::<Size4KiB>::containing_address(chg_ctx_function_addr);
-
-    for frame in PhysFrame::range_inclusive(chg_ctx_function_frame, chg_ctx_function_frame + 1) {
-        let page = Page::containing_address(VirtAddr::new(frame.start_address().as_u64()));
-
+        let gdt_page = Page::containing_address(VirtAddr::new(gdt_frame.start_address().as_u64()));
         unsafe {
             page_tables.kernel.map_to_with_table_flags(
-                page,
-                frame,
+                gdt_page,
+                gdt_frame,
                 PageTableFlags::PRESENT,
                 PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
                 frame_allocator,
             )
         }
-        .expect("Failed to map chg_ctx page")
+        .expect("Failed to map GDT page")
         .flush();
+
+        info!("Mapped GDT");
+        debug!("GDT at {:#x}", gdt_frame.start_address().as_u64());
     }
 
-    info!("Mapped jump code");
-    debug!("chg_ctx function at {:#x}", chg_ctx_function_addr.as_u64());
-
-    let gdt_frame = frame_allocator
-        .allocate_frame()
-        .expect("Failed to allocate a frame");
-
-    let gdt_virt_addr = VirtAddr::new(gdt_frame.start_address().as_u64());
-    let ptr: *mut GlobalDescriptorTable = gdt_virt_addr.as_mut_ptr();
-    let mut gdt = GlobalDescriptorTable::new();
-
-    let code_selector = gdt.append(x86_64::structures::gdt::Descriptor::kernel_code_segment());
-    let data_selector = gdt.append(x86_64::structures::gdt::Descriptor::kernel_data_segment());
-
-    unsafe {
-        ptr.write(gdt);
-        &*ptr
-    }
-    .load();
-
-    unsafe {
-        segmentation::CS::set_reg(code_selector);
-        segmentation::SS::set_reg(data_selector);
-    }
-
-    let gdt_page = Page::containing_address(VirtAddr::new(gdt_frame.start_address().as_u64()));
-    unsafe {
-        page_tables.kernel.map_to_with_table_flags(
-            gdt_page,
-            gdt_frame,
-            PageTableFlags::PRESENT,
-            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-            frame_allocator,
-        )
-    }
-    .expect("Failed to map GDT page")
-    .flush();
-
-    info!("Mapped GDT");
-    debug!("GDT at {:#x}", gdt_frame.start_address().as_u64());
-
+    // Map framebuffer
     let framebuffer_virt_addr = {
         let (start_frame, end_frame, start_page) = crate::video::with_physical_framebuffer(|fb| {
             let start_frame = Frame::<M4KiB>::containing_address(fb.start_addr());
@@ -295,6 +355,7 @@ pub fn make_mappings(
         start_page.start_address()
     };
 
+    // Get the recursive index
     let recursive_index = {
         let index = level_4_entries.get_free_entries(1);
 
@@ -323,11 +384,8 @@ pub fn make_mappings(
         level_4_entries,
         framebuffer: framebuffer_virt_addr,
         recursive_index,
-        tls_template,
-
-        kernel_addr: kernel_paddr,
-        kernel_len,
-        kernel_vaddr,
+        kernel_info,
+        ramdisk_info,
     }
 }
 
@@ -344,16 +402,10 @@ pub struct Mappings {
     framebuffer: VirtAddr,
     /// The recursive mapping index in the level 4 page table.
     recursive_index: PageTableIndex,
-    /// An optional thread local storage template.
-    tls_template: Option<TlsTemplate>,
-
-    // Kernel-related
-    /// The address of the kernel ELF in memory.
-    kernel_addr: PhysAddr,
-    /// The size of the kernel ELF in memory.
-    kernel_len: u64,
-    /// The offset of the kernel image.
-    kernel_vaddr: VirtAddr,
+    /// Various kernel information.
+    kernel_info: KernelInfo,
+    /// Various ramdisk information.
+    ramdisk_info: Option<RamdiskInfo>,
 }
 
 impl Mappings {
@@ -395,25 +447,13 @@ impl Mappings {
 
     #[must_use]
     #[inline]
-    pub const fn tls_template(&self) -> Option<TlsTemplate> {
-        self.tls_template
+    pub const fn kernel_info(&self) -> KernelInfo {
+        self.kernel_info
     }
 
     #[must_use]
     #[inline]
-    pub const fn kernel_addr(&self) -> PhysAddr {
-        self.kernel_addr
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn kernel_len(&self) -> u64 {
-        self.kernel_len
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn kernel_vaddr(&self) -> VirtAddr {
-        self.kernel_vaddr
+    pub const fn ramdisk_info(&self) -> Option<RamdiskInfo> {
+        self.ramdisk_info
     }
 }

@@ -1,4 +1,4 @@
-use std::{env::var, fs};
+use std::{env::var, fs, io::Write};
 
 fn main() {
     println!("cargo:rerun-if-changed=./beskar-core");
@@ -20,4 +20,12 @@ fn main() {
         .expect("Failed to copy bootloader.efi");
     fs::copy(&kernel_path, "efi_disk/efi/kernelx64.elf").expect("Failed to copy kernel");
     fs::copy(&userspace_path, "efi_disk/bin/userspace.elf").expect("Failed to copy userspace");
+
+    // Create (empty) ramdisk.img file
+    let mut ramdisk =
+        fs::File::create("efi_disk/efi/ramdisk.img").expect("Failed to create ramdisk.img");
+    // While we don't have a real ramdisk, we'll just write some dummy data to the file
+    ramdisk
+        .write(b"lorem ipsum")
+        .expect("Failed to write to ramdisk.img");
 }

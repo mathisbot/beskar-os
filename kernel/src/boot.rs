@@ -4,10 +4,7 @@ use crate::{
     arch::{self, ap, apic, interrupts},
     drivers, locals, mem, process, screen, syscall, time,
 };
-use beskar_core::{
-    arch::commons::{PhysAddr, VirtAddr},
-    boot::BootInfo,
-};
+use beskar_core::boot::BootInfo;
 
 /// Static reference to the kernel main function
 ///
@@ -48,7 +45,8 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         recursive_index,
         memory_regions,
         rsdp_paddr,
-        kernel_vaddr,
+        kernel_info,
+        ramdisk_info: _ramdisk_info,
         ..
     } = boot_info;
 
@@ -62,11 +60,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     crate::info!("BeskarOS kernel starting...");
 
-    mem::init(
-        *recursive_index,
-        memory_regions,
-        VirtAddr::new(kernel_vaddr.as_u64()),
-    );
+    mem::init(*recursive_index, memory_regions, kernel_info.vaddr());
     crate::info!("Memory initialized");
 
     locals::init();
@@ -74,7 +68,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     locals!().gdt().init_load();
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
-    rsdp_paddr.map(|rsdp_paddr| drivers::acpi::init(PhysAddr::new(rsdp_paddr.as_u64())));
+    rsdp_paddr.map(|rsdp_paddr| drivers::acpi::init(rsdp_paddr));
 
     time::init();
 
@@ -87,6 +81,8 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     apic::init_ioapic();
 
     drivers::init();
+
+    // TODO: Use ramdisk here?
 }
 
 /// Rust entry point for APs

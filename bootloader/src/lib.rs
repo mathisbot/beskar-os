@@ -110,8 +110,8 @@ pub fn create_boot_info(
         unsafe {
             core::slice::from_raw_parts_mut(memory_map_regions_addr.as_mut_ptr(), max_region_count)
         },
-        mappings.kernel_addr(),
-        mappings.kernel_len(),
+        mappings.kernel_info().paddr(),
+        mappings.kernel_info().size(),
     );
 
     // ## Safety
@@ -124,10 +124,8 @@ pub fn create_boot_info(
             }),
             recursive_index: u16::from(mappings.recursive_index()),
             rsdp_paddr: crate::system::acpi::rsdp_paddr(),
-            kernel_paddr: mappings.kernel_addr(),
-            kernel_len: mappings.kernel_len(),
-            kernel_vaddr: core::mem::transmute(mappings.kernel_vaddr()),
-            tls_template: mappings.tls_template(),
+            kernel_info: mappings.kernel_info(),
+            ramdisk_info: mappings.ramdisk_info(),
             cpu_count: crate::system::core_count(),
         });
 
