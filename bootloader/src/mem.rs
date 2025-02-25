@@ -71,7 +71,6 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
     // All memory is identity mapped by UEFI
     let physical_offset = VirtAddr::new(0);
 
-    // TODO: Don't
     let bootloader_page_table = {
         let old_table = {
             let (old_frame, _) = Cr3::read();
