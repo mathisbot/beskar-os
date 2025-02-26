@@ -36,8 +36,6 @@ pub fn init() {
 }
 
 struct Heap {
-    // start: NonZeroU64,
-    // end: NonZeroU64,
     // TODO: Add faster allocator
     linked_list: linked_list_allocator::Heap,
 }
@@ -52,11 +50,7 @@ impl Heap {
             linked_list_allocator::Heap::new(page_range.start.start_address().as_mut_ptr(), size)
         };
 
-        Self {
-            // start: start_address.try_into().unwrap(),
-            // end: end_address.try_into().unwrap(),
-            linked_list,
-        }
+        Self { linked_list }
     }
 
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {

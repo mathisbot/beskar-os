@@ -1,8 +1,14 @@
 #![no_main]
 #![no_std]
 
+extern crate alloc;
+
+use alloc::sync::Arc;
 use hyperdrive::once::Once;
-use kernel::{locals, process::scheduler};
+use kernel::{
+    locals,
+    process::{Process, scheduler},
+};
 
 kernel::kernel_main!(kmain);
 
@@ -28,7 +34,7 @@ fn kmain() -> ! {
         };
         extern crate alloc;
 
-        let root_proc = scheduler::current_process();
+        let root_proc = Arc::new(Process::new("Tests", kernel::process::Kind::Driver));
 
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             root_proc.clone(),

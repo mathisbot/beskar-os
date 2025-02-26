@@ -37,9 +37,12 @@ pub fn init(recursive_index: u16, kernel_vaddr: VirtAddr) {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// TODO: Free address space? Useful for userland processes.
+// TODO: Free frames on drop? Useful for userland processes.
 pub struct AddressSpace {
+    /// Virtual address of the level 4 page table
+    /// **IN THE ADDRESS SPACE**
     lvl4_vaddr: VirtAddr,
+    /// Physical address of the level 4 page table
     lvl4_paddr: PhysAddr,
     /// # WARNING
     /// Only updated when the address space is loaded.
@@ -54,11 +57,21 @@ impl Default for AddressSpace {
 
 impl AddressSpace {
     #[must_use]
+    /// Create a new address space.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the kernel address space is not active.
     pub fn new() -> Self {
+        // TODO: Find a way to avoid this panic
+        assert!(
+            KERNEL_ADDRESS_SPACE.get().unwrap().is_active(),
+            "Kernel address must be active"
+        );
+
         let frame =
             frame_alloc::with_frame_allocator(super::frame_alloc::FrameAllocator::alloc).unwrap();
 
-        // The page is in the CURRENT address space.
         let page = page_alloc::with_page_allocator(|page_allocator| {
             page_allocator.allocate_pages::<M4KiB>(1)
         })
@@ -83,15 +96,19 @@ impl AddressSpace {
         // Copy the kernel's page table entries to the new address space
         let kernel_start_page =
             Page::<M4KiB>::containing_address(*KERNEL_CODE_ADDRESS.get().unwrap());
-        let kernel_page_range = kernel_start_page.p4_index().into()..512_usize;
 
         let current_page_table = KERNEL_ADDRESS_SPACE.get().unwrap().get_recursive_pt();
         let current_pt = current_page_table.entries();
+
+        // FIXME: Only copying the page table starting from the kernel's code entry
+        // triggers a triple fault. Is it the IDT?
+        // FIXME: The IDT is on the kernel heap, which can be anywhere in the address space.
+        pt[0] = current_pt[0];
+
         for (i, pte) in current_pt
             .iter()
             .enumerate()
-            .skip(kernel_page_range.start)
-            .take(512 - kernel_page_range.start)
+            .skip(kernel_start_page.p4_index().into())
         {
             if pte.is_null() {
                 continue;
@@ -120,7 +137,7 @@ impl AddressSpace {
         let lvl4_vaddr = {
             assert!(u16::try_from(index).is_ok(), "Index is too large");
             let i = u64::try_from(index).unwrap();
-            VirtAddr::new((i << 39) | (i << 30) | (i << 21) | (i << 12))
+            VirtAddr::new_extend((i << 39) | (i << 30) | (i << 21) | (i << 12))
         };
 
         Self {
@@ -143,11 +160,16 @@ impl AddressSpace {
         }
     }
 
-    pub fn cr3_raw(&self) -> usize {
-        usize::try_from(self.lvl4_paddr.as_u64() | u64::from(self.cr3_flags())).unwrap()
+    pub fn cr3_raw(&self) -> u64 {
+        self.lvl4_paddr.as_u64() | u64::from(self.cr3_flags())
     }
 
-    fn get_recursive_pt(&self) -> PageTable<'static> {
+    /// Get the page table of the address space.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the address space is not active.
+    pub fn get_recursive_pt(&self) -> PageTable<'static> {
         assert!(self.is_active(), "Address space is not active");
         PageTable::new(unsafe { &mut *self.lvl4_vaddr.as_mut_ptr() })
     }
