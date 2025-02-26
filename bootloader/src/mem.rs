@@ -23,6 +23,7 @@ use crate::{debug, info};
 pub fn init(
     memory_map: MemoryMapOwned,
     kernel_elf: &ElfFile,
+    ramdisk: Option<&[u8]>,
 ) -> (EarlyFrameAllocator, PageTables, Mappings) {
     let total_mem_size = compute_total_memory_kib(&memory_map);
     debug!("Detected memory size: {} MiB", total_mem_size / 1024);
@@ -31,7 +32,7 @@ pub fn init(
 
     let mut page_tables = create_page_tables(&mut frame_allocator);
 
-    let mappings = virt::make_mappings(kernel_elf, &mut frame_allocator, &mut page_tables);
+    let mappings = virt::make_mappings(kernel_elf, ramdisk, &mut frame_allocator, &mut page_tables);
 
     (frame_allocator, page_tables, mappings)
 }
@@ -70,7 +71,6 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
     // All memory is identity mapped by UEFI
     let physical_offset = VirtAddr::new(0);
 
-    // TODO: Don't
     let bootloader_page_table = {
         let old_table = {
             let (old_frame, _) = Cr3::read();

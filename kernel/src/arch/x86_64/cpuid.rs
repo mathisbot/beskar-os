@@ -294,7 +294,7 @@ pub fn get_highest_supported_leaf() -> u32 {
 #[must_use]
 #[inline]
 /// Get the highest supported extended leaf
-/// (EAX >= 0x8000_0000)
+/// (EAX >= `0x8000_0000`)
 pub fn get_highest_supported_xleaf() -> u32 {
     EXTENDED_MAX_LEAF.load(Ordering::Acquire)
 }

@@ -68,7 +68,8 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
 pub struct ContextSwitch {
     old_stack: *mut *mut u8,
     new_stack: *const u8,
-    cr3: usize,
+    cr3: u64,
+    user_thread: bool,
 }
 
 impl ContextSwitch {
@@ -79,6 +80,9 @@ impl ContextSwitch {
     ///
     /// See `kernel::arch::context::context_switch`.
     pub unsafe fn perform(&self) {
+        if self.user_thread {
+            todo!("User threads are not supported yet");
+        }
         unsafe { crate::arch::context::switch(self.old_stack, self.new_stack, self.cr3) };
     }
 }
@@ -159,10 +163,13 @@ impl Scheduler {
 
             let cr3 = thread.process().address_space().cr3_raw();
 
+            let user_thread = thread.process().kind() == super::Kind::User;
+
             Some(ContextSwitch {
                 old_stack,
                 new_stack,
                 cr3,
+                user_thread,
             })
         })?
     }

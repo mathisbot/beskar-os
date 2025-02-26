@@ -20,4 +20,6 @@ fn main() {
         .expect("Failed to copy bootloader.efi");
     fs::copy(&kernel_path, "efi_disk/efi/kernelx64.elf").expect("Failed to copy kernel");
     fs::copy(&userspace_path, "efi_disk/bin/userspace.elf").expect("Failed to copy userspace");
+
+    // TODO:: Build a disk image for the ramdisk
 }

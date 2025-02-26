@@ -68,6 +68,7 @@ dependencies = [
  "hyperdrive",
  "linked_list_allocator",
  "x86_64",
+ "xmas-elf",
 ]
 
 [[package]]

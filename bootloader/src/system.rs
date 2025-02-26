@@ -4,15 +4,11 @@ use crate::{debug, info, warn};
 use beskar_core::arch::x86_64::registers::{Cr0, Efer};
 use uefi::{proto::pi::mp::MpServices, system};
 
-pub mod acpi;
-
 static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub fn init() {
     enable_and_count_cores();
     enable_cpu_features();
-    // Find the hopefully available XSDP/RSDP
-    acpi::init();
 }
 
 /// Print firmware information and check for compatibility.
