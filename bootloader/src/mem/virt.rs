@@ -18,9 +18,11 @@ use x86_64::{
 };
 use xmas_elf::{ElfFile, program::ProgramHeader};
 
-use crate::{KERNEL_STACK_SIZE, chg_ctx, debug, info, kernel_elf};
+use crate::{KERNEL_STACK_NB_PAGES, arch::chg_ctx, debug, info, kernel_elf};
 
 use super::{EarlyFrameAllocator, PageTables};
+
+const KERNEL_STACK_SIZE: u64 = KERNEL_STACK_NB_PAGES * M4KiB::SIZE;
 
 /// Keeps track of used entries in the level 4 page table.
 pub struct Level4Entries([bool; 512]);
@@ -244,7 +246,7 @@ pub fn make_mappings(
         }
 
         info!("Setup stack");
-        debug!("Stack top at {:#x}", stack_end_addr);
+        debug!("Stack top at {:#x}", stack_end_addr.as_u64());
 
         stack_end_addr
     };

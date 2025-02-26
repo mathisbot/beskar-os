@@ -12,6 +12,7 @@ pub struct Msi {
 }
 
 impl Msi {
+    #[must_use]
     pub fn new(handler: &mut dyn PciHandler, device: &super::Device) -> Option<Self> {
         let capability = MsiCapability::find(handler, device)?;
 
@@ -110,8 +111,9 @@ struct MessageControlValue {
 
 impl MessageControlValue {
     #[must_use]
+    #[inline]
     /// Returns the number of messages that the device is capable of generating.
-    pub fn multiple_message_capable(&self) -> u8 {
+    pub const fn multiple_message_capable(&self) -> u8 {
         match self.raw & 0b1110 {
             0b0000 => 1,
             0b0010 => 2,
@@ -125,17 +127,20 @@ impl MessageControlValue {
     }
 
     #[must_use]
-    pub fn qword_addressing(&self) -> bool {
+    #[inline]
+    pub const fn qword_addressing(&self) -> bool {
         self.raw & (1 << 7) != 0
     }
 
     #[must_use]
-    pub fn pvm_capable(&self) -> bool {
+    #[inline]
+    pub const fn pvm_capable(&self) -> bool {
         self.raw & (1 << 8) != 0
     }
 
     #[must_use]
-    pub fn extended_message_capable(&self) -> bool {
+    #[inline]
+    pub const fn extended_message_capable(&self) -> bool {
         self.raw & (1 << 9) != 0
     }
 }

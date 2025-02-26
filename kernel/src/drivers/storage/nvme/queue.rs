@@ -281,6 +281,6 @@ impl CommandIdentifier {
     #[must_use]
     #[inline]
     pub fn as_u16(self) -> u16 {
-        u16::from(self.0)
+        self.0
     }
 }

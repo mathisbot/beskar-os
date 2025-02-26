@@ -36,28 +36,28 @@ pub struct KernelInfo {
 impl KernelInfo {
     #[must_use]
     #[inline]
-    pub fn new(paddr: PhysAddr, vaddr: VirtAddr, size: u64) -> Self {
+    pub const fn new(paddr: PhysAddr, vaddr: VirtAddr, size: u64) -> Self {
         Self { paddr, vaddr, size }
     }
 
     #[must_use]
     #[inline]
     /// Returns the physical address of the kernel ELF in memory.
-    pub fn paddr(&self) -> PhysAddr {
+    pub const fn paddr(&self) -> PhysAddr {
         self.paddr
     }
 
     #[must_use]
     #[inline]
     /// Returns the virtual address of the loaded kernel image.
-    pub fn vaddr(&self) -> VirtAddr {
+    pub const fn vaddr(&self) -> VirtAddr {
         self.vaddr
     }
 
     #[must_use]
     #[inline]
     /// Returns the size of the kernel ELF in memory.
-    pub fn size(&self) -> u64 {
+    pub const fn size(&self) -> u64 {
         self.size
     }
 }
@@ -72,21 +72,21 @@ pub struct RamdiskInfo {
 impl RamdiskInfo {
     #[must_use]
     #[inline]
-    pub fn new(vaddr: VirtAddr, size: u64) -> Self {
+    pub const fn new(vaddr: VirtAddr, size: u64) -> Self {
         Self { vaddr, size }
     }
 
     #[must_use]
     #[inline]
     /// Returns the virtual address of the ramdisk.
-    pub fn vaddr(&self) -> VirtAddr {
+    pub const fn vaddr(&self) -> VirtAddr {
         self.vaddr
     }
 
     #[must_use]
     #[inline]
     /// Returns the size of the ramdisk in memory.
-    pub fn size(&self) -> u64 {
+    pub const fn size(&self) -> u64 {
         self.size
     }
 }

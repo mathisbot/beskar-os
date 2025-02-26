@@ -81,6 +81,8 @@ fn efi_entry() -> Status {
 
     bootloader::system::init();
 
+    bootloader::arch::init();
+
     // Load Kernel file in RAM
     // Kernel is expected to be the only file named `kernelx64.elf` in the `efi` directory
     let kernel = {
@@ -109,11 +111,11 @@ fn efi_entry() -> Status {
     bootloader::video::clear_screen();
 
     unsafe {
-        bootloader::chg_ctx(
-            pt.kernel_level_4_frame.start_address().as_u64(),
-            mappings.stack_top().as_u64(),
-            mappings.entry_point().as_u64(),
-            core::ptr::from_ref(boot_info) as u64,
+        bootloader::arch::chg_ctx(
+            pt.kernel_level_4_frame,
+            mappings.stack_top(),
+            mappings.entry_point(),
+            boot_info,
         );
     };
 }
