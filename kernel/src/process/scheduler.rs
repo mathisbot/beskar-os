@@ -262,12 +262,14 @@ pub fn change_current_thread_priority(priority: priority::Priority) {
 ///
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.
-pub unsafe fn exit_current_thread() {
+pub unsafe fn exit_current_thread() -> ! {
     get_scheduler().exit_current_thread();
 
-    // Wait for the next thread to be scheduled.
+    // Try to reschedule the thread.
+    thread_yield();
+
+    // If no thread are waiting, loop.
     crate::arch::interrupts::int_enable();
-    // FIXME: Force reschedule now?
     loop {
         crate::arch::halt();
     }

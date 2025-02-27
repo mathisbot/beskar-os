@@ -42,6 +42,5 @@ fn sc_exit(args: &Arguments) -> ! {
     // TODO: Use exit code
     let _exit_code = args.one;
 
-    unsafe { crate::process::scheduler::exit_current_thread() };
-    unreachable!()
+    unsafe { crate::process::scheduler::exit_current_thread() }
 }

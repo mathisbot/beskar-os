@@ -74,12 +74,5 @@ fn kmain() -> ! {
         // )));
     });
 
-    unsafe { kernel::process::scheduler::exit_current_thread() };
-
-    kernel::error!(
-        "Kernel main function reached the end on core {}",
-        locals!().core_id()
-    );
-
-    unreachable!()
+    unsafe { kernel::process::scheduler::exit_current_thread() }
 }
