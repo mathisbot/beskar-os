@@ -1,7 +1,6 @@
-use beskar_core::arch::x86_64::registers::Cr4;
-use x86_64::{
-    VirtAddr,
-    registers::segmentation::{GS, Segment64},
+use beskar_core::arch::{
+    commons::VirtAddr,
+    x86_64::registers::{Cr4, GS},
 };
 
 #[cold]

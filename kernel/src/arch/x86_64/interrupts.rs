@@ -1,9 +1,7 @@
 use core::cell::UnsafeCell;
 
-use x86_64::{
-    registers::control::Cr2,
-    structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
-};
+use beskar_core::arch::x86_64::registers::Cr2;
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use super::gdt::{DOUBLE_FAULT_IST, PAGE_FAULT_IST};
 use crate::locals;

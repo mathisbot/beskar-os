@@ -13,7 +13,7 @@ use crate::{
     locals,
     mem::{frame_alloc, page_alloc, page_table},
 };
-use beskar_core::arch::x86_64::paging::page_table::Flags;
+use beskar_core::arch::x86_64::{paging::page_table::Flags, registers::Msr};
 use beskar_core::arch::{
     commons::{
         PhysAddr, VirtAddr,
@@ -21,7 +21,6 @@ use beskar_core::arch::{
     },
     x86_64::port::{self, Port},
 };
-use x86_64::registers::model_specific::Msr;
 
 use super::interrupts::Irq;
 
@@ -107,8 +106,8 @@ pub struct LocalApic {
 impl LocalApic {
     #[must_use]
     fn get_paddr_from_msr() -> PhysAddr {
-        let msr = Msr::new(0x1B);
-        let base = unsafe { msr.read() };
+        let msr = Msr::<0x1B>;
+        let base = msr.read();
 
         assert!((base >> 11) & 1 == 1, "APIC not enabled");
 
