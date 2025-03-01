@@ -6,7 +6,7 @@
 //! Allocated frames do not need to be contiguous.
 
 use super::{
-    page_table,
+    address_space,
     ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
 };
 use beskar_core::arch::commons::{
@@ -95,7 +95,7 @@ impl FrameAllocator {
     ) where
         for<'a> PageTable<'a>: Mapper<S>,
     {
-        page_table::with_page_table(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             for page in pages {
                 let frame = self.alloc::<S>().unwrap();
                 page_table.map(page, frame, flags, self).flush();

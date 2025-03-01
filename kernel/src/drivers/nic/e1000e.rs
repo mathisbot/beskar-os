@@ -348,7 +348,7 @@ impl BufferSet<'_> {
         let flags = pmap::FLAGS_MMIO;
         let descriptor_frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
             let frame = fralloc.alloc::<M4KiB>().unwrap();
-            crate::mem::page_table::with_page_table(|page_table| {
+            crate::mem::address_space::with_kernel_pt(|page_table| {
                 page_table
                     .map(descriptor_page, frame, flags, fralloc)
                     .flush();
@@ -376,7 +376,7 @@ impl BufferSet<'_> {
         for (i, page) in page_range.into_iter().take(nb_rx).enumerate() {
             let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
                 let frame = fralloc.alloc::<M4KiB>().unwrap();
-                crate::mem::page_table::with_page_table(|page_table| {
+                crate::mem::address_space::with_kernel_pt(|page_table| {
                     page_table.map(page, frame, flags, fralloc).flush();
                 });
                 frame
@@ -401,7 +401,7 @@ impl BufferSet<'_> {
         for (i, page) in page_range.into_iter().skip(nb_rx).take(nb_tx).enumerate() {
             let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
                 let frame = fralloc.alloc::<M4KiB>().unwrap();
-                crate::mem::page_table::with_page_table(|page_table| {
+                crate::mem::address_space::with_kernel_pt(|page_table| {
                     page_table.map(page, frame, flags, fralloc).flush();
                 });
                 frame
@@ -478,7 +478,7 @@ impl Drop for BufferSet<'_> {
         );
 
         for page in buffer_page_range {
-            let frame = crate::mem::page_table::with_page_table(|pt| {
+            let frame = crate::mem::address_space::with_kernel_pt(|pt| {
                 let (frame, tlb) = pt.unmap(page).unwrap();
                 tlb.flush();
                 frame
@@ -490,7 +490,7 @@ impl Drop for BufferSet<'_> {
         let descriptors_page =
             Page::<M4KiB>::from_start_address(VirtAddr::new(self.rx_descriptors.as_ptr() as u64))
                 .unwrap();
-        let descriptors_frame = crate::mem::page_table::with_page_table(|pt| {
+        let descriptors_frame = crate::mem::address_space::with_kernel_pt(|pt| {
             let (frame, tlb) = pt.unmap(descriptors_page).unwrap();
             tlb.flush();
             frame

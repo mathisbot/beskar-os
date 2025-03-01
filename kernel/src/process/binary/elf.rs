@@ -89,38 +89,38 @@ fn load_segments(elf: &ElfFile) -> BinaryResult<()> {
 }
 
 fn handle_segment_load(ph: program::ProgramHeader, offset: VirtAddr) -> BinaryResult<()> {
-    let mut pt = scheduler::current_process()
+    scheduler::current_process()
         .address_space()
-        .get_recursive_pt();
+        .with_page_table(|pt| {
+            let segment_start_vaddr = offset + ph.virtual_addr();
 
-    let segment_start_vaddr = offset + ph.virtual_addr();
+            if ph.file_size() != 0 {
+                let segment_start_page = Page::<M4KiB>::containing_address(segment_start_vaddr);
+                let segment_end_page =
+                    Page::<M4KiB>::containing_address(segment_start_vaddr + ph.file_size() - 1);
 
-    if ph.file_size() != 0 {
-        let segment_start_page = Page::<M4KiB>::containing_address(segment_start_vaddr);
-        let segment_end_page =
-            Page::<M4KiB>::containing_address(segment_start_vaddr + ph.file_size() - 1);
+                // TODO: User Accessible if userspace
+                let mut segment_flags = Flags::PRESENT;
+                if ph.flags().is_write() {
+                    segment_flags = segment_flags | Flags::WRITABLE;
+                }
+                if !ph.flags().is_execute() {
+                    segment_flags = segment_flags | Flags::NO_EXECUTE;
+                }
 
-        // TODO: User Accessible if userspace
-        let mut segment_flags = Flags::PRESENT;
-        if ph.flags().is_write() {
-            segment_flags = segment_flags | Flags::WRITABLE;
-        }
-        if !ph.flags().is_execute() {
-            segment_flags = segment_flags | Flags::NO_EXECUTE;
-        }
+                for page in Page::range_inclusive(segment_start_page, segment_end_page) {
+                    pt.update_flags(page, segment_flags)
+                        .expect("Failed to update flags")
+                        .flush();
+                }
+            }
 
-        for page in Page::range_inclusive(segment_start_page, segment_end_page) {
-            pt.update_flags(page, segment_flags)
-                .expect("Failed to update flags")
-                .flush();
-        }
-    }
+            if ph.mem_size() > ph.file_size() {
+                zero_bss(segment_start_vaddr, ph, pt).unwrap();
+            }
 
-    if ph.mem_size() > ph.file_size() {
-        zero_bss(segment_start_vaddr, ph, &mut pt).unwrap();
-    }
-
-    Ok(())
+            Ok(())
+        })
 }
 
 fn zero_bss<'a>(
@@ -170,23 +170,24 @@ fn handle_segment_dynamic(ph: program::ProgramHeader, offset: VirtAddr) -> Binar
 }
 
 fn handle_segment_gnurelro(ph: program::ProgramHeader, offset: VirtAddr) -> BinaryResult<()> {
-    let mut pt = scheduler::current_process()
+    scheduler::current_process()
         .address_space()
-        .get_recursive_pt();
+        .with_page_table(|pt| {
+            let start_vaddr = offset + ph.virtual_addr();
 
-    let start_vaddr = offset + ph.virtual_addr();
-    let start_page = Page::<M4KiB>::containing_address(start_vaddr);
-    let end_page = Page::<M4KiB>::containing_address(start_vaddr + ph.mem_size() - 1);
+            let start_page = Page::<M4KiB>::containing_address(start_vaddr);
+            let end_page = Page::<M4KiB>::containing_address(start_vaddr + ph.mem_size() - 1);
 
-    for page in Page::range_inclusive(start_page, end_page) {
-        let (_frame, flags) = pt.translate(page).unwrap();
+            for page in Page::range_inclusive(start_page, end_page) {
+                let (_frame, flags) = pt.translate(page).unwrap();
 
-        if flags.contains(Flags::WRITABLE) {
-            pt.update_flags(page, flags.without(Flags::WRITABLE))
-                .unwrap()
-                .flush();
-        }
-    }
+                if flags.contains(Flags::WRITABLE) {
+                    pt.update_flags(page, flags.without(Flags::WRITABLE))
+                        .unwrap()
+                        .flush();
+                }
+            }
 
-    Ok(())
+            Ok(())
+        })
 }

@@ -2,19 +2,16 @@ use beskar_core::{arch::commons::VirtAddr, mem::MemoryRegion};
 
 pub mod address_space;
 pub mod frame_alloc;
-pub mod heap;
+mod heap;
 pub mod page_alloc;
-pub mod page_table;
-pub mod ranges;
+mod ranges;
 
 pub fn init(recursive_index: u16, regions: &[MemoryRegion], kernel_vaddr: VirtAddr) {
-    page_table::init(recursive_index);
+    address_space::init(recursive_index, kernel_vaddr);
 
     frame_alloc::init(regions);
 
     page_alloc::init(recursive_index);
-
-    address_space::init(recursive_index, kernel_vaddr);
 
     heap::init();
 }

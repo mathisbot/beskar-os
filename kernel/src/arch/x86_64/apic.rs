@@ -11,7 +11,7 @@ use timer::LapicTimer;
 use super::cpuid;
 use crate::{
     locals,
-    mem::{frame_alloc, page_alloc, page_table},
+    mem::{address_space, frame_alloc, page_alloc},
 };
 use beskar_core::arch::x86_64::{paging::page_table::Flags, registers::Msr};
 use beskar_core::arch::{
@@ -125,7 +125,7 @@ impl LocalApic {
         });
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
-            page_table::with_page_table(|page_table| {
+            address_space::with_kernel_pt(|page_table| {
                 page_table
                     .map(page, frame, apic_flags, &mut *frame_allocator)
                     .flush();
@@ -182,7 +182,7 @@ impl LocalApic {
 
     #[must_use]
     pub fn paddr(&self) -> PhysAddr {
-        page_table::with_page_table(|pt| {
+        address_space::with_kernel_pt(|pt| {
             pt.translate_addr(VirtAddr::new(self.base.as_non_null().as_ptr() as u64))
                 .unwrap()
         })
@@ -354,7 +354,7 @@ impl IoApic {
         .start;
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
-            page_table::with_page_table(|page_table| {
+            address_space::with_kernel_pt(|page_table| {
                 // Safety:
                 // The frame is reserved by the UEFI, so it is already allocated.
                 page_table

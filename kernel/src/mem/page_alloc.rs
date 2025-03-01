@@ -1,4 +1,4 @@
-use crate::mem::{page_table, ranges::MemoryRange};
+use crate::mem::{address_space, ranges::MemoryRange};
 use beskar_core::arch::commons::{
     VirtAddr,
     paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
@@ -82,7 +82,7 @@ pub fn init(recursive_index: u16) {
     // Skip the first two pages
     vaddrs.insert(MemoryRange::new(2 * M4KiB::SIZE, MAX_VALID_VADDR));
 
-    page_table::with_page_table(|pt| {
+    address_space::with_kernel_pt(|pt| {
         remove_mapping(4, pt.entries(), &[recursive_index; 4], &mut vaddrs);
     });
 

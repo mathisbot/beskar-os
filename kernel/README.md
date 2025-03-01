@@ -56,7 +56,7 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
 - Memory
     - [x] Paging
     - [x] Physical/Virtual Allocators
-    - [ ] Address spaces (partial)
+    - [x] Address spaces
 - FS
     - [ ] GPT
     - [ ] ext2/ext4

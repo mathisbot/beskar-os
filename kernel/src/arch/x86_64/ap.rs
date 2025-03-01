@@ -1,7 +1,7 @@
 use super::apic::ipi::{self, Ipi};
 use crate::{
     locals,
-    mem::{frame_alloc, page_alloc, page_table},
+    mem::{address_space, frame_alloc, page_alloc},
 };
 use beskar_core::arch::{
     commons::{
@@ -61,7 +61,7 @@ pub fn start_up_aps(core_count: usize) {
     let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        page_table::with_page_table(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             page_table
                 .map(
                     page,
@@ -134,7 +134,7 @@ pub fn start_up_aps(core_count: usize) {
 
     // Free trampoline code
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        page_table::with_page_table(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             let (frame, tlb) = page_table.unmap(page).unwrap();
             tlb.flush();
             frame_allocator.free(frame);

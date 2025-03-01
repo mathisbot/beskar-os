@@ -4,7 +4,7 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
-use hyperdrive::once::Once;
+use hyperdrive::{once::Once, tether::Tether};
 
 use crate::mem::address_space::{self, AddressSpace};
 
@@ -19,7 +19,7 @@ pub fn init() {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: *address_space::get_kernel_address_space(),
+            address_space: Tether::Reference(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
         })
     });
@@ -35,7 +35,7 @@ pub fn init() {
 pub struct Process {
     name: String,
     pid: ProcessId,
-    address_space: AddressSpace,
+    address_space: Tether<'static, AddressSpace>,
     kind: Kind,
 }
 
@@ -46,7 +46,7 @@ impl Process {
         Self {
             name: name.to_string(),
             pid: ProcessId::new(),
-            address_space: AddressSpace::new(),
+            address_space: Tether::Owned(AddressSpace::new()),
             kind,
         }
     }
@@ -65,7 +65,7 @@ impl Process {
 
     #[must_use]
     #[inline]
-    pub const fn address_space(&self) -> &AddressSpace {
+    pub fn address_space(&self) -> &AddressSpace {
         &self.address_space
     }
 
