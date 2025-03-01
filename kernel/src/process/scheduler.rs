@@ -268,7 +268,7 @@ pub unsafe fn exit_current_thread() -> ! {
     // Try to reschedule the thread.
     thread_yield();
 
-    // If no thread are waiting, loop.
+    // If no thread is waiting, loop.
     crate::arch::interrupts::int_enable();
     loop {
         crate::arch::halt();

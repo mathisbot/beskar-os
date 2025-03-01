@@ -16,7 +16,7 @@ use beskar_core::arch::{
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-// The amount of pages should be kept in sync with the stack size allocated by the bootloader
+// The amount of pages should be kept in sync with the bootloader
 const KERNEL_STACK_NB_PAGES: u64 = 64; // 256 KiB
 
 static AP_STACK_TOP_ADDR: AtomicU64 = AtomicU64::new(0);

@@ -200,9 +200,13 @@ pub fn make_mappings(
             let flags = PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE;
 
             unsafe {
-                page_tables
-                    .kernel
-                    .map_to(page, frame, flags, frame_allocator)
+                page_tables.kernel.map_to_with_table_flags(
+                    page,
+                    frame,
+                    flags,
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    frame_allocator,
+                )
             }
             .expect("Failed to map ramdisk page")
             .flush();

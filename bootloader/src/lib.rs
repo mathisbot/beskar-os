@@ -16,7 +16,6 @@ pub mod video;
 
 mod kernel_elf;
 
-// The amount of pages should be kept in sync with the stack size allocated by the bootloader
 const KERNEL_STACK_NB_PAGES: u64 = 64; // 256 KiB
 
 #[macro_export]

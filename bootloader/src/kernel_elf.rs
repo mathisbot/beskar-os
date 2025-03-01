@@ -591,10 +591,8 @@ fn handle_segment_gnurelro(
     vao: u64,
 ) {
     let start = VirtAddr::new(vao + gnurelro_segment.virtual_addr());
-    let end = VirtAddr::new(vao + gnurelro_segment.virtual_addr() + gnurelro_segment.mem_size());
-
     let start_page = Page::<Size4KiB>::containing_address(start);
-    let end_page = Page::<Size4KiB>::containing_address(end - 1);
+    let end_page = Page::<Size4KiB>::containing_address(start + gnurelro_segment.mem_size() - 1);
 
     for page in Page::range_inclusive(start_page, end_page) {
         let TranslateResult::Mapped {

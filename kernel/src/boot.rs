@@ -83,6 +83,15 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     drivers::init();
 
     // TODO: Use ramdisk here?
+    // {
+    //     // TODO: Remove!
+    //     let rd_info = _ramdisk_info.unwrap();
+    //     let rd_slice = unsafe {
+    //         core::slice::from_raw_parts(rd_info.vaddr().as_ptr(), rd_info.size() as usize)
+    //     };
+    //     let binary = process::binary::Binary::new(rd_slice, process::binary::BinaryType::Elf);
+    //     binary.load().unwrap();
+    // }
 }
 
 /// Rust entry point for APs

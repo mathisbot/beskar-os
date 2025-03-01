@@ -3,17 +3,12 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
-use beskar_core::syscall::Syscall;
+use beskar_core::syscall::{ExitCode, Syscall};
 pub mod io;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     exit(ExitCode::Failure)
-}
-
-pub enum ExitCode {
-    Success = 0,
-    Failure = 1,
 }
 
 pub fn exit(code: ExitCode) -> ! {
