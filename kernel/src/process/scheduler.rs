@@ -18,7 +18,7 @@ pub mod thread;
 /// The time quantum for the scheduler, in milliseconds.
 ///
 /// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
-pub const SCHEDULER_QUANTUM_MS: u32 = 60;
+pub const SCHEDULER_QUANTUM_MS: u32 = 30;
 
 // TODO: Runtime size for schedulers
 // Currently, it takes 4KiB of memory but on a vast majority of systems, it only needs a few schedulers.

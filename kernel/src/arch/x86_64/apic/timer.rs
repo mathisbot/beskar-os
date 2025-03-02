@@ -75,7 +75,7 @@ impl LapicTimer {
             duration: u32::MAX - 1,
         }));
 
-        crate::time::wait(crate::time::Duration::from_millis(50));
+        crate::time::wait(crate::time::Duration::from_millis(100));
 
         let ticks = self.read_curr_count_reg();
 
@@ -84,7 +84,7 @@ impl LapicTimer {
         let elapsed_ticks = (u32::MAX - 1) - ticks;
 
         // divider * elapsed_ticks * 1/calibration_time(in s) / hz_per_mhz
-        let rate_mhz = 2 * elapsed_ticks * 20 / 1_000_000;
+        let rate_mhz = 2 * elapsed_ticks * 10 / 1_000_000;
         if rate_mhz == 0 {
             crate::warn!("LAPIC timer calibration failed");
             return;

@@ -1,12 +1,13 @@
-use crate::mem::{address_space, ranges::MemoryRange};
-use beskar_core::arch::commons::{
-    VirtAddr,
-    paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
-};
+use crate::mem::address_space;
 use beskar_core::arch::x86_64::paging::page_table::{Entries, Flags};
+use beskar_core::{
+    arch::commons::{
+        VirtAddr,
+        paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
+    },
+    mem::ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
+};
 use hyperdrive::locks::mcs::MUMcsLock;
-
-use super::ranges::MemoryRanges;
 
 pub mod pmap;
 
@@ -109,11 +110,9 @@ pub struct PageAllocator {
 
 impl PageAllocator {
     pub fn allocate_pages<S: MemSize>(&mut self, count: u64) -> Option<PageRangeInclusive<S>> {
-        let start_vaddr = self.vranges.allocate::<1>(
-            S::SIZE * count,
-            S::SIZE,
-            &super::ranges::MemoryRangeRequest::DontCare,
-        )?;
+        let start_vaddr =
+            self.vranges
+                .allocate::<1>(S::SIZE * count, S::SIZE, &MemoryRangeRequest::DontCare)?;
 
         let first_page =
             Page::from_start_address(VirtAddr::new(u64::try_from(start_vaddr).unwrap())).unwrap();
@@ -152,7 +151,7 @@ impl PageAllocator {
             u64::try_from(self.vranges.allocate::<1>(
                 size,
                 alignment,
-                &super::ranges::MemoryRangeRequest::DontCare,
+                &MemoryRangeRequest::DontCare,
             )?)
             .unwrap(),
         );
