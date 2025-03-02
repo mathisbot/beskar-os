@@ -5,6 +5,7 @@ use beskar_core::arch::{
     },
     x86_64::paging::page_table::PageTable,
 };
+use beskar_core::process::binary::LoadError;
 use xmas_elf::{
     ElfFile, header,
     program::{self, Type},
@@ -12,7 +13,7 @@ use xmas_elf::{
 
 use crate::process::scheduler;
 
-use super::{BinaryResult, LoadError, LoadedBinary};
+use super::{BinaryResult, LoadedBinary};
 
 macro_rules! faillible {
     ($expr:expr) => {

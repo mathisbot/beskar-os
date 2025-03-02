@@ -4,6 +4,7 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
+use beskar_core::arch::x86_64::userspace::Ring;
 use hyperdrive::{once::Once, tether::Tether};
 
 use crate::mem::address_space::{self, AddressSpace};
@@ -114,4 +115,15 @@ pub enum Kind {
     /// User process kind.
     /// These are Ring 3 processes.
     User,
+}
+
+impl Kind {
+    #[must_use]
+    #[inline]
+    pub const fn ring(&self) -> Ring {
+        match self {
+            Self::Kernel | Self::Driver => Ring::Kernel,
+            Self::User => Ring::User,
+        }
+    }
 }

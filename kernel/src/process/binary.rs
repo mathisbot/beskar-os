@@ -1,5 +1,7 @@
 mod elf;
 
+use beskar_core::process::binary::BinaryResult;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BinaryType {
@@ -27,6 +29,7 @@ impl<'a> Binary<'a> {
 
 pub struct LoadedBinary {
     entry_point: extern "C" fn(),
+    // TODO: Add information about the binary in memory to impl `Drop`
 }
 
 impl LoadedBinary {
@@ -36,20 +39,3 @@ impl LoadedBinary {
         self.entry_point
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoadError {
-    InvalidBinary,
-}
-
-impl core::fmt::Display for LoadError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            LoadError::InvalidBinary => write!(f, "Invalid binary"),
-        }
-    }
-}
-
-impl core::error::Error for LoadError {}
-
-pub type BinaryResult<T> = Result<T, LoadError>;
