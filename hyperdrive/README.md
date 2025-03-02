@@ -11,7 +11,7 @@ It defines:
 - Locks
     - Mellor, Crumley and Scott
     - Read-Write
-- Ownership
+- Borrow
     - Tether
 - Pointers
     - Volatile Pointers with compile-time Access Rights

@@ -39,7 +39,7 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
     let mut controller = NvmeControllers::new(nvme)?;
     controller.init()?;
 
-    crate::debug!(
+    crate::info!(
         "NVMe controller initialized with version {}",
         controller.version()
     );
