@@ -31,7 +31,7 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
         let raw_entry_point = elf.header.pt2.entry_point();
         // Get the right memory layout
         let entry_point = raw_entry_point as *const ();
-        unsafe { core::mem::transmute(entry_point) }
+        unsafe { core::mem::transmute::<*const (), extern "C" fn()>(entry_point) }
     };
 
     Ok(LoadedBinary { entry_point })
@@ -79,7 +79,7 @@ fn load_segments(elf: &ElfFile) -> BinaryResult<()> {
         }
     }
 
-    // Relocate memory addresses
+    // Handle GNU_RELRO segments
     for ph in elf.program_iter() {
         if faillible!(ph.get_type()) == Type::GnuRelro {
             handle_segment_gnurelro(ph, binary_offset)?;
@@ -124,16 +124,25 @@ fn handle_segment_load(ph: program::ProgramHeader, offset: VirtAddr) -> BinaryRe
         })
 }
 
-fn zero_bss<'a>(
+fn zero_bss(
     vaddr: VirtAddr,
     ph: program::ProgramHeader,
-    pt: &mut PageTable<'a>,
+    pt: &mut PageTable<'_>,
 ) -> BinaryResult<()> {
     let zero_start = vaddr + ph.file_size();
     let zero_end = vaddr + ph.mem_size() - 1;
 
     let unaligned = zero_start.as_u64() % M4KiB::SIZE;
     if unaligned != 0 {
+        // TODO: Unmap the page
+        // TODO: Allocate new frame
+        // TODO: Map the page to the new frame
+        // TODO: Copy old frame to new frame
+        // TODO: Zero the unaligned section
+
+        // This is needed, because th "BSS section" of the frame may actually
+        // contain the next segment...
+
         todo!("Unaligned BSS");
     }
 
@@ -157,10 +166,11 @@ fn zero_bss<'a>(
             pt.map(page, frame, segment_flags, fralloc).flush();
         });
         unsafe {
-            page.start_address()
-                .as_mut_ptr::<usize>()
-                .write_bytes(0, M4KiB::SIZE as usize / size_of::<usize>())
-        };
+            page.start_address().as_mut_ptr::<usize>().write_bytes(
+                0,
+                usize::try_from(M4KiB::SIZE).unwrap() / size_of::<usize>(),
+            );
+        }
     }
 
     Ok(())

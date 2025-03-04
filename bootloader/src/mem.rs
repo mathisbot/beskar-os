@@ -26,7 +26,7 @@ pub fn init(
     ramdisk: Option<&[u8]>,
 ) -> (EarlyFrameAllocator, PageTables, Mappings) {
     let total_mem_size = compute_total_memory_kib(&memory_map);
-    debug!("Detected memory size: {} MiB", total_mem_size / 1024);
+    debug!("Usable memory size: {} MiB", total_mem_size / 1024);
 
     let mut frame_allocator = EarlyFrameAllocator::new(memory_map);
 
@@ -60,7 +60,8 @@ fn compute_total_memory_kib(memory_map: &MemoryMapOwned) -> u64 {
             | MemoryType::BOOT_SERVICES_CODE
             | MemoryType::BOOT_SERVICES_DATA
             | MemoryType::RUNTIME_SERVICES_CODE
-            | MemoryType::RUNTIME_SERVICES_DATA => Some(entry.page_count),
+            | MemoryType::RUNTIME_SERVICES_DATA
+            | MemoryType::ACPI_RECLAIM => Some(entry.page_count),
             _ => None,
         })
         .sum::<u64>()

@@ -84,8 +84,8 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
         unsafe {
             stack_ptr
                 .cast::<SyscallRegisters>()
-                .write_volatile(regs.read())
-        };
+                .write_volatile(regs.read());
+        }
 
         #[allow(clippy::pointers_in_nomem_asm_block)] // False positive
         unsafe {

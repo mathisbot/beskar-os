@@ -16,7 +16,7 @@ pub struct Binary<'a> {
 impl<'a> Binary<'a> {
     #[must_use]
     #[inline]
-    pub fn new(input: &'a [u8], kind: BinaryType) -> Self {
+    pub const fn new(input: &'a [u8], kind: BinaryType) -> Self {
         Self { input, kind }
     }
 

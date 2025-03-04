@@ -229,7 +229,7 @@ fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelL
     // First, handle unaligned start
     let before_aligned = zero_start.as_u64() % Size4KiB::SIZE;
     if before_aligned != 0 {
-        let last_page = Page::<Size4KiB>::containing_address(zero_start - 1);
+        let last_page = Page::<Size4KiB>::containing_address(zero_start);
 
         let new_frame = {
             let TranslateResult::Mapped {

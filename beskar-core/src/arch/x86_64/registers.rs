@@ -158,6 +158,7 @@ impl Efer {
 
 pub struct Star;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StarSelectors {
     cs_syscall: u16,
     ss_syscall: u16,
