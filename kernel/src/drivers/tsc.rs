@@ -78,6 +78,7 @@ fn calibrate_with_pit() -> bool {
     rate_mhz != 0
 }
 
+/// Calibrate using CPUID, Intel only.
 fn calibrate_with_rdtsc() -> bool {
     assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
 
@@ -87,7 +88,6 @@ fn calibrate_with_rdtsc() -> bool {
         if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
             let thc_hz =
                 u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);
-            crate::debug!("RDTSC calibration: {} MHz", thc_hz / 1_000_000);
             TSC_MHZ.store(thc_hz / 1_000_000, Ordering::Relaxed);
             return true;
         }

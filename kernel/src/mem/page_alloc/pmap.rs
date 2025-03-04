@@ -13,7 +13,7 @@ use crate::mem::{address_space, frame_alloc, page_alloc};
 #[derive(Debug)]
 /// Physical Mapping structure
 ///
-/// Be careful to only used the original mapped length, as accessing outside
+/// Be careful to only use the original mapped length, as accessing outside
 /// could result in undefined behavior if the memory is used by another mapping.
 pub struct PhysicalMapping<S: MemSize = M4KiB>
 where

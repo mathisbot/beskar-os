@@ -70,7 +70,7 @@ impl core::fmt::Display for CpuFeature {
 // TODO: Add more features!
 #[allow(dead_code)]
 impl CpuFeature {
-    // LEAF 0
+    // LEAF 1
 
     pub const FPU: Self = Self {
         leaf: 1,
@@ -96,7 +96,7 @@ impl CpuFeature {
         bit: 5,
         name: "MSR",
     };
-    pub const APIC: Self = Self {
+    pub const APIC_ONBOARD: Self = Self {
         leaf: 1,
         reg: CpuidReg::Edx,
         bit: 9,
@@ -174,12 +174,11 @@ impl CpuFeature {
 /// List of required features for the kernel to run
 ///
 /// Please keep the list sorted by leaf number
-const REQUIRED_FEATURES: [CpuFeature; 6] = [
+const REQUIRED_FEATURES: [CpuFeature; 5] = [
     // Leaf 1
     // CpuFeature::FPU,
     CpuFeature::PSE,
     CpuFeature::MSR,
-    CpuFeature::APIC,
     // CpuFeature::PAT,
     // CpuFeature::FXSR,
     CpuFeature::XSAVE,
