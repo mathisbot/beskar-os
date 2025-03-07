@@ -61,7 +61,7 @@ A great choice for most of modern CPUs is `x86_64-v3` (`v4` if it is very modern
 If you want to run the OS on a testing virtual machine on QEMU, you can do so by running the following command :
 
 ```powershell
-& "qemu-system-x86_64.exe" -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -device usb-kbd -M q35
+qemu-system-x86_64.exe -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -device usb-kbd -M q35
 ```
 
 Where:

@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 beskar-core = { workspace = true }
 hyperdrive = { workspace = true }
-uefi = { version = "0.33.0", default-features = false }
+uefi = { version = "0.34.1", default-features = false }
 xmas-elf = { workspace = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]

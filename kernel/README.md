@@ -64,8 +64,8 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
 - Processes
     - [x] Scheduling
     - [ ] User space
-    - [ ] Binary loading
-        - [ ] ELF
+    - [X] Binary loading
+        - [X] ELF
 - Video
     - [x] Character rendering
     - [x] Logging
