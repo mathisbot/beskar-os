@@ -1,4 +1,3 @@
-use beskar_core::boot::TlsTemplate;
 use x86_64::structures::paging::{
     FrameAllocator, Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB, Translate,
     mapper::{MappedFrame, TranslateResult},
@@ -39,7 +38,7 @@ impl<'a> KernelLoadingUtils<'a> {
     }
 }
 
-pub fn load_kernel_elf(mut klu: KernelLoadingUtils) -> KernelInfo {
+pub fn load_kernel_elf(mut klu: KernelLoadingUtils) -> LoadedKernelInfo {
     // Assert that the kernel is page aligned
     assert!(
         PhysAddr::new(core::ptr::from_ref::<u8>(&klu.kernel.input[0]) as u64)
@@ -103,34 +102,24 @@ pub fn load_kernel_elf(mut klu: KernelLoadingUtils) -> KernelInfo {
     klu.level_4_entries
         .mark_segments(klu.kernel.program_iter(), virtual_address_offset);
 
-    let lsi = load_segments(&mut klu, virtual_address_offset);
+    let _lsi = load_segments(&mut klu, virtual_address_offset);
 
-    KernelInfo {
+    LoadedKernelInfo {
         entry_point: VirtAddr::new(virtual_address_offset + klu.kernel.header.pt2.entry_point()),
         image_offset: VirtAddr::new(virtual_address_offset),
-        tls_template: lsi.tls,
     }
 }
 
-struct LoadedSegmentsInfo {
-    tls: Option<TlsTemplate>,
-}
+struct LoadedSegmentsInfo {}
 
 fn load_segments(klu: &mut KernelLoadingUtils, vao: u64) -> LoadedSegmentsInfo {
-    let mut tls = None;
-
     for program_header in klu.kernel.program_iter() {
         match program_header.get_type().unwrap() {
             Type::Load => {
                 handle_segment_load(program_header, klu, vao);
             }
             Type::Tls => {
-                let old = tls.replace(TlsTemplate {
-                    start_addr: vao + program_header.virtual_addr(),
-                    file_size: program_header.file_size(),
-                    mem_size: program_header.mem_size(),
-                });
-                assert_eq!(old, None, "Multiple TLS segments");
+                crate::warn!("TLS segment found, but not used.");
             }
             Type::Interp => {
                 panic!("Found unexpected interpreter segment");
@@ -188,7 +177,7 @@ fn load_segments(klu: &mut KernelLoadingUtils, vao: u64) -> LoadedSegmentsInfo {
         }
     }
 
-    LoadedSegmentsInfo { tls }
+    LoadedSegmentsInfo {}
 }
 
 fn handle_segment_load(load_segment: ProgramHeader, klu: &mut KernelLoadingUtils, vao: u64) {
@@ -240,7 +229,7 @@ fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelL
     // First, handle unaligned start
     let before_aligned = zero_start.as_u64() % Size4KiB::SIZE;
     if before_aligned != 0 {
-        let last_page = Page::<Size4KiB>::containing_address(zero_start - 1);
+        let last_page = Page::<Size4KiB>::containing_address(zero_start);
 
         let new_frame = {
             let TranslateResult::Mapped {
@@ -602,10 +591,8 @@ fn handle_segment_gnurelro(
     vao: u64,
 ) {
     let start = VirtAddr::new(vao + gnurelro_segment.virtual_addr());
-    let end = VirtAddr::new(vao + gnurelro_segment.virtual_addr() + gnurelro_segment.mem_size());
-
     let start_page = Page::<Size4KiB>::containing_address(start);
-    let end_page = Page::<Size4KiB>::containing_address(end - 1);
+    let end_page = Page::<Size4KiB>::containing_address(start + gnurelro_segment.mem_size() - 1);
 
     for page in Page::range_inclusive(start_page, end_page) {
         let TranslateResult::Mapped {
@@ -630,8 +617,7 @@ fn handle_segment_gnurelro(
 }
 
 #[derive(Debug)]
-pub struct KernelInfo {
+pub struct LoadedKernelInfo {
     pub entry_point: VirtAddr,
     pub image_offset: VirtAddr,
-    pub tls_template: Option<TlsTemplate>,
 }

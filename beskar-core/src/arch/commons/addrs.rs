@@ -22,6 +22,14 @@ impl VirtAddr {
 
     #[must_use]
     #[inline]
+    /// Create a new valid virtual address by sign extending the address.
+    pub const fn new_extend(addr: u64) -> Self {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        Self(((addr << 16) as i64 >> 16) as u64)
+    }
+
+    #[must_use]
+    #[inline]
     pub const fn as_u64(self) -> u64 {
         self.0
     }
@@ -112,7 +120,7 @@ impl Add<u64> for VirtAddr {
 
     #[inline]
     fn add(self, rhs: u64) -> Self {
-        Self::new(self.0 + rhs)
+        Self::new_extend(self.0 + rhs)
     }
 }
 
@@ -121,7 +129,7 @@ impl Add<Self> for VirtAddr {
 
     #[inline]
     fn add(self, rhs: Self) -> Self {
-        Self::new(self.0 + rhs.0)
+        Self::new_extend(self.0 + rhs.0)
     }
 }
 
@@ -130,7 +138,7 @@ impl Sub<u64> for VirtAddr {
 
     #[inline]
     fn sub(self, rhs: u64) -> Self {
-        Self::new(self.0 - rhs)
+        Self::new_extend(self.0 - rhs)
     }
 }
 
@@ -206,6 +214,14 @@ mod tests {
     fn test_v() {
         let addr = PhysAddr::new(0x18000031060);
         assert_eq!(addr.as_u64(), 0x18000031060);
+    }
+
+    #[test]
+    fn test_v_extends() {
+        let addr = VirtAddr::new_extend(0xFFFF_FFFF_FFFF);
+        assert_eq!(addr.as_u64(), 0xFFFF_FFFF_FFFF_FFFF);
+        let addr = VirtAddr::new_extend(0x3FFF_FFFF_FFFF);
+        assert_eq!(addr.as_u64(), 0x3FFF_FFFF_FFFF);
     }
 
     #[test]

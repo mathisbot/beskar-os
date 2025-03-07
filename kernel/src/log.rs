@@ -4,9 +4,9 @@ use beskar_core::{
     video::writer::FramebufferWriter,
 };
 use core::{fmt::Write, sync::atomic::AtomicBool};
-use hyperdrive::locks::mcs::{MUMcsLock, McsLock};
+use hyperdrive::locks::mcs::MUMcsLock;
 
-static SERIAL: McsLock<SerialCom> = McsLock::new(SerialCom::new(ComNumber::Com1));
+static SERIAL: MUMcsLock<SerialCom> = MUMcsLock::uninit();
 
 static LOG_ON_SCREEN: AtomicBool = AtomicBool::new(false);
 static SCREEN_LOGGER: MUMcsLock<ScreenWriter> = MUMcsLock::uninit();
@@ -15,9 +15,10 @@ static SCREEN_LOGGER: MUMcsLock<ScreenWriter> = MUMcsLock::uninit();
 ///
 /// This function should be called at the very beginning of the kernel.
 pub fn init_serial() {
-    SERIAL.with_locked(|serial| {
-        serial.init();
-    });
+    let mut serial = SerialCom::new(ComNumber::Com1);
+    if serial.init().is_ok() {
+        SERIAL.init(serial);
+    }
 }
 
 /// Initialize the screen logger.
@@ -34,7 +35,7 @@ pub fn set_screen_logging(enable: bool) {
 }
 
 pub fn log(args: core::fmt::Arguments) {
-    SERIAL.with_locked(|serial| {
+    SERIAL.with_locked_if_init(|serial| {
         serial.write_fmt(args).unwrap();
     });
     if LOG_ON_SCREEN.load(core::sync::atomic::Ordering::Acquire) {

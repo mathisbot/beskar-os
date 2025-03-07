@@ -1,7 +1,6 @@
 use core::{cell::UnsafeCell, mem::MaybeUninit};
 
 use x86_64::{
-    instructions::tables::load_tss,
     registers::segmentation::{CS, Segment},
     structures::{
         gdt::{GlobalDescriptorTable, SegmentSelector},
@@ -10,7 +9,10 @@ use x86_64::{
 };
 
 use crate::mem::{frame_alloc, page_alloc};
-use beskar_core::arch::commons::paging::{M4KiB, MemSize as _, Page};
+use beskar_core::arch::{
+    commons::paging::{M4KiB, MemSize as _, Page},
+    x86_64::instructions::load_tss,
+};
 
 use beskar_core::arch::x86_64::paging::page_table::Flags;
 
@@ -63,7 +65,9 @@ impl Gdt {
         inner.user_data_selector.write(user_data_selector);
         inner.user_code_selector.write(user_code_selector);
 
-        let tss_selector = gdt.append(x86_64::structures::gdt::Descriptor::tss_segment(tss));
+        let tss_selector = gdt
+            .append(x86_64::structures::gdt::Descriptor::tss_segment(tss))
+            .0;
 
         let gdt = inner.gdt.write(gdt);
         gdt.load();

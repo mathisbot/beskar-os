@@ -5,7 +5,7 @@ use core::{
 };
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use beskar_core::arch::x86_64::registers::Rflags;
+use beskar_core::arch::x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags};
 use hyperdrive::queues::mpsc::{Link, Queueable};
 
 use super::{super::Process, priority::Priority};
@@ -73,7 +73,7 @@ impl Thread {
         root_proc: Arc<Process>,
         priority: Priority,
         mut stack: Vec<u8>,
-        entry_point: fn(),
+        entry_point: extern "C" fn(),
     ) -> Self {
         let mut stack_ptr = stack.as_mut_ptr(); // Stack grows downwards
 
@@ -93,9 +93,10 @@ impl Thread {
     }
 
     /// Setup the stack and move stack pointer to the end of the stack.
-    fn setup_stack(stack_ptr: *mut u8, stack: &mut [u8], entry_point: fn()) -> usize {
+    fn setup_stack(stack_ptr: *mut u8, stack: &mut [u8], entry_point: extern "C" fn()) -> usize {
         // Can be used to detect stack overflow
-        stack.fill(0xCD);
+        #[cfg(debug_assertions)]
+        stack.fill(STACK_DEBUG_INSTR);
 
         let mut stack_bottom = stack.len();
         assert!(

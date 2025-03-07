@@ -1,25 +1,28 @@
 use beskar_core::arch::x86_64::port::serial::com::{ComNumber, SerialCom};
+use beskar_core::video::Info;
 use beskar_core::video::writer::FramebufferWriter;
 use core::fmt::Write;
-use hyperdrive::locks::mcs::{MUMcsLock, McsLock};
+use hyperdrive::locks::mcs::MUMcsLock;
 
-static SERIAL: McsLock<SerialCom> = McsLock::new(SerialCom::new(ComNumber::Com1));
+static SERIAL: MUMcsLock<SerialCom> = MUMcsLock::uninit();
 
 static SCREEN_LOGGER: MUMcsLock<ScreenWriter> = MUMcsLock::uninit();
 
 pub fn init_serial() {
-    SERIAL.with_locked(|serial| {
-        serial.init();
-    });
+    let mut serial = SerialCom::new(ComNumber::Com1);
+    if serial.init().is_ok() {
+        SERIAL.init(serial);
+    }
 }
 
 pub fn init_screen() {
-    let screen = ScreenWriter::new();
+    let info = crate::video::with_physical_framebuffer(|screen| screen.info());
+    let screen = ScreenWriter::new(info);
     SCREEN_LOGGER.init(screen);
 }
 
 pub fn log(args: core::fmt::Arguments) {
-    SERIAL.with_locked(|serial| {
+    SERIAL.with_locked_if_init(|serial| {
         serial.write_fmt(args).unwrap();
     });
     SCREEN_LOGGER.with_locked_if_init(|writer| {
@@ -62,15 +65,8 @@ pub struct ScreenWriter(FramebufferWriter);
 impl ScreenWriter {
     #[must_use]
     #[inline]
-    pub fn new() -> Self {
-        let info = crate::video::with_physical_framebuffer(|screen| screen.info());
+    pub const fn new(info: Info) -> Self {
         Self(FramebufferWriter::new(info))
-    }
-}
-
-impl Default for ScreenWriter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

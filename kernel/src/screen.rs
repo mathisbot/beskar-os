@@ -33,14 +33,18 @@ impl Screen {
     #[inline]
     pub fn new(raw_buffer: &'static mut [u8], info: Info) -> Self {
         assert!(
-            raw_buffer.len() % 4 == 0,
-            "Buffer size must be a multiple of 4"
+            raw_buffer.len() % info.bytes_per_pixel() == 0,
+            "Buffer size must be a multiple of the pixel size"
         );
 
-        // Convert the buffer to a slice of u32
-        // Safety: Framebuffer is page aligned, the pointer is therefore dword aligned
+        // Convert the buffer to a slice of Pixels
+        // Safety: Framebuffer is page aligned, the pointer is therefore aligned
+        assert_eq!(size_of::<Pixel>(), info.bytes_per_pixel());
         let raw_buffer = unsafe {
-            core::slice::from_raw_parts_mut(raw_buffer.as_mut_ptr().cast(), raw_buffer.len() / 4)
+            core::slice::from_raw_parts_mut(
+                raw_buffer.as_mut_ptr().cast(),
+                raw_buffer.len() / info.bytes_per_pixel(),
+            )
         };
 
         Self { raw_buffer, info }

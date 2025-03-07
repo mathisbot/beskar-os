@@ -103,7 +103,7 @@ gdtr:
     dq gdt
 
 ALIGN 8, nop
-; These are placeholder and will be overwritten at runtime by the BSP
+; These are placeholders and will be overwritten at runtime by the BSP
 trampoline:
     .page_table: dq 0xFFFFFFFFFFFFFFFF
     .stack_end_ptr: dq 0xFFFFFFFFFFFFFFFF

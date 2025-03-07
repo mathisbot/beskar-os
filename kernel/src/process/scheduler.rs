@@ -18,7 +18,7 @@ pub mod thread;
 /// The time quantum for the scheduler, in milliseconds.
 ///
 /// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
-pub const SCHEDULER_QUANTUM_MS: u32 = 60;
+pub const SCHEDULER_QUANTUM_MS: u32 = 30;
 
 // TODO: Runtime size for schedulers
 // Currently, it takes 4KiB of memory but on a vast majority of systems, it only needs a few schedulers.
@@ -68,7 +68,8 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
 pub struct ContextSwitch {
     old_stack: *mut *mut u8,
     new_stack: *const u8,
-    cr3: usize,
+    cr3: u64,
+    user_thread: bool,
 }
 
 impl ContextSwitch {
@@ -79,6 +80,9 @@ impl ContextSwitch {
     ///
     /// See `kernel::arch::context::context_switch`.
     pub unsafe fn perform(&self) {
+        if self.user_thread {
+            todo!("User threads are not supported yet");
+        }
         unsafe { crate::arch::context::switch(self.old_stack, self.new_stack, self.cr3) };
     }
 }
@@ -159,10 +163,13 @@ impl Scheduler {
 
             let cr3 = thread.process().address_space().cr3_raw();
 
+            let user_thread = thread.process().kind() == super::Kind::User;
+
             Some(ContextSwitch {
                 old_stack,
                 new_stack,
                 cr3,
+                user_thread,
             })
         })?
     }
@@ -173,7 +180,7 @@ fn get_scheduler() -> &'static Scheduler {
     SCHEDULERS[locals!().core_id()].get().unwrap()
 }
 
-fn clean_thread() {
+extern "C" fn clean_thread() {
     // FIXME: If the cleaning process starts very soon,
     // it often results in a bad free.
     // idk what happens, so let's wait for a bit.
@@ -255,12 +262,14 @@ pub fn change_current_thread_priority(priority: priority::Priority) {
 ///
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.
-pub unsafe fn exit_current_thread() {
+pub unsafe fn exit_current_thread() -> ! {
     get_scheduler().exit_current_thread();
 
-    // Wait for the next thread to be scheduled.
+    // Try to reschedule the thread.
+    thread_yield();
+
+    // If no thread is waiting, loop.
     crate::arch::interrupts::int_enable();
-    // FIXME: Force reschedule now?
     loop {
         crate::arch::halt();
     }

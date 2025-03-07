@@ -1,8 +1,14 @@
 #![no_main]
 #![no_std]
 
+extern crate alloc;
+
+use alloc::sync::Arc;
 use hyperdrive::once::Once;
-use kernel::{locals, process::scheduler};
+use kernel::{
+    locals,
+    process::{Process, scheduler},
+};
 
 kernel::kernel_main!(kmain);
 
@@ -28,7 +34,7 @@ fn kmain() -> ! {
         };
         extern crate alloc;
 
-        let root_proc = scheduler::current_process();
+        let root_proc = Arc::new(Process::new("Tests", kernel::process::Kind::Driver));
 
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             root_proc.clone(),
@@ -66,14 +72,26 @@ fn kmain() -> ! {
         //     alloc::vec![0; 1024*256],
         //     dummy::syscall_test,
         // )));
+
+        if let Some(ramdisk) = kernel::boot::ramdisk() {
+            let try_load = kernel::process::binary::Binary::new(
+                ramdisk,
+                kernel::process::binary::BinaryType::Elf,
+            )
+            .load();
+            if let Ok(binary) = try_load {
+                scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+                    root_proc.clone(),
+                    Priority::Normal,
+                    alloc::vec![0; 1024*256],
+                    binary.entry_point(),
+                )));
+                kernel::debug!("Ramdisk loaded!");
+            } else {
+                kernel::error!("Failed to load ramdisk");
+            }
+        }
     });
 
-    unsafe { kernel::process::scheduler::exit_current_thread() };
-
-    kernel::error!(
-        "Kernel main function reached the end on core {}",
-        locals!().core_id()
-    );
-
-    unreachable!()
+    unsafe { kernel::process::scheduler::exit_current_thread() }
 }

@@ -7,6 +7,7 @@ use beskar_core::{boot::BootInfo, mem::MemoryRegion};
 use mem::{EarlyFrameAllocator, Mappings, PageTables};
 use x86_64::structures::paging::{FrameAllocator, Mapper, Page, PageTableFlags};
 
+pub mod arch;
 pub mod fs;
 pub mod log;
 pub mod mem;
@@ -15,7 +16,7 @@ pub mod video;
 
 mod kernel_elf;
 
-const KERNEL_STACK_SIZE: u64 = 64 * 4096; // 256 KiB
+const KERNEL_STACK_NB_PAGES: u64 = 64; // 256 KiB
 
 #[macro_export]
 macro_rules! entry_point {
@@ -29,45 +30,12 @@ macro_rules! entry_point {
     };
 }
 
-/// Change context and jump to the kernel entry point.
-///
-/// ## Safety
-///
-/// The caller must ensure that the four adresses are valid.
-pub unsafe fn chg_ctx(
-    level4_frame_addr: u64,
-    stack_top: u64,
-    entry_point_addr: u64,
-    boot_info_addr: u64,
-) -> ! {
-    // Safety:
-    // We are resetting the stack, which is safe if we do not intend to return.
-    // We are setting the CR3 register to a valid page table, which is safe.
-    // We are also putting boot info into rdi, according to the C calling convention.
-    // Finally, jumping to the kernel entry point is safe, as it is valid.
-    unsafe {
-        core::arch::asm!(
-            r#"
-            xor rbp, rbp
-            mov cr3, {}
-            mov rsp, {}
-            jmp {}
-            "#,
-            in(reg) level4_frame_addr,
-            in(reg) stack_top,
-            in(reg) entry_point_addr,
-            in("rdi") boot_info_addr,
-            options(noreturn)
-        );
-    };
-}
-
 #[must_use]
 pub fn create_boot_info(
     mut frame_allocator: EarlyFrameAllocator,
     page_tables: &mut PageTables,
     mappings: &mut Mappings,
-) -> &'static mut BootInfo {
+) -> x86_64::VirtAddr {
     let (layout, memory_regions_offset) = core::alloc::Layout::new::<BootInfo>()
         .extend(
             core::alloc::Layout::array::<MemoryRegion>(
@@ -110,8 +78,8 @@ pub fn create_boot_info(
         unsafe {
             core::slice::from_raw_parts_mut(memory_map_regions_addr.as_mut_ptr(), max_region_count)
         },
-        mappings.kernel_addr(),
-        mappings.kernel_len(),
+        mappings.kernel_info().paddr(),
+        mappings.kernel_info().size(),
     );
 
     // ## Safety
@@ -123,17 +91,15 @@ pub fn create_boot_info(
                 fb.to_framebuffer(core::mem::transmute(mappings.framebuffer()))
             }),
             recursive_index: u16::from(mappings.recursive_index()),
-            rsdp_paddr: crate::system::acpi::rsdp_paddr(),
-            kernel_paddr: mappings.kernel_addr(),
-            kernel_len: mappings.kernel_len(),
-            kernel_vaddr: core::mem::transmute(mappings.kernel_vaddr()),
-            tls_template: mappings.tls_template(),
+            rsdp_paddr: crate::arch::acpi::rsdp_paddr(),
+            kernel_info: mappings.kernel_info(),
+            ramdisk_info: mappings.ramdisk_info(),
             cpu_count: crate::system::core_count(),
         });
 
         info!("Boot info created");
         debug!("Boot info written to {:#x}", boot_info_addr.as_u64());
 
-        &mut *boot_info_addr.as_mut_ptr()
+        boot_info_addr
     }
 }

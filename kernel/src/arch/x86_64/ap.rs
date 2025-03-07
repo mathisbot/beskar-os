@@ -1,7 +1,7 @@
 use super::apic::ipi::{self, Ipi};
 use crate::{
     locals,
-    mem::{frame_alloc, page_alloc, page_table},
+    mem::{address_space, frame_alloc, page_alloc},
 };
 use beskar_core::arch::{
     commons::{
@@ -15,6 +15,9 @@ use beskar_core::arch::{
 };
 
 use core::sync::atomic::{AtomicU64, Ordering};
+
+// The amount of pages should be kept in sync with the bootloader
+const KERNEL_STACK_NB_PAGES: u64 = 64; // 256 KiB
 
 static AP_STACK_TOP_ADDR: AtomicU64 = AtomicU64::new(0);
 
@@ -58,7 +61,7 @@ pub fn start_up_aps(core_count: usize) {
     let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        page_table::with_page_table(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             page_table
                 .map(
                     page,
@@ -131,7 +134,7 @@ pub fn start_up_aps(core_count: usize) {
 
     // Free trampoline code
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        page_table::with_page_table(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             let (frame, tlb) = page_table.unmap(page).unwrap();
             tlb.flush();
             frame_allocator.free(frame);
@@ -159,8 +162,9 @@ fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
 
 fn allocate_stack() {
     let stack_pages = page_alloc::with_page_allocator(|page_allocator| {
-        // The amount of pages should be kept in sync with the stack size allocated by the bootloader
-        page_allocator.allocate_pages::<M4KiB>(64).unwrap()
+        page_allocator
+            .allocate_pages::<M4KiB>(KERNEL_STACK_NB_PAGES)
+            .unwrap()
     });
 
     frame_alloc::with_frame_allocator(|frame_allocator| {

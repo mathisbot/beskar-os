@@ -1,3 +1,5 @@
+pub mod ranges;
+
 /// Represent a physical memory region.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct MemoryRegion {

@@ -206,6 +206,7 @@ unsafe impl FrameAllocator<Size4KiB> for EarlyFrameAllocator {
 #[must_use]
 /// Returns whether the memory region is usable after the bootloader exits.
 const fn usable_after_bootloader_exit(memory_descriptor: &MemoryDescriptor) -> bool {
+    // TODO: Find a way to send ACPI_RECLAIM regions to the kernel?
     match memory_descriptor.ty {
         MemoryType::CONVENTIONAL
         | MemoryType::LOADER_CODE

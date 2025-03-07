@@ -1,7 +1,7 @@
 //! Implementation of the serial communication interface
 
 use super::super::WriteOnly;
-use super::SerialPort;
+use super::{SerialPort, SerialResult};
 
 /// Port number for COM1
 const COM1_IO_PORT: u16 = 0x3F8;
@@ -48,8 +48,8 @@ impl SerialCom {
         Self(SerialPort::new(com.io_port()))
     }
 
-    pub fn init(&mut self) {
-        self.0.init();
+    pub fn init(&mut self) -> SerialResult<()> {
+        self.0.init()
     }
 }
 

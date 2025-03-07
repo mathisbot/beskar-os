@@ -5,20 +5,20 @@
 //!
 //! Allocated frames do not need to be contiguous.
 
-use super::{
-    page_table,
-    ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
-};
+use super::address_space;
 use beskar_core::arch::commons::{
     PhysAddr,
     paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, PageRangeInclusive},
 };
 use beskar_core::arch::x86_64::paging::page_table::{Flags, PageTable};
-use beskar_core::mem::{MemoryRegion, MemoryRegionUsage};
+use beskar_core::mem::{
+    MemoryRegion, MemoryRegionUsage,
+    ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
+};
 
 use hyperdrive::locks::mcs::MUMcsLock;
 
-const MAX_MEMORY_REGIONS: usize = 1024;
+const MAX_MEMORY_REGIONS: usize = 256;
 
 static KFRAME_ALLOC: MUMcsLock<FrameAllocator> = MUMcsLock::uninit();
 
@@ -95,7 +95,7 @@ impl FrameAllocator {
     ) where
         for<'a> PageTable<'a>: Mapper<S>,
     {
-        page_table::with_page_table(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             for page in pages {
                 let frame = self.alloc::<S>().unwrap();
                 page_table.map(page, frame, flags, self).flush();

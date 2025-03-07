@@ -12,6 +12,7 @@ pub mod arch;
 pub mod boot;
 pub mod drivers;
 pub mod mem;
+pub mod process;
 pub mod syscall;
 pub mod video;
 

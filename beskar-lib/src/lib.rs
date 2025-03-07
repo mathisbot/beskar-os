@@ -3,17 +3,13 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
+pub use beskar_core::syscall::ExitCode;
 use beskar_core::syscall::Syscall;
 pub mod io;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     exit(ExitCode::Failure)
-}
-
-pub enum ExitCode {
-    Success = 0,
-    Failure = 1,
 }
 
 pub fn exit(code: ExitCode) -> ! {
@@ -33,7 +29,8 @@ macro_rules! entry_point {
         #[inline]
         #[unsafe(export_name = "_start")]
         pub extern "C" fn __program_entry() {
-            ($path)()
+            ($path)();
+            ::beskar_lib::exit(::beskar_lib::ExitCode::Success);
         }
     };
 }

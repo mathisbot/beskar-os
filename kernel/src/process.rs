@@ -4,12 +4,13 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
-use hyperdrive::once::Once;
+use beskar_core::arch::x86_64::userspace::Ring;
+use hyperdrive::{once::Once, tether::Tether};
 
-use crate::mem::address_space::AddressSpace;
+use crate::mem::address_space::{self, AddressSpace};
 
+pub mod binary;
 pub mod dummy;
-pub mod elf;
 pub mod scheduler;
 
 static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();
@@ -19,7 +20,8 @@ pub fn init() {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: *crate::mem::address_space::get_kernel_address_space(),
+            address_space: Tether::Reference(address_space::get_kernel_address_space()),
+            kind: Kind::Kernel,
         })
     });
 
@@ -34,10 +36,22 @@ pub fn init() {
 pub struct Process {
     name: String,
     pid: ProcessId,
-    address_space: AddressSpace,
+    address_space: Tether<'static, AddressSpace>,
+    kind: Kind,
 }
 
 impl Process {
+    #[must_use]
+    #[inline]
+    pub fn new(name: &str, kind: Kind) -> Self {
+        Self {
+            name: name.to_string(),
+            pid: ProcessId::new(),
+            address_space: Tether::Owned(AddressSpace::new()),
+            kind,
+        }
+    }
+
     #[must_use]
     #[inline]
     pub fn name(&self) -> &str {
@@ -52,8 +66,14 @@ impl Process {
 
     #[must_use]
     #[inline]
-    pub const fn address_space(&self) -> &AddressSpace {
+    pub fn address_space(&self) -> &AddressSpace {
         &self.address_space
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn kind(&self) -> Kind {
+        self.kind
     }
 }
 
@@ -79,5 +99,31 @@ impl Default for ProcessId {
 impl ProcessId {
     pub fn new() -> Self {
         Self(PID_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+#[repr(u8)]
+pub enum Kind {
+    /// Vital process kind.
+    /// On panic or other critical errors, the while system will be halted.
+    Kernel,
+    /// Driver process kind.
+    /// These are Ring 0 processes that are not vital for the system.
+    Driver,
+    /// User process kind.
+    /// These are Ring 3 processes.
+    User,
+}
+
+impl Kind {
+    #[must_use]
+    #[inline]
+    pub const fn ring(&self) -> Ring {
+        match self {
+            Self::Kernel | Self::Driver => Ring::Kernel,
+            Self::User => Ring::User,
+        }
     }
 }

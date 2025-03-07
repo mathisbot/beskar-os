@@ -36,3 +36,8 @@ impl SyscallExitCode {
         assert_ne!(self, Self::Failure, "Syscall failed!");
     }
 }
+
+pub enum ExitCode {
+    Success = 0,
+    Failure = 1,
+}
