@@ -29,6 +29,7 @@ fn sc_print(args: &Arguments) -> SyscallExitCode {
     // i.e. buffer is in user space, length is valid, etc.
 
     let buf = unsafe { core::slice::from_raw_parts(msg_addr, msg_len) };
+    crate::debug!("buf: {:?}", buf);
     let Ok(msg) = core::str::from_utf8(buf) else {
         return SyscallExitCode::Failure;
     };

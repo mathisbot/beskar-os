@@ -120,7 +120,7 @@ impl Add<u64> for VirtAddr {
 
     #[inline]
     fn add(self, rhs: u64) -> Self {
-        Self::new(self.0 + rhs)
+        Self::new_extend(self.0 + rhs)
     }
 }
 
@@ -129,7 +129,7 @@ impl Add<Self> for VirtAddr {
 
     #[inline]
     fn add(self, rhs: Self) -> Self {
-        Self::new(self.0 + rhs.0)
+        Self::new_extend(self.0 + rhs.0)
     }
 }
 
@@ -138,7 +138,7 @@ impl Sub<u64> for VirtAddr {
 
     #[inline]
     fn sub(self, rhs: u64) -> Self {
-        Self::new(self.0 - rhs)
+        Self::new_extend(self.0 - rhs)
     }
 }
 

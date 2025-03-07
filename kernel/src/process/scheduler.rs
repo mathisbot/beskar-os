@@ -180,7 +180,7 @@ fn get_scheduler() -> &'static Scheduler {
     SCHEDULERS[locals!().core_id()].get().unwrap()
 }
 
-fn clean_thread() {
+extern "C" fn clean_thread() {
     // FIXME: If the cleaning process starts very soon,
     // it often results in a bad free.
     // idk what happens, so let's wait for a bit.

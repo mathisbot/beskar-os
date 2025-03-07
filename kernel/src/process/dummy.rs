@@ -1,7 +1,7 @@
 //! Test processes for the kernel.
 // TODO: Remove this module
 
-pub fn fibonacci() {
+pub extern "C" fn fibonacci() {
     let mut a = 0_u16;
     let mut b = 1_u16;
     let mut n = 0_u32;
@@ -29,7 +29,7 @@ pub fn fibonacci() {
     }
 }
 
-pub fn counter() {
+pub extern "C" fn counter() {
     let mut counter = 0_u64;
 
     loop {
@@ -43,14 +43,14 @@ pub fn counter() {
     }
 }
 
-pub fn hello_world() {
+pub extern "C" fn hello_world() {
     loop {
         crate::info!("Hello from core {}!", crate::locals!().core_id());
         crate::time::wait(crate::time::Duration::from_secs(1));
     }
 }
 
-pub fn alloc_intensive() {
+pub extern "C" fn alloc_intensive() {
     use alloc::vec::Vec;
 
     loop {
@@ -66,7 +66,7 @@ pub fn alloc_intensive() {
     }
 }
 
-pub fn floating_point() {
+pub extern "C" fn floating_point() {
     let mut x = 1.1_f64;
 
     loop {
@@ -80,6 +80,6 @@ pub fn floating_point() {
     }
 }
 
-pub fn panic_test() {
+pub extern "C" fn panic_test() {
     panic!("This is a panic test");
 }

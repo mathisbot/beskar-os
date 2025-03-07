@@ -4,7 +4,8 @@ use crate::{
     arch::{self, ap, apic, interrupts},
     drivers, locals, mem, process, screen, syscall, time,
 };
-use beskar_core::boot::BootInfo;
+use beskar_core::boot::{BootInfo, RamdiskInfo};
+use hyperdrive::once::Once;
 
 /// Static reference to the kernel main function
 ///
@@ -12,21 +13,19 @@ use beskar_core::boot::BootInfo;
 /// It will be used by each core to start the kernel.
 ///
 /// This function should never be called directly, but only by the `enter_kmain` function.
-static mut KERNEL_MAIN: fn() -> ! = || loop {
-    crate::arch::halt();
-};
+static KERNEL_MAIN: Once<fn() -> !> = Once::uninit();
 
 /// Static fence to ensure all cores enter `kmain` when they're all ready
 static KERNEL_MAIN_FENCE: AtomicUsize = AtomicUsize::new(0);
+
+static RAMDISK: Once<Option<RamdiskInfo>> = Once::uninit();
 
 /// This function is the proper entry point called by the bootloader.
 ///
 /// It should only be the entry for the BSP.
 pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> ! {
-    // Safety:
-    // This line is only executed once on the BSP,
-    // when no other core is currently running.
-    unsafe { KERNEL_MAIN = kernel_main };
+    KERNEL_MAIN.call_once(|| kernel_main);
+    RAMDISK.call_once(|| boot_info.ramdisk_info);
 
     let core_count = boot_info.cpu_count;
 
@@ -46,7 +45,6 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         memory_regions,
         rsdp_paddr,
         kernel_info,
-        ramdisk_info: _ramdisk_info,
         ..
     } = boot_info;
 
@@ -81,17 +79,6 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     apic::init_ioapic();
 
     drivers::init();
-
-    // TODO: Use ramdisk here?
-    // {
-    //     // TODO: Remove!
-    //     let rd_info = _ramdisk_info.unwrap();
-    //     let rd_slice = unsafe {
-    //         core::slice::from_raw_parts(rd_info.vaddr().as_ptr(), rd_info.size() as usize)
-    //     };
-    //     let binary = process::binary::Binary::new(rd_slice, process::binary::BinaryType::Elf);
-    //     binary.load().unwrap();
-    // }
 }
 
 /// Rust entry point for APs
@@ -131,6 +118,17 @@ fn ap_init() {
     arch::apic::init_lapic();
 }
 
+/// Returns the ramdisk data as readonly.
+///
+/// # Panics
+///
+/// Panics if the ramdisk is not initialized.
+pub fn ramdisk() -> Option<&'static [u8]> {
+    RAMDISK.get().unwrap().map(|rd| unsafe {
+        core::slice::from_raw_parts(rd.vaddr().as_ptr(), rd.size().try_into().unwrap())
+    })
+}
+
 /// This function is called by each core once they're ready to start the kernel.
 ///
 /// It will wait for all cores to be ready before starting the kernel,
@@ -144,7 +142,7 @@ pub(crate) fn enter_kmain() -> ! {
         core::hint::spin_loop();
     }
 
-    unsafe { KERNEL_MAIN() }
+    (KERNEL_MAIN.get().unwrap())()
 }
 
 #[macro_export]
