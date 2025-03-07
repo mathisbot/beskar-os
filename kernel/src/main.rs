@@ -73,22 +73,24 @@ fn kmain() -> ! {
         //     dummy::syscall_test,
         // )));
 
-        // if let Some(ramdisk) = kernel::boot::ramdisk() {
-        //     kernel::debug!("Loading ramdisk...");
-        //     let try_load = process::binary::Binary::new(ramdisk, process::binary::BinaryType::Elf)
-        //         .load();
-        //     if let Ok(binary) = try_load {
-        //         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-        //             root_proc.clone(),
-        //             Priority::Normal,
-        //             alloc::vec![0; 1024*256],
-        //             binary.entry_point(),
-        //         )));
-        //         kernel::debug!("Ramdisk loaded!");
-        //     } else {
-        //         kernel::error!("Failed to load ramdisk");
-        //     }
-        // }
+        if let Some(ramdisk) = kernel::boot::ramdisk() {
+            let try_load = kernel::process::binary::Binary::new(
+                ramdisk,
+                kernel::process::binary::BinaryType::Elf,
+            )
+            .load();
+            if let Ok(binary) = try_load {
+                scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+                    root_proc.clone(),
+                    Priority::Normal,
+                    alloc::vec![0; 1024*256],
+                    binary.entry_point(),
+                )));
+                kernel::debug!("Ramdisk loaded!");
+            } else {
+                kernel::error!("Failed to load ramdisk");
+            }
+        }
     });
 
     unsafe { kernel::process::scheduler::exit_current_thread() }

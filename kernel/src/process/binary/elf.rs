@@ -127,6 +127,11 @@ fn sanity_check(elf: &ElfFile) -> BinaryResult<()> {
     ensure!(elf.header.pt2.machine().as_machine() == header::Machine::X86_64);
     // FIXME: Is it safe to assume that the endianness is always little?
     ensure!(elf.header.pt1.data() == header::Data::LittleEndian);
+    ensure!(
+        elf.header.pt1.os_abi() == header::OsAbi::SystemV
+            || elf.header.pt1.os_abi() == header::OsAbi::Linux
+    );
+    ensure!(elf.header.pt2.entry_point() != 0);
 
     Ok(())
 }
@@ -219,10 +224,10 @@ fn zero_bss(
     offset: VirtAddr,
     working_offset: VirtAddr,
 ) {
-    let zero_start = offset + ph.file_size();
-    let zero_end = offset + ph.mem_size() - 1;
+    let zero_start = offset + ph.virtual_addr() + ph.file_size();
+    let zero_end = offset + ph.virtual_addr() + ph.mem_size() - 1;
 
-    let working_zero_start = working_offset + ph.file_size();
+    let working_zero_start = working_offset + ph.virtual_addr() + ph.file_size();
 
     let unaligned = zero_start.as_u64() % M4KiB::SIZE;
     if unaligned != 0 {
