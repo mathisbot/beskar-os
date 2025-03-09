@@ -225,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "assertion failed: virt_addr == addr"]
+    #[should_panic = "assertion failed: extended == addr"]
     fn test_v_reject() {
         let _ = VirtAddr::new(0x1234567890ABCDEF);
     }
