@@ -115,7 +115,8 @@ impl PageAllocator {
                 .allocate::<1>(S::SIZE * count, S::SIZE, &MemoryRangeRequest::DontCare)?;
 
         let first_page =
-            Page::from_start_address(VirtAddr::new(u64::try_from(start_vaddr).unwrap())).unwrap();
+            Page::from_start_address(VirtAddr::new_extend(u64::try_from(start_vaddr).unwrap()))
+                .unwrap();
 
         Some(Page::range_inclusive(first_page, first_page + (count - 1)))
     }

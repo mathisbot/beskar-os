@@ -9,7 +9,7 @@ use beskar_core::syscall::{Syscall, SyscallExitCode};
 pub fn print(msg: &str) {
     let res_code: u64;
     unsafe {
-        core::arch::asm!(
+        ::core::arch::asm!(
             "syscall",
             in("rax") Syscall::Print as u64,
             lateout("rax") res_code,
@@ -17,5 +17,5 @@ pub fn print(msg: &str) {
             in("rsi") msg.len(),
         );
     }
-    assert_eq!(res_code, SyscallExitCode::Success as u64);
+    assert_eq!(res_code, SyscallExitCode::Success as _);
 }

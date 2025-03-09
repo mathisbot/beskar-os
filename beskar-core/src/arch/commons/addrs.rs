@@ -15,9 +15,9 @@ impl VirtAddr {
     pub const fn new(addr: u64) -> Self {
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
         // Perform sign extension
-        let virt_addr = ((addr << 16) as i64 >> 16) as u64;
-        assert!(virt_addr == addr);
-        Self(virt_addr)
+        let extended = ((addr << 16) as i64 >> 16) as u64;
+        assert!(extended == addr);
+        Self(extended)
     }
 
     #[must_use]
@@ -50,14 +50,14 @@ impl VirtAddr {
     #[inline]
     pub const fn align_down(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
-        Self::new(self.0 & !(align - 1))
+        Self::new_extend(self.0 & !(align - 1))
     }
 
     #[must_use]
     #[inline]
     pub const fn align_up(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
-        Self::new((self.0 + (align - 1)) & !(align - 1))
+        Self::new_extend((self.0 + (align - 1)) & !(align - 1))
     }
 
     #[must_use]

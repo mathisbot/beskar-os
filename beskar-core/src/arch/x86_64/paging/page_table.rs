@@ -30,6 +30,12 @@ impl Flags {
 
     const ALL: Self = Self(0x8000_0000_0000_01FF);
     pub const EMPTY: Self = Self(0);
+    /// A set of flags that are used to mark the parent entries in the page table.
+    /// The flags are present and writable.
+    ///
+    /// ## Warning
+    ///
+    /// If any child page is USER ACCESSIBLE, then the parent page must also be USER ACCESSIBLE.
     const PARENT: Self = Self(1 | (1 << 1));
 
     #[must_use]
@@ -285,34 +291,38 @@ impl IndexMut<usize> for PageTable<'_> {
     }
 }
 
+#[must_use]
 fn get_p3<S: MemSize>(page: Page<S>, recursive_index: u16) -> Page {
     let ri = u64::from(recursive_index);
     let p4_idx = u64::from(page.p4_index());
-    let vaddr = VirtAddr::new((ri << 39) | (ri << 30) | (ri << 21) | (p4_idx << 12));
+    let vaddr = VirtAddr::new_extend((ri << 39) | (ri << 30) | (ri << 21) | (p4_idx << 12));
     Page::containing_address(vaddr)
 }
 
+#[must_use]
 fn get_p2_2mib(page: Page<M2MiB>, recursive_index: u16) -> Page {
     let ri = u64::from(recursive_index);
     let p4_idx = u64::from(page.p4_index());
     let p3_idx = u64::from(page.p3_index());
-    let vaddr = VirtAddr::new((ri << 39) | (ri << 30) | (p4_idx << 21) | (p3_idx << 12));
+    let vaddr = VirtAddr::new_extend((ri << 39) | (ri << 30) | (p4_idx << 21) | (p3_idx << 12));
     Page::containing_address(vaddr)
 }
+#[must_use]
 fn get_p2_4kib(page: Page<M4KiB>, recursive_index: u16) -> Page {
     let ri = u64::from(recursive_index);
     let p4_idx = u64::from(page.p4_index());
     let p3_idx = u64::from(page.p3_index());
-    let vaddr = VirtAddr::new((ri << 39) | (ri << 30) | (p4_idx << 21) | (p3_idx << 12));
+    let vaddr = VirtAddr::new_extend((ri << 39) | (ri << 30) | (p4_idx << 21) | (p3_idx << 12));
     Page::containing_address(vaddr)
 }
 
+#[must_use]
 fn get_p1(page: Page<M4KiB>, recursive_index: u16) -> Page {
     let ri = u64::from(recursive_index);
     let p4_idx = u64::from(page.p4_index());
     let p3_idx = u64::from(page.p3_index());
     let p2_idx = u64::from(page.p2_index());
-    let vaddr = VirtAddr::new((ri << 39) | (p4_idx << 30) | (p3_idx << 21) | (p2_idx << 12));
+    let vaddr = VirtAddr::new_extend((ri << 39) | (p4_idx << 30) | (p3_idx << 21) | (p2_idx << 12));
     Page::containing_address(vaddr)
 }
 
@@ -325,13 +335,18 @@ impl Mapper<M4KiB> for PageTable<'_> {
         fralloc: &mut A,
     ) -> impl crate::arch::commons::paging::CacheFlush<M4KiB> {
         let ri = self.recursive_index;
+        let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
+            Flags::PARENT | Flags::USER_ACCESSIBLE
+        } else {
+            Flags::PARENT
+        };
 
         let p3_page = get_p3(page, ri);
         let p3 = unsafe {
             Self::create_next_level(
                 &mut self[usize::from(page.p4_index())],
                 p3_page,
-                Flags::PARENT,
+                parent_flags,
                 fralloc,
             )
         };
@@ -341,7 +356,7 @@ impl Mapper<M4KiB> for PageTable<'_> {
             Self::create_next_level(
                 &mut p3[usize::from(page.p3_index())],
                 p2_page,
-                Flags::PARENT,
+                parent_flags,
                 fralloc,
             )
         };
@@ -351,7 +366,7 @@ impl Mapper<M4KiB> for PageTable<'_> {
             Self::create_next_level(
                 &mut p2[usize::from(page.p2_index())],
                 p1_page,
-                Flags::PARENT,
+                parent_flags,
                 fralloc,
             )
         };
@@ -499,13 +514,18 @@ impl Mapper<M2MiB> for PageTable<'_> {
         fralloc: &mut A,
     ) -> impl crate::arch::commons::paging::CacheFlush<M2MiB> {
         let ri = self.recursive_index;
+        let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
+            Flags::PARENT | Flags::USER_ACCESSIBLE
+        } else {
+            Flags::PARENT
+        };
 
         let p3_page = get_p3(page, ri);
         let p3 = unsafe {
             Self::create_next_level(
                 &mut self[usize::from(page.p4_index())],
                 p3_page,
-                Flags::PARENT,
+                parent_flags,
                 fralloc,
             )
         };
@@ -515,7 +535,7 @@ impl Mapper<M2MiB> for PageTable<'_> {
             Self::create_next_level(
                 &mut p3[usize::from(page.p3_index())],
                 p2_page,
-                Flags::PARENT,
+                parent_flags,
                 fralloc,
             )
         };
@@ -642,12 +662,18 @@ impl Mapper<M1GiB> for PageTable<'_> {
         flags: Flags,
         fralloc: &mut A,
     ) -> impl crate::arch::commons::paging::CacheFlush<M1GiB> {
+        let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
+            Flags::PARENT | Flags::USER_ACCESSIBLE
+        } else {
+            Flags::PARENT
+        };
+
         let p3_page = get_p3(page, self.recursive_index);
         let p3 = unsafe {
             Self::create_next_level(
                 &mut self[usize::from(page.p4_index())],
                 p3_page,
-                Flags::PARENT,
+                parent_flags,
                 fralloc,
             )
         };

@@ -136,6 +136,9 @@ impl<T> Once<T> {
     /// Initializes the value if it has not been initialized yet.
     ///
     /// Try to make the `initializer` function as less likely to panic as possible.
+    ///
+    /// If the value is still initializing, the function will NOT wait until initialization is complete.
+    /// To do so, use `get`.
     pub fn call_once<F>(&self, initializer: F)
     where
         F: FnOnce() -> T,
@@ -162,6 +165,9 @@ impl<T> Once<T> {
     }
 
     #[must_use]
+    /// Returns a reference to the value if it has been initialized.
+    ///
+    /// If the value is still initializing, this function will wait until initialization is complete.
     pub fn get(&self) -> Option<&T> {
         match self.state.load(Ordering::Acquire) {
             State::Initialized => {

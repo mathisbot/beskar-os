@@ -1,7 +1,7 @@
 use core::sync::atomic::AtomicUsize;
 
 use crate::{
-    arch::{self, ap, apic, interrupts},
+    arch::{self, apic, interrupts},
     drivers, locals, mem, process, screen, syscall, time,
 };
 use beskar_core::boot::{BootInfo, RamdiskInfo};
@@ -33,7 +33,7 @@ pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> !
 
     crate::debug!("Starting up APs. Core count: {}", core_count);
 
-    ap::start_up_aps(core_count);
+    arch::ap::start_up_aps(core_count);
 
     enter_kmain()
 }
@@ -88,7 +88,7 @@ pub extern "C" fn kap_entry() -> ! {
     // Safety:
     // Values are coming from the BSP, so they are safe to use.
     unsafe {
-        ap::load_ap_regs();
+        arch::ap::load_ap_regs();
     }
 
     // Tell the BSP we are out of the trampoline spin lock,

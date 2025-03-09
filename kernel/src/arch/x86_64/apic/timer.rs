@@ -75,7 +75,7 @@ impl LapicTimer {
         if onboard && hsl >= 0x15 {
             let core_crystal = cpuid::cpuid(0x15).ecx;
             NonZeroU32::new(core_crystal / 1_000_000)
-        } else if hsl >= 0x16 {
+        } else if !onboard && hsl >= 0x16 {
             // Frequency is already given is MHz
             NonZeroU32::new(cpuid::cpuid(0x16).ecx & 0xFFFF)
         } else {
@@ -117,7 +117,7 @@ impl LapicTimer {
             return;
         }
 
-        crate::info!(
+        crate::debug!(
             "LAPIC timer calibrated at {} MHz",
             self.configuration.rate_mhz
         );

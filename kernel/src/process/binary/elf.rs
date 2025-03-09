@@ -29,7 +29,7 @@ macro_rules! faillible {
 
 macro_rules! ensure {
     ($expr:expr) => {
-        if !$expr {
+        if !($expr) {
             return Err(LoadError::InvalidBinary);
         }
     };
@@ -54,10 +54,8 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
         max_vaddr
     };
 
-    // FIXME: Cannot use kernel's page allocator because it is for the kernel
-    // and we may not be in the kernel's address space!
-    // Temporary fix:
-    assert!(crate::mem::address_space::get_kernel_address_space().is_active());
+    // FIXME: We are using the kernel's page allocator, which is not ideal as
+    // we may be in a different address space.
 
     let page_range = page_alloc::with_page_allocator(|palloc| {
         palloc.allocate_pages::<M4KiB>(total_size.div_ceil(M4KiB::SIZE))

@@ -5,8 +5,16 @@ use core::{
 };
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use beskar_core::arch::x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags};
-use hyperdrive::queues::mpsc::{Link, Queueable};
+use beskar_core::arch::{
+    commons::paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, Page},
+    x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags, userspace::Ring},
+};
+use hyperdrive::{
+    once::Once,
+    queues::mpsc::{Link, Queueable},
+};
+
+use crate::mem::{frame_alloc, page_alloc};
 
 use super::{super::Process, priority::Priority};
 
@@ -21,7 +29,7 @@ pub struct Thread {
     /// The priority of the thread.
     priority: Priority,
     /// Used to keep ownership of the stack when needed.
-    stack: Option<Vec<u8>>,
+    stack: Option<ThreadStacks>,
     /// Keeps track of where the stack is.
     ///
     /// The usize is the last stack pointer.
@@ -68,7 +76,7 @@ impl Thread {
     }
 
     #[must_use]
-    #[inline]
+    /// Create a new thread with a given entry point and stack.
     pub fn new(
         root_proc: Arc<Process>,
         priority: Priority,
@@ -86,10 +94,30 @@ impl Thread {
             id: ThreadId::new(),
             root_proc,
             priority,
-            stack: Some(stack),
+            stack: Some(ThreadStacks::new(stack)),
             last_stack_ptr: Box::pin(stack_ptr),
             link: Link::default(),
         }
+    }
+
+    #[must_use]
+    /// Create a new thread with the given stack, and the root process' binary.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the root process does not have a binary.
+    pub fn new_from_binary(root_proc: Arc<Process>, priority: Priority, stack: Vec<u8>) -> Self {
+        assert!(
+            root_proc.binary_data.is_some(),
+            "Root process has no binary"
+        );
+
+        let trampoline = match root_proc.kind.ring() {
+            Ring::User => user_trampoline,
+            Ring::Kernel => todo!("Ring0 binary threads"),
+        };
+
+        Self::new(root_proc, priority, stack, trampoline)
     }
 
     /// Setup the stack and move stack pointer to the end of the stack.
@@ -151,13 +179,6 @@ impl Thread {
         self.priority = priority;
     }
 
-    // pub(super) fn allocate_stack(&mut self, size: usize) {
-    //     if self.stack.is_some() {
-    //         log::warn!("Thread stack already allocated");
-    //     }
-    //     self.stack = Some(alloc::vec![0; size]);
-    // }
-
     #[must_use]
     #[inline]
     pub const fn id(&self) -> ThreadId {
@@ -174,18 +195,6 @@ impl Thread {
     #[inline]
     pub fn process(&self) -> Arc<Process> {
         self.root_proc.clone()
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn stack(&self) -> Option<&[u8]> {
-        self.stack.as_ref().map(core::convert::AsRef::as_ref)
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn stack_mut(&mut self) -> Option<&mut [u8]> {
-        self.stack.as_mut().map(core::convert::AsMut::as_mut)
     }
 
     #[must_use]
@@ -256,4 +265,112 @@ pub struct ThreadRegisters {
     rax: u64,
     rflags: u64,
     rip: u64,
+}
+
+/// Trampoline function to load the binary and call the entry point.
+///
+/// ## Warning
+///
+/// This function should not be called directly, but rather be used
+/// as an entry point for threads.
+extern "C" fn user_trampoline() {
+    let root_proc = super::current_process();
+
+    // Load the binary into the process' address space.
+    let entry_point = root_proc.load_binary();
+
+    // Allocate a user stack
+    let rsp = super::get_scheduler()
+        .current_thread
+        .with_locked(|t| t.stack.as_mut().map(|ts| ts.allocate_user(4 * M4KiB::SIZE)))
+        .expect("Thread stack not found");
+
+    unsafe { crate::arch::userspace::enter_usermode(entry_point, rsp) };
+
+    // TODO: After tests, remove this
+    unreachable!("Thread trampline returned");
+}
+
+struct ThreadStacks {
+    /// The stack allocated in the kernel's address space.
+    ///
+    /// This can be the only stack used (ring0 processes) or
+    /// only used by the trampoline function (ring3 processes).
+    _kernel: Vec<u8>,
+    /// Page in the process' address space where the stack starts.
+    user_start_page: Once<Page>,
+    /// Size of the user stack in bytes.
+    user_size: Once<u64>,
+}
+
+impl ThreadStacks {
+    #[must_use]
+    #[inline]
+    pub const fn new(stack: Vec<u8>) -> Self {
+        Self {
+            _kernel: stack,
+            user_start_page: Once::uninit(),
+            user_size: Once::uninit(),
+        }
+    }
+
+    pub fn allocate_user(&self, size: u64) -> *mut u8 {
+        // FIXME: Use the process' page allocator to allocate the stack.
+        // FIXME: Allocate guarded ?
+        let page_range = page_alloc::with_page_allocator(|palloc| {
+            palloc.allocate_pages::<M4KiB>(size.div_ceil(M4KiB::SIZE))
+        })
+        .unwrap();
+
+        frame_alloc::with_frame_allocator(|fralloc| {
+            super::current_process()
+                .address_space()
+                .with_page_table(|pt| {
+                    let frame = fralloc.allocate_frame().unwrap();
+                    let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
+                    for page in page_range {
+                        pt.map(page, frame, flags, fralloc).flush();
+                    }
+                });
+        });
+
+        // FIXME: Even if the stack is already allocated, the above allocations still happen.
+        self.user_start_page.call_once(|| page_range.start);
+        self.user_size.call_once(|| page_range.len() * M4KiB::SIZE);
+
+        // Return the stack TOP
+        let stack_bottom = page_range.start.start_address().as_mut_ptr::<u8>();
+        #[cfg(debug_assertions)]
+        unsafe {
+            stack_bottom.write_bytes(STACK_DEBUG_INSTR, size.try_into().unwrap());
+        }
+        unsafe { stack_bottom.byte_add(size.try_into().unwrap()) }
+    }
+}
+
+impl Drop for ThreadStacks {
+    fn drop(&mut self) {
+        if let Some(&start_page) = self.user_start_page.get() {
+            let &size = self.user_size.get().unwrap();
+
+            let end_page = Page::<M4KiB>::containing_address(start_page.start_address() + size - 1);
+
+            frame_alloc::with_frame_allocator(|fralloc| {
+                super::current_process()
+                    .address_space()
+                    .with_page_table(|pt| {
+                        for page in Page::range_inclusive(start_page, end_page) {
+                            let (frame, tlb) = pt.unmap(page).unwrap();
+                            fralloc.deallocate_frame(frame);
+                            tlb.flush();
+                        }
+                    });
+            });
+
+            // FIXME: Use the process' page allocator to allocate the stack.
+            page_alloc::with_page_allocator(|palloc| {
+                palloc.free_pages(Page::range_inclusive(start_page, end_page));
+            });
+        }
+    }
 }

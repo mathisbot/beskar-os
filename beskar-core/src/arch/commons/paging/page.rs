@@ -72,7 +72,7 @@ impl Page<M1GiB> {
     #[inline]
     pub fn from_p4p3(p4: u16, p3: u16) -> Self {
         let addr = (u64::from(p4) << 39) | (u64::from(p3) << 30);
-        let vaddr = VirtAddr::new(addr);
+        let vaddr = VirtAddr::new_extend(addr);
 
         Self {
             start_address: vaddr,
@@ -92,7 +92,7 @@ impl Page<M2MiB> {
     #[inline]
     pub fn from_p4p3p2(p4: u16, p3: u16, p2: u16) -> Self {
         let addr = (u64::from(p4) << 39) | (u64::from(p3) << 30) | (u64::from(p2) << 21);
-        let vaddr = VirtAddr::new(addr);
+        let vaddr = VirtAddr::new_extend(addr);
 
         Self {
             start_address: vaddr,
@@ -121,7 +121,7 @@ impl Page<M4KiB> {
             | (u64::from(p3) << 30)
             | (u64::from(p2) << 21)
             | (u64::from(p1) << 12);
-        let vaddr = VirtAddr::new(addr);
+        let vaddr = VirtAddr::new_extend(addr);
 
         Self {
             start_address: vaddr,

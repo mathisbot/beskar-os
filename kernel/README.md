@@ -63,7 +63,7 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
     - [ ] VFS
 - Processes
     - [x] Scheduling
-    - [ ] User space
+    - [X] User space
     - [X] Binary loading
         - [X] ELF
 - Video

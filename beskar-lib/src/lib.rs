@@ -3,18 +3,19 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
-pub use beskar_core::syscall::ExitCode;
-use beskar_core::syscall::Syscall;
+pub use ::beskar_core::syscall::ExitCode;
+use ::beskar_core::syscall::Syscall;
 pub mod io;
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
+fn panic(_info: &::core::panic::PanicInfo) -> ! {
     exit(ExitCode::Failure)
 }
 
+/// Exit the program with the given exit code.
 pub fn exit(code: ExitCode) -> ! {
     unsafe {
-        core::arch::asm!(
+        ::core::arch::asm!(
             "syscall",
             in("rax") Syscall::Exit as u64,
             in("rdi") code as u64,
@@ -24,6 +25,7 @@ pub fn exit(code: ExitCode) -> ! {
 }
 
 #[macro_export]
+/// Sets the entry point for the program.
 macro_rules! entry_point {
     ($path:path) => {
         #[inline]

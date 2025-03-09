@@ -25,7 +25,6 @@ impl<'a> Binary<'a> {
     /// # Errors
     ///
     /// Returns an error if the binary is not valid.
-    #[must_use]
     pub fn load(&self) -> BinaryResult<LoadedBinary> {
         match self.kind {
             BinaryType::Elf => elf::load(self.input),

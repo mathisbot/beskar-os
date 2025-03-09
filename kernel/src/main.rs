@@ -34,7 +34,7 @@ fn kmain() -> ! {
         };
         extern crate alloc;
 
-        let root_proc = Arc::new(Process::new("Tests", kernel::process::Kind::Driver));
+        let root_proc = Arc::new(Process::new("Tests", kernel::process::Kind::Driver, None));
 
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             root_proc.clone(),
@@ -74,22 +74,22 @@ fn kmain() -> ! {
         // )));
 
         if let Some(ramdisk) = kernel::boot::ramdisk() {
-            let try_load = kernel::process::binary::Binary::new(
-                ramdisk,
-                kernel::process::binary::BinaryType::Elf,
-            )
-            .load();
-            if let Ok(binary) = try_load {
-                scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-                    root_proc.clone(),
-                    Priority::Normal,
-                    alloc::vec![0; 1024*256],
-                    binary.entry_point(),
-                )));
-                kernel::debug!("Ramdisk loaded!");
-            } else {
-                kernel::error!("Failed to load ramdisk");
-            }
+            // TODO: Only pass the file location to the process creation.
+            // File loading should be done in the process itself.
+            let user_proc = Arc::new(Process::new(
+                "User",
+                kernel::process::Kind::User,
+                Some(kernel::process::binary::Binary::new(
+                    ramdisk,
+                    kernel::process::binary::BinaryType::Elf,
+                )),
+            ));
+
+            scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new_from_binary(
+                user_proc,
+                Priority::Normal,
+                alloc::vec![0; 1024*64],
+            )));
         }
     });
 

@@ -22,6 +22,7 @@ pub fn init() {
             pid: ProcessId::new(),
             address_space: Tether::Reference(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
+            binary_data: None,
         })
     });
 
@@ -38,17 +39,20 @@ pub struct Process {
     pid: ProcessId,
     address_space: Tether<'static, AddressSpace>,
     kind: Kind,
+    // FIXME: Shouldn't be 'static
+    binary_data: Option<BinaryData<'static>>,
 }
 
 impl Process {
     #[must_use]
     #[inline]
-    pub fn new(name: &str, kind: Kind) -> Self {
+    pub fn new(name: &str, kind: Kind, binary: Option<binary::Binary<'static>>) -> Self {
         Self {
             name: name.to_string(),
             pid: ProcessId::new(),
             address_space: Tether::Owned(AddressSpace::new()),
             kind,
+            binary_data: binary.map(BinaryData::new),
         }
     }
 
@@ -74,6 +78,18 @@ impl Process {
     #[inline]
     pub const fn kind(&self) -> Kind {
         self.kind
+    }
+
+    /// Loads the process binary into memory and returns its entry point.
+    /// If the binary is already loaded, the only thing this function does is returning the entry point.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no binary data associated with the process.
+    fn load_binary(&self) -> extern "C" fn() {
+        let binary_data = self.binary_data.as_ref().unwrap();
+        binary_data.load();
+        binary_data.loaded.get().unwrap().entry_point()
     }
 }
 
@@ -107,7 +123,7 @@ impl ProcessId {
 #[repr(u8)]
 pub enum Kind {
     /// Vital process kind.
-    /// On panic or other critical errors, the while system will be halted.
+    /// On panic, the system will be halted.
     Kernel,
     /// Driver process kind.
     /// These are Ring 0 processes that are not vital for the system.
@@ -125,5 +141,36 @@ impl Kind {
             Self::Kernel | Self::Driver => Ring::Kernel,
             Self::User => Ring::User,
         }
+    }
+}
+
+struct BinaryData<'a> {
+    input: binary::Binary<'a>,
+    loaded: Once<binary::LoadedBinary>,
+}
+
+impl<'a> BinaryData<'a> {
+    #[must_use]
+    #[inline]
+    /// Creates a new binary data.
+    ///
+    /// Calling this function does **not** load the binary into memory,
+    /// it only tells the process that its binary exists and can be loaded.
+    pub const fn new(input: binary::Binary<'a>) -> Self {
+        Self {
+            input,
+            loaded: Once::uninit(),
+        }
+    }
+
+    /// Loads the binary into memory.
+    ///
+    /// More precisely, the input binary will be loaded into the address space of the **current** process.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the binary is invalid.
+    pub fn load(&self) {
+        self.loaded.call_once(|| self.input.load().unwrap());
     }
 }
