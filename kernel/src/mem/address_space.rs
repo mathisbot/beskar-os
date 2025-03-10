@@ -1,10 +1,13 @@
-use beskar_core::arch::commons::{
-    PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, M4KiB, Mapper as _, Page},
-};
 use beskar_core::arch::x86_64::{
     paging::page_table::{Entries, Flags, PageTable},
     registers::Cr3,
+};
+use beskar_core::{
+    arch::commons::{
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, M4KiB, Mapper as _, Page},
+    },
+    boot::KernelInfo,
 };
 
 use super::{frame_alloc, page_alloc};
@@ -12,10 +15,10 @@ use hyperdrive::{locks::mcs::McsLock, once::Once};
 
 static KERNEL_ADDRESS_SPACE: Once<AddressSpace> = Once::uninit();
 
-static KERNEL_CODE_ADDRESS: Once<VirtAddr> = Once::uninit();
+static KERNEL_CODE_INFO: Once<KernelInfo> = Once::uninit();
 
-pub fn init(recursive_index: u16, kernel_vaddr: VirtAddr) {
-    KERNEL_CODE_ADDRESS.call_once(|| kernel_vaddr);
+pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
+    KERNEL_CODE_INFO.call_once(|| *kernel_info);
 
     let kernel_pt = {
         let bootloader_pt_vaddr = {
@@ -43,7 +46,7 @@ pub fn init(recursive_index: u16, kernel_vaddr: VirtAddr) {
     });
 }
 
-// TODO: Free frames on drop? Useful for userland processes.
+// TODO: Free PT frames on drop? Useful for userland processes.
 pub struct AddressSpace {
     /// Page table of the address space
     ///
@@ -103,7 +106,7 @@ impl AddressSpace {
 
         // Copy the kernel's page table entries to the new address space
         let kernel_start_page =
-            Page::<M4KiB>::containing_address(*KERNEL_CODE_ADDRESS.get().unwrap());
+            Page::<M4KiB>::containing_address(KERNEL_CODE_INFO.get().unwrap().vaddr());
 
         with_kernel_pt(|current_pt| {
             // FIXME: Only copying the page table starting from the kernel's code entry
@@ -120,7 +123,7 @@ impl AddressSpace {
                 if pte.is_null() {
                     continue;
                 }
-                pt[i].set(pte.addr(), pte.flags());
+                pt[i] = *pte;
             }
         });
 
@@ -130,7 +133,6 @@ impl AddressSpace {
             .filter(|(_, e)| e.is_null())
             .next_back()
             .unwrap();
-        assert_ne!(index, 0, "No free PTEs in the new page table");
 
         pte.set(frame.start_address(), Flags::PRESENT | Flags::WRITABLE);
 

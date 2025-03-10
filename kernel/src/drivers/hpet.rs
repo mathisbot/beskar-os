@@ -453,7 +453,7 @@ pub fn init() -> DriverResult<()> {
 
     let mut general_configuration =
         GeneralConfiguration::new(PhysAddr::new(hpet_info.general_configuration().address()));
-    general_configuration.validate(); // TODO: Change valide: return a Result instead of panicking
+    general_configuration.validate();
     general_configuration.set_enable_cnf(false);
 
     let general_interrupt_status = GeneralInterruptStatus::new(
@@ -512,10 +512,6 @@ pub fn init() -> DriverResult<()> {
     HPET.init(hpet);
 
     Ok(())
-}
-
-impl Hpet {
-    // TODO: Implement methods!
 }
 
 pub fn try_with_hpet<R>(f: impl FnOnce(&mut Hpet) -> R) -> Option<R> {

@@ -4,8 +4,6 @@
 //! chapter 10  (p.286) (9 can also be useful) for more information.
 //!
 //! NB: All registers use host-endianess (LE), except for `ETherType` fiels, which use network-endianess (BE).
-#![allow(dead_code)] // TODO: Remove
-
 use core::ptr::NonNull;
 
 use alloc::vec::Vec;
@@ -37,7 +35,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     let Some(Bar::Memory(bar_reg)) =
         with_pci_handler(|handler| handler.read_bar(&network_controller, 0))
     else {
-        // TODO: Apparently, some network controllers use IO BARs
+        // FIXME: Apparently, some network controllers use IO BARs
         crate::warn!("Network controller does not have a memory BAR");
         return Err(DriverError::Absent);
     };
@@ -187,9 +185,11 @@ impl E1000e<'_> {
         if let Some(msix) = msix {
             msix.setup_int(crate::arch::interrupts::Irq::Nic, 0);
             pci::with_pci_handler(|handler| msix.enable(handler));
-        } else if let Some(_msi) = msi {
-            // TODO: Enable MSI
-            todo!("MSI not implemented");
+        } else if let Some(msi) = msi {
+            pci::with_pci_handler(|handler| {
+                msi.setup_int(crate::arch::interrupts::Irq::Nic, handler);
+                msi.enable(handler);
+            });
         } else {
             unreachable!("No MSI or MSI-X capability found for the network controller.");
         }

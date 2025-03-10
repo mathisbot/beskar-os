@@ -97,7 +97,6 @@ where
 {
     fn drop(&mut self) {
         // TODO: Is it possible to add frames to the frame allocator pool at some point?
-        // We don't need to keep memory reserved for ACPI once we've read the tables.
         // Be careful as the frame could be used by another mapping.
         let page_range =
             Page::<S>::range_inclusive(self.start_page, self.start_page + self.count - 1);

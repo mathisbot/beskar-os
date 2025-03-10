@@ -6,8 +6,10 @@ use core::{
 };
 
 use crate::mem::page_alloc;
-use beskar_core::arch::commons::paging::{M2MiB, MemSize, PageRangeInclusive};
-use beskar_core::arch::x86_64::paging::page_table::Flags;
+use beskar_core::arch::{
+    commons::paging::{CacheFlush as _, M2MiB, Mapper as _, MemSize, PageRangeInclusive},
+    x86_64::paging::page_table::Flags,
+};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::frame_alloc;
@@ -26,10 +28,19 @@ pub fn init() {
     });
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        frame_allocator.map_pages(
-            page_range,
-            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
-        );
+        super::address_space::with_kernel_pt(|page_table| {
+            for page in page_range {
+                let frame = frame_allocator.alloc::<M2MiB>().unwrap();
+                page_table
+                    .map(
+                        page,
+                        frame,
+                        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+                        frame_allocator,
+                    )
+                    .flush();
+            }
+        });
     });
 
     KERNEL_HEAP.init(Heap::new(page_range));

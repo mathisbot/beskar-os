@@ -174,10 +174,6 @@ fn get_scheduler() -> &'static Scheduler {
 }
 
 extern "C" fn clean_thread() {
-    // FIXME: If the cleaning process starts very soon,
-    // it often results in a bad free.
-    // idk what happens, so let's wait for a bit.
-    crate::time::wait(crate::time::Duration::from_millis(250));
     loop {
         if let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
             drop(thread);
@@ -250,6 +246,8 @@ pub fn change_current_thread_priority(priority: priority::Priority) {
 }
 
 /// Exits the current thread.
+///
+/// This function will enable interrupts, otherwise the system would halt.
 ///
 /// ## Safety
 ///

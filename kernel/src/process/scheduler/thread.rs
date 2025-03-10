@@ -286,9 +286,6 @@ extern "C" fn user_trampoline() {
         .expect("Thread stack not found");
 
     unsafe { crate::arch::userspace::enter_usermode(entry_point, rsp) };
-
-    // TODO: After tests, remove this
-    unreachable!("Thread trampline returned");
 }
 
 struct ThreadStacks {
@@ -316,9 +313,8 @@ impl ThreadStacks {
 
     pub fn allocate_user(&self, size: u64) -> *mut u8 {
         // FIXME: Use the process' page allocator to allocate the stack.
-        // FIXME: Allocate guarded ?
-        let page_range = page_alloc::with_page_allocator(|palloc| {
-            palloc.allocate_pages::<M4KiB>(size.div_ceil(M4KiB::SIZE))
+        let (page_range, _guard) = page_alloc::with_page_allocator(|palloc| {
+            palloc.allocate_guarded::<M4KiB>(size.div_ceil(M4KiB::SIZE))
         })
         .unwrap();
 
@@ -355,19 +351,24 @@ impl Drop for ThreadStacks {
 
             let end_page = Page::<M4KiB>::containing_address(start_page.start_address() + size - 1);
 
-            frame_alloc::with_frame_allocator(|fralloc| {
-                super::current_process()
-                    .address_space()
-                    .with_page_table(|pt| {
-                        for page in Page::range_inclusive(start_page, end_page) {
-                            let (frame, tlb) = pt.unmap(page).unwrap();
-                            fralloc.deallocate_frame(frame);
-                            tlb.flush();
-                        }
-                    });
-            });
+            // FIXME: This is WRONG!!!
+            // The process in charge of cleaning threads is a Kernel process,
+            // thus it does not have the stack in its address space.
+            // How to recover the frames used and free them ?
+            // frame_alloc::with_frame_allocator(|fralloc| {
+            //     super::current_process()
+            //         .address_space()
+            //         .with_page_table(|pt| {
+            //             for page in Page::range_inclusive(start_page, end_page) {
+            //                 let (frame, tlb) = pt.unmap(page).unwrap();
+            //                 fralloc.deallocate_frame(frame);
+            //                 tlb.flush();
+            //             }
+            //         });
+            // });
 
-            // FIXME: Use the process' page allocator to allocate the stack.
+            // TODO: When the process' page allocator is implemented, remove this
+            // as the allocator does not exist anymore.
             page_alloc::with_page_allocator(|palloc| {
                 palloc.free_pages(Page::range_inclusive(start_page, end_page));
             });

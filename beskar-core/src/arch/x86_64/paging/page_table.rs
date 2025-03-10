@@ -244,18 +244,13 @@ impl<'t> PageTable<'t> {
 
         if entry.is_null() {
             existed = false;
-            if let Some(frame) = allocator.allocate_frame() {
-                entry.set(
-                    frame.start_address(),
-                    Flags::PRESENT | Flags::WRITABLE | insert_flags,
-                );
-            } else {
-                panic!("Out of memory");
-            }
+
+            let frame = allocator.allocate_frame().unwrap();
+            entry.set(
+                frame.start_address(),
+                Flags::PRESENT | Flags::WRITABLE | insert_flags,
+            );
         } else {
-            // if !insert_flags.is_empty() && !entry.flags().contains(insert_flags) {
-            //     entry.set(entry.addr(), entry.flags() | insert_flags);
-            // }
             entry.update_flags(insert_flags);
         }
 

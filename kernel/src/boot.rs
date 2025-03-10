@@ -58,7 +58,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     crate::info!("BeskarOS kernel starting...");
 
-    mem::init(*recursive_index, memory_regions, kernel_info.vaddr());
+    mem::init(*recursive_index, memory_regions, kernel_info);
     crate::info!("Memory initialized");
 
     locals::init();

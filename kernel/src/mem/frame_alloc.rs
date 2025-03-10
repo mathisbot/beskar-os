@@ -5,12 +5,10 @@
 //!
 //! Allocated frames do not need to be contiguous.
 
-use super::address_space;
 use beskar_core::arch::commons::{
     PhysAddr,
-    paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, PageRangeInclusive},
+    paging::{Frame, M4KiB, MemSize},
 };
-use beskar_core::arch::x86_64::paging::page_table::{Flags, PageTable};
 use beskar_core::mem::{
     MemoryRegion, MemoryRegionUsage,
     ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
@@ -30,7 +28,6 @@ pub fn init(regions: &[MemoryRegion]) {
             usable_regions += 1;
         }
     }
-    // FIXME: Two stages init for dynamic sizing?
     assert!(usable_regions > 0, "No usable memory regions found");
     if usable_regions >= MAX_MEMORY_REGIONS {
         crate::warn!(
@@ -60,12 +57,14 @@ pub struct FrameAllocator {
 impl FrameAllocator {
     #[must_use]
     #[inline]
+    /// Allocate a frame anywhere in memory
     pub fn alloc<S: MemSize>(&mut self) -> Option<Frame<S>> {
-        self.alloc_request(&MemoryRangeRequest::<MAX_MEMORY_REGIONS>::DontCare)
+        self.alloc_request(&MemoryRangeRequest::<1>::DontCare)
     }
 
     #[must_use]
     #[inline]
+    /// Allocate a frame according to a specific request.
     pub fn alloc_request<S: MemSize, const M: usize>(
         &mut self,
         req_range: &MemoryRangeRequest<M>,
@@ -77,30 +76,12 @@ impl FrameAllocator {
         Some(Frame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
     }
 
-    // FIXME: Keep track of allocated frames?
-    // Here nothing ensures the caller has provided a valid frame
-    // (valid as in "usable memory region provided by the bootloader")
+    /// Free a frame
     pub fn free<S: MemSize>(&mut self, frame: Frame<S>) {
         self.memory_ranges.insert(MemoryRange::new(
             frame.start_address().as_u64(),
             frame.start_address().as_u64() + (frame.size() - 1),
         ));
-    }
-
-    /// Given a range of pages, allocate whatever frames are needed and map them to the pages.
-    pub fn map_pages<S: MemSize + core::fmt::Debug>(
-        &mut self,
-        pages: PageRangeInclusive<S>,
-        flags: Flags,
-    ) where
-        for<'a> PageTable<'a>: Mapper<S>,
-    {
-        address_space::with_kernel_pt(|page_table| {
-            for page in pages {
-                let frame = self.alloc::<S>().unwrap();
-                page_table.map(page, frame, flags, self).flush();
-            }
-        });
     }
 }
 

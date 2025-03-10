@@ -39,9 +39,8 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     if process::scheduler::is_scheduling_init() {
         use crate::arch::apic::ipi;
 
-        if process::scheduler::current_process().kind() != process::Kind::Kernel {
-            unsafe { process::scheduler::exit_current_thread() };
-        } else {
+        if process::scheduler::current_process().kind() == process::Kind::Kernel {
+            // If a kernel (vital) process panics, crash the whole system.
             KERNEL_PANIC.call_once(|| {
                 crate::error!("Kernel process panicked. Sending NMI to all cores.");
                 let ipi_nmi =
@@ -52,6 +51,9 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
                 unsafe { locals!().lapic().force_lock() }.send_ipi(&ipi_nmi);
                 // TODO: BSOD
             });
+        } else {
+            // Otherwise, it should be safe to kill the process and proceed.
+            unsafe { process::scheduler::exit_current_thread() };
         }
     }
 

@@ -34,7 +34,7 @@ impl<'a> Binary<'a> {
 
 pub struct LoadedBinary {
     entry_point: extern "C" fn(),
-    // TODO: Add information about the binary in memory to impl `Drop`
+    // TODO: Add information about the binary, such as frames, to impl `Drop`
 }
 
 impl LoadedBinary {

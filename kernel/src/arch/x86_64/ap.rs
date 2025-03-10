@@ -43,7 +43,6 @@ beskar_core::static_assert!(
     "AP trampoline code is too big"
 );
 
-// TODO: If the main core panics, all APs should stop.
 pub fn start_up_aps(core_count: usize) {
     if core_count <= 1 {
         return;
@@ -106,20 +105,16 @@ pub fn start_up_aps(core_count: usize) {
 
     // Wake up APs
     locals!().lapic().with_locked(|apic| {
-        // FIXME: Decide if the following advised boot sequence is mandatory or if
-        // this dumb code works just fine.
-        // <https://wiki.osdev.org/Symmetric_Multiprocessing#Startup_Sequence>
         apic.send_ipi(&Ipi::new(
             ipi::DeliveryMode::Init,
             ipi::Destination::AllExcludingSelf,
         ));
+        // FIXME: Is it useful to wait a bit here?
         // crate::time::tsc::wait_ms(10);
         apic.send_ipi(&Ipi::new(
             ipi::DeliveryMode::Sipi(sipi_payload),
             ipi::Destination::AllExcludingSelf,
         ));
-        // crate::time::tsc::wait_ms(100);
-        // apic.send_ipi(Ipi::new(ipi::DeliveryMode::Sipi(sipi_payload), ipi::Destination::AllExcludingSelf));
     });
 
     // Now, each AP will be waiting for a stack,
@@ -168,10 +163,19 @@ fn allocate_stack() {
     });
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        frame_allocator.map_pages(
-            stack_pages,
-            Flags::WRITABLE | Flags::PRESENT | Flags::NO_EXECUTE,
-        );
+        crate::mem::address_space::with_kernel_pt(|page_table| {
+            for page in stack_pages {
+                let frame = frame_allocator.alloc::<M4KiB>().unwrap();
+                page_table
+                    .map(
+                        page,
+                        frame,
+                        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+                        frame_allocator,
+                    )
+                    .flush();
+            }
+        });
     });
 
     let stack_top = (stack_pages.end.start_address() + M4KiB::SIZE - 1).align_down(16_u64);

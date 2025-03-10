@@ -27,7 +27,8 @@ pub struct BootInfo {
 pub struct KernelInfo {
     /// Physical address of the kernel ELF in memory.
     paddr: PhysAddr,
-    /// Virtual address of the loaded kernel image.
+    /// Virtual address of the loaded kernel image,
+    /// in the kernel's address space.
     vaddr: VirtAddr,
     /// Size of the kernel ELF in memory.
     size: u64,
@@ -49,7 +50,8 @@ impl KernelInfo {
 
     #[must_use]
     #[inline]
-    /// Returns the virtual address of the loaded kernel image.
+    /// Returns the virtual address of the loaded kernel image,
+    /// in the kernel's address space.
     pub const fn vaddr(&self) -> VirtAddr {
         self.vaddr
     }

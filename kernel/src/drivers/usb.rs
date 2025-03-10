@@ -21,7 +21,9 @@ pub fn init() -> DriverResult<()> {
             .collect::<Vec<_>>()
     });
 
-    host::init(&usb_controllers)
+    host::init(&usb_controllers)?;
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
