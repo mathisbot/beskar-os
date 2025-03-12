@@ -1,3 +1,5 @@
+use super::{super::scheduler, BinaryResult, LoadedBinary};
+use crate::mem::{frame_alloc, page_alloc};
 use beskar_core::arch::{
     commons::{
         VirtAddr,
@@ -13,13 +15,6 @@ use xmas_elf::{
     program::{self, SegmentData, Type},
     sections::Rela,
 };
-
-use crate::{
-    mem::{frame_alloc, page_alloc},
-    process::scheduler,
-};
-
-use super::{BinaryResult, LoadedBinary};
 
 macro_rules! faillible {
     ($expr:expr) => {
@@ -72,13 +67,21 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
     .unwrap();
     let working_offset = working_page_range.start.start_address();
 
+    debug_assert_eq!(page_range.size(), working_page_range.size());
+
     frame_alloc::with_frame_allocator(|fralloc| {
         scheduler::current_process()
             .address_space()
             .with_page_table(|pt| {
                 for (page, working_page) in page_range.into_iter().zip(working_page_range) {
                     let frame = fralloc.allocate_frame().unwrap();
-                    pt.map(page, frame, Flags::PRESENT, fralloc).flush();
+                    let mut dummy_flags = Flags::PRESENT | Flags::NO_EXECUTE;
+                    // FIXME: Not setting the USER_ACCESSIBLE flag results in a page fault.
+                    // I don't understand why, as the below code should set the correct flags when needed.
+                    if scheduler::current_process().kind().ring() == Ring::User {
+                        dummy_flags = dummy_flags | Flags::USER_ACCESSIBLE;
+                    }
+                    pt.map(page, frame, dummy_flags, fralloc).flush();
                     pt.map(
                         working_page,
                         frame,
@@ -195,9 +198,7 @@ fn handle_segment_load(
                 }
 
                 for page in Page::range_inclusive(segment_start_page, segment_end_page) {
-                    pt.update_flags(page, segment_flags)
-                        .expect("Failed to update flags")
-                        .flush();
+                    pt.update_flags(page, segment_flags).unwrap().flush();
                 }
 
                 // Copy the segment data from elf.input to the new location
@@ -270,7 +271,7 @@ fn zero_bss(
                 usize::try_from(M4KiB::SIZE).unwrap() / size_of::<usize>(),
             );
         }
-        // Finally, set the page with the correct flags (possibly without WRITABLE)
+        // Finally, set the page with the correct flags (potentially without WRITABLE)
         pt.update_flags(page, segment_flags).unwrap().flush();
     }
 }

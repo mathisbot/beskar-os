@@ -32,7 +32,6 @@ pub struct Thread {
     stack: Option<ThreadStacks>,
     /// Keeps track of where the stack is.
     ///
-    /// The usize is the last stack pointer.
     /// The reason it is a pinned `Box` is so that we can easily get a reference to it
     /// and update it when switching contexts.
     pub(super) last_stack_ptr: Pin<Box<*mut u8>>,
@@ -312,6 +311,8 @@ impl ThreadStacks {
     }
 
     pub fn allocate_user(&self, size: u64) -> *mut u8 {
+        assert!(size > 0);
+
         // FIXME: Use the process' page allocator to allocate the stack.
         let (page_range, _guard) = page_alloc::with_page_allocator(|palloc| {
             palloc.allocate_guarded::<M4KiB>(size.div_ceil(M4KiB::SIZE))
@@ -335,12 +336,15 @@ impl ThreadStacks {
         self.user_size.call_once(|| page_range.len() * M4KiB::SIZE);
 
         // Return the stack TOP
-        let stack_bottom = page_range.start.start_address().as_mut_ptr::<u8>();
+        let stack_bottom = page_range.start.start_address();
         #[cfg(debug_assertions)]
         unsafe {
-            stack_bottom.write_bytes(STACK_DEBUG_INSTR, size.try_into().unwrap());
+            stack_bottom
+                .as_mut_ptr::<u8>()
+                .write_bytes(STACK_DEBUG_INSTR, size.try_into().unwrap());
         }
-        unsafe { stack_bottom.byte_add(size.try_into().unwrap()) }
+        let stack_top = (stack_bottom + (size - 1)).align_down(16_u64);
+        stack_top.as_mut_ptr()
     }
 }
 

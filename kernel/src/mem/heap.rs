@@ -27,6 +27,11 @@ pub fn init() {
         page_allocator.allocate_pages(KERNEL_HEAP_PAGES).unwrap()
     });
 
+    crate::debug!(
+        "Kernel heap allocated at {:#x}",
+        page_range.start.start_address().as_u64()
+    );
+
     frame_alloc::with_frame_allocator(|frame_allocator| {
         super::address_space::with_kernel_pt(|page_table| {
             for page in page_range {

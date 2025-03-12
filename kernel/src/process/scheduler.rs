@@ -146,7 +146,18 @@ impl Scheduler {
             let old_should_exit = self.should_exit_thread.swap(false, Ordering::Relaxed);
 
             // Handle stack pointers.
-            let old_stack = old_thread.last_stack_ptr_mut();
+            let old_stack = if old_should_exit {
+                // In the case of the thread exiting, we cannot write to the `Thread` struct anymore.
+                // Therefore, we write to a useless static variable because we won't need RSP value.
+                static mut USELESS: *mut u8 = core::ptr::null_mut();
+                #[allow(static_mut_refs)]
+                // Safety: There will be data races, but we don't care lol
+                unsafe {
+                    &mut USELESS
+                }
+            } else {
+                old_thread.last_stack_ptr_mut()
+            };
             let new_stack = thread.last_stack_ptr();
 
             if old_should_exit {

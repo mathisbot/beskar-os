@@ -105,20 +105,19 @@ impl AddressSpace {
         let mut pt = Entries::new();
 
         // Copy the kernel's page table entries to the new address space
-        let kernel_start_page =
-            Page::<M4KiB>::containing_address(KERNEL_CODE_INFO.get().unwrap().vaddr());
-
         with_kernel_pt(|current_pt| {
-            // FIXME: Only copying the page table starting from the kernel's code entry
-            // triggers a triple fault. Is it the IDT?
-            // FIXME: The IDT is on the kernel heap, which can be anywhere in the address space.
-            pt[0] = current_pt[0];
+            // FIXME: Is it safe to copy the whole PML4?
+            // In fact we should only need kernel code, heap, fb, and stack.
+            // maybe more?
 
-            for (i, pte) in current_pt
-                .entries()
-                .iter()
-                .enumerate()
-                .skip(kernel_start_page.p4_index().into())
+            // let kcode_info = KERNEL_CODE_INFO.get().unwrap();
+            // let kernel_start_page = Page::<M4KiB>::containing_address(kcode_info.vaddr());
+            // let kernel_end_page =
+            //     Page::<M4KiB>::containing_address(kcode_info.vaddr() + kcode_info.size());
+
+            for (i, pte) in current_pt.entries().iter().enumerate()
+            // .take(kernel_end_page.p4_index().into())
+            // .skip(kernel_start_page.p4_index().into())
             {
                 if pte.is_null() {
                     continue;

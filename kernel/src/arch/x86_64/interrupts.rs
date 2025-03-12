@@ -145,11 +145,11 @@ macro_rules! info_isr {
     ($name:ident) => {
         extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
             crate::info!(
-                "{} INTERRUPT on core {}",
+                "{} INTERRUPT on core {} - t{}",
                 stringify!($name),
-                locals!().core_id()
+                locals!().core_id(),
+                $crate::process::scheduler::current_thread_id().as_u64()
             );
-            locals!().lapic().with_locked(|lapic| lapic.send_eoi());
         }
     };
 }
