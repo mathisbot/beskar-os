@@ -39,9 +39,20 @@ fn sc_print(args: &Arguments) -> SyscallExitCode {
 }
 
 fn sc_exit(args: &Arguments) -> ! {
-    // TODO: Use exit code
-    let _exit_code = args.one;
+    #[cfg_attr(not(debug_assertions), allow(unused_variables))]
+    let exit_code = args.one;
 
-    unsafe { crate::process::scheduler::exit_current_thread() };
-    unreachable!()
+    #[cfg(debug_assertions)]
+    {
+        let exit_code = beskar_core::syscall::ExitCode::try_from(exit_code);
+        let tid = crate::process::scheduler::current_thread_id();
+
+        if let Ok(exit_code) = exit_code {
+            crate::debug!("Thread {} exited with code {:?}", tid.as_u64(), exit_code);
+        } else {
+            crate::debug!("Thread {} exited with invalid code", tid.as_u64());
+        }
+    }
+
+    unsafe { crate::process::scheduler::exit_current_thread() }
 }

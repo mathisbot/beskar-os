@@ -37,25 +37,24 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     );
 
     if process::scheduler::is_scheduling_init() {
-        unsafe { process::scheduler::exit_current_thread() };
-        // TODO: Find a better way to determine if the current process is critical.
+        use crate::arch::apic::ipi;
 
-        // use crate::arch::apic::ipi;
-
-        // if *unsafe { process::scheduler::current_process() }.pid() != 0 {
-        //     unsafe { process::scheduler::exit_current_thread() };
-        // } else {
-        //     KERNEL_PANIC.call_once(|| {
-        //         crate::error!("Kernel process panicked. Sending NMI to all cores.");
-        //         let ipi_nmi =
-        //         ipi::Ipi::new(ipi::DeliveryMode::Nmi, ipi::Destination::AllExcludingSelf);
-        //         // FIXME: While the system is unlikely to panic during logging,
-        //         // NMI can be received at any time, including during logging
-        //         // (resulting in a deadlock if the screen is locked).
-        //         unsafe { locals!().lapic().force_lock() }.send_ipi(&ipi_nmi);
-        //         // TODO: BSOD
-        //     });
-        // }
+        if process::scheduler::current_process().kind() == process::Kind::Kernel {
+            // If a kernel (vital) process panics, crash the whole system.
+            KERNEL_PANIC.call_once(|| {
+                crate::error!("Kernel process panicked. Sending NMI to all cores.");
+                let ipi_nmi =
+                    ipi::Ipi::new(ipi::DeliveryMode::Nmi, ipi::Destination::AllExcludingSelf);
+                // FIXME: While the system is unlikely to panic during logging,
+                // NMI can be received at any time, including during logging
+                // (resulting in a deadlock if the screen is locked).
+                unsafe { locals!().lapic().force_lock() }.send_ipi(&ipi_nmi);
+                // TODO: BSOD
+            });
+        } else {
+            // Otherwise, it should be safe to kill the process and proceed.
+            unsafe { process::scheduler::exit_current_thread() };
+        }
     }
 
     loop {

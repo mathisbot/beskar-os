@@ -188,11 +188,26 @@ mod tests {
         let frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1000)).unwrap();
         assert_eq!(frame.size(), M4KiB::SIZE);
         assert_eq!(frame.start_address(), PhysAddr::new(0x1000));
+
+        let same_frame = Frame::<M4KiB>::containing_address(PhysAddr::new(0x1FFF));
+        assert_eq!(same_frame, frame);
     }
 
     #[test]
     fn test_f_unaligned() {
-        assert!(Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1001)).is_err());
+        let unaligned_frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1001));
+        assert!(unaligned_frame.is_err());
+    }
+
+    #[test]
+    fn test_f_op() {
+        let frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x2000)).unwrap();
+        let next_frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x3000)).unwrap();
+        let previous_frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1000)).unwrap();
+
+        assert_eq!(frame + 1, next_frame);
+        assert_eq!(frame - 1, previous_frame);
+        assert_eq!(next_frame - frame, 1);
     }
 
     #[test]
@@ -202,5 +217,15 @@ mod tests {
         let range = Frame::range_inclusive(start, end);
         assert_eq!(range.len(), 2);
         assert_eq!(range.size(), 2 * M4KiB::SIZE);
+
+        let mut iter = range.into_iter();
+        let first = iter.next().unwrap();
+        let second = iter.next().unwrap();
+        assert_eq!(first, start);
+        assert_eq!(second, end);
+        assert!(iter.next().is_none());
+
+        let empty_range = Frame::range_inclusive(end, start);
+        assert!(empty_range.is_empty());
     }
 }

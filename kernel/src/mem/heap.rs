@@ -6,8 +6,10 @@ use core::{
 };
 
 use crate::mem::page_alloc;
-use beskar_core::arch::commons::paging::{M2MiB, MemSize, PageRangeInclusive};
-use beskar_core::arch::x86_64::paging::page_table::Flags;
+use beskar_core::arch::{
+    commons::paging::{CacheFlush as _, M2MiB, Mapper as _, MemSize, PageRangeInclusive},
+    x86_64::paging::page_table::Flags,
+};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::frame_alloc;
@@ -25,19 +27,31 @@ pub fn init() {
         page_allocator.allocate_pages(KERNEL_HEAP_PAGES).unwrap()
     });
 
+    crate::debug!(
+        "Kernel heap allocated at {:#x}",
+        page_range.start.start_address().as_u64()
+    );
+
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        frame_allocator.map_pages(
-            page_range,
-            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
-        );
+        super::address_space::with_kernel_pt(|page_table| {
+            for page in page_range {
+                let frame = frame_allocator.alloc::<M2MiB>().unwrap();
+                page_table
+                    .map(
+                        page,
+                        frame,
+                        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+                        frame_allocator,
+                    )
+                    .flush();
+            }
+        });
     });
 
     KERNEL_HEAP.init(Heap::new(page_range));
 }
 
 struct Heap {
-    // start: NonZeroU64,
-    // end: NonZeroU64,
     // TODO: Add faster allocator
     linked_list: linked_list_allocator::Heap,
 }
@@ -52,11 +66,7 @@ impl Heap {
             linked_list_allocator::Heap::new(page_range.start.start_address().as_mut_ptr(), size)
         };
 
-        Self {
-            // start: start_address.try_into().unwrap(),
-            // end: end_address.try_into().unwrap(),
-            linked_list,
-        }
+        Self { linked_list }
     }
 
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {

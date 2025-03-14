@@ -1,7 +1,6 @@
 use core::{cell::UnsafeCell, mem::MaybeUninit};
 
 use x86_64::{
-    instructions::tables::load_tss,
     registers::segmentation::{CS, Segment},
     structures::{
         gdt::{GlobalDescriptorTable, SegmentSelector},
@@ -10,7 +9,10 @@ use x86_64::{
 };
 
 use crate::mem::{frame_alloc, page_alloc};
-use beskar_core::arch::commons::paging::{M4KiB, MemSize as _, Page};
+use beskar_core::arch::{
+    commons::paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _},
+    x86_64::instructions::load_tss,
+};
 
 use beskar_core::arch::x86_64::paging::page_table::Flags;
 
@@ -63,7 +65,9 @@ impl Gdt {
         inner.user_data_selector.write(user_data_selector);
         inner.user_code_selector.write(user_code_selector);
 
-        let tss_selector = gdt.append(x86_64::structures::gdt::Descriptor::tss_segment(tss));
+        let tss_selector = gdt
+            .append(x86_64::structures::gdt::Descriptor::tss_segment(tss))
+            .0;
 
         let gdt = inner.gdt.write(gdt);
         gdt.load();
@@ -77,24 +81,28 @@ impl Gdt {
     #[must_use]
     fn create_tss() -> TaskStateSegment {
         fn alloc_stack(count: u64) -> x86_64::VirtAddr {
-            let (page_range, guard_page) = page_alloc::with_page_allocator(|page_allocator| {
+            let (page_range, _guard_page) = page_alloc::with_page_allocator(|page_allocator| {
                 page_allocator.allocate_guarded::<M4KiB>(count).unwrap()
             });
 
             frame_alloc::with_frame_allocator(|frame_allocator| {
-                frame_allocator.map_pages(
-                    page_range,
-                    Flags::WRITABLE | Flags::PRESENT | Flags::NO_EXECUTE,
-                );
-                frame_allocator.map_pages(
-                    Page::range_inclusive(guard_page, guard_page),
-                    Flags::PRESENT | Flags::NO_EXECUTE,
-                );
+                crate::mem::address_space::with_kernel_pt(|page_table| {
+                    for page in page_range {
+                        let frame = frame_allocator.alloc::<M4KiB>().unwrap();
+                        page_table
+                            .map(
+                                page,
+                                frame,
+                                Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+                                frame_allocator,
+                            )
+                            .flush();
+                    }
+                });
             });
 
-            x86_64::VirtAddr::new(
-                (page_range.end.start_address().as_u64() + (M4KiB::SIZE - 1)) & !0xF,
-            )
+            x86_64::VirtAddr::new(page_range.end.start_address().as_u64() + (M4KiB::SIZE - 1))
+                .align_down(16_u64)
         }
 
         let mut tss = TaskStateSegment::new();

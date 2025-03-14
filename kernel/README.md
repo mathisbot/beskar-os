@@ -25,9 +25,9 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [x] HPET
         - [x] MCFG
         - [ ] FADT
-    - [ ] PCI/PCIe
+    - [X] PCI/PCIe
         - [x] Devices
-        - [ ] MSI/MSI-X (partial)
+        - [X] MSI/MSI-X
     - [ ] USB
         - [ ] xHCI driver
         - [ ] USB 1/2/3 driver
@@ -52,18 +52,20 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
             - [ ] Sockets
     - Storage
         - [ ] AHCI
-        - [ ] NVMe
+        - [ ] NVMe (partial)
 - Memory
     - [x] Paging
     - [x] Physical/Virtual Allocators
-    - [ ] Address spaces (partial)
+    - [x] Address spaces
 - FS
     - [ ] GPT
     - [ ] ext2/ext4
+    - [ ] VFS
 - Processes
     - [x] Scheduling
-    - [ ] User space
-    - [ ] ELF loading
+    - [X] User space
+    - [X] Binary loading
+        - [X] ELF
 - Video
     - [x] Character rendering
     - [x] Logging

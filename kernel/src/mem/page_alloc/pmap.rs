@@ -8,12 +8,12 @@ use beskar_core::arch::commons::{
 };
 use beskar_core::arch::x86_64::paging::page_table::{Flags, PageTable};
 
-use crate::mem::{frame_alloc, page_alloc, page_table};
+use crate::mem::{address_space, frame_alloc, page_alloc};
 
 #[derive(Debug)]
 /// Physical Mapping structure
 ///
-/// Be careful to only used the original mapped length, as accessing outside
+/// Be careful to only use the original mapped length, as accessing outside
 /// could result in undefined behavior if the memory is used by another mapping.
 pub struct PhysicalMapping<S: MemSize = M4KiB>
 where
@@ -55,7 +55,7 @@ where
         });
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
-            page_table::with_page_table(|page_table| {
+            address_space::with_kernel_pt(|page_table| {
                 for (frame, page) in frame_range.into_iter().zip(page_range) {
                     page_table
                         .map(page, frame, flags | Flags::PRESENT, frame_allocator)
@@ -97,12 +97,11 @@ where
 {
     fn drop(&mut self) {
         // TODO: Is it possible to add frames to the frame allocator pool at some point?
-        // We don't need to keep memory reserved for ACPI once we've read the tables.
         // Be careful as the frame could be used by another mapping.
         let page_range =
             Page::<S>::range_inclusive(self.start_page, self.start_page + self.count - 1);
 
-        page_table::with_page_table(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             for page in page_range {
                 let (_frame, tlb) = page_table.unmap(page).unwrap();
                 tlb.flush();

@@ -36,3 +36,21 @@ impl SyscallExitCode {
         assert_ne!(self, Self::Failure, "Syscall failed!");
     }
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ExitCode {
+    Success = 0,
+    Failure = 1,
+}
+
+impl TryFrom<u64> for ExitCode {
+    type Error = ();
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Success),
+            1 => Ok(Self::Failure),
+            _ => Err(()),
+        }
+    }
+}

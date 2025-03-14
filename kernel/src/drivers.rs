@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod acpi;
 pub mod hpet;
 pub mod nic;

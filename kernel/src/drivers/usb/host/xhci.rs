@@ -1,6 +1,3 @@
-// TODO: Remove
-#![allow(dead_code)]
-
 use beskar_core::arch::commons::{PhysAddr, paging::M4KiB};
 
 use crate::mem::page_alloc::pmap::{self, PhysicalMapping};

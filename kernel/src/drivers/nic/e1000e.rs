@@ -4,8 +4,6 @@
 //! chapter 10  (p.286) (9 can also be useful) for more information.
 //!
 //! NB: All registers use host-endianess (LE), except for `ETherType` fiels, which use network-endianess (BE).
-#![allow(dead_code)] // TODO: Remove
-
 use core::ptr::NonNull;
 
 use alloc::vec::Vec;
@@ -37,7 +35,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     let Some(Bar::Memory(bar_reg)) =
         with_pci_handler(|handler| handler.read_bar(&network_controller, 0))
     else {
-        // TODO: Apparently, some network controllers use IO BARs
+        // FIXME: Apparently, some network controllers use IO BARs
         crate::warn!("Network controller does not have a memory BAR");
         return Err(DriverError::Absent);
     };
@@ -179,7 +177,7 @@ impl E1000e<'_> {
         // FIXME: Only one pass over the capabilities is needed
         let msix = pci::with_pci_handler(|handler| pci::msix::MsiX::new(handler, &self.pci_device));
         let msi = if msix.is_none() {
-            pci::with_pci_handler(|handler| pci::msi::find_msi_cap(handler, &self.pci_device))
+            pci::with_pci_handler(|handler| pci::msi::Msi::new(handler, &self.pci_device))
         } else {
             None
         };
@@ -187,9 +185,11 @@ impl E1000e<'_> {
         if let Some(msix) = msix {
             msix.setup_int(crate::arch::interrupts::Irq::Nic, 0);
             pci::with_pci_handler(|handler| msix.enable(handler));
-        } else if let Some(_msi) = msi {
-            // TODO: Enable MSI
-            todo!("MSI not implemented");
+        } else if let Some(msi) = msi {
+            pci::with_pci_handler(|handler| {
+                msi.setup_int(crate::arch::interrupts::Irq::Nic, handler);
+                msi.enable(handler);
+            });
         } else {
             unreachable!("No MSI or MSI-X capability found for the network controller.");
         }
@@ -348,7 +348,7 @@ impl BufferSet<'_> {
         let flags = pmap::FLAGS_MMIO;
         let descriptor_frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
             let frame = fralloc.alloc::<M4KiB>().unwrap();
-            crate::mem::page_table::with_page_table(|page_table| {
+            crate::mem::address_space::with_kernel_pt(|page_table| {
                 page_table
                     .map(descriptor_page, frame, flags, fralloc)
                     .flush();
@@ -376,7 +376,7 @@ impl BufferSet<'_> {
         for (i, page) in page_range.into_iter().take(nb_rx).enumerate() {
             let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
                 let frame = fralloc.alloc::<M4KiB>().unwrap();
-                crate::mem::page_table::with_page_table(|page_table| {
+                crate::mem::address_space::with_kernel_pt(|page_table| {
                     page_table.map(page, frame, flags, fralloc).flush();
                 });
                 frame
@@ -401,7 +401,7 @@ impl BufferSet<'_> {
         for (i, page) in page_range.into_iter().skip(nb_rx).take(nb_tx).enumerate() {
             let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
                 let frame = fralloc.alloc::<M4KiB>().unwrap();
-                crate::mem::page_table::with_page_table(|page_table| {
+                crate::mem::address_space::with_kernel_pt(|page_table| {
                     page_table.map(page, frame, flags, fralloc).flush();
                 });
                 frame
@@ -478,7 +478,7 @@ impl Drop for BufferSet<'_> {
         );
 
         for page in buffer_page_range {
-            let frame = crate::mem::page_table::with_page_table(|pt| {
+            let frame = crate::mem::address_space::with_kernel_pt(|pt| {
                 let (frame, tlb) = pt.unmap(page).unwrap();
                 tlb.flush();
                 frame
@@ -490,7 +490,7 @@ impl Drop for BufferSet<'_> {
         let descriptors_page =
             Page::<M4KiB>::from_start_address(VirtAddr::new(self.rx_descriptors.as_ptr() as u64))
                 .unwrap();
-        let descriptors_frame = crate::mem::page_table::with_page_table(|pt| {
+        let descriptors_frame = crate::mem::address_space::with_kernel_pt(|pt| {
             let (frame, tlb) = pt.unmap(descriptors_page).unwrap();
             tlb.flush();
             frame

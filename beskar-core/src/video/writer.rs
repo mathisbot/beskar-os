@@ -58,7 +58,6 @@ impl FramebufferWriter {
                     self.newline();
                 }
                 if self.y + CHAR_HEIGHT + LINE_SPACING + BORDER_PADDING >= self.info.height() {
-                    // TODO: Clear or scroll up ?
                     self.clear_screen(buffer);
                 }
 

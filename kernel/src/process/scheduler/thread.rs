@@ -5,8 +5,18 @@ use core::{
 };
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use beskar_core::arch::x86_64::registers::Rflags;
-use hyperdrive::queues::mpsc::{Link, Queueable};
+use beskar_core::arch::{
+    commons::paging::{
+        CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive,
+    },
+    x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags, userspace::Ring},
+};
+use hyperdrive::{
+    once::Once,
+    queues::mpsc::{Link, Queueable},
+};
+
+use crate::mem::{frame_alloc, page_alloc};
 
 use super::{super::Process, priority::Priority};
 
@@ -21,13 +31,9 @@ pub struct Thread {
     /// The priority of the thread.
     priority: Priority,
     /// Used to keep ownership of the stack when needed.
-    stack: Option<Vec<u8>>,
+    stack: Option<ThreadStacks>,
     /// Keeps track of where the stack is.
-    ///
-    /// The usize is the last stack pointer.
-    /// The reason it is a pinned `Box` is so that we can easily get a reference to it
-    /// and update it when switching contexts.
-    pub(super) last_stack_ptr: Pin<Box<*mut u8>>,
+    pub(super) last_stack_ptr: *mut u8,
 
     /// Link to the next thread in the queue.
     pub(super) link: Link<Self>,
@@ -62,18 +68,18 @@ impl Thread {
             priority: Priority::High,
             stack: None,
             // Will be overwritten before being used.
-            last_stack_ptr: Box::pin(core::ptr::null_mut()),
+            last_stack_ptr: core::ptr::null_mut(),
             link: Link::default(),
         }
     }
 
     #[must_use]
-    #[inline]
+    /// Create a new thread with a given entry point and stack.
     pub fn new(
         root_proc: Arc<Process>,
         priority: Priority,
         mut stack: Vec<u8>,
-        entry_point: fn(),
+        entry_point: extern "C" fn(),
     ) -> Self {
         let mut stack_ptr = stack.as_mut_ptr(); // Stack grows downwards
 
@@ -86,16 +92,37 @@ impl Thread {
             id: ThreadId::new(),
             root_proc,
             priority,
-            stack: Some(stack),
-            last_stack_ptr: Box::pin(stack_ptr),
+            stack: Some(ThreadStacks::new(stack)),
+            last_stack_ptr: stack_ptr,
             link: Link::default(),
         }
     }
 
+    #[must_use]
+    /// Create a new thread with the given stack, and the root process' binary.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the root process does not have a binary.
+    pub fn new_from_binary(root_proc: Arc<Process>, priority: Priority, stack: Vec<u8>) -> Self {
+        assert!(
+            root_proc.binary_data.is_some(),
+            "Root process has no binary"
+        );
+
+        let trampoline = match root_proc.kind.ring() {
+            Ring::User => user_trampoline,
+            Ring::Kernel => todo!("Ring0 binary threads"),
+        };
+
+        Self::new(root_proc, priority, stack, trampoline)
+    }
+
     /// Setup the stack and move stack pointer to the end of the stack.
-    fn setup_stack(stack_ptr: *mut u8, stack: &mut [u8], entry_point: fn()) -> usize {
+    fn setup_stack(stack_ptr: *mut u8, stack: &mut [u8], entry_point: extern "C" fn()) -> usize {
         // Can be used to detect stack overflow
-        stack.fill(0xCD);
+        #[cfg(debug_assertions)]
+        stack.fill(STACK_DEBUG_INSTR);
 
         let mut stack_bottom = stack.len();
         assert!(
@@ -135,7 +162,7 @@ impl Thread {
             root_proc,
             priority: Priority::Null,
             stack: None,
-            last_stack_ptr: Box::pin(core::ptr::null_mut()),
+            last_stack_ptr: core::ptr::null_mut(),
             link: Link::default(),
         }
     }
@@ -149,13 +176,6 @@ impl Thread {
     pub(super) const unsafe fn set_priority(&mut self, priority: Priority) {
         self.priority = priority;
     }
-
-    // pub(super) fn allocate_stack(&mut self, size: usize) {
-    //     if self.stack.is_some() {
-    //         log::warn!("Thread stack already allocated");
-    //     }
-    //     self.stack = Some(alloc::vec![0; size]);
-    // }
 
     #[must_use]
     #[inline]
@@ -177,28 +197,16 @@ impl Thread {
 
     #[must_use]
     #[inline]
-    pub fn stack(&self) -> Option<&[u8]> {
-        self.stack.as_ref().map(core::convert::AsRef::as_ref)
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn stack_mut(&mut self) -> Option<&mut [u8]> {
-        self.stack.as_mut().map(core::convert::AsMut::as_mut)
-    }
-
-    #[must_use]
-    #[inline]
     /// Returns the value of the last stack pointer.
     pub fn last_stack_ptr(&self) -> *const u8 {
-        *self.last_stack_ptr.as_ref()
+        self.last_stack_ptr
     }
 
     #[must_use]
     #[inline]
     /// Returns a mutable pointer to the last stack pointer.
     pub fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
-        self.last_stack_ptr.as_mut().get_mut()
+        &mut self.last_stack_ptr
     }
 }
 
@@ -255,4 +263,111 @@ pub struct ThreadRegisters {
     rax: u64,
     rflags: u64,
     rip: u64,
+}
+
+/// Trampoline function to load the binary and call the entry point.
+///
+/// ## Warning
+///
+/// This function should not be called directly, but rather be used
+/// as an entry point for threads.
+extern "C" fn user_trampoline() {
+    let root_proc = super::current_process();
+
+    // Load the binary into the process' address space.
+    let entry_point = root_proc.load_binary();
+
+    // Allocate a user stack
+    let rsp = super::get_scheduler()
+        .current_thread
+        .with_locked(|t| t.stack.as_mut().map(|ts| ts.allocate_user(4 * M4KiB::SIZE)))
+        .expect("Thread stack not found");
+
+    unsafe { crate::arch::userspace::enter_usermode(entry_point, rsp) };
+}
+
+struct ThreadStacks {
+    /// The stack allocated in the kernel's address space.
+    ///
+    /// This can be the only stack used (ring0 processes) or
+    /// only used by the trampoline function (ring3 processes).
+    _kernel: Vec<u8>,
+    /// Page range in the process' address space of the stack.
+    user_pages: Once<PageRangeInclusive>,
+}
+
+impl ThreadStacks {
+    #[must_use]
+    #[inline]
+    pub const fn new(stack: Vec<u8>) -> Self {
+        Self {
+            _kernel: stack,
+            user_pages: Once::uninit(),
+        }
+    }
+
+    pub fn allocate_user(&self, size: u64) -> *mut u8 {
+        assert!(size > 0);
+
+        // FIXME: Use the process' page allocator to allocate the stack.
+        let (page_range, _guard) = page_alloc::with_page_allocator(|palloc| {
+            palloc.allocate_guarded::<M4KiB>(size.div_ceil(M4KiB::SIZE))
+        })
+        .unwrap();
+
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
+        frame_alloc::with_frame_allocator(|fralloc| {
+            super::current_process()
+                .address_space()
+                .with_page_table(|pt| {
+                    let frame = fralloc.allocate_frame().unwrap();
+                    for page in page_range {
+                        pt.map(page, frame, flags, fralloc).flush();
+                    }
+                });
+        });
+
+        // FIXME: Even if the stack is already allocated, the above allocations still happen.
+        self.user_pages.call_once(|| page_range);
+
+        // Return the stack TOP
+        let stack_bottom = page_range.start.start_address();
+        let size = page_range.size();
+        #[cfg(debug_assertions)]
+        unsafe {
+            stack_bottom
+                .as_mut_ptr::<u8>()
+                .write_bytes(STACK_DEBUG_INSTR, size.try_into().unwrap());
+        }
+        let stack_top = (stack_bottom + (size - 1)).align_down(16_u64);
+        stack_top.as_mut_ptr()
+    }
+}
+
+impl Drop for ThreadStacks {
+    fn drop(&mut self) {
+        if let Some(&page_range) = self.user_pages.get() {
+            // FIXME: This is WRONG!!!
+            // The process in charge of cleaning threads is a Kernel process,
+            // thus it does not have the stack in its address space.
+            // How to recover the frames used and free them ?
+            // frame_alloc::with_frame_allocator(|fralloc| {
+            //     super::current_process()
+            //         .address_space()
+            //         .with_page_table(|pt| {
+            //             for page in Page::range_inclusive(start_page, end_page) {
+            //                 let (frame, tlb) = pt.unmap(page).unwrap();
+            //                 fralloc.deallocate_frame(frame);
+            //                 tlb.flush();
+            //             }
+            //         });
+            // });
+
+            // TODO: When the process' page allocator is implemented, remove this
+            // as the allocator does not exist anymore.
+            page_alloc::with_page_allocator(|palloc| {
+                palloc.free_pages(page_range);
+            });
+        }
+    }
 }

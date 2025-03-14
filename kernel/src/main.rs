@@ -1,8 +1,14 @@
 #![no_main]
 #![no_std]
 
+extern crate alloc;
+
+use alloc::sync::Arc;
 use hyperdrive::once::Once;
-use kernel::{locals, process::scheduler};
+use kernel::{
+    locals,
+    process::{Process, scheduler},
+};
 
 kernel::kernel_main!(kmain);
 
@@ -28,7 +34,7 @@ fn kmain() -> ! {
         };
         extern crate alloc;
 
-        let root_proc = scheduler::current_process();
+        let root_proc = Arc::new(Process::new("Tests", kernel::process::Kind::Driver, None));
 
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             root_proc.clone(),
@@ -42,12 +48,6 @@ fn kmain() -> ! {
             alloc::vec![0; 1024*256],
             dummy::counter,
         )));
-        // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-        //     root_proc.clone(),
-        //     Priority::Low,
-        //     alloc::vec![0; 1024*1024],
-        //     dummy::alloc_intensive,
-        // )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             root_proc.clone(),
             Priority::Low,
@@ -60,20 +60,34 @@ fn kmain() -> ! {
             alloc::vec![0; 1024*256],
             dummy::floating_point,
         )));
-        // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-        //     root_proc.clone(),
-        //     Priority::Low,
-        //     alloc::vec![0; 1024*256],
-        //     dummy::syscall_test,
-        // )));
+
+        let root_proc = Arc::new(Process::new("Tests2!", kernel::process::Kind::Driver, None));
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            root_proc.clone(),
+            Priority::Normal,
+            alloc::vec![0; 1024*256],
+            dummy::counter,
+        )));
+
+        if let Some(ramdisk) = kernel::boot::ramdisk() {
+            // TODO: Only pass the file location to the process creation.
+            // File loading should be done in the process itself.
+            let user_proc = Arc::new(Process::new(
+                "User",
+                kernel::process::Kind::User,
+                Some(kernel::process::binary::Binary::new(
+                    ramdisk,
+                    kernel::process::binary::BinaryType::Elf,
+                )),
+            ));
+
+            scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new_from_binary(
+                user_proc.clone(),
+                Priority::Normal,
+                alloc::vec![0; 1024*64],
+            )));
+        }
     });
 
-    unsafe { kernel::process::scheduler::exit_current_thread() };
-
-    kernel::error!(
-        "Kernel main function reached the end on core {}",
-        locals!().core_id()
-    );
-
-    unreachable!()
+    unsafe { kernel::process::scheduler::exit_current_thread() }
 }

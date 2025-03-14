@@ -81,6 +81,8 @@ fn efi_entry() -> Status {
 
     bootloader::system::init();
 
+    bootloader::arch::init();
+
     // Load Kernel file in RAM
     // Kernel is expected to be the only file named `kernelx64.elf` in the `efi` directory
     let kernel = {
@@ -90,11 +92,17 @@ fn efi_entry() -> Status {
     };
     info!("Kernel file loaded");
 
+    let ramdisk = bootloader::fs::load_file_from_efi_dir(cstr16!("ramdisk.img"));
+    if let Some(ramdisk) = ramdisk.as_ref() {
+        info!("Ramdisk of size {}B loaded", ramdisk.len());
+    }
+
     let mut memory_map = unsafe { boot::exit_boot_services(boot::MemoryType::LOADER_DATA) };
     debug!("Boot services exited");
     memory_map.sort();
 
-    let (fralloc, mut pt, mut mappings) = bootloader::mem::init(memory_map, &kernel);
+    let (fralloc, mut pt, mut mappings) =
+        bootloader::mem::init(memory_map, &kernel, ramdisk.as_deref());
 
     let boot_info = bootloader::create_boot_info(fralloc, &mut pt, &mut mappings);
 
@@ -103,11 +111,11 @@ fn efi_entry() -> Status {
     bootloader::video::clear_screen();
 
     unsafe {
-        bootloader::chg_ctx(
-            pt.kernel_level_4_frame.start_address().as_u64(),
-            mappings.stack_top().as_u64(),
-            mappings.entry_point().as_u64(),
-            core::ptr::from_ref(boot_info) as u64,
+        bootloader::arch::chg_ctx(
+            pt.kernel_level_4_frame,
+            mappings.stack_top(),
+            mappings.entry_point(),
+            boot_info,
         );
     };
 }

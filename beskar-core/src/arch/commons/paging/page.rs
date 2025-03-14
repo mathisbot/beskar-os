@@ -72,7 +72,7 @@ impl Page<M1GiB> {
     #[inline]
     pub fn from_p4p3(p4: u16, p3: u16) -> Self {
         let addr = (u64::from(p4) << 39) | (u64::from(p3) << 30);
-        let vaddr = VirtAddr::new(addr);
+        let vaddr = VirtAddr::new_extend(addr);
 
         Self {
             start_address: vaddr,
@@ -92,7 +92,7 @@ impl Page<M2MiB> {
     #[inline]
     pub fn from_p4p3p2(p4: u16, p3: u16, p2: u16) -> Self {
         let addr = (u64::from(p4) << 39) | (u64::from(p3) << 30) | (u64::from(p2) << 21);
-        let vaddr = VirtAddr::new(addr);
+        let vaddr = VirtAddr::new_extend(addr);
 
         Self {
             start_address: vaddr,
@@ -121,7 +121,7 @@ impl Page<M4KiB> {
             | (u64::from(p3) << 30)
             | (u64::from(p2) << 21)
             | (u64::from(p1) << 12);
-        let vaddr = VirtAddr::new(addr);
+        let vaddr = VirtAddr::new_extend(addr);
 
         Self {
             start_address: vaddr,
@@ -154,7 +154,7 @@ impl<S: MemSize> Sub<Self> for Page<S> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageRangeInclusive<S: MemSize = M4KiB> {
     pub start: Page<S>,
     pub end: Page<S>,
@@ -253,11 +253,26 @@ mod tests {
         let page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1000)).unwrap();
         assert_eq!(page.size(), M4KiB::SIZE);
         assert_eq!(page.start_address(), VirtAddr::new(0x1000));
+
+        let same_page = Page::<M4KiB>::containing_address(VirtAddr::new(0x1FFF));
+        assert_eq!(page, same_page);
     }
 
     #[test]
     fn test_p_unaligned() {
-        assert!(Page::<M4KiB>::from_start_address(VirtAddr::new(0x1001)).is_err());
+        let unaligned_page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1001));
+        assert!(unaligned_page.is_err());
+    }
+
+    #[test]
+    fn test_p_op() {
+        let page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x2000)).unwrap();
+        let next_page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x3000)).unwrap();
+        let previous_page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1000)).unwrap();
+
+        assert_eq!(page + 1, next_page);
+        assert_eq!(page - 1, previous_page);
+        assert_eq!(next_page - page, 1);
     }
 
     #[test]
@@ -267,5 +282,15 @@ mod tests {
         let range = Page::range_inclusive(start, end);
         assert_eq!(range.len(), 2);
         assert_eq!(range.size(), 2 * M4KiB::SIZE);
+
+        let mut iter = range.into_iter();
+        let first = iter.next().unwrap();
+        let second = iter.next().unwrap();
+        assert_eq!(first, start);
+        assert_eq!(second, end);
+        assert!(iter.next().is_none());
+
+        let empty_range = Page::range_inclusive(end, start);
+        assert!(empty_range.is_empty());
     }
 }

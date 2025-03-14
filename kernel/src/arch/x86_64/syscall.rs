@@ -1,11 +1,7 @@
 use alloc::vec::Vec;
-use beskar_core::{arch::x86_64::registers::Efer, syscall::Syscall};
-use x86_64::{
-    VirtAddr,
-    registers::{
-        model_specific::{LStar, SFMask, Star},
-        rflags::RFlags,
-    },
+use beskar_core::{
+    arch::x86_64::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors},
+    syscall::Syscall,
 };
 
 use crate::{
@@ -33,8 +29,8 @@ struct SyscallRegisters {
 
 #[naked]
 pub(super) unsafe extern "sysv64" fn syscall_handler_arch() {
-    // FIXME: It is very likely that interrupts are allowed here
-    // so maybe add sti instruction
+    // The only reason we cannot enable interrupts here is because we are using
+    // a per-core stack for syscall handling.
     unsafe {
         core::arch::naked_asm!(
             "push r11", // Previous RFLAGS
@@ -88,8 +84,8 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
         unsafe {
             stack_ptr
                 .cast::<SyscallRegisters>()
-                .write_volatile(regs.read())
-        };
+                .write_volatile(regs.read());
+        }
 
         #[allow(clippy::pointers_in_nomem_asm_block)] // False positive
         unsafe {
@@ -143,18 +139,17 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
 }
 
 pub fn init_syscalls() {
-    LStar::write(VirtAddr::new(syscall_handler_arch as u64));
-    Star::write(
-        locals!().gdt().user_code_selector(),
-        locals!().gdt().user_data_selector(),
-        locals!().gdt().kernel_code_selector(),
-        locals!().gdt().kernel_data_selector(),
-    )
-    .unwrap();
+    LStar::write(syscall_handler_arch);
+    Star::write(StarSelectors::new(
+        locals!().gdt().kernel_code_selector().0,
+        locals!().gdt().kernel_data_selector().0,
+        locals!().gdt().user_code_selector().0,
+        locals!().gdt().user_data_selector().0,
+    ));
     // Disable interrupts on syscall
     // FIXME: Because of this, if a malicious user spams syscalls,
     // it will prevent scheduling of other threads
-    SFMask::write(RFlags::INTERRUPT_FLAG);
+    unsafe { SFMask::write(Rflags::IF) };
 
     #[allow(static_mut_refs)]
     unsafe {

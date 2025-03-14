@@ -1,9 +1,7 @@
 use core::cell::UnsafeCell;
 
-use x86_64::{
-    registers::control::Cr2,
-    structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
-};
+use beskar_core::arch::x86_64::registers::Cr2;
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use super::gdt::{DOUBLE_FAULT_IST, PAGE_FAULT_IST};
 use crate::locals;
@@ -64,6 +62,9 @@ pub fn init() {
 
     idt[Irq::Timer as u8].set_handler_fn(timer_interrupt_handler);
     idt[Irq::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
+
+    // TODO: Allocate these at runtime
+    // This is hard because they need to be set for all cores
     idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
     idt[Irq::Nic as u8].set_handler_fn(nic_interrupt_handler);
     idt[Irq::Nvme as u8].set_handler_fn(nvme_interrupt_handler);
@@ -104,13 +105,16 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: InterruptStackFrame,
+    _stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    crate::error!("EXCEPTION: PAGE FAULT {:?}", error_code);
-    crate::error!("Accessed Address: {:?}", Cr2::read());
-    crate::error!("{:#?}", stack_frame);
-
+    crate::error!(
+        "EXCEPTION: PAGE FAULT {:?} in Thread {}",
+        error_code,
+        crate::process::scheduler::current_thread_id().as_u64()
+    );
+    crate::error!("Accessed Address: {:#x}", Cr2::read().as_u64());
+    // crate::error!("{:#?}", stack_frame);
     panic!();
 }
 
@@ -145,11 +149,11 @@ macro_rules! info_isr {
     ($name:ident) => {
         extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
             crate::info!(
-                "{} INTERRUPT on core {}",
+                "{} INTERRUPT on core {} - t{}",
                 stringify!($name),
-                locals!().core_id()
+                locals!().core_id(),
+                $crate::process::scheduler::current_thread_id().as_u64()
             );
-            locals!().lapic().with_locked(|lapic| lapic.send_eoi());
         }
     };
 }

@@ -1,7 +1,7 @@
 use super::apic::ipi::{self, Ipi};
 use crate::{
     locals,
-    mem::{frame_alloc, page_alloc, page_table},
+    mem::{address_space, frame_alloc, page_alloc},
 };
 use beskar_core::arch::{
     commons::{
@@ -15,6 +15,9 @@ use beskar_core::arch::{
 };
 
 use core::sync::atomic::{AtomicU64, Ordering};
+
+// The amount of pages should be kept in sync with the bootloader
+const KERNEL_STACK_NB_PAGES: u64 = 64; // 256 KiB
 
 static AP_STACK_TOP_ADDR: AtomicU64 = AtomicU64::new(0);
 
@@ -40,7 +43,6 @@ beskar_core::static_assert!(
     "AP trampoline code is too big"
 );
 
-// TODO: If the main core panics, all APs should stop.
 pub fn start_up_aps(core_count: usize) {
     if core_count <= 1 {
         return;
@@ -58,7 +60,7 @@ pub fn start_up_aps(core_count: usize) {
     let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        page_table::with_page_table(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             page_table
                 .map(
                     page,
@@ -82,12 +84,8 @@ pub fn start_up_aps(core_count: usize) {
     // Update section .data of the AP trampoline code
 
     // Page table address
-    let (frame, offset) = Cr3::read();
-    write_sipi(
-        payload_vaddr,
-        3,
-        frame.start_address().as_u64() | u64::from(offset),
-    );
+    let cr3_raw = Cr3::read_raw();
+    write_sipi(payload_vaddr, 3, cr3_raw);
 
     // Entry Point address
     write_sipi(payload_vaddr, 1, crate::boot::kap_entry as u64);
@@ -96,27 +94,23 @@ pub fn start_up_aps(core_count: usize) {
     write_sipi(payload_vaddr, 0, payload_vaddr.as_u64());
 
     // Pointer to the address of the top of the stack
-    // Note that using `as_ptr` in safe as the trampoline code uses atomic instructions
+    // Note that using `as_ptr` is safe as the trampoline code uses atomic instructions
     write_sipi(payload_vaddr, 2, AP_STACK_TOP_ADDR.as_ptr() as u64);
 
     let sipi_payload = u8::try_from(payload_paddr.as_u64() >> 12).unwrap();
 
     // Wake up APs
     locals!().lapic().with_locked(|apic| {
-        // FIXME: Decide if the following advised boot sequence is mandatory or if
-        // this dumb code works just fine.
-        // <https://wiki.osdev.org/Symmetric_Multiprocessing#Startup_Sequence>
         apic.send_ipi(&Ipi::new(
             ipi::DeliveryMode::Init,
             ipi::Destination::AllExcludingSelf,
         ));
+        // FIXME: Is it useful to wait a bit here?
         // crate::time::tsc::wait_ms(10);
         apic.send_ipi(&Ipi::new(
             ipi::DeliveryMode::Sipi(sipi_payload),
             ipi::Destination::AllExcludingSelf,
         ));
-        // crate::time::tsc::wait_ms(100);
-        // apic.send_ipi(Ipi::new(ipi::DeliveryMode::Sipi(sipi_payload), ipi::Destination::AllExcludingSelf));
     });
 
     // Now, each AP will be waiting for a stack,
@@ -131,7 +125,7 @@ pub fn start_up_aps(core_count: usize) {
 
     // Free trampoline code
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        page_table::with_page_table(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             let (frame, tlb) = page_table.unmap(page).unwrap();
             tlb.flush();
             frame_allocator.free(frame);
@@ -159,15 +153,25 @@ fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
 
 fn allocate_stack() {
     let stack_pages = page_alloc::with_page_allocator(|page_allocator| {
-        // The amount of pages should be kept in sync with the stack size allocated by the bootloader
-        page_allocator.allocate_pages::<M4KiB>(64).unwrap()
+        page_allocator
+            .allocate_pages::<M4KiB>(KERNEL_STACK_NB_PAGES)
+            .unwrap()
     });
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        frame_allocator.map_pages(
-            stack_pages,
-            Flags::WRITABLE | Flags::PRESENT | Flags::NO_EXECUTE,
-        );
+        crate::mem::address_space::with_kernel_pt(|page_table| {
+            for page in stack_pages {
+                let frame = frame_allocator.alloc::<M4KiB>().unwrap();
+                page_table
+                    .map(
+                        page,
+                        frame,
+                        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+                        frame_allocator,
+                    )
+                    .flush();
+            }
+        });
     });
 
     let stack_top = (stack_pages.end.start_address() + M4KiB::SIZE - 1).align_down(16_u64);

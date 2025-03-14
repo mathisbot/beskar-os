@@ -1,12 +1,13 @@
-use crate::mem::{page_table, ranges::MemoryRange};
-use beskar_core::arch::commons::{
-    VirtAddr,
-    paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
-};
+use crate::mem::address_space;
 use beskar_core::arch::x86_64::paging::page_table::{Entries, Flags};
+use beskar_core::{
+    arch::commons::{
+        VirtAddr,
+        paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
+    },
+    mem::ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
+};
 use hyperdrive::locks::mcs::MUMcsLock;
-
-use super::ranges::MemoryRanges;
 
 pub mod pmap;
 
@@ -82,7 +83,7 @@ pub fn init(recursive_index: u16) {
     // Skip the first two pages
     vaddrs.insert(MemoryRange::new(2 * M4KiB::SIZE, MAX_VALID_VADDR));
 
-    page_table::with_page_table(|pt| {
+    address_space::with_kernel_pt(|pt| {
         remove_mapping(4, pt.entries(), &[recursive_index; 4], &mut vaddrs);
     });
 
@@ -109,14 +110,13 @@ pub struct PageAllocator {
 
 impl PageAllocator {
     pub fn allocate_pages<S: MemSize>(&mut self, count: u64) -> Option<PageRangeInclusive<S>> {
-        let start_vaddr = self.vranges.allocate::<1>(
-            S::SIZE * count,
-            S::SIZE,
-            &super::ranges::MemoryRangeRequest::DontCare,
-        )?;
+        let start_vaddr =
+            self.vranges
+                .allocate::<1>(S::SIZE * count, S::SIZE, &MemoryRangeRequest::DontCare)?;
 
         let first_page =
-            Page::from_start_address(VirtAddr::new(u64::try_from(start_vaddr).unwrap())).unwrap();
+            Page::from_start_address(VirtAddr::new_extend(u64::try_from(start_vaddr).unwrap()))
+                .unwrap();
 
         Some(Page::range_inclusive(first_page, first_page + (count - 1)))
     }
@@ -152,7 +152,7 @@ impl PageAllocator {
             u64::try_from(self.vranges.allocate::<1>(
                 size,
                 alignment,
-                &super::ranges::MemoryRangeRequest::DontCare,
+                &MemoryRangeRequest::DontCare,
             )?)
             .unwrap(),
         );

@@ -1,13 +1,11 @@
 use core::sync::atomic::AtomicUsize;
 
 use crate::{
-    arch::{self, ap, apic, interrupts},
+    arch::{self, apic, interrupts},
     drivers, locals, mem, process, screen, syscall, time,
 };
-use beskar_core::{
-    arch::commons::{PhysAddr, VirtAddr},
-    boot::BootInfo,
-};
+use beskar_core::boot::{BootInfo, RamdiskInfo};
+use hyperdrive::once::Once;
 
 /// Static reference to the kernel main function
 ///
@@ -15,21 +13,19 @@ use beskar_core::{
 /// It will be used by each core to start the kernel.
 ///
 /// This function should never be called directly, but only by the `enter_kmain` function.
-static mut KERNEL_MAIN: fn() -> ! = || loop {
-    crate::arch::halt();
-};
+static KERNEL_MAIN: Once<fn() -> !> = Once::uninit();
 
 /// Static fence to ensure all cores enter `kmain` when they're all ready
 static KERNEL_MAIN_FENCE: AtomicUsize = AtomicUsize::new(0);
+
+static RAMDISK: Once<Option<RamdiskInfo>> = Once::uninit();
 
 /// This function is the proper entry point called by the bootloader.
 ///
 /// It should only be the entry for the BSP.
 pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> ! {
-    // Safety:
-    // This line is only executed once on the BSP,
-    // when no other core is currently running.
-    unsafe { KERNEL_MAIN = kernel_main };
+    KERNEL_MAIN.call_once(|| kernel_main);
+    RAMDISK.call_once(|| boot_info.ramdisk_info);
 
     let core_count = boot_info.cpu_count;
 
@@ -37,7 +33,7 @@ pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> !
 
     crate::debug!("Starting up APs. Core count: {}", core_count);
 
-    ap::start_up_aps(core_count);
+    arch::ap::start_up_aps(core_count);
 
     enter_kmain()
 }
@@ -48,7 +44,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         recursive_index,
         memory_regions,
         rsdp_paddr,
-        kernel_vaddr,
+        kernel_info,
         ..
     } = boot_info;
 
@@ -62,11 +58,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     crate::info!("BeskarOS kernel starting...");
 
-    mem::init(
-        *recursive_index,
-        memory_regions,
-        VirtAddr::new(kernel_vaddr.as_u64()),
-    );
+    mem::init(*recursive_index, memory_regions, kernel_info);
     crate::info!("Memory initialized");
 
     locals::init();
@@ -74,7 +66,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     locals!().gdt().init_load();
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
-    rsdp_paddr.map(|rsdp_paddr| drivers::acpi::init(PhysAddr::new(rsdp_paddr.as_u64())));
+    rsdp_paddr.map(drivers::acpi::init);
 
     time::init();
 
@@ -96,7 +88,7 @@ pub extern "C" fn kap_entry() -> ! {
     // Safety:
     // Values are coming from the BSP, so they are safe to use.
     unsafe {
-        ap::load_ap_regs();
+        arch::ap::load_ap_regs();
     }
 
     // Tell the BSP we are out of the trampoline spin lock,
@@ -126,6 +118,17 @@ fn ap_init() {
     arch::apic::init_lapic();
 }
 
+/// Returns the ramdisk data as readonly.
+///
+/// # Panics
+///
+/// Panics if the ramdisk is not initialized.
+pub fn ramdisk() -> Option<&'static [u8]> {
+    RAMDISK.get().unwrap().map(|rd| unsafe {
+        core::slice::from_raw_parts(rd.vaddr().as_ptr(), rd.size().try_into().unwrap())
+    })
+}
+
 /// This function is called by each core once they're ready to start the kernel.
 ///
 /// It will wait for all cores to be ready before starting the kernel,
@@ -139,7 +142,7 @@ pub(crate) fn enter_kmain() -> ! {
         core::hint::spin_loop();
     }
 
-    unsafe { KERNEL_MAIN() }
+    (KERNEL_MAIN.get().unwrap())()
 }
 
 #[macro_export]

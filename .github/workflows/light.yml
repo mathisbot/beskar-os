@@ -27,7 +27,9 @@ jobs:
         run: cargo build
 
       - name: Run tests
-        run: cargo test --package hyperdrive
+        run: |
+          cargo test --package hyperdrive
+          cargo test --package beskar-core
 
       - name: Run Clippy
         run: cargo clippy

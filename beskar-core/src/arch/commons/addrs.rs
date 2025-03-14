@@ -15,9 +15,17 @@ impl VirtAddr {
     pub const fn new(addr: u64) -> Self {
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
         // Perform sign extension
-        let virt_addr = ((addr << 16) as i64 >> 16) as u64;
-        assert!(virt_addr == addr);
-        Self(virt_addr)
+        let extended = ((addr << 16) as i64 >> 16) as u64;
+        assert!(extended == addr);
+        Self(extended)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Create a new valid virtual address by sign extending the address.
+    pub const fn new_extend(addr: u64) -> Self {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        Self(((addr << 16) as i64 >> 16) as u64)
     }
 
     #[must_use]
@@ -42,14 +50,14 @@ impl VirtAddr {
     #[inline]
     pub const fn align_down(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
-        Self::new(self.0 & !(align - 1))
+        Self::new_extend(self.0 & !(align - 1))
     }
 
     #[must_use]
     #[inline]
     pub const fn align_up(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
-        Self::new((self.0 + (align - 1)) & !(align - 1))
+        Self::new_extend((self.0 + (align - 1)) & !(align - 1))
     }
 
     #[must_use]
@@ -112,7 +120,7 @@ impl Add<u64> for VirtAddr {
 
     #[inline]
     fn add(self, rhs: u64) -> Self {
-        Self::new(self.0 + rhs)
+        Self::new_extend(self.0 + rhs)
     }
 }
 
@@ -121,7 +129,7 @@ impl Add<Self> for VirtAddr {
 
     #[inline]
     fn add(self, rhs: Self) -> Self {
-        Self::new(self.0 + rhs.0)
+        Self::new_extend(self.0 + rhs.0)
     }
 }
 
@@ -130,7 +138,7 @@ impl Sub<u64> for VirtAddr {
 
     #[inline]
     fn sub(self, rhs: u64) -> Self {
-        Self::new(self.0 - rhs)
+        Self::new_extend(self.0 - rhs)
     }
 }
 
@@ -209,7 +217,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "assertion failed: virt_addr == addr"]
+    fn test_v_extends() {
+        let addr = VirtAddr::new_extend(0xFFFF_FFFF_FFFF);
+        assert_eq!(addr.as_u64(), 0xFFFF_FFFF_FFFF_FFFF);
+        let addr = VirtAddr::new_extend(0x3FFF_FFFF_FFFF);
+        assert_eq!(addr.as_u64(), 0x3FFF_FFFF_FFFF);
+    }
+
+    #[test]
+    #[should_panic = "assertion failed: extended == addr"]
     fn test_v_reject() {
         let _ = VirtAddr::new(0x1234567890ABCDEF);
     }

@@ -17,12 +17,12 @@ pub struct MsiX {
     capability: MsiXCapability,
     table: Volatile<ReadWrite, TableEntry>,
     pba: Volatile<ReadWrite, u64>,
-    pmap_table: PhysicalMapping,
-    pmap_pba: PhysicalMapping,
+    _pmap_table: PhysicalMapping,
+    _pmap_pba: PhysicalMapping,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MsiXCapability {
+struct MsiXCapability {
     base: PciAddress,
     table_size: u16,
     table_bar_nb: u8,
@@ -91,8 +91,8 @@ impl MsiX {
             capability: msix_cap,
             table: Volatile::new(NonNull::new(table_vaddr.as_mut_ptr()).unwrap()),
             pba: Volatile::new(NonNull::new(pba_vaddr.as_mut_ptr()).unwrap()),
-            pmap_table,
-            pmap_pba,
+            _pmap_table: pmap_table,
+            _pmap_pba: pmap_pba,
         })
     }
 

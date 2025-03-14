@@ -14,6 +14,7 @@ pub fn init() {
     crate::debug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
 }
 
+#[inline]
 pub fn halt() {
     unsafe {
         core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));

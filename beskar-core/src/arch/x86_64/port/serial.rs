@@ -4,10 +4,9 @@
 //!
 //! On a physical machine, the serial port can be connected to another machine
 //! to capture early debug messages in case of hard failure.
-
-use core::marker::PhantomData;
-
 use super::{Access, Port, ReadAccess, ReadWrite, WriteAccess, WriteOnly};
+use core::marker::PhantomData;
+use thiserror::Error;
 
 pub mod com;
 
@@ -36,7 +35,7 @@ impl<A: Access> SerialPort<A> {
         }
     }
 
-    pub fn init(&mut self) {
+    pub fn init(&mut self) -> SerialResult<()> {
         // Disable interrupts
         unsafe { self.interrupt_enable.write(0x00) };
 
@@ -62,12 +61,16 @@ impl<A: Access> SerialPort<A> {
         unsafe {
             self.modem_control.write(0x1E); // Set loopback mode
             self.data.write(0xAE); // Send test pattern
-            // FIXME: Maybe do not panic?
-            assert_eq!(self.data.read(), 0xAE); // Check test pattern
+            if self.data.read() != 0xAE {
+                // Check test pattern
+                return Err(SerialError::Unavailable);
+            }
         }
 
         // Enable IRQ and OUT1/2
         unsafe { self.modem_control.write(0x0F) };
+
+        Ok(())
     }
 }
 
@@ -94,3 +97,12 @@ impl<A: WriteAccess> SerialPort<A> {
         }
     }
 }
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+/// Error type for serial port operations
+pub enum SerialError {
+    #[error("Serial port is not available")]
+    Unavailable,
+}
+
+pub type SerialResult<T> = Result<T, SerialError>;

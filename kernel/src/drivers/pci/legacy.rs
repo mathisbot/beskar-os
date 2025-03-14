@@ -48,7 +48,6 @@ impl LegacyPciHandler {
         self.devices.clear();
 
         // Brute-force scan
-        // FIXME: Way too slow (8192 iterations)
         for bus in 0..=255 {
             for device in 0..32 {
                 if let Some(device) = self.scan_device(PciAddress::new(

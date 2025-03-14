@@ -15,13 +15,14 @@ beskar-core = { path = "beskar-core" }
 beskar-lib = { path = "beskar-lib" }
 bootloader = { path = "bootloader" }
 hyperdrive = { path = "hyperdrive" }
-thiserror = { version = "2.0.11", default-features = false }
+thiserror = { version = "2.0.12", default-features = false }
 x86_64 = { version = "0.15.2", default-features = false, features = ["abi_x86_interrupt","instructions"] }
+xmas-elf = "0.9.1"
 
 [build-dependencies]
 bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }
+hello_world = { path = "userspace/helloworld", artifact = "bin", target = "x86_64-unknown-none" }
 kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
-userspace = { path = "userspace/helloworld", artifact = "bin", target = "x86_64-unknown-none" }
 
 [profile.release]
 panic = "abort"

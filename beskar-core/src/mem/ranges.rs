@@ -1,11 +1,8 @@
-use core::{
-    cmp::Ordering,
-    ops::{Index, IndexMut},
-};
+use core::ops::{Index, IndexMut};
 
-use beskar_core::mem::{MemoryRegion, MemoryRegionUsage};
+use super::{MemoryRegion, MemoryRegionUsage};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 /// Represents a range of memory addresses.
 ///
 /// It is guaranteed that the range is valid, i.e. start <= end.
@@ -63,30 +60,36 @@ impl From<MemoryRegion> for MemoryRange {
 }
 
 #[derive(Debug, Clone, Copy)]
+/// An array-backed `Vec` (thus statically sized) of `MemoryRange`s.
 pub struct MemoryRanges<const N: usize> {
     /// Array of ranges
     ranges: [MemoryRange; N],
     /// Number of ranges that are currently in use
-    used: u16,
+    used: usize,
 }
 
 impl<const N: usize> Index<usize> for MemoryRanges<N> {
     type Output = MemoryRange;
 
     fn index(&self, index: usize) -> &Self::Output {
+        assert!(index < self.len(), "Index out of bounds");
         &self.ranges[index]
     }
 }
 
 impl<const N: usize> IndexMut<usize> for MemoryRanges<N> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        assert!(index < self.len(), "Index out of bounds");
         &mut self.ranges[index]
     }
 }
 
 impl<const N: usize> Default for MemoryRanges<N> {
     fn default() -> Self {
-        Self::new()
+        Self {
+            ranges: [MemoryRange::default(); N],
+            used: usize::default(),
+        }
     }
 }
 
@@ -120,20 +123,20 @@ impl<const N: usize> MemoryRanges<N> {
     #[must_use]
     #[inline]
     pub fn entries(&self) -> &[MemoryRange] {
-        &self.ranges[..usize::from(self.len())]
+        &self.ranges[..self.len()]
     }
 
     #[must_use]
     #[inline]
-    pub const fn len(&self) -> u16 {
+    pub const fn len(&self) -> usize {
         self.used
     }
 
     fn delete(&mut self, index: usize) {
-        assert!(index < usize::from(self.len()), "Index out of bounds");
+        assert!(index < self.len(), "Index out of bounds");
 
         // The deleted range is put at the end of the array like a bubble
-        for i in index..usize::from(self.len()) - 1 {
+        for i in index..self.len() - 1 {
             self.ranges.swap(i, i + 1);
         }
 
@@ -146,14 +149,11 @@ impl<const N: usize> MemoryRanges<N> {
             return;
         }
 
-        assert!(
-            self.used < u16::try_from(N).unwrap(),
-            "MemoryRanges is full"
-        );
+        assert!(self.used < N, "MemoryRanges is full");
 
         // Try merging the new range with the existing ones
         'outer: loop {
-            for i in 0..usize::from(self.len()) {
+            for i in 0..self.len() {
                 let current = &self.ranges[i];
 
                 if range.overlaps(current).is_some() {
@@ -167,7 +167,7 @@ impl<const N: usize> MemoryRanges<N> {
             break;
         }
 
-        self.ranges[usize::from(self.len())] = range;
+        self.ranges[self.len()] = range;
         self.used += 1;
     }
 
@@ -175,7 +175,7 @@ impl<const N: usize> MemoryRanges<N> {
     ///
     /// Returns the outer range that was removed, if any.
     pub fn try_remove(&mut self, range: MemoryRange) -> Option<MemoryRange> {
-        for i in 0..usize::from(self.len()) {
+        for i in 0..self.len() {
             let current = self.ranges[i];
 
             // If the range is the same as the current one, we can remove it
@@ -209,7 +209,7 @@ impl<const N: usize> MemoryRanges<N> {
     /// Anihilates the specified range from the set, trimming other ranges if necessary.
     pub fn remove(&mut self, range: MemoryRange) {
         let mut i = 0;
-        while i < usize::from(self.len()) {
+        while i < self.len() {
             let current = self.ranges[i];
 
             if range.overlaps(&current).is_none() {
@@ -257,11 +257,11 @@ impl<const N: usize> MemoryRanges<N> {
     ) -> Option<usize> {
         // 0-sized allocations are not allowed,
         // and alignment must be a power of 2 because of memory constraints
-        if size == 0 || alignment.count_ones() != 1 {
+        if size == 0 || !alignment.is_power_of_two() {
             return None;
         }
 
-        // Because alignment is a power of 2, alignment - 1 is all zeroes followed by ones
+        // Alignment is a power of 2, so alignment - 1 is all zeroes followed by ones
         let alignment_mask = alignment - 1;
 
         let mut allocation = None;
@@ -275,50 +275,44 @@ impl<const N: usize> MemoryRanges<N> {
                 continue;
             }
 
-            if request.strength() >= MemoryRangeRequestStrength::HopefullyHere {
-                // Try to find a suitable region in the range
-                let req_ranges = match request {
-                    MemoryRangeRequest::MustBeWithin(ranges) => ranges,
-                    // MemoryRangeRequest::HopefullyHere(ranges) => ranges,
-                    MemoryRangeRequest::DontCare => unreachable!(),
-                };
+            match request {
+                MemoryRangeRequest::MustBeWithin(req_ranges) => {
+                    for req_range in req_ranges.entries() {
+                        if let Some(overlap) = range.overlaps(req_range) {
+                            let alignment_overlap =
+                                (overlap.start.wrapping_add(alignment_mask)) & !alignment_mask;
 
-                for req_range in req_ranges.entries() {
-                    if let Some(overlap) = range.overlaps(req_range) {
-                        let alignment_overlap =
-                            (overlap.start.wrapping_add(alignment_mask)) & !alignment_mask;
-
-                        if alignment_overlap >= overlap.start
-                            && alignment_overlap <= overlap.end
-                            && (overlap.end - alignment_overlap) >= (size - 1)
-                        {
-                            let overlap_end = alignment_overlap + (size - 1);
-
-                            let prev_size = allocation.map(|(start, end, _)| end - start);
-
-                            if allocation.is_none()
-                                || overlap_end - alignment_overlap < prev_size.unwrap()
+                            if alignment_overlap >= overlap.start
+                                && alignment_overlap <= overlap.end
+                                && (overlap.end - alignment_overlap) >= (size - 1)
                             {
-                                allocation = Some((
-                                    alignment_overlap,
-                                    overlap_end,
-                                    usize::try_from(alignment_overlap).unwrap(),
-                                ));
+                                let overlap_end = alignment_overlap + (size - 1);
+
+                                let prev_size = allocation.map(|(start, end, _)| end - start);
+
+                                if allocation.is_none()
+                                    || overlap_end - alignment_overlap < prev_size.unwrap()
+                                {
+                                    allocation = Some((
+                                        alignment_overlap,
+                                        overlap_end,
+                                        usize::try_from(alignment_overlap).unwrap(),
+                                    ));
+                                }
                             }
                         }
                     }
                 }
-            }
+                MemoryRangeRequest::DontCare => {
+                    let prev_size = allocation.map(|(start, end, _)| end - start);
 
-            if request.strength() <= MemoryRangeRequestStrength::DontCare {
-                let prev_size = allocation.map(|(start, end, _)| end - start);
-
-                if allocation.is_none() || end - start < prev_size.unwrap() {
-                    allocation = Some((
-                        start,
-                        end,
-                        usize::try_from(start + alignment_offset).unwrap(),
-                    ));
+                    if allocation.is_none() || end - start < prev_size.unwrap() {
+                        allocation = Some((
+                            start,
+                            end,
+                            usize::try_from(start + alignment_offset).unwrap(),
+                        ));
+                    }
                 }
             }
         }
@@ -336,33 +330,68 @@ pub enum MemoryRangeRequest<'a, const N: usize> {
     MustBeWithin(&'a MemoryRanges<N>),
 }
 
-impl<const N: usize> MemoryRangeRequest<'_, N> {
-    #[must_use]
-    #[inline]
-    const fn strength(&self) -> MemoryRangeRequestStrength {
-        match self {
-            MemoryRangeRequest::DontCare => MemoryRangeRequestStrength::DontCare,
-            MemoryRangeRequest::MustBeWithin(_) => MemoryRangeRequestStrength::MustBeHere,
-        }
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MemoryRangeRequestStrength {
-    DontCare,
-    HopefullyHere,
-    MustBeHere,
-}
+    #[test]
+    fn test_memory_range() {
+        let range = MemoryRange::new(0, 10);
+        assert_eq!(range.start, 0);
+        assert_eq!(range.end, 10);
 
-impl PartialOrd for MemoryRangeRequestStrength {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self == other {
-            return Some(Ordering::Equal);
-        }
-        match self {
-            Self::DontCare => Some(Ordering::Less),
-            Self::MustBeHere => Some(Ordering::Greater),
-            Self::HopefullyHere => unreachable!(),
-        }
+        let range2 = MemoryRange::new(5, 15);
+        assert_eq!(range2.start, 5);
+        assert_eq!(range2.end, 15);
+
+        let range3 = MemoryRange::new(6, 14);
+
+        assert!(range.overlaps(&range2).is_some());
+        assert!(range2.overlaps(&range).is_some());
+        assert!(range3.is_inside(&range2));
     }
+
+    #[test]
+    fn test_memory_ranges() {
+        let mut ranges = MemoryRanges::<10>::new();
+        assert_eq!(ranges.len(), 0);
+
+        ranges.insert(MemoryRange::new(0, 10));
+        assert_eq!(ranges.len(), 1);
+
+        ranges.insert(MemoryRange::new(5, 15));
+        assert_eq!(ranges.len(), 1);
+
+        ranges.insert(MemoryRange::new(20, 30));
+        assert_eq!(ranges.len(), 2);
+
+        ranges.insert(MemoryRange::new(25, 35));
+        assert_eq!(ranges.len(), 2);
+
+        ranges.insert(MemoryRange::new(40, 50));
+        assert_eq!(ranges.len(), 3);
+
+        ranges.insert(MemoryRange::new(45, 55));
+        assert_eq!(ranges.len(), 3);
+
+        ranges.insert(MemoryRange::new(60, 70));
+        assert_eq!(ranges.len(), 4);
+
+        ranges.insert(MemoryRange::new(65, 75));
+        assert_eq!(ranges.len(), 4);
+
+        ranges.insert(MemoryRange::new(80, 90));
+        assert_eq!(ranges.len(), 5);
+
+        ranges.insert(MemoryRange::new(85, 95));
+        assert_eq!(ranges.len(), 5);
+
+        ranges.insert(MemoryRange::new(100, 110));
+        assert_eq!(ranges.len(), 6);
+
+        ranges.insert(MemoryRange::new(105, 115));
+        assert_eq!(ranges.len(), 6);
+    }
+
+    // FIXME: Write more tests
 }

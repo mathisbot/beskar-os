@@ -3,7 +3,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use alloc::{boxed::Box, sync::Arc, vec};
+use alloc::{boxed::Box, sync::Arc};
 use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
 use thread::Thread;
@@ -18,7 +18,7 @@ pub mod thread;
 /// The time quantum for the scheduler, in milliseconds.
 ///
 /// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
-pub const SCHEDULER_QUANTUM_MS: u32 = 60;
+pub const SCHEDULER_QUANTUM_MS: u32 = 30;
 
 // TODO: Runtime size for schedulers
 // Currently, it takes 4KiB of memory but on a vast majority of systems, it only needs a few schedulers.
@@ -56,7 +56,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
         let clean_thread = Thread::new(
             kernel_process,
             priority::Priority::Low,
-            vec![0; 1024 * 128],
+            alloc::vec![0; 1024 * 128],
             clean_thread,
         );
 
@@ -68,7 +68,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
 pub struct ContextSwitch {
     old_stack: *mut *mut u8,
     new_stack: *const u8,
-    cr3: usize,
+    cr3: u64,
 }
 
 impl ContextSwitch {
@@ -146,8 +146,21 @@ impl Scheduler {
             let old_should_exit = self.should_exit_thread.swap(false, Ordering::Relaxed);
 
             // Handle stack pointers.
-            let old_stack = old_thread.last_stack_ptr_mut();
+            let old_stack = if old_should_exit {
+                // In the case of the thread exiting, we cannot write to the `Thread` struct anymore.
+                // Therefore, we write to a useless static variable because we won't need RSP value.
+                static mut USELESS: *mut u8 = core::ptr::null_mut();
+                #[allow(static_mut_refs)]
+                // Safety: There will be data races, but we don't care lol
+                unsafe {
+                    &mut USELESS
+                }
+            } else {
+                old_thread.last_stack_ptr_mut()
+            };
             let new_stack = thread.last_stack_ptr();
+
+            let cr3 = thread.process().address_space().cr3_raw();
 
             if old_should_exit {
                 // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
@@ -156,8 +169,6 @@ impl Scheduler {
             } else {
                 QUEUE.get().unwrap().append(Pin::new(old_thread));
             }
-
-            let cr3 = thread.process().address_space().cr3_raw();
 
             Some(ContextSwitch {
                 old_stack,
@@ -173,11 +184,7 @@ fn get_scheduler() -> &'static Scheduler {
     SCHEDULERS[locals!().core_id()].get().unwrap()
 }
 
-fn clean_thread() {
-    // FIXME: If the cleaning process starts very soon,
-    // it often results in a bad free.
-    // idk what happens, so let's wait for a bit.
-    crate::time::wait(crate::time::Duration::from_millis(250));
+extern "C" fn clean_thread() {
     loop {
         if let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
             drop(thread);
@@ -251,16 +258,20 @@ pub fn change_current_thread_priority(priority: priority::Priority) {
 
 /// Exits the current thread.
 ///
+/// This function will enable interrupts, otherwise the system would halt.
+///
 /// ## Safety
 ///
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.
-pub unsafe fn exit_current_thread() {
+pub unsafe fn exit_current_thread() -> ! {
     get_scheduler().exit_current_thread();
 
-    // Wait for the next thread to be scheduled.
+    // Try to reschedule the thread.
+    thread_yield();
+
+    // If no thread is waiting, loop.
     crate::arch::interrupts::int_enable();
-    // FIXME: Force reschedule now?
     loop {
         crate::arch::halt();
     }

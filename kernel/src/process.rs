@@ -4,12 +4,13 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
-use hyperdrive::once::Once;
+use beskar_core::arch::x86_64::userspace::Ring;
+use hyperdrive::{once::Once, tether::Tether};
 
-use crate::mem::address_space::AddressSpace;
+use crate::mem::address_space::{self, AddressSpace};
 
+pub mod binary;
 pub mod dummy;
-pub mod elf;
 pub mod scheduler;
 
 static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();
@@ -19,7 +20,9 @@ pub fn init() {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: *crate::mem::address_space::get_kernel_address_space(),
+            address_space: Tether::Reference(address_space::get_kernel_address_space()),
+            kind: Kind::Kernel,
+            binary_data: None,
         })
     });
 
@@ -34,10 +37,25 @@ pub fn init() {
 pub struct Process {
     name: String,
     pid: ProcessId,
-    address_space: AddressSpace,
+    address_space: Tether<'static, AddressSpace>,
+    kind: Kind,
+    // FIXME: Shouldn't be 'static
+    binary_data: Option<BinaryData<'static>>,
 }
 
 impl Process {
+    #[must_use]
+    #[inline]
+    pub fn new(name: &str, kind: Kind, binary: Option<binary::Binary<'static>>) -> Self {
+        Self {
+            name: name.to_string(),
+            pid: ProcessId::new(),
+            address_space: Tether::Owned(AddressSpace::new()),
+            kind,
+            binary_data: binary.map(BinaryData::new),
+        }
+    }
+
     #[must_use]
     #[inline]
     pub fn name(&self) -> &str {
@@ -52,8 +70,26 @@ impl Process {
 
     #[must_use]
     #[inline]
-    pub const fn address_space(&self) -> &AddressSpace {
+    pub fn address_space(&self) -> &AddressSpace {
         &self.address_space
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn kind(&self) -> Kind {
+        self.kind
+    }
+
+    /// Loads the process binary into memory and returns its entry point.
+    /// If the binary is already loaded, the only thing this function does is returning the entry point.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no binary data associated with the process.
+    fn load_binary(&self) -> extern "C" fn() {
+        let binary_data = self.binary_data.as_ref().unwrap();
+        binary_data.load();
+        binary_data.loaded.get().unwrap().entry_point()
     }
 }
 
@@ -79,5 +115,62 @@ impl Default for ProcessId {
 impl ProcessId {
     pub fn new() -> Self {
         Self(PID_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+#[repr(u8)]
+pub enum Kind {
+    /// Vital process kind.
+    /// On panic, the system will be halted.
+    Kernel,
+    /// Driver process kind.
+    /// These are Ring 0 processes that are not vital for the system.
+    Driver,
+    /// User process kind.
+    /// These are Ring 3 processes.
+    User,
+}
+
+impl Kind {
+    #[must_use]
+    #[inline]
+    pub const fn ring(&self) -> Ring {
+        match self {
+            Self::Kernel | Self::Driver => Ring::Kernel,
+            Self::User => Ring::User,
+        }
+    }
+}
+
+struct BinaryData<'a> {
+    input: binary::Binary<'a>,
+    loaded: Once<binary::LoadedBinary>,
+}
+
+impl<'a> BinaryData<'a> {
+    #[must_use]
+    #[inline]
+    /// Creates a new binary data.
+    ///
+    /// Calling this function does **not** load the binary into memory,
+    /// it only tells the process that its binary exists and can be loaded.
+    pub const fn new(input: binary::Binary<'a>) -> Self {
+        Self {
+            input,
+            loaded: Once::uninit(),
+        }
+    }
+
+    /// Loads the binary into memory.
+    ///
+    /// More precisely, the input binary will be loaded into the address space of the **current** process.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the binary is invalid.
+    pub fn load(&self) {
+        self.loaded.call_once(|| self.input.load().unwrap());
     }
 }
