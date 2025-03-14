@@ -84,12 +84,8 @@ pub fn start_up_aps(core_count: usize) {
     // Update section .data of the AP trampoline code
 
     // Page table address
-    let (frame, offset) = Cr3::read();
-    write_sipi(
-        payload_vaddr,
-        3,
-        frame.start_address().as_u64() | u64::from(offset),
-    );
+    let cr3_raw = Cr3::read_raw();
+    write_sipi(payload_vaddr, 3, cr3_raw);
 
     // Entry Point address
     write_sipi(payload_vaddr, 1, crate::boot::kap_entry as u64);
@@ -98,7 +94,7 @@ pub fn start_up_aps(core_count: usize) {
     write_sipi(payload_vaddr, 0, payload_vaddr.as_u64());
 
     // Pointer to the address of the top of the stack
-    // Note that using `as_ptr` in safe as the trampoline code uses atomic instructions
+    // Note that using `as_ptr` is safe as the trampoline code uses atomic instructions
     write_sipi(payload_vaddr, 2, AP_STACK_TOP_ADDR.as_ptr() as u64);
 
     let sipi_payload = u8::try_from(payload_paddr.as_u64() >> 12).unwrap();

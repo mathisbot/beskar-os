@@ -70,17 +70,17 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
     debug_assert_eq!(page_range.size(), working_page_range.size());
 
     frame_alloc::with_frame_allocator(|fralloc| {
+        let mut dummy_flags = Flags::PRESENT | Flags::NO_EXECUTE;
+        // FIXME: Not setting the USER_ACCESSIBLE flag results in a page fault.
+        // I don't understand why, as the below code should set the correct flags when needed.
+        if scheduler::current_process().kind().ring() == Ring::User {
+            dummy_flags = dummy_flags | Flags::USER_ACCESSIBLE;
+        }
         scheduler::current_process()
             .address_space()
             .with_page_table(|pt| {
                 for (page, working_page) in page_range.into_iter().zip(working_page_range) {
                     let frame = fralloc.allocate_frame().unwrap();
-                    let mut dummy_flags = Flags::PRESENT | Flags::NO_EXECUTE;
-                    // FIXME: Not setting the USER_ACCESSIBLE flag results in a page fault.
-                    // I don't understand why, as the below code should set the correct flags when needed.
-                    if scheduler::current_process().kind().ring() == Ring::User {
-                        dummy_flags = dummy_flags | Flags::USER_ACCESSIBLE;
-                    }
                     pt.map(page, frame, dummy_flags, fralloc).flush();
                     pt.map(
                         working_page,
@@ -92,6 +92,15 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
                 }
             });
     });
+
+    #[cfg(debug_assertions)]
+    unsafe {
+        let page_start = working_offset.as_mut_ptr::<u8>();
+        page_start.write_bytes(
+            beskar_core::arch::x86_64::instructions::STACK_DEBUG_INSTR,
+            usize::try_from(working_page_range.size()).unwrap(),
+        );
+    }
 
     load_segments(&elf, offset, working_offset)?;
 
@@ -176,6 +185,17 @@ fn handle_segment_load(
     offset: VirtAddr,
     working_offset: VirtAddr,
 ) -> BinaryResult<()> {
+    let mut segment_flags = Flags::PRESENT;
+    if ph.flags().is_write() {
+        segment_flags = segment_flags | Flags::WRITABLE;
+    }
+    if !ph.flags().is_execute() {
+        segment_flags = segment_flags | Flags::NO_EXECUTE;
+    }
+    if scheduler::current_process().kind().ring() == Ring::User {
+        segment_flags = segment_flags | Flags::USER_ACCESSIBLE;
+    }
+
     scheduler::current_process()
         .address_space()
         .with_page_table(|pt| {
@@ -185,17 +205,6 @@ fn handle_segment_load(
                 let segment_start_page = Page::<M4KiB>::containing_address(segment_start_vaddr);
                 let segment_end_page =
                     Page::<M4KiB>::containing_address(segment_start_vaddr + ph.file_size() - 1);
-
-                let mut segment_flags = Flags::PRESENT;
-                if ph.flags().is_write() {
-                    segment_flags = segment_flags | Flags::WRITABLE;
-                }
-                if !ph.flags().is_execute() {
-                    segment_flags = segment_flags | Flags::NO_EXECUTE;
-                }
-                if scheduler::current_process().kind().ring() == Ring::User {
-                    segment_flags = segment_flags | Flags::USER_ACCESSIBLE;
-                }
 
                 for page in Page::range_inclusive(segment_start_page, segment_end_page) {
                     pt.update_flags(page, segment_flags).unwrap().flush();

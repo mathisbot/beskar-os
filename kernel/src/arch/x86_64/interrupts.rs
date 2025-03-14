@@ -108,7 +108,11 @@ extern "x86-interrupt" fn page_fault_handler(
     _stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    crate::error!("EXCEPTION: PAGE FAULT {:?}", error_code);
+    crate::error!(
+        "EXCEPTION: PAGE FAULT {:?} in Thread {}",
+        error_code,
+        crate::process::scheduler::current_thread_id().as_u64()
+    );
     crate::error!("Accessed Address: {:#x}", Cr2::read().as_u64());
     // crate::error!("{:#?}", stack_frame);
     panic!();

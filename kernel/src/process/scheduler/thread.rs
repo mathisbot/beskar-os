@@ -6,7 +6,9 @@ use core::{
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
-    commons::paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, Page},
+    commons::paging::{
+        CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive,
+    },
     x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags, userspace::Ring},
 };
 use hyperdrive::{
@@ -31,10 +33,7 @@ pub struct Thread {
     /// Used to keep ownership of the stack when needed.
     stack: Option<ThreadStacks>,
     /// Keeps track of where the stack is.
-    ///
-    /// The reason it is a pinned `Box` is so that we can easily get a reference to it
-    /// and update it when switching contexts.
-    pub(super) last_stack_ptr: Pin<Box<*mut u8>>,
+    pub(super) last_stack_ptr: *mut u8,
 
     /// Link to the next thread in the queue.
     pub(super) link: Link<Self>,
@@ -69,7 +68,7 @@ impl Thread {
             priority: Priority::High,
             stack: None,
             // Will be overwritten before being used.
-            last_stack_ptr: Box::pin(core::ptr::null_mut()),
+            last_stack_ptr: core::ptr::null_mut(),
             link: Link::default(),
         }
     }
@@ -94,7 +93,7 @@ impl Thread {
             root_proc,
             priority,
             stack: Some(ThreadStacks::new(stack)),
-            last_stack_ptr: Box::pin(stack_ptr),
+            last_stack_ptr: stack_ptr,
             link: Link::default(),
         }
     }
@@ -163,7 +162,7 @@ impl Thread {
             root_proc,
             priority: Priority::Null,
             stack: None,
-            last_stack_ptr: Box::pin(core::ptr::null_mut()),
+            last_stack_ptr: core::ptr::null_mut(),
             link: Link::default(),
         }
     }
@@ -200,14 +199,14 @@ impl Thread {
     #[inline]
     /// Returns the value of the last stack pointer.
     pub fn last_stack_ptr(&self) -> *const u8 {
-        *self.last_stack_ptr.as_ref()
+        self.last_stack_ptr
     }
 
     #[must_use]
     #[inline]
     /// Returns a mutable pointer to the last stack pointer.
     pub fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
-        self.last_stack_ptr.as_mut().get_mut()
+        &mut self.last_stack_ptr
     }
 }
 
@@ -293,10 +292,8 @@ struct ThreadStacks {
     /// This can be the only stack used (ring0 processes) or
     /// only used by the trampoline function (ring3 processes).
     _kernel: Vec<u8>,
-    /// Page in the process' address space where the stack starts.
-    user_start_page: Once<Page>,
-    /// Size of the user stack in bytes.
-    user_size: Once<u64>,
+    /// Page range in the process' address space of the stack.
+    user_pages: Once<PageRangeInclusive>,
 }
 
 impl ThreadStacks {
@@ -305,8 +302,7 @@ impl ThreadStacks {
     pub const fn new(stack: Vec<u8>) -> Self {
         Self {
             _kernel: stack,
-            user_start_page: Once::uninit(),
-            user_size: Once::uninit(),
+            user_pages: Once::uninit(),
         }
     }
 
@@ -319,12 +315,12 @@ impl ThreadStacks {
         })
         .unwrap();
 
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
         frame_alloc::with_frame_allocator(|fralloc| {
             super::current_process()
                 .address_space()
                 .with_page_table(|pt| {
                     let frame = fralloc.allocate_frame().unwrap();
-                    let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
                     for page in page_range {
                         pt.map(page, frame, flags, fralloc).flush();
                     }
@@ -332,11 +328,11 @@ impl ThreadStacks {
         });
 
         // FIXME: Even if the stack is already allocated, the above allocations still happen.
-        self.user_start_page.call_once(|| page_range.start);
-        self.user_size.call_once(|| page_range.len() * M4KiB::SIZE);
+        self.user_pages.call_once(|| page_range);
 
         // Return the stack TOP
         let stack_bottom = page_range.start.start_address();
+        let size = page_range.size();
         #[cfg(debug_assertions)]
         unsafe {
             stack_bottom
@@ -350,11 +346,7 @@ impl ThreadStacks {
 
 impl Drop for ThreadStacks {
     fn drop(&mut self) {
-        if let Some(&start_page) = self.user_start_page.get() {
-            let &size = self.user_size.get().unwrap();
-
-            let end_page = Page::<M4KiB>::containing_address(start_page.start_address() + size - 1);
-
+        if let Some(&page_range) = self.user_pages.get() {
             // FIXME: This is WRONG!!!
             // The process in charge of cleaning threads is a Kernel process,
             // thus it does not have the stack in its address space.
@@ -374,7 +366,7 @@ impl Drop for ThreadStacks {
             // TODO: When the process' page allocator is implemented, remove this
             // as the allocator does not exist anymore.
             page_alloc::with_page_allocator(|palloc| {
-                palloc.free_pages(Page::range_inclusive(start_page, end_page));
+                palloc.free_pages(page_range);
             });
         }
     }

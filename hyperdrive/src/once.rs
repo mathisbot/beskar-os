@@ -197,7 +197,7 @@ impl<T> Drop for Once<T> {
             // Safety:
             // We are the only one accessing the value right now (dropping)
             // AND the value is initialized (if-statement).
-            unsafe { (*self.value.get()).assume_init_drop() };
+            unsafe { self.value.get_mut().assume_init_drop() };
         }
     }
 }
@@ -230,6 +230,7 @@ mod test {
     #[test]
     fn test_once_drop() {
         let once = Once::uninit();
+        let _once_uninit: Once<Box<u8>> = Once::uninit();
 
         once.call_once(|| Box::new(42));
     }

@@ -63,13 +63,17 @@ impl Cr3 {
 
     #[must_use]
     #[inline]
-    pub fn read() -> (Frame, u16) {
+    pub fn read_raw() -> u64 {
         let value: u64;
-
         unsafe {
-            core::arch::asm!("mov {}, cr3", out(reg) value, options(nomem, nostack, preserves_flags));
+            core::arch::asm!("mov {}, cr3", lateout(reg) value, options(nomem, nostack, preserves_flags));
         }
+        value
+    }
 
+    #[must_use]
+    pub fn read() -> (Frame, u16) {
+        let value = Self::read_raw();
         let addr = PhysAddr::new(value & 0x_000f_ffff_ffff_f000);
         let frame = Frame::containing_address(addr);
         (frame, (value & 0xFFF) as u16)

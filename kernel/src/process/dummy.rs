@@ -43,29 +43,6 @@ pub extern "C" fn counter() {
     }
 }
 
-pub extern "C" fn hello_world() {
-    loop {
-        crate::info!("Hello from core {}!", crate::locals!().core_id());
-        crate::time::wait(crate::time::Duration::from_secs(1));
-    }
-}
-
-pub extern "C" fn alloc_intensive() {
-    use alloc::vec::Vec;
-
-    loop {
-        let sz = usize::from(unsafe { crate::arch::rand::rand::<u16>() }) * 32;
-        let vec = Vec::<u8>::with_capacity(sz);
-        crate::info!(
-            "Hello from core {}! Allocated {} bytes",
-            crate::locals!().core_id(),
-            vec.capacity()
-        );
-        drop(vec);
-        crate::time::wait(crate::time::Duration::from_secs(1));
-    }
-}
-
 pub extern "C" fn floating_point() {
     let mut x = 1.1_f64;
 

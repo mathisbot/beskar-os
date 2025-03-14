@@ -56,8 +56,6 @@ pub struct AddressSpace {
     pt: McsLock<PageTable<'static>>,
     /// Physical address of the level 4 page table
     lvl4_paddr: PhysAddr,
-    /// # WARNING
-    /// Only updated when the address space is loaded.
     cr3_flags: u16,
 }
 
@@ -157,19 +155,18 @@ impl AddressSpace {
         }
     }
 
+    #[must_use]
     pub fn is_active(&self) -> bool {
         let (frame, _) = Cr3::read();
         self.lvl4_paddr == frame.start_address()
     }
 
+    #[must_use]
     pub fn cr3_flags(&self) -> u16 {
-        if self.is_active() {
-            Cr3::read().1
-        } else {
-            self.cr3_flags
-        }
+        self.cr3_flags
     }
 
+    #[must_use]
     pub fn cr3_raw(&self) -> u64 {
         self.lvl4_paddr.as_u64() | u64::from(self.cr3_flags())
     }
@@ -185,6 +182,8 @@ impl AddressSpace {
     }
 }
 
+#[must_use]
+#[inline]
 pub fn get_kernel_address_space() -> &'static AddressSpace {
     KERNEL_ADDRESS_SPACE.get().unwrap()
 }

@@ -48,12 +48,6 @@ fn kmain() -> ! {
             alloc::vec![0; 1024*256],
             dummy::counter,
         )));
-        // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-        //     root_proc.clone(),
-        //     Priority::Low,
-        //     alloc::vec![0; 1024*1024],
-        //     dummy::alloc_intensive,
-        // )));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             root_proc.clone(),
             Priority::Low,
@@ -66,12 +60,14 @@ fn kmain() -> ! {
             alloc::vec![0; 1024*256],
             dummy::floating_point,
         )));
-        // scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-        //     root_proc.clone(),
-        //     Priority::Low,
-        //     alloc::vec![0; 1024*256],
-        //     dummy::syscall_test,
-        // )));
+
+        let root_proc = Arc::new(Process::new("Tests2!", kernel::process::Kind::Driver, None));
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            root_proc.clone(),
+            Priority::Normal,
+            alloc::vec![0; 1024*256],
+            dummy::counter,
+        )));
 
         if let Some(ramdisk) = kernel::boot::ramdisk() {
             // TODO: Only pass the file location to the process creation.
@@ -86,7 +82,7 @@ fn kmain() -> ! {
             ));
 
             scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new_from_binary(
-                user_proc,
+                user_proc.clone(),
                 Priority::Normal,
                 alloc::vec![0; 1024*64],
             )));

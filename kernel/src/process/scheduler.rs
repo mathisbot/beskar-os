@@ -160,6 +160,8 @@ impl Scheduler {
             };
             let new_stack = thread.last_stack_ptr();
 
+            let cr3 = thread.process().address_space().cr3_raw();
+
             if old_should_exit {
                 // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
                 // This job should be done by a cleaning thread.
@@ -167,8 +169,6 @@ impl Scheduler {
             } else {
                 QUEUE.get().unwrap().append(Pin::new(old_thread));
             }
-
-            let cr3 = thread.process().address_space().cr3_raw();
 
             Some(ContextSwitch {
                 old_stack,

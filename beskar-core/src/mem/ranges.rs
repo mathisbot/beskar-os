@@ -257,7 +257,7 @@ impl<const N: usize> MemoryRanges<N> {
     ) -> Option<usize> {
         // 0-sized allocations are not allowed,
         // and alignment must be a power of 2 because of memory constraints
-        if size == 0 || alignment.count_ones() != 1 {
+        if size == 0 || !alignment.is_power_of_two() {
             return None;
         }
 
@@ -328,4 +328,70 @@ impl<const N: usize> MemoryRanges<N> {
 pub enum MemoryRangeRequest<'a, const N: usize> {
     DontCare,
     MustBeWithin(&'a MemoryRanges<N>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memory_range() {
+        let range = MemoryRange::new(0, 10);
+        assert_eq!(range.start, 0);
+        assert_eq!(range.end, 10);
+
+        let range2 = MemoryRange::new(5, 15);
+        assert_eq!(range2.start, 5);
+        assert_eq!(range2.end, 15);
+
+        let range3 = MemoryRange::new(6, 14);
+
+        assert!(range.overlaps(&range2).is_some());
+        assert!(range2.overlaps(&range).is_some());
+        assert!(range3.is_inside(&range2));
+    }
+
+    #[test]
+    fn test_memory_ranges() {
+        let mut ranges = MemoryRanges::<10>::new();
+        assert_eq!(ranges.len(), 0);
+
+        ranges.insert(MemoryRange::new(0, 10));
+        assert_eq!(ranges.len(), 1);
+
+        ranges.insert(MemoryRange::new(5, 15));
+        assert_eq!(ranges.len(), 1);
+
+        ranges.insert(MemoryRange::new(20, 30));
+        assert_eq!(ranges.len(), 2);
+
+        ranges.insert(MemoryRange::new(25, 35));
+        assert_eq!(ranges.len(), 2);
+
+        ranges.insert(MemoryRange::new(40, 50));
+        assert_eq!(ranges.len(), 3);
+
+        ranges.insert(MemoryRange::new(45, 55));
+        assert_eq!(ranges.len(), 3);
+
+        ranges.insert(MemoryRange::new(60, 70));
+        assert_eq!(ranges.len(), 4);
+
+        ranges.insert(MemoryRange::new(65, 75));
+        assert_eq!(ranges.len(), 4);
+
+        ranges.insert(MemoryRange::new(80, 90));
+        assert_eq!(ranges.len(), 5);
+
+        ranges.insert(MemoryRange::new(85, 95));
+        assert_eq!(ranges.len(), 5);
+
+        ranges.insert(MemoryRange::new(100, 110));
+        assert_eq!(ranges.len(), 6);
+
+        ranges.insert(MemoryRange::new(105, 115));
+        assert_eq!(ranges.len(), 6);
+    }
+
+    // FIXME: Write more tests
 }

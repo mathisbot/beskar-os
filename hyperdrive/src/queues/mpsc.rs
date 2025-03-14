@@ -265,7 +265,7 @@ impl<T: Queueable> MpscQueue<T> {
     pub fn try_dequeue(&self) -> DequeueResult<T> {
         if self
             .being_dequeued
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
             return DequeueResult::InUse;
@@ -285,7 +285,7 @@ impl<T: Queueable> MpscQueue<T> {
         let mut tail_node = unsafe { NonNull::new_unchecked(self.tail.load(Ordering::Relaxed)) };
         let mut next = unsafe { T::get_link(tail_node).as_ref() }
             .next
-            .load(Ordering::Acquire);
+            .load(Ordering::Relaxed);
 
         // If node is the stub, dequeue it and use the next one
         if tail_node == self.stub {
@@ -295,7 +295,7 @@ impl<T: Queueable> MpscQueue<T> {
             tail_node = next_node;
             next = unsafe { T::get_link(tail_node).as_ref() }
                 .next
-                .load(Ordering::Acquire);
+                .load(Ordering::Relaxed);
         }
 
         // If there is a next node, simply cycle the queue
@@ -313,7 +313,7 @@ impl<T: Queueable> MpscQueue<T> {
         // We need to wait for it (should be rare).
         let next_link = unsafe { T::get_link(tail_node).as_ref() };
         let next = loop {
-            let next = next_link.next.load(Ordering::Acquire);
+            let next = next_link.next.load(Ordering::Relaxed);
             if !next.is_null() {
                 break next;
             }
