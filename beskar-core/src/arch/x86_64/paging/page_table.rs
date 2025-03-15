@@ -159,12 +159,12 @@ impl Entries {
     }
 
     #[inline]
-    pub fn iter(&self) -> core::slice::Iter<Entry> {
+    pub fn iter_entries(&self) -> core::slice::Iter<Entry> {
         self.0.iter()
     }
 
     #[inline]
-    pub fn iter_mut(&mut self) -> core::slice::IterMut<Entry> {
+    pub fn iter_entries_mut(&mut self) -> core::slice::IterMut<Entry> {
         self.0.iter_mut()
     }
 

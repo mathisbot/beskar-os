@@ -113,7 +113,7 @@ impl AddressSpace {
             // let kernel_end_page =
             //     Page::<M4KiB>::containing_address(kcode_info.vaddr() + kcode_info.size());
 
-            for (i, pte) in current_pt.entries().iter().enumerate()
+            for (i, pte) in current_pt.entries().iter_entries().enumerate()
             // .take(kernel_end_page.p4_index().into())
             // .skip(kernel_start_page.p4_index().into())
             {
@@ -125,7 +125,7 @@ impl AddressSpace {
         });
 
         let (index, pte) = pt
-            .iter_mut()
+            .iter_entries_mut()
             .enumerate()
             .filter(|(_, e)| e.is_null())
             .next_back()

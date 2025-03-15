@@ -21,8 +21,23 @@ impl From<u64> for Syscall {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SyscallExitCode {
+    /// The syscall succeeded
     Success = 0,
+    /// The syscall failed
     Failure = 1,
+
+    /// Any other (invalid) exit code.
+    Other,
+}
+
+impl From<u64> for SyscallExitCode {
+    fn from(value: u64) -> Self {
+        match value {
+            0 => Self::Success,
+            1 => Self::Failure,
+            _ => Self::Other,
+        }
+    }
 }
 
 impl SyscallExitCode {

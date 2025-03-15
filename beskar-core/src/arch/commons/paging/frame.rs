@@ -1,9 +1,8 @@
 //! Abstractions for default-sized and huge physical memory frames.
-use super::super::PhysAddr;
+use super::{super::PhysAddr, M4KiB, MemSize};
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
-
-use super::{M4KiB, MemSize};
+use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// A physical memory frame.
@@ -12,12 +11,18 @@ pub struct Frame<S: MemSize = M4KiB> {
     size: PhantomData<S>,
 }
 
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum FrameError {
+    #[error("Unaligned address")]
+    UnalignedAddress,
+}
+
 impl<S: MemSize> Frame<S> {
     #[inline]
-    pub fn from_start_address(address: PhysAddr) -> Result<Self, ()> {
+    pub fn from_start_address(address: PhysAddr) -> Result<Self, FrameError> {
         // Check that the address is correctly aligned.
         if address != address.align_down(S::SIZE) {
-            return Err(());
+            return Err(FrameError::UnalignedAddress);
         }
         Ok(Self {
             start_address: address,
@@ -196,7 +201,7 @@ mod tests {
     #[test]
     fn test_f_unaligned() {
         let unaligned_frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1001));
-        assert!(unaligned_frame.is_err());
+        assert!(unaligned_frame == Err(FrameError::UnalignedAddress));
     }
 
     #[test]

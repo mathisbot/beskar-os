@@ -26,7 +26,7 @@ pub fn init(recursive_index: u16) {
         level_indices: &[u16; 4],
         vaddrs: &mut MemoryRanges<MAX_VRANGES>,
     ) {
-        for (i, pte) in page_table.iter().enumerate() {
+        for (i, pte) in page_table.iter_entries().enumerate() {
             if !pte.flags().contains(Flags::PRESENT) {
                 continue;
             }

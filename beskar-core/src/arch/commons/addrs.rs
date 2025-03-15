@@ -120,7 +120,7 @@ impl Add<u64> for VirtAddr {
 
     #[inline]
     fn add(self, rhs: u64) -> Self {
-        Self::new_extend(self.0 + rhs)
+        Self::new_extend(self.0.checked_add(rhs).unwrap())
     }
 }
 
@@ -129,7 +129,7 @@ impl Add<Self> for VirtAddr {
 
     #[inline]
     fn add(self, rhs: Self) -> Self {
-        Self::new_extend(self.0 + rhs.0)
+        Self::new_extend(self.0.checked_add(rhs.0).unwrap())
     }
 }
 
@@ -138,7 +138,7 @@ impl Sub<u64> for VirtAddr {
 
     #[inline]
     fn sub(self, rhs: u64) -> Self {
-        Self::new_extend(self.0 - rhs)
+        Self::new_extend(self.0.checked_sub(rhs).unwrap())
     }
 }
 
@@ -147,7 +147,7 @@ impl Sub<Self> for VirtAddr {
 
     #[inline]
     fn sub(self, rhs: Self) -> u64 {
-        self.0 - rhs.0
+        self.0.checked_sub(rhs.0).unwrap()
     }
 }
 
@@ -156,7 +156,7 @@ impl Add<u64> for PhysAddr {
 
     #[inline]
     fn add(self, rhs: u64) -> Self {
-        Self::new(self.0 + rhs)
+        Self::new(self.0.checked_add(rhs).unwrap())
     }
 }
 
@@ -165,7 +165,7 @@ impl Add<Self> for PhysAddr {
 
     #[inline]
     fn add(self, rhs: Self) -> Self {
-        Self::new(self.0 + rhs.0)
+        Self::new(self.0.checked_add(rhs.0).unwrap())
     }
 }
 
@@ -174,7 +174,7 @@ impl Sub<u64> for PhysAddr {
 
     #[inline]
     fn sub(self, rhs: u64) -> Self {
-        Self::new(self.0 - rhs)
+        Self::new(self.0.checked_sub(rhs).unwrap())
     }
 }
 
@@ -183,7 +183,7 @@ impl Sub<Self> for PhysAddr {
 
     #[inline]
     fn sub(self, rhs: Self) -> u64 {
-        self.0 - rhs.0
+        self.0.checked_sub(rhs.0).unwrap()
     }
 }
 
@@ -208,6 +208,20 @@ mod tests {
         let addr = PhysAddr::new(0x18000031060);
         assert_eq!(addr.align_down(0x1000).as_u64(), 0x18000031000);
         assert_eq!(addr.align_up(0x1000).as_u64(), 0x18000032000);
+    }
+
+    #[test]
+    #[should_panic = "assertion failed: align.is_power_of_two()"]
+    fn test_p_align_down_unaligned() {
+        let addr = PhysAddr::new(0x18000031060);
+        let _ = addr.align_down(0x1001);
+    }
+
+    #[test]
+    #[should_panic = "called `Option::unwrap()` on a `None` value"]
+    fn test_p_underflow() {
+        let addr = PhysAddr::new(0x1000);
+        let _ = addr - 0x1001;
     }
 
     #[test]
@@ -244,5 +258,26 @@ mod tests {
         assert_eq!(addr.p3_index(), 0);
         assert_eq!(addr.p2_index(), 0);
         assert_eq!(addr.p1_index(), 49);
+    }
+
+    #[test]
+    #[should_panic = "assertion failed: align.is_power_of_two()"]
+    fn test_v_align_down_unaligned() {
+        let addr = VirtAddr::new_extend(0x18000031060);
+        let _ = addr.align_down(0x1001);
+    }
+
+    #[test]
+    #[should_panic = "called `Option::unwrap()` on a `None` value"]
+    fn test_v_underflow() {
+        let addr = VirtAddr::new(0x1000);
+        let _ = addr - 0x1001;
+    }
+
+    #[test]
+    #[should_panic = "called `Option::unwrap()` on a `None` value"]
+    fn test_v_overflow() {
+        let addr = VirtAddr::new(0xFFFF_FFFF_FFFF_FFFF);
+        let _ = addr + 1;
     }
 }

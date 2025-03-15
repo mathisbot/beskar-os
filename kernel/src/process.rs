@@ -113,8 +113,16 @@ impl Default for ProcessId {
 }
 
 impl ProcessId {
+    #[must_use]
+    #[inline]
     pub fn new() -> Self {
         Self(PID_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn as_u64(&self) -> u64 {
+        self.0
     }
 }
 

@@ -132,16 +132,18 @@ impl<const N: usize> MemoryRanges<N> {
         self.used
     }
 
+    #[must_use]
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     fn delete(&mut self, index: usize) {
         assert!(index < self.len(), "Index out of bounds");
 
-        // The deleted range is put at the end of the array like a bubble
-        for i in index..self.len() - 1 {
-            self.ranges.swap(i, i + 1);
-        }
-
         // Note that self.used is not 0 because of the assert above
         self.used -= 1;
+        self.ranges.swap(index, self.used);
     }
 
     pub fn insert(&mut self, mut range: MemoryRange) {

@@ -1,3 +1,4 @@
+use crate::arch::syscalls;
 use beskar_core::syscall::{Syscall, SyscallExitCode};
 
 /// Print a message to the console
@@ -7,15 +8,10 @@ use beskar_core::syscall::{Syscall, SyscallExitCode};
 /// Panics if the syscall fails (should never happen
 /// for valid input).
 pub fn print(msg: &str) {
-    let res_code: u64;
-    unsafe {
-        ::core::arch::asm!(
-            "syscall",
-            in("rax") Syscall::Print as u64,
-            lateout("rax") res_code,
-            in("rdi") msg.as_ptr(),
-            in("rsi") msg.len(),
-        );
-    }
-    assert_eq!(res_code, SyscallExitCode::Success as _);
+    let res = syscalls::syscall_2(
+        Syscall::Print,
+        msg.as_ptr() as u64,
+        msg.len().try_into().unwrap(),
+    );
+    assert_eq!(res, SyscallExitCode::Success);
 }

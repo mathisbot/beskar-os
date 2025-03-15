@@ -33,10 +33,10 @@ pub struct Thread {
     /// Used to keep ownership of the stack when needed.
     stack: Option<ThreadStacks>,
     /// Keeps track of where the stack is.
-    pub(super) last_stack_ptr: *mut u8,
+    last_stack_ptr: *mut u8,
 
     /// Link to the next thread in the queue.
-    pub(super) link: Link<Self>,
+    link: Link<Self>,
 }
 
 impl Unpin for Thread {}

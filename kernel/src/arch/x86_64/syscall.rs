@@ -59,7 +59,6 @@ pub(super) unsafe extern "sysv64" fn syscall_handler_arch() {
     };
 }
 
-#[inline]
 extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
     // Switch to kernel stack
     {
@@ -125,6 +124,7 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
     }
 }
 
+#[inline(never)]
 extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
     let args = Arguments {
         one: regs.rdi,

@@ -1,9 +1,8 @@
 //! Abstractions for default-sized and huge virtual memory pages.
-use super::super::VirtAddr;
+use super::{super::VirtAddr, M1GiB, M2MiB, M4KiB, MemSize};
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
-
-use super::{M1GiB, M2MiB, M4KiB, MemSize};
+use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// A virtual memory page.
@@ -13,12 +12,18 @@ pub struct Page<S: MemSize = M4KiB> {
     size: PhantomData<S>,
 }
 
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum PageError {
+    #[error("Unaligned address")]
+    UnalignedAddress,
+}
+
 impl<S: MemSize> Page<S> {
     #[inline]
-    pub fn from_start_address(address: VirtAddr) -> Result<Self, ()> {
+    pub fn from_start_address(address: VirtAddr) -> Result<Self, PageError> {
         // Check that the address is correctly aligned.
         if address != address.align_down(S::SIZE) {
-            return Err(());
+            return Err(PageError::UnalignedAddress);
         }
         Ok(Self {
             start_address: address,
@@ -261,7 +266,7 @@ mod tests {
     #[test]
     fn test_p_unaligned() {
         let unaligned_page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1001));
-        assert!(unaligned_page.is_err());
+        assert!(unaligned_page == Err(PageError::UnalignedAddress));
     }
 
     #[test]
