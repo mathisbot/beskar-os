@@ -5,7 +5,20 @@ pub enum Syscall {
     /// The first argument is a pointer to the string to print.
     /// The second argument is the length of the string.
     Print = 0,
+    /// Exit syscall.
+    ///
+    /// The first argument is the exit code.
     Exit = 1,
+    /// RandomGen syscall.
+    ///
+    /// Fills a given buffer with random data.
+    ///
+    /// The first argument is a pointer to the buffer.
+    /// The second argument is the length of the buffer.
+    RandomGen = 2,
+    /// Invalid syscall.
+    ///
+    /// Any syscall that is not recognized.
     Invalid = 0xFF,
 }
 
@@ -14,6 +27,7 @@ impl From<u64> for Syscall {
         match value {
             0 => Self::Print,
             1 => Self::Exit,
+            2 => Self::RandomGen,
             _ => Self::Invalid,
         }
     }

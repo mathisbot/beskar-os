@@ -9,6 +9,7 @@ use ::beskar_core::syscall::Syscall;
 mod arch;
 use arch::syscalls;
 pub mod io;
+pub mod rand;
 
 #[panic_handler]
 fn panic(_info: &::core::panic::PanicInfo) -> ! {
@@ -17,8 +18,8 @@ fn panic(_info: &::core::panic::PanicInfo) -> ! {
 
 /// Exit the program with the given exit code.
 pub fn exit(code: ExitCode) -> ! {
-    syscalls::syscall_1(Syscall::Exit, code as u64);
-    unsafe { core::hint::unreachable_unchecked() }
+    let _ = syscalls::syscall_1(Syscall::Exit, code as u64);
+    unsafe { ::core::hint::unreachable_unchecked() }
 }
 
 #[macro_export]

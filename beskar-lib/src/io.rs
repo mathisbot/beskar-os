@@ -1,6 +1,7 @@
 use crate::arch::syscalls;
-use beskar_core::syscall::{Syscall, SyscallExitCode};
+use ::beskar_core::syscall::{Syscall, SyscallExitCode};
 
+#[inline]
 /// Print a message to the console
 ///
 /// ## Panics

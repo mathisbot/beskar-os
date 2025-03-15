@@ -1,5 +1,6 @@
-use beskar_core::syscall::{Syscall, SyscallExitCode};
+use ::beskar_core::syscall::{Syscall, SyscallExitCode};
 
+#[must_use]
 pub fn syscall_1(syscall: Syscall, arg1: u64) -> SyscallExitCode {
     let res_code: u64;
     unsafe {
@@ -13,6 +14,7 @@ pub fn syscall_1(syscall: Syscall, arg1: u64) -> SyscallExitCode {
     SyscallExitCode::from(res_code)
 }
 
+#[must_use]
 pub fn syscall_2(syscall: Syscall, arg1: u64, arg2: u64) -> SyscallExitCode {
     let res_code: u64;
     unsafe {
@@ -27,6 +29,7 @@ pub fn syscall_2(syscall: Syscall, arg1: u64, arg2: u64) -> SyscallExitCode {
     SyscallExitCode::from(res_code)
 }
 
+// #[must_use]
 // pub fn syscall_3(syscall: Syscall, arg1: u64, arg2: u64, arg3: u64) -> SyscallExitCode {
 //     let res_code: u64;
 //     unsafe {

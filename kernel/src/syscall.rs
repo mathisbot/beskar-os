@@ -16,6 +16,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallExitCode {
     match syscall {
         Syscall::Print => sc_print(args),
         Syscall::Exit => sc_exit(args),
+        Syscall::RandomGen => sc_randomgen(args),
         Syscall::Invalid => SyscallExitCode::Failure,
     }
 }
@@ -55,4 +56,20 @@ fn sc_exit(args: &Arguments) -> ! {
     }
 
     unsafe { crate::process::scheduler::exit_current_thread() }
+}
+
+fn sc_randomgen(args: &Arguments) -> SyscallExitCode {
+    let start_addr = args.one as *mut u8;
+    let len = args.two;
+
+    // FIXME: Validate arguments
+
+    let buffer = unsafe { core::slice::from_raw_parts_mut(start_addr, len.try_into().unwrap()) };
+
+    let rand_res = crate::arch::rand::rand_bytes(buffer);
+
+    match rand_res {
+        Ok(()) => SyscallExitCode::Success,
+        Err(_) => SyscallExitCode::Failure,
+    }
 }
