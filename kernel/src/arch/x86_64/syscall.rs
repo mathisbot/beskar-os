@@ -1,7 +1,6 @@
-use alloc::vec::Vec;
 use beskar_core::{
     arch::{
-        commons::VirtAddr,
+        commons::paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper},
         x86_64::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors},
     },
     syscall::Syscall,
@@ -14,9 +13,9 @@ use crate::{
 };
 
 // FIXME: Determine the number of stacks dynamically
-static STACKS: [Once<Vec<u8>>; 256] = [const { Once::uninit() }; 256];
+static SYSCALL_STACK_PTRS: [Once<*mut u8>; 256] = [const { Once::uninit() }; 256];
 
-const SYSCALL_STACK_SIZE: usize = 4096 * 8; // 32 KiB
+const SYSCALL_STACK_NB_PAGES: u64 = 4; // 16 KiB
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(8))]
@@ -78,22 +77,15 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
     // Currently, we are on the user stack. It is undefined wether we are right where the
     // assembly stub left us (because of Rust), but the place we want to be is in the `regs` argument.
 
-    // Perform the stack switch to kernel stack
+    // Perform the stack switch to kernel stack.
+    // We must prepare the kernel stack before switching to it.
+    // That is:
+    // - Keeping track of the user stack pointer
+    // - Copying the `regs` pointer to the kernel stack
     {
-        // Make sure we have a nice aligned stack pointer
-        let mut stack_ptr = {
-            // Note that we do not lock the stack here, as it is a per-core stack
-            // and that interrupts (scheduling) are disabled during syscall handling.
-            // Locking the stack for the entire duration of the syscall handling would
-            // be a bad idea, as panicking/exiting threads would poison the lock.
-            let kernel_stack = STACKS[locals!().core_id()].get().unwrap();
-            let stack_bottom = kernel_stack.as_ptr();
-            let stack_top_unaligned = unsafe { stack_bottom.add(kernel_stack.capacity()) };
-            let stack_top_vaddr = VirtAddr::new(stack_top_unaligned as u64).align_down(16);
-            stack_top_vaddr.as_mut_ptr::<u8>()
-        };
+        let mut stack_ptr = *SYSCALL_STACK_PTRS[locals!().core_id()].get().unwrap();
 
-        // Copy current RSP to kernel stack
+        // Copy user RSP to kernel stack
         #[allow(clippy::cast_ptr_alignment)] // `stack_ptr` is 16-byte aligned
         {
             let user_rsp: *mut u8;
@@ -105,7 +97,7 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
             unsafe { stack_ptr.cast::<*mut u8>().write_volatile(user_rsp) };
         }
 
-        // Copy pointer to `regs` to kernel stack
+        // Copy to `regs` to kernel stack
         #[allow(clippy::cast_ptr_alignment)] // `stack_ptr` is 8-byte aligned
         {
             stack_ptr = unsafe { stack_ptr.byte_sub(size_of::<*mut SyscallRegisters>()) };
@@ -124,34 +116,21 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
         }
     }
 
+    // Perform the function call
     unsafe {
-        // Thanks to our fiddling with the stack, RSP points to `regs`,
-        // which we can directly pass to the next function.
         core::arch::asm!(
-            "mov rdi, [rsp]",
+            "pop rdi",
             "call {}",
             sym syscall_handler_inner,
         );
     }
 
     // Switch back to user stack
-    {
-        let mut kernel_rsp: *mut *mut SyscallRegisters;
-        unsafe {
-            core::arch::asm!("mov {}, rsp", out(reg) kernel_rsp, options(nomem, nostack, preserves_flags));
-        }
-
-        // Ignore first value (pointer to `regs`)
-        kernel_rsp = unsafe { kernel_rsp.add(1) };
-
-        // Ready previously written user RSP on the kernel stack
-        let previous_rsp = unsafe { kernel_rsp.cast::<*mut u8>().read() };
-
-        // Finally switch back to user stack
-        #[allow(clippy::pointers_in_nomem_asm_block)] // False positive
-        unsafe {
-            core::arch::asm!("mov rsp, {}", in(reg) previous_rsp, options(nomem, nostack, preserves_flags));
-        }
+    unsafe {
+        core::arch::asm!(
+            "pop rsp", // Pop user stack pointer
+            options(nomem, nostack, preserves_flags)
+        );
     }
 }
 
@@ -185,7 +164,30 @@ pub fn init_syscalls() {
     // it will prevent scheduling other threads
     unsafe { SFMask::write(Rflags::IF) };
 
-    STACKS[locals!().core_id()].call_once(|| Vec::with_capacity(SYSCALL_STACK_SIZE));
+    SYSCALL_STACK_PTRS[locals!().core_id()].call_once(|| allocate_stack(SYSCALL_STACK_NB_PAGES));
 
     unsafe { Efer::insert_flags(Efer::SYSTEM_CALL_EXTENSIONS) };
+}
+
+// Allocate a stack for the syscall handler and return the top of the stack
+fn allocate_stack(nb_pages: u64) -> *mut u8 {
+    let (page_range, _guard_page) = crate::mem::page_alloc::with_page_allocator(|palloc| {
+        palloc.allocate_guarded::<M4KiB>(nb_pages).unwrap()
+    });
+
+    crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
+        crate::mem::address_space::with_kernel_pt(|kpt| {
+            for page in page_range.clone() {
+                let frame = fralloc.allocate_frame().unwrap();
+                kpt.map(page, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)
+                    .flush();
+            }
+        })
+    });
+
+    // We need the stack to be 16-byte aligned.
+    // Here, it is 4096-byte aligned!
+    let stack_bottom = page_range.start.start_address() + page_range.size();
+    debug_assert_eq!(stack_bottom.align_down(16), stack_bottom);
+    stack_bottom.as_mut_ptr()
 }
