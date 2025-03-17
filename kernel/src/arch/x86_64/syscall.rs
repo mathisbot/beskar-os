@@ -77,64 +77,22 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
     // Currently, we are on the user stack. It is undefined wether we are right where the
     // assembly stub left us (because of Rust), but the place we want to be is in the `regs` argument.
 
-    // Perform the stack switch to kernel stack.
-    // We must prepare the kernel stack before switching to it.
-    // That is:
-    // - Keeping track of the user stack pointer
-    // - Copying the `regs` pointer to the kernel stack
-    {
-        let mut stack_ptr = *SYSCALL_STACK_PTRS[locals!().core_id()].get().unwrap();
-
-        // Copy user RSP to kernel stack
-        #[allow(clippy::cast_ptr_alignment)] // `stack_ptr` is 16-byte aligned
-        {
-            let user_rsp: *mut u8;
-            unsafe {
-                core::arch::asm!("mov {}, rsp", lateout(reg) user_rsp, options(nomem, nostack, preserves_flags));
-            }
-            stack_ptr = unsafe { stack_ptr.byte_sub(size_of::<*mut u8>()) };
-            debug_assert!(stack_ptr.cast::<*mut u8>().is_aligned());
-            unsafe { stack_ptr.cast::<*mut u8>().write_volatile(user_rsp) };
-        }
-
-        // Copy to `regs` to kernel stack
-        #[allow(clippy::cast_ptr_alignment)] // `stack_ptr` is 8-byte aligned
-        {
-            stack_ptr = unsafe { stack_ptr.byte_sub(size_of::<*mut SyscallRegisters>()) };
-            debug_assert!(stack_ptr.cast::<*mut SyscallRegisters>().is_aligned());
-            unsafe {
-                stack_ptr
-                    .cast::<*mut SyscallRegisters>()
-                    .write_volatile(regs);
-            }
-        }
-
-        // Finaly, switch to kernel stack
-        #[allow(clippy::pointers_in_nomem_asm_block)] // False positive
-        unsafe {
-            core::arch::asm!("mov rsp, {}", in(reg) stack_ptr, options(nomem, nostack, preserves_flags));
-        }
-    }
-
-    // Perform the function call
+    let kernel_stack = *SYSCALL_STACK_PTRS[locals!().core_id()].get().unwrap();
     unsafe {
         core::arch::asm!(
-            "pop rdi",
-            "call {}",
+            "mov {ustack}, rsp", // Keep track of user stack (0)
+            "mov rsp, {}", // Switch to kernel stack
+            "push {ustack}", // Keep track of user stack (1)
+            "call {}", // Perform the function call with `regs` in rdi
+            "pop rsp", // Switch back to user stack
+            in(reg) kernel_stack,
             sym syscall_handler_inner,
-        );
-    }
-
-    // Switch back to user stack
-    unsafe {
-        core::arch::asm!(
-            "pop rsp", // Pop user stack pointer
-            options(nomem, nostack, preserves_flags)
+            in("rdi") regs,
+            ustack = out(reg) _,
         );
     }
 }
 
-#[inline(never)]
 /// Performs the standardization of arguments and call to the kernel syscall handler.
 ///
 /// Called by the above function after stack switching

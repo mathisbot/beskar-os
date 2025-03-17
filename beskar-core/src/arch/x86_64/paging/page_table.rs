@@ -234,6 +234,12 @@ impl<'t> PageTable<'t> {
         self.entries
     }
 
+    #[must_use]
+    #[inline]
+    pub const fn recursive_index(&self) -> u16 {
+        self.recursive_index
+    }
+
     unsafe fn create_next_level<'a, A: FrameAllocator<M4KiB>>(
         entry: &'a mut Entry,
         next_table: Page,

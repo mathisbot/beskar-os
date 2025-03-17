@@ -1,6 +1,6 @@
-use core::mem::MaybeUninit;
 use crate::arch::syscalls;
 use beskar_core::syscall::{Syscall, SyscallExitCode};
+use core::mem::MaybeUninit;
 
 #[inline]
 /// Fills the buffer with random bytes
@@ -20,13 +20,13 @@ pub fn rand_fill(buf: &mut [u8]) {
 
 #[must_use]
 /// Generates a random value of the given type
-/// 
+///
 /// ## Safety
-/// 
+///
 /// Any random sequence of bytes should be a valid instance of the given type.
-/// 
+///
 /// ## Panics
-/// 
+///
 /// Panics if randomness fails to be generated.
 pub unsafe fn rand<T: Sized>() -> T {
     let mut res = MaybeUninit::<T>::uninit();

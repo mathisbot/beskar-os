@@ -177,8 +177,10 @@ impl AddressSpace {
     ///
     /// Panics if the address space is not active.
     pub fn with_page_table<R>(&self, f: impl FnOnce(&mut PageTable<'static>) -> R) -> R {
+        // FIXME: It is possible to map the page table in the current address space
+        // and then operate on it without the need to panic.
         assert!(self.is_active(), "Address space must be active");
-        self.pt.with_locked(|pt| f(pt))
+        self.pt.with_locked(f)
     }
 }
 
