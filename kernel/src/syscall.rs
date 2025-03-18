@@ -9,6 +9,9 @@ pub struct Arguments {
     pub one: u64,
     pub two: u64,
     pub three: u64,
+    pub four: u64,
+    pub five: u64,
+    pub six: u64,
 }
 
 #[must_use]

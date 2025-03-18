@@ -101,6 +101,9 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
         one: regs.rdi,
         two: regs.rsi,
         three: regs.rdx,
+        four: regs.r10,
+        five: regs.r8,
+        six: regs.r9,
     };
 
     let res = syscall(Syscall::from(regs.rax), &args);

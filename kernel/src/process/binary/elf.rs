@@ -38,71 +38,55 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
     let elf = faillible!(ElfFile::new(input));
     sanity_check(&elf)?;
 
-    let total_size = {
-        let mut max_vaddr = 0;
-        for ph in elf.program_iter() {
-            let vaddr = ph.virtual_addr() + ph.mem_size();
-            if vaddr > max_vaddr {
-                max_vaddr = vaddr;
-            }
-        }
-        max_vaddr
-    };
+    let total_size = elf
+        .program_iter()
+        .map(|ph| ph.virtual_addr() + ph.mem_size())
+        .max()
+        .unwrap();
 
     // FIXME: We are using the kernel's page allocator, which is not ideal as
     // we may be in a different address space.
 
-    let page_range = page_alloc::with_page_allocator(|palloc| {
-        palloc.allocate_pages::<M4KiB>(total_size.div_ceil(M4KiB::SIZE))
-    })
-    .unwrap();
+    let page_count = total_size.div_ceil(M4KiB::SIZE);
+    let page_range =
+        page_alloc::with_page_allocator(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
+            .unwrap();
     let offset = page_range.start.start_address();
     // During the loading process, we will have to modify the page flags.
     // The pages we'll be writing to may not have the WRITABLE flag set anymore.
     // To overcome this problem, we will map a set of "working" pages, which will have the
     // correct flags set. These pages will be unmapped after the loading process.
-    let working_page_range = page_alloc::with_page_allocator(|palloc| {
-        palloc.allocate_pages::<M4KiB>(total_size.div_ceil(M4KiB::SIZE))
-    })
-    .unwrap();
+    let working_page_range =
+        page_alloc::with_page_allocator(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
+            .unwrap();
     let working_offset = working_page_range.start.start_address();
-
-    debug_assert_eq!(page_range.size(), working_page_range.size());
 
     frame_alloc::with_frame_allocator(|fralloc| {
         let mut dummy_flags = Flags::PRESENT | Flags::NO_EXECUTE;
-        // FIXME: Not setting the USER_ACCESSIBLE flag results in a page fault.
-        // I don't understand why, as the below code should set the correct flags when needed.
         if scheduler::current_process().kind().ring() == Ring::User {
             dummy_flags = dummy_flags | Flags::USER_ACCESSIBLE;
         }
         scheduler::current_process()
             .address_space()
             .with_page_table(|pt| {
-                for (page, working_page) in page_range.into_iter().zip(working_page_range) {
+                for (page, wp) in page_range.into_iter().zip(working_page_range) {
                     let frame = fralloc.allocate_frame().unwrap();
                     pt.map(page, frame, dummy_flags, fralloc).flush();
-                    pt.map(
-                        working_page,
-                        frame,
-                        Flags::PRESENT | Flags::WRITABLE,
-                        fralloc,
-                    )
-                    .flush();
+                    pt.map(wp, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)
+                        .flush();
                 }
             });
     });
 
     #[cfg(debug_assertions)]
     unsafe {
-        let page_start = working_offset.as_mut_ptr::<u8>();
-        page_start.write_bytes(
+        working_offset.as_mut_ptr::<u8>().write_bytes(
             beskar_core::arch::x86_64::instructions::STACK_DEBUG_INSTR,
             usize::try_from(working_page_range.size()).unwrap(),
         );
     }
 
-    load_segments(&elf, offset, working_offset)?;
+    let load_res = load_segments(&elf, offset, working_offset);
 
     // Unmap and free "working" pages
     scheduler::current_process()
@@ -116,6 +100,24 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
     page_alloc::with_page_allocator(|palloc| {
         palloc.free_pages(working_page_range);
     });
+
+    if let Err(e) = load_res {
+        frame_alloc::with_frame_allocator(|fralloc| {
+            scheduler::current_process()
+                .address_space()
+                .with_page_table(|pt| {
+                    for page in page_range {
+                        let (frame, tlb) = pt.unmap(page).unwrap();
+                        tlb.flush();
+                        fralloc.free(frame);
+                    }
+                });
+        });
+        page_alloc::with_page_allocator(|palloc| {
+            palloc.free_pages(page_range);
+        });
+        return Err(e);
+    }
 
     let entry_point = {
         let raw_entry_point = elf.header.pt2.entry_point().try_into().unwrap();
@@ -134,8 +136,10 @@ fn sanity_check(elf: &ElfFile) -> BinaryResult<()> {
     }
 
     ensure!(elf.header.pt1.class() == header::Class::SixtyFour);
+    #[cfg(target_arch = "x86_64")]
     ensure!(elf.header.pt2.machine().as_machine() == header::Machine::X86_64);
-    // FIXME: Is it safe to assume that the endianness is always little?
+    #[cfg(target_arch = "aarch64")]
+    ensure!(elf.header.pt2.machine().as_machine() == header::Machine::AArch64);
     ensure!(elf.header.pt1.data() == header::Data::LittleEndian);
     ensure!(
         elf.header.pt1.os_abi() == header::OsAbi::SystemV
@@ -153,6 +157,7 @@ fn load_segments(elf: &ElfFile, offset: VirtAddr, working_offset: VirtAddr) -> B
                 handle_segment_load(elf, ph, offset, working_offset)?;
             }
             Type::Tls => {
+                // TODO: TLS support
                 crate::warn!("TLS segment found, but not supported");
             }
             Type::Interp => {
