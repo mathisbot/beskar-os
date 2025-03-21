@@ -27,7 +27,6 @@ fn rdrand(dst: &mut u64) -> Result<(), RandError> {
     Err(RandError::RdrandFailed)
 }
 
-#[must_use]
 /// Generates a random instance of the given type, filling its bytes with RDRAND
 ///
 /// ## Safety

@@ -81,9 +81,10 @@ impl Gdt {
     #[must_use]
     fn create_tss() -> TaskStateSegment {
         fn alloc_stack(count: u64) -> x86_64::VirtAddr {
-            let (page_range, _guard_page) = page_alloc::with_page_allocator(|page_allocator| {
-                page_allocator.allocate_guarded::<M4KiB>(count).unwrap()
-            });
+            let (_guard_start, page_range, _guard_end) =
+                page_alloc::with_page_allocator(|page_allocator| {
+                    page_allocator.allocate_guarded(count).unwrap()
+                });
 
             frame_alloc::with_frame_allocator(|frame_allocator| {
                 crate::mem::address_space::with_kernel_pt(|page_table| {

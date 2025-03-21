@@ -162,7 +162,7 @@ impl AddressSpace {
     }
 
     #[must_use]
-    pub fn cr3_flags(&self) -> u16 {
+    pub const fn cr3_flags(&self) -> u16 {
         self.cr3_flags
     }
 

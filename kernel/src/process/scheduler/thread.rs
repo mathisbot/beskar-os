@@ -198,14 +198,14 @@ impl Thread {
     #[must_use]
     #[inline]
     /// Returns the value of the last stack pointer.
-    pub fn last_stack_ptr(&self) -> *const u8 {
+    pub const fn last_stack_ptr(&self) -> *const u8 {
         self.last_stack_ptr
     }
 
     #[must_use]
     #[inline]
     /// Returns a mutable pointer to the last stack pointer.
-    pub fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
+    pub const fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
         &mut self.last_stack_ptr
     }
 }
@@ -310,8 +310,8 @@ impl ThreadStacks {
         assert!(size > 0);
 
         // FIXME: Use the process' page allocator to allocate the stack.
-        let (page_range, _guard) = page_alloc::with_page_allocator(|palloc| {
-            palloc.allocate_guarded::<M4KiB>(size.div_ceil(M4KiB::SIZE))
+        let (_guard_start, page_range, _guard_end) = page_alloc::with_page_allocator(|palloc| {
+            palloc.allocate_guarded(size.div_ceil(M4KiB::SIZE))
         })
         .unwrap();
 

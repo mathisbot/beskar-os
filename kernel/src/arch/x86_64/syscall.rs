@@ -132,18 +132,19 @@ pub fn init_syscalls() {
 
 // Allocate a stack for the syscall handler and return the top of the stack
 fn allocate_stack(nb_pages: u64) -> *mut u8 {
-    let (page_range, _guard_page) = crate::mem::page_alloc::with_page_allocator(|palloc| {
-        palloc.allocate_guarded::<M4KiB>(nb_pages).unwrap()
-    });
+    let (_guard_start, page_range, _guard_end) =
+        crate::mem::page_alloc::with_page_allocator(|palloc| {
+            palloc.allocate_guarded(nb_pages).unwrap()
+        });
 
     crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
         crate::mem::address_space::with_kernel_pt(|kpt| {
-            for page in page_range.clone() {
+            for page in page_range {
                 let frame = fralloc.allocate_frame().unwrap();
                 kpt.map(page, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)
                     .flush();
             }
-        })
+        });
     });
 
     // We need the stack to be 16-byte aligned.

@@ -41,6 +41,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
+#[derive(Default)]
 /// A read-write lock.
 pub struct RwLock<T> {
     /// The data protected by the lock.
@@ -57,32 +58,32 @@ unsafe impl<T> Sync for RwLock<T> {}
 
 impl<T> RwLock<T> {
     #[must_use]
-    pub fn new(data: T) -> Self {
+    pub const fn new(data: T) -> Self {
         Self {
             data: UnsafeCell::new(data),
-            state: AtomicState::default(),
+            state: AtomicState::new(),
         }
     }
 
     #[must_use]
-    pub fn read(&self) -> RwLockReadGuard<T> {
+    pub fn read(&self) -> ReadGuard<T> {
         self.state.read_lock();
-        RwLockReadGuard { lock: self }
+        ReadGuard { lock: self }
     }
 
     #[must_use]
-    pub fn write(&self) -> RwLockWriteGuard<T> {
+    pub fn write(&self) -> WriteGuard<T> {
         self.state.write_lock();
-        RwLockWriteGuard { lock: self }
+        WriteGuard { lock: self }
     }
 }
 
 /// A guard that allows read-only access to the data.
-pub struct RwLockReadGuard<'a, T> {
+pub struct ReadGuard<'a, T> {
     lock: &'a RwLock<T>,
 }
 
-impl<T> core::ops::Deref for RwLockReadGuard<'_, T> {
+impl<T> core::ops::Deref for ReadGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -91,18 +92,18 @@ impl<T> core::ops::Deref for RwLockReadGuard<'_, T> {
     }
 }
 
-impl<T> Drop for RwLockReadGuard<'_, T> {
+impl<T> Drop for ReadGuard<'_, T> {
     fn drop(&mut self) {
         self.lock.state.read_unlock();
     }
 }
 
 /// A guard that allows mutable access to the data.
-pub struct RwLockWriteGuard<'a, T> {
+pub struct WriteGuard<'a, T> {
     lock: &'a RwLock<T>,
 }
 
-impl<T> core::ops::Deref for RwLockWriteGuard<'_, T> {
+impl<T> core::ops::Deref for WriteGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -110,19 +111,20 @@ impl<T> core::ops::Deref for RwLockWriteGuard<'_, T> {
     }
 }
 
-impl<T> core::ops::DerefMut for RwLockWriteGuard<'_, T> {
+impl<T> core::ops::DerefMut for WriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         debug_assert_eq!(self.lock.state.readers.load(Ordering::Acquire), 0);
         unsafe { &mut *self.lock.data.get() }
     }
 }
 
-impl<T> Drop for RwLockWriteGuard<'_, T> {
+impl<T> Drop for WriteGuard<'_, T> {
     fn drop(&mut self) {
         self.lock.state.write_unlock();
     }
 }
 
+#[derive(Debug, Default)]
 /// The state of the lock.
 struct AtomicState {
     /// The number of readers.
@@ -131,16 +133,16 @@ struct AtomicState {
     writer: AtomicBool,
 }
 
-impl Default for AtomicState {
-    fn default() -> Self {
+impl AtomicState {
+    #[must_use]
+    #[inline]
+    pub const fn new() -> Self {
         Self {
             readers: AtomicUsize::new(0),
             writer: AtomicBool::new(false),
         }
     }
-}
 
-impl AtomicState {
     pub fn read_lock(&self) {
         loop {
             while self.writer.load(Ordering::Acquire) {

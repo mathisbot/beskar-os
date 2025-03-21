@@ -239,7 +239,7 @@ extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFra
 #[repr(u8)]
 /// Represents a programmable interrupt index
 pub enum Irq {
-    // Because the 32 first interrupts are reserved for exceptions,
+    // As the 32 first interrupts are reserved for exceptions,
     // all numbers defined here must be greater than or equal to 32.
     Timer = 32,
     Spurious = 33,

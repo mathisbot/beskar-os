@@ -140,13 +140,13 @@ impl PageAllocator {
         }
     }
 
-    /// Returns a tuple with the range of pages and the guard page
-    pub fn allocate_guarded<S: MemSize>(
+    /// Returns a tuple with the range of pages and the guard pages
+    pub fn allocate_guarded(
         &mut self,
         count: u64,
-    ) -> Option<(PageRangeInclusive<S>, Page<M4KiB>)> {
-        let size = S::SIZE * count + M4KiB::SIZE;
-        let alignment = S::SIZE;
+    ) -> Option<(Page<M4KiB>, PageRangeInclusive<M4KiB>, Page<M4KiB>)> {
+        let size = M4KiB::SIZE * (count + 2);
+        let alignment = M4KiB::SIZE;
 
         let start_vaddr = VirtAddr::new(
             u64::try_from(self.vranges.allocate::<1>(
@@ -157,16 +157,17 @@ impl PageAllocator {
             .unwrap(),
         );
 
-        // Guard page is the first page
-        let guard_page = Page::<M4KiB>::from_start_address(start_vaddr).unwrap();
-        let start_vaddr = start_vaddr + M4KiB::SIZE;
+        let guard_page_start = Page::<M4KiB>::from_start_address(start_vaddr).unwrap();
 
-        let first_page = Page::<S>::from_start_address(start_vaddr).unwrap();
+        let usable_pages = Page::range_inclusive(
+            Page::<M4KiB>::from_start_address(start_vaddr + M4KiB::SIZE).unwrap(),
+            Page::<M4KiB>::from_start_address(start_vaddr + M4KiB::SIZE * count).unwrap(),
+        );
 
-        Some((
-            Page::range_inclusive(first_page, first_page + (count - 1)),
-            guard_page,
-        ))
+        let guard_page_end =
+            Page::<M4KiB>::from_start_address(start_vaddr + M4KiB::SIZE * (count + 1)).unwrap();
+
+        Some((guard_page_start, usable_pages, guard_page_end))
     }
 
     pub fn free_pages<S: MemSize>(&mut self, pages: PageRangeInclusive<S>) {
