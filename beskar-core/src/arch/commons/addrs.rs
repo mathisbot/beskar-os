@@ -22,6 +22,18 @@ impl VirtAddr {
 
     #[must_use]
     #[inline]
+    pub const fn try_new(addr: u64) -> Option<Self> {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        // Perform sign extension
+        let extended = ((addr << 16) as i64 >> 16) as u64;
+        if extended != addr {
+            return None;
+        }
+        Some(Self(extended))
+    }
+
+    #[must_use]
+    #[inline]
     /// Create a new valid virtual address by sign extending the address.
     pub const fn new_extend(addr: u64) -> Self {
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]

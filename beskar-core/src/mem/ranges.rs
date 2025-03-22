@@ -1,6 +1,5 @@
-use core::ops::{Index, IndexMut};
-
 use super::{MemoryRegion, MemoryRegionUsage};
+use core::ops::{Index, IndexMut};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 /// Represents a range of memory addresses.
@@ -44,6 +43,18 @@ impl MemoryRange {
     /// Returns true if the range is inside the other range.
     pub const fn is_inside(&self, other: &Self) -> bool {
         self.start >= other.start && self.end <= other.end
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn start(&self) -> u64 {
+        self.start
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn end(&self) -> u64 {
+        self.end
     }
 }
 

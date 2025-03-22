@@ -18,7 +18,7 @@ use beskar_core::{
 use core::ptr::NonNull;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
-    volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
+    ptrs::volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
 };
 use queue::admin::{AdminCompletionQueue, AdminSubmissionQueue};
 

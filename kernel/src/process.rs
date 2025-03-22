@@ -5,7 +5,7 @@ use alloc::{
     sync::Arc,
 };
 use beskar_core::arch::x86_64::userspace::Ring;
-use hyperdrive::{once::Once, tether::Tether};
+use hyperdrive::{once::Once, ptrs::view::View};
 
 use crate::mem::address_space::{self, AddressSpace};
 
@@ -20,7 +20,7 @@ pub fn init() {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: Tether::Reference(address_space::get_kernel_address_space()),
+            address_space: View::Reference(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
             binary_data: None,
         })
@@ -37,7 +37,7 @@ pub fn init() {
 pub struct Process {
     name: String,
     pid: ProcessId,
-    address_space: Tether<'static, AddressSpace>,
+    address_space: View<'static, AddressSpace>,
     kind: Kind,
     // FIXME: Shouldn't be 'static
     binary_data: Option<BinaryData<'static>>,
@@ -50,7 +50,7 @@ impl Process {
         Self {
             name: name.to_string(),
             pid: ProcessId::new(),
-            address_space: Tether::Owned(AddressSpace::new()),
+            address_space: View::Owned(AddressSpace::new()),
             kind,
             binary_data: binary.map(BinaryData::new),
         }
@@ -181,4 +181,10 @@ impl<'a> BinaryData<'a> {
     pub fn load(&self) {
         self.loaded.call_once(|| self.input.load().unwrap());
     }
+}
+
+#[must_use]
+#[inline]
+pub fn current() -> Arc<Process> {
+    scheduler::current_process()
 }

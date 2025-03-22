@@ -5,13 +5,14 @@ use core::{
     sync::atomic::{AtomicU8, Ordering},
 };
 
-use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
 use timer::LapicTimer;
 
 use super::cpuid;
 use crate::{
     locals,
-    mem::{address_space, frame_alloc, page_alloc},
+    mem::{address_space, frame_alloc},
+    process,
 };
 use beskar_core::arch::x86_64::{paging::page_table::Flags, registers::Msr};
 use beskar_core::arch::{
@@ -120,9 +121,11 @@ impl LocalApic {
 
         let apic_flags = Flags::MMIO_SUITABLE;
 
-        let page = page_alloc::with_page_allocator(|page_allocator| {
-            page_allocator.allocate_pages::<M4KiB>(1).unwrap().start
-        });
+        let page = process::current()
+            .address_space()
+            .with_pgalloc(|page_allocator| {
+                page_allocator.allocate_pages::<M4KiB>(1).unwrap().start
+            });
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             address_space::with_kernel_pt(|page_table| {
@@ -347,11 +350,11 @@ impl IoApic {
         // FIXME: I don't quite like that each IOAPIC gets its own page
         // Apparently, IOAPICs only live in Physical 0xFEC0..00, so one page per 16 IOAPICs?
         // Or maybe keep track of mapped pages and check if the page is already mapped?
-        let page = page_alloc::with_page_allocator(|page_allocator| {
-            page_allocator.allocate_pages::<M4KiB>(1)
-        })
-        .unwrap()
-        .start;
+        let page = process::current()
+            .address_space()
+            .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<M4KiB>(1))
+            .unwrap()
+            .start;
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             address_space::with_kernel_pt(|page_table| {

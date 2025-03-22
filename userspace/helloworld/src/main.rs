@@ -9,5 +9,9 @@ fn main() {
     print("Hello, userspace!");
 
     // Safety: any 8 random bytes are valid u64 values.
-    let _random_u64 = unsafe { rand::<u64>() };
+    let random_u64 = unsafe { rand::<u64>() };
+
+    let _test_vec = alloc::vec![0; 10];
+
+    beskar_lib::println!("Random u64: {}", random_u64);
 }

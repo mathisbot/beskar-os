@@ -14,5 +14,14 @@ pub fn print(msg: &str) {
         msg.as_ptr() as u64,
         msg.len().try_into().unwrap(),
     );
-    assert_eq!(res, SyscallExitCode::Success);
+    assert_eq!(SyscallExitCode::from(res), SyscallExitCode::Success);
+}
+
+#[macro_export]
+// FIXME: When stdout is implemented, maybe change it to multiple syscalls
+// instead of buffering the output.
+macro_rules! println {
+    ($($arg:tt)*) => {
+        ::beskar_lib::io::print(&::alloc::format!($($arg)*));
+    };
 }

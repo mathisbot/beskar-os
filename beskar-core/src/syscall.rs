@@ -16,6 +16,12 @@ pub enum Syscall {
     /// The first argument is a pointer to the buffer.
     /// The second argument is the length of the buffer.
     RandomGen = 2,
+    /// MemoryMap syscall.
+    ///
+    /// Allocates memory and gives the user a pointer to it.
+    ///
+    /// The first argument is the size of the memory to allocate.
+    MemoryMap = 3,
     /// Invalid syscall.
     ///
     /// Any syscall that is not recognized.
@@ -28,6 +34,7 @@ impl From<u64> for Syscall {
             0 => Self::Print,
             1 => Self::Exit,
             2 => Self::RandomGen,
+            3 => Self::MemoryMap,
             _ => Self::Invalid,
         }
     }
@@ -63,6 +70,23 @@ impl SyscallExitCode {
     /// Panics if the syscall exit code is not a success.
     pub fn unwrap(self) {
         assert_ne!(self, Self::Failure, "Syscall failed!");
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SyscallReturnValue {
+    Code(SyscallExitCode),
+    Value(u64),
+}
+
+impl SyscallReturnValue {
+    #[must_use]
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
+        match self {
+            Self::Code(code) => code as u64,
+            Self::Value(value) => value,
+        }
     }
 }
 

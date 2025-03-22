@@ -82,14 +82,25 @@ impl From<State> for u8 {
 struct AtomicState(AtomicU8);
 
 impl AtomicState {
+    #[must_use]
+    #[inline]
     const fn uninit() -> Self {
         Self(AtomicU8::new(State::Uninitialized as u8))
     }
 
+    #[must_use]
+    #[inline]
+    const fn new(state: State) -> Self {
+        Self(AtomicU8::new(state as u8))
+    }
+
+    #[must_use]
+    #[inline]
     fn load(&self, order: Ordering) -> State {
         self.0.load(order).try_into().unwrap()
     }
 
+    #[inline]
     fn compare_exchange(
         &self,
         current: State,
@@ -101,6 +112,7 @@ impl AtomicState {
             .compare_exchange(current.into(), new.into(), success, failure)
     }
 
+    #[inline]
     fn store(&self, value: State, order: Ordering) {
         self.0.store(value.into(), order);
     }
@@ -125,10 +137,20 @@ unsafe impl<T> Sync for Once<T> {}
 
 impl<T> Once<T> {
     #[must_use]
+    #[inline]
     pub const fn uninit() -> Self {
         Self {
             state: AtomicState::uninit(),
             value: UnsafeCell::new(MaybeUninit::uninit()),
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn from_init(value: T) -> Self {
+        Self {
+            state: AtomicState::new(State::Initialized),
+            value: UnsafeCell::new(MaybeUninit::new(value)),
         }
     }
 
@@ -215,6 +237,14 @@ mod test {
 
         once.call_once(|| 42);
 
+        let value = once.get().unwrap();
+        assert_eq!(*value, 42);
+    }
+
+    #[test]
+    fn test_init() {
+        let once = Once::from_init(42);
+        once.call_once(|| panic!("This should not be called"));
         let value = once.get().unwrap();
         assert_eq!(*value, 42);
     }

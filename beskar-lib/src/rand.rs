@@ -15,7 +15,7 @@ pub fn rand_fill(buf: &mut [u8]) {
         buf.as_mut_ptr() as u64,
         buf.len().try_into().unwrap(),
     );
-    assert_eq!(res, SyscallExitCode::Success);
+    assert_eq!(SyscallExitCode::from(res), SyscallExitCode::Success);
 }
 
 #[must_use]

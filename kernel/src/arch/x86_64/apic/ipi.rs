@@ -1,6 +1,6 @@
 //! Inter-Processor Interrupts (IPIs)
 
-use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
 
 use crate::arch::interrupts::Irq;
 

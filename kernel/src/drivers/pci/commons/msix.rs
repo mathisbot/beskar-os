@@ -2,7 +2,7 @@
 
 use core::ptr::NonNull;
 
-use hyperdrive::volatile::{ReadWrite, Volatile};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
 use crate::arch::interrupts::Irq;
 use crate::locals;

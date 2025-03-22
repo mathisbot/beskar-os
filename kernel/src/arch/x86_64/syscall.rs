@@ -1,6 +1,6 @@
 use beskar_core::{
     arch::{
-        commons::paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper},
+        commons::paging::{CacheFlush, Flags, FrameAllocator, Mapper},
         x86_64::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors},
     },
     syscall::Syscall,
@@ -9,6 +9,7 @@ use hyperdrive::once::Once;
 
 use crate::{
     locals,
+    mem::address_space,
     syscall::{Arguments, syscall},
 };
 
@@ -109,7 +110,7 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
     let res = syscall(Syscall::from(regs.rax), &args);
 
     // Store result
-    regs.rax = res as u64;
+    regs.rax = res.as_u64();
 }
 
 pub fn init_syscalls() {
@@ -133,9 +134,7 @@ pub fn init_syscalls() {
 // Allocate a stack for the syscall handler and return the top of the stack
 fn allocate_stack(nb_pages: u64) -> *mut u8 {
     let (_guard_start, page_range, _guard_end) =
-        crate::mem::page_alloc::with_page_allocator(|palloc| {
-            palloc.allocate_guarded(nb_pages).unwrap()
-        });
+        address_space::with_kernel_pgalloc(|palloc| palloc.allocate_guarded(nb_pages).unwrap());
 
     crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
         crate::mem::address_space::with_kernel_pt(|kpt| {

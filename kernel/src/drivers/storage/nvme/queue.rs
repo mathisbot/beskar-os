@@ -10,7 +10,7 @@ use beskar_core::{
     },
     drivers::{DriverError, DriverResult},
 };
-use hyperdrive::volatile::{ReadWrite, Volatile};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
 use crate::mem::{frame_alloc, page_alloc::pmap::PhysicalMapping};
 

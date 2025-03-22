@@ -65,6 +65,8 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     locals!().gdt().init_load();
 
+    process::init();
+
     // If the bootloader provided an RSDP address, we can initialize ACPI.
     rsdp_paddr.map(drivers::acpi::init);
 
@@ -72,7 +74,6 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     interrupts::init();
 
-    process::init();
     syscall::init();
 
     apic::init_lapic();

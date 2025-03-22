@@ -9,6 +9,7 @@ use ::beskar_core::syscall::Syscall;
 mod arch;
 use arch::syscalls;
 pub mod io;
+pub mod mem;
 pub mod rand;
 
 #[panic_handler]
@@ -26,11 +27,24 @@ pub fn exit(code: ExitCode) -> ! {
 /// Sets the entry point for the program.
 macro_rules! entry_point {
     ($path:path) => {
+        extern crate alloc;
+
         #[inline]
         #[unsafe(export_name = "_start")]
         pub extern "C" fn __program_entry() {
+            unsafe { ::beskar_lib::__init() };
             ($path)();
             ::beskar_lib::exit(::beskar_lib::ExitCode::Success);
         }
     };
+}
+
+/// Initialize the standard library.
+///
+/// ## Safety
+///
+/// Do not call this function.
+pub unsafe fn __init() {
+    let res = mem::mmap(mem::HEAP_SIZE);
+    unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };
 }

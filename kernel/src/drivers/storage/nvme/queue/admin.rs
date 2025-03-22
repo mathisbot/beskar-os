@@ -2,7 +2,7 @@ use beskar_core::{
     arch::commons::{PhysAddr, paging::Frame},
     drivers::DriverResult,
 };
-use hyperdrive::volatile::{ReadWrite, Volatile};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
 use super::{CompletionEntry, CompletionQueue, SubmissionEntry, SubmissionQueue};
 

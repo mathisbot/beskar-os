@@ -1,5 +1,5 @@
-use super::{super::scheduler, BinaryResult, LoadedBinary};
-use crate::mem::{frame_alloc, page_alloc};
+use super::{BinaryResult, LoadedBinary};
+use crate::{mem::frame_alloc, process};
 use beskar_core::arch::{
     commons::{
         VirtAddr,
@@ -44,38 +44,35 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
         .max()
         .unwrap();
 
-    // FIXME: We are using the kernel's page allocator, which is not ideal as
-    // we may be in a different address space.
-
     let page_count = total_size.div_ceil(M4KiB::SIZE);
-    let page_range =
-        page_alloc::with_page_allocator(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
-            .unwrap();
+    let page_range = process::current()
+        .address_space()
+        .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
+        .unwrap();
     let offset = page_range.start.start_address();
     // During the loading process, we will have to modify the page flags.
     // The pages we'll be writing to may not have the WRITABLE flag set anymore.
     // To overcome this problem, we will map a set of "working" pages, which will have the
     // correct flags set. These pages will be unmapped after the loading process.
-    let working_page_range =
-        page_alloc::with_page_allocator(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
-            .unwrap();
+    let working_page_range = process::current()
+        .address_space()
+        .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
+        .unwrap();
     let working_offset = working_page_range.start.start_address();
 
     frame_alloc::with_frame_allocator(|fralloc| {
-        let mut dummy_flags = Flags::PRESENT | Flags::NO_EXECUTE;
-        if scheduler::current_process().kind().ring() == Ring::User {
+        let mut dummy_flags = Flags::PRESENT | Flags::NO_EXECUTE | Flags::WRITABLE;
+        if process::current().kind().ring() == Ring::User {
             dummy_flags = dummy_flags | Flags::USER_ACCESSIBLE;
         }
-        scheduler::current_process()
-            .address_space()
-            .with_page_table(|pt| {
-                for (page, wp) in page_range.into_iter().zip(working_page_range) {
-                    let frame = fralloc.allocate_frame().unwrap();
-                    pt.map(page, frame, dummy_flags, fralloc).flush();
-                    pt.map(wp, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)
-                        .flush();
-                }
-            });
+        process::current().address_space().with_page_table(|pt| {
+            for (page, wp) in page_range.into_iter().zip(working_page_range) {
+                let frame = fralloc.allocate_frame().unwrap();
+                pt.map(page, frame, dummy_flags, fralloc).flush();
+                pt.map(wp, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)
+                    .flush();
+            }
+        });
     });
 
     #[cfg(debug_assertions)]
@@ -89,31 +86,27 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
     let load_res = load_segments(&elf, offset, working_offset);
 
     // Unmap and free "working" pages
-    scheduler::current_process()
-        .address_space()
-        .with_page_table(|pt| {
-            for page in working_page_range {
-                // Note that we cannot free the frames as they are used by the binary!
-                pt.unmap(page).unwrap().1.flush();
-            }
-        });
-    page_alloc::with_page_allocator(|palloc| {
+    process::current().address_space().with_page_table(|pt| {
+        for page in working_page_range {
+            // Note that we cannot free the frames as they are used by the binary!
+            pt.unmap(page).unwrap().1.flush();
+        }
+    });
+    process::current().address_space().with_pgalloc(|palloc| {
         palloc.free_pages(working_page_range);
     });
 
     if let Err(e) = load_res {
         frame_alloc::with_frame_allocator(|fralloc| {
-            scheduler::current_process()
-                .address_space()
-                .with_page_table(|pt| {
-                    for page in page_range {
-                        let (frame, tlb) = pt.unmap(page).unwrap();
-                        tlb.flush();
-                        fralloc.free(frame);
-                    }
-                });
+            process::current().address_space().with_page_table(|pt| {
+                for page in page_range {
+                    let (frame, tlb) = pt.unmap(page).unwrap();
+                    tlb.flush();
+                    fralloc.free(frame);
+                }
+            });
         });
-        page_alloc::with_page_allocator(|palloc| {
+        process::current().address_space().with_pgalloc(|palloc| {
             palloc.free_pages(page_range);
         });
         return Err(e);
@@ -197,38 +190,36 @@ fn handle_segment_load(
     if !ph.flags().is_execute() {
         segment_flags = segment_flags | Flags::NO_EXECUTE;
     }
-    if scheduler::current_process().kind().ring() == Ring::User {
+    if process::current().kind().ring() == Ring::User {
         segment_flags = segment_flags | Flags::USER_ACCESSIBLE;
     }
 
-    scheduler::current_process()
-        .address_space()
-        .with_page_table(|pt| {
-            let segment_start_vaddr = offset + ph.virtual_addr();
+    process::current().address_space().with_page_table(|pt| {
+        let segment_start_vaddr = offset + ph.virtual_addr();
 
-            if ph.file_size() != 0 {
-                let segment_start_page = Page::<M4KiB>::containing_address(segment_start_vaddr);
-                let segment_end_page =
-                    Page::<M4KiB>::containing_address(segment_start_vaddr + ph.file_size() - 1);
+        if ph.file_size() != 0 {
+            let segment_start_page = Page::<M4KiB>::containing_address(segment_start_vaddr);
+            let segment_end_page =
+                Page::<M4KiB>::containing_address(segment_start_vaddr + ph.file_size() - 1);
 
-                for page in Page::range_inclusive(segment_start_page, segment_end_page) {
-                    pt.update_flags(page, segment_flags).unwrap().flush();
-                }
-
-                // Copy the segment data from elf.input to the new location
-                let dest = (working_offset + ph.virtual_addr()).as_mut_ptr::<u8>();
-                let src = elf.input[usize::try_from(ph.offset()).unwrap()..].as_ptr();
-                unsafe {
-                    dest.copy_from(src, usize::try_from(ph.file_size()).unwrap());
-                }
+            for page in Page::range_inclusive(segment_start_page, segment_end_page) {
+                pt.update_flags(page, segment_flags).unwrap().flush();
             }
 
-            if ph.mem_size() > ph.file_size() {
-                zero_bss(ph, pt, offset, working_offset);
+            // Copy the segment data from elf.input to the new location
+            let dest = (working_offset + ph.virtual_addr()).as_mut_ptr::<u8>();
+            let src = elf.input[usize::try_from(ph.offset()).unwrap()..].as_ptr();
+            unsafe {
+                dest.copy_from(src, usize::try_from(ph.file_size()).unwrap());
             }
+        }
 
-            Ok(())
-        })
+        if ph.mem_size() > ph.file_size() {
+            zero_bss(ph, pt, offset, working_offset);
+        }
+
+        Ok(())
+    })
 }
 
 fn zero_bss(
@@ -267,7 +258,7 @@ fn zero_bss(
     if !ph.flags().is_execute() {
         segment_flags = segment_flags | Flags::NO_EXECUTE;
     }
-    if scheduler::current_process().kind().ring() == Ring::User {
+    if process::current().kind().ring() == Ring::User {
         segment_flags = segment_flags | Flags::USER_ACCESSIBLE;
     }
 
@@ -370,24 +361,22 @@ fn handle_segment_dynamic(
 }
 
 fn handle_segment_gnurelro(ph: program::ProgramHeader, offset: VirtAddr) -> BinaryResult<()> {
-    scheduler::current_process()
-        .address_space()
-        .with_page_table(|pt| {
-            let start_vaddr = offset + ph.virtual_addr();
+    process::current().address_space().with_page_table(|pt| {
+        let start_vaddr = offset + ph.virtual_addr();
 
-            let start_page = Page::<M4KiB>::containing_address(start_vaddr);
-            let end_page = Page::<M4KiB>::containing_address(start_vaddr + ph.mem_size() - 1);
+        let start_page = Page::<M4KiB>::containing_address(start_vaddr);
+        let end_page = Page::<M4KiB>::containing_address(start_vaddr + ph.mem_size() - 1);
 
-            for page in Page::range_inclusive(start_page, end_page) {
-                let (_frame, flags) = pt.translate(page).unwrap();
+        for page in Page::range_inclusive(start_page, end_page) {
+            let (_frame, flags) = pt.translate(page).unwrap();
 
-                if flags.contains(Flags::WRITABLE) {
-                    pt.update_flags(page, flags.without(Flags::WRITABLE))
-                        .unwrap()
-                        .flush();
-                }
+            if flags.contains(Flags::WRITABLE) {
+                pt.update_flags(page, flags.without(Flags::WRITABLE))
+                    .unwrap()
+                    .flush();
             }
+        }
 
-            Ok(())
-        })
+        Ok(())
+    })
 }

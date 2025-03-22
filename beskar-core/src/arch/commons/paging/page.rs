@@ -76,6 +76,8 @@ impl Page<M1GiB> {
     #[must_use]
     #[inline]
     pub fn from_p4p3(p4: u16, p3: u16) -> Self {
+        debug_assert!(p4 < 512);
+        debug_assert!(p3 < 512);
         let addr = (u64::from(p4) << 39) | (u64::from(p3) << 30);
         let vaddr = VirtAddr::new_extend(addr);
 
@@ -96,6 +98,9 @@ impl Page<M2MiB> {
     #[must_use]
     #[inline]
     pub fn from_p4p3p2(p4: u16, p3: u16, p2: u16) -> Self {
+        debug_assert!(p4 < 512);
+        debug_assert!(p3 < 512);
+        debug_assert!(p2 < 512);
         let addr = (u64::from(p4) << 39) | (u64::from(p3) << 30) | (u64::from(p2) << 21);
         let vaddr = VirtAddr::new_extend(addr);
 
@@ -122,6 +127,10 @@ impl Page<M4KiB> {
     #[must_use]
     #[inline]
     pub fn from_p4p3p2p1(p4: u16, p3: u16, p2: u16, p1: u16) -> Self {
+        debug_assert!(p4 < 512);
+        debug_assert!(p3 < 512);
+        debug_assert!(p2 < 512);
+        debug_assert!(p1 < 512);
         let addr = (u64::from(p4) << 39)
             | (u64::from(p3) << 30)
             | (u64::from(p2) << 21)
