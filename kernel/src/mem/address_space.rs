@@ -22,7 +22,7 @@ static KERNEL_ADDRESS_SPACE: Once<AddressSpace> = Once::uninit();
 
 static KERNEL_CODE_INFO: Once<KernelInfo> = Once::uninit();
 
-const PROCESS_PGALLOC_VRANGES: usize = 64;
+const PROCESS_PGALLOC_VRANGES: usize = 128;
 
 pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
     KERNEL_CODE_INFO.call_once(|| *kernel_info);
@@ -107,6 +107,7 @@ impl AddressSpace {
         let mut pt = Entries::new();
 
         // Copy the kernel's page table entries to the new address space
+        // FIXME: Requires being in the kernel's address space
         with_kernel_pt(|kpt| {
             // FIXME: Is it safe to copy the whole PML4?
             // In fact we should only need kernel code, heap, fb, and stack.

@@ -79,7 +79,7 @@ impl Thread {
         root_proc: Arc<Process>,
         priority: Priority,
         mut stack: Vec<u8>,
-        entry_point: extern "C" fn(),
+        entry_point: extern "C" fn() -> !,
     ) -> Self {
         let mut stack_ptr = stack.as_mut_ptr(); // Stack grows downwards
 
@@ -119,7 +119,11 @@ impl Thread {
     }
 
     /// Setup the stack and move stack pointer to the end of the stack.
-    fn setup_stack(stack_ptr: *mut u8, stack: &mut [u8], entry_point: extern "C" fn()) -> usize {
+    fn setup_stack(
+        stack_ptr: *mut u8,
+        stack: &mut [u8],
+        entry_point: extern "C" fn() -> !,
+    ) -> usize {
         // Can be used to detect stack overflow
         #[cfg(debug_assertions)]
         stack.fill(STACK_DEBUG_INSTR);
@@ -271,7 +275,7 @@ pub struct ThreadRegisters {
 ///
 /// This function should not be called directly, but rather be used
 /// as an entry point for threads.
-extern "C" fn user_trampoline() {
+extern "C" fn user_trampoline() -> ! {
     let root_proc = super::current_process();
 
     // Load the binary into the process' address space.

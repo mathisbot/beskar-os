@@ -184,7 +184,7 @@ fn get_scheduler() -> &'static Scheduler {
     SCHEDULERS[locals!().core_id()].get().unwrap()
 }
 
-extern "C" fn clean_thread() {
+extern "C" fn clean_thread() -> ! {
     loop {
         if let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
             drop(thread);

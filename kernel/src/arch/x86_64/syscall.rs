@@ -9,7 +9,7 @@ use hyperdrive::once::Once;
 
 use crate::{
     locals,
-    mem::address_space,
+    mem::{address_space, frame_alloc},
     syscall::{Arguments, syscall},
 };
 
@@ -136,8 +136,8 @@ fn allocate_stack(nb_pages: u64) -> *mut u8 {
     let (_guard_start, page_range, _guard_end) =
         address_space::with_kernel_pgalloc(|palloc| palloc.allocate_guarded(nb_pages).unwrap());
 
-    crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-        crate::mem::address_space::with_kernel_pt(|kpt| {
+    frame_alloc::with_frame_allocator(|fralloc| {
+        address_space::with_kernel_pt(|kpt| {
             for page in page_range {
                 let frame = fralloc.allocate_frame().unwrap();
                 kpt.map(page, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)

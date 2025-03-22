@@ -17,8 +17,8 @@ use crate::{
 use beskar_core::arch::x86_64::{paging::page_table::Flags, registers::Msr};
 use beskar_core::arch::{
     commons::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Translator as _},
+        PhysAddr,
+        paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _},
     },
     x86_64::port::{self, Port},
 };
@@ -102,6 +102,7 @@ fn enable_disable_interrupts(enable: bool) {
 pub struct LocalApic {
     base: Volatile<ReadWrite, u32>,
     timer: LapicTimer,
+    paddr: PhysAddr,
 }
 
 impl LocalApic {
@@ -147,6 +148,7 @@ impl LocalApic {
         Self {
             base,
             timer: timer::LapicTimer::new(timer::Configuration::new(base, Irq::Timer)),
+            paddr,
         }
     }
 
@@ -184,11 +186,9 @@ impl LocalApic {
     }
 
     #[must_use]
-    pub fn paddr(&self) -> PhysAddr {
-        address_space::with_kernel_pt(|pt| {
-            pt.translate_addr(VirtAddr::new(self.base.as_non_null().as_ptr() as u64))
-                .unwrap()
-        })
+    #[inline]
+    pub const fn paddr(&self) -> PhysAddr {
+        self.paddr
     }
 }
 

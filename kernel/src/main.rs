@@ -31,6 +31,14 @@ fn kmain() -> ! {
         use kernel::process::scheduler::{self, priority::Priority, thread::Thread};
         extern crate alloc;
 
+        let driver_proc = Arc::new(Process::new("Drivers", kernel::process::Kind::Driver, None));
+        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+            driver_proc,
+            Priority::Low,
+            alloc::vec![0; 1024 * 128],
+            kernel::drivers::init,
+        )));
+
         if let Some(ramdisk) = kernel::boot::ramdisk() {
             // TODO: Only pass the file location to the process creation.
             // File loading should be done in the process itself.

@@ -80,8 +80,6 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     apic::init_ioapic();
 
     crate::storage::init();
-
-    drivers::init();
 }
 
 /// Rust entry point for APs
