@@ -10,7 +10,6 @@ use hyperdrive::{once::Once, ptrs::view::View};
 use crate::mem::address_space::{self, AddressSpace};
 
 pub mod binary;
-pub mod dummy;
 pub mod scheduler;
 
 static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();

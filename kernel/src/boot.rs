@@ -79,6 +79,8 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     apic::init_lapic();
     apic::init_ioapic();
 
+    crate::storage::init();
+
     drivers::init();
 }
 

@@ -28,46 +28,8 @@ fn kmain() -> ! {
     // (GUI, ...)
 
     SPAWN_ONCE.call_once(|| {
-        use kernel::process::{
-            dummy,
-            scheduler::{self, priority::Priority, thread::Thread},
-        };
+        use kernel::process::scheduler::{self, priority::Priority, thread::Thread};
         extern crate alloc;
-
-        let root_proc = Arc::new(Process::new("Tests", kernel::process::Kind::Driver, None));
-
-        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            root_proc.clone(),
-            Priority::Normal,
-            alloc::vec![0; 1024*256],
-            dummy::fibonacci,
-        )));
-        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            root_proc.clone(),
-            Priority::Normal,
-            alloc::vec![0; 1024*256],
-            dummy::counter,
-        )));
-        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            root_proc.clone(),
-            Priority::Low,
-            alloc::vec![0; 1024*256],
-            dummy::panic_test,
-        )));
-        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            root_proc.clone(),
-            Priority::Normal,
-            alloc::vec![0; 1024*256],
-            dummy::floating_point,
-        )));
-
-        let root_proc = Arc::new(Process::new("Tests2!", kernel::process::Kind::Driver, None));
-        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
-            root_proc.clone(),
-            Priority::Normal,
-            alloc::vec![0; 1024*256],
-            dummy::counter,
-        )));
 
         if let Some(ramdisk) = kernel::boot::ramdisk() {
             // TODO: Only pass the file location to the process creation.

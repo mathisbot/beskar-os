@@ -23,16 +23,18 @@ unsafe impl core::alloc::GlobalAlloc for Heap {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
         ALLOCATOR.with_locked_if_init(|heap| unsafe {
-            heap.deallocate(NonNull::new_unchecked(ptr), layout)
+            heap.deallocate(NonNull::new_unchecked(ptr), layout);
         });
     }
 }
 
+#[inline]
 /// Initialize the heap allocator
 pub(crate) unsafe fn init_heap(start: *mut u8, size: usize) {
     ALLOCATOR.init(unsafe { linked_list_allocator::Heap::new(start, size) });
 }
 
+#[must_use]
 #[inline]
 /// Map memory into the address space
 ///

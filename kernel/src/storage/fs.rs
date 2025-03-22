@@ -44,6 +44,7 @@ pub trait FileSystem {
     fn write(&self, path: &str, buffer: &[u8]) -> FileResult<usize>;
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct PathBuf(String);
 
 pub struct Path<'a>(&'a str);
@@ -51,8 +52,8 @@ pub struct Path<'a>(&'a str);
 impl PathBuf {
     #[must_use]
     #[inline]
-    pub fn new() -> Self {
-        Self(String::new())
+    pub fn new(path: &str) -> Self {
+        Self(String::from(path))
     }
 
     pub fn push(&mut self, path: &str) {

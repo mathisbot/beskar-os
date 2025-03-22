@@ -185,8 +185,16 @@ impl AddressSpace {
     pub fn is_addr_owned(&self, start: VirtAddr, end: VirtAddr) -> bool {
         let recursive_idx = self.pt.with_locked(|pt| pt.recursive_index());
 
-        // Currently, a process owns the whole recursive index area
-        start.p4_index() == recursive_idx && end.p4_index() == recursive_idx
+        let lvl4_start = {
+            let i = u64::from(recursive_idx);
+            VirtAddr::new_extend((i << 39) | (i << 30) | (i << 21) | (i << 12))
+        };
+        let lvl4_end = lvl4_start + (M4KiB::SIZE - 1);
+
+        // Currently, a process owns the whole recursive index area EXCEPT the page table pages
+        start.p4_index() == recursive_idx
+            && end.p4_index() == recursive_idx
+            && (start > lvl4_end || end < lvl4_start)
     }
 
     #[must_use]

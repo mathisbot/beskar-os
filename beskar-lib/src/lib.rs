@@ -17,6 +17,7 @@ fn panic(_info: &::core::panic::PanicInfo) -> ! {
     exit(ExitCode::Failure)
 }
 
+#[inline]
 /// Exit the program with the given exit code.
 pub fn exit(code: ExitCode) -> ! {
     let _ = syscalls::syscall_1(Syscall::Exit, code as u64);
@@ -39,6 +40,7 @@ macro_rules! entry_point {
     };
 }
 
+#[inline]
 /// Initialize the standard library.
 ///
 /// ## Safety

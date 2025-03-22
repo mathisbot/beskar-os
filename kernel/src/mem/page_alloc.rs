@@ -101,7 +101,7 @@ impl<const N: usize> PageAllocator<N> {
     pub fn new_range(start: VirtAddr, end: VirtAddr) -> Self {
         let mut vaddrs = MemoryRanges::new();
         vaddrs.insert(MemoryRange::new(start.as_u64(), end.as_u64()));
-        PageAllocator { vranges: vaddrs }
+        Self { vranges: vaddrs }
     }
 
     #[must_use]
@@ -124,7 +124,7 @@ impl<const N: usize> PageAllocator<N> {
 
         vaddrs.remove(MemoryRange::new(pte_start, pte_end));
 
-        PageAllocator { vranges: vaddrs }
+        Self { vranges: vaddrs }
     }
 
     pub fn allocate_pages<S: MemSize>(&mut self, count: u64) -> Option<PageRangeInclusive<S>> {
