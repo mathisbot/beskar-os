@@ -153,6 +153,7 @@ impl AddressSpace {
 
         // Create a new process page allocator with the whole recursive index area free (256TiB)
         let pgalloc = {
+            // FIXME: Starting at p3 1 results in a "already mapped" error
             let start_page =
                 Page::<M4KiB>::from_p4p3p2p1(recursive_idx.try_into().unwrap(), 1, 0, 0);
             let end_page =
