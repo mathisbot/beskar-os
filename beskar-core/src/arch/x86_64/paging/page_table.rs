@@ -159,12 +159,12 @@ impl Entries {
     }
 
     #[inline]
-    pub fn iter(&self) -> core::slice::Iter<Entry> {
+    pub fn iter_entries(&self) -> core::slice::Iter<Entry> {
         self.0.iter()
     }
 
     #[inline]
-    pub fn iter_mut(&mut self) -> core::slice::IterMut<Entry> {
+    pub fn iter_entries_mut(&mut self) -> core::slice::IterMut<Entry> {
         self.0.iter_mut()
     }
 
@@ -232,6 +232,12 @@ impl<'t> PageTable<'t> {
     #[inline]
     pub const fn entries_mut(&mut self) -> &mut Entries {
         self.entries
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn recursive_index(&self) -> u16 {
+        self.recursive_index
     }
 
     unsafe fn create_next_level<'a, A: FrameAllocator<M4KiB>>(

@@ -3,6 +3,7 @@ use crate::arch::commons::{PhysAddr, VirtAddr, paging::Frame};
 pub struct Cr0;
 
 impl Cr0 {
+    pub const TASK_SWITCHED: u64 = 1 << 3;
     pub const WRITE_PROTECT: u64 = 1 << 16;
     pub const CACHE_DISABLE: u64 = 1 << 30;
 

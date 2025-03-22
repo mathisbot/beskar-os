@@ -16,7 +16,7 @@ use hyperdrive::{
     queues::mpsc::{Link, Queueable},
 };
 
-use crate::mem::{frame_alloc, page_alloc};
+use crate::mem::frame_alloc;
 
 use super::{super::Process, priority::Priority};
 
@@ -33,10 +33,10 @@ pub struct Thread {
     /// Used to keep ownership of the stack when needed.
     stack: Option<ThreadStacks>,
     /// Keeps track of where the stack is.
-    pub(super) last_stack_ptr: *mut u8,
+    last_stack_ptr: *mut u8,
 
     /// Link to the next thread in the queue.
-    pub(super) link: Link<Self>,
+    link: Link<Self>,
 }
 
 impl Unpin for Thread {}
@@ -198,14 +198,14 @@ impl Thread {
     #[must_use]
     #[inline]
     /// Returns the value of the last stack pointer.
-    pub fn last_stack_ptr(&self) -> *const u8 {
+    pub const fn last_stack_ptr(&self) -> *const u8 {
         self.last_stack_ptr
     }
 
     #[must_use]
     #[inline]
     /// Returns a mutable pointer to the last stack pointer.
-    pub fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
+    pub const fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
         &mut self.last_stack_ptr
     }
 }
@@ -309,11 +309,10 @@ impl ThreadStacks {
     pub fn allocate_user(&self, size: u64) -> *mut u8 {
         assert!(size > 0);
 
-        // FIXME: Use the process' page allocator to allocate the stack.
-        let (page_range, _guard) = page_alloc::with_page_allocator(|palloc| {
-            palloc.allocate_guarded::<M4KiB>(size.div_ceil(M4KiB::SIZE))
-        })
-        .unwrap();
+        let (_guard_start, page_range, _guard_end) = super::current_process()
+            .address_space()
+            .with_pgalloc(|palloc| palloc.allocate_guarded(size.div_ceil(M4KiB::SIZE)))
+            .unwrap();
 
         let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
         frame_alloc::with_frame_allocator(|fralloc| {
@@ -344,30 +343,10 @@ impl ThreadStacks {
     }
 }
 
-impl Drop for ThreadStacks {
-    fn drop(&mut self) {
-        if let Some(&page_range) = self.user_pages.get() {
-            // FIXME: This is WRONG!!!
-            // The process in charge of cleaning threads is a Kernel process,
-            // thus it does not have the stack in its address space.
-            // How to recover the frames used and free them ?
-            // frame_alloc::with_frame_allocator(|fralloc| {
-            //     super::current_process()
-            //         .address_space()
-            //         .with_page_table(|pt| {
-            //             for page in Page::range_inclusive(start_page, end_page) {
-            //                 let (frame, tlb) = pt.unmap(page).unwrap();
-            //                 fralloc.deallocate_frame(frame);
-            //                 tlb.flush();
-            //             }
-            //         });
-            // });
-
-            // TODO: When the process' page allocator is implemented, remove this
-            // as the allocator does not exist anymore.
-            page_alloc::with_page_allocator(|palloc| {
-                palloc.free_pages(page_range);
-            });
-        }
-    }
-}
+// impl Drop for ThreadStacks {
+//     #[inline]
+//     fn drop(&mut self) {
+//         // TODO:
+//         // How to recover the alocated frames and free them ?
+//     }
+// }

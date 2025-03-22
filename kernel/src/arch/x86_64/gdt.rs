@@ -8,7 +8,7 @@ use x86_64::{
     },
 };
 
-use crate::mem::{frame_alloc, page_alloc};
+use crate::mem::{address_space, frame_alloc};
 use beskar_core::arch::{
     commons::paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _},
     x86_64::instructions::load_tss,
@@ -81,9 +81,10 @@ impl Gdt {
     #[must_use]
     fn create_tss() -> TaskStateSegment {
         fn alloc_stack(count: u64) -> x86_64::VirtAddr {
-            let (page_range, _guard_page) = page_alloc::with_page_allocator(|page_allocator| {
-                page_allocator.allocate_guarded::<M4KiB>(count).unwrap()
-            });
+            let (_guard_start, page_range, _guard_end) =
+                address_space::with_kernel_pgalloc(|page_allocator| {
+                    page_allocator.allocate_guarded(count).unwrap()
+                });
 
             frame_alloc::with_frame_allocator(|frame_allocator| {
                 crate::mem::address_space::with_kernel_pt(|page_table| {

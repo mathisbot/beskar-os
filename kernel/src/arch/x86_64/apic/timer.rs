@@ -4,7 +4,7 @@
 
 use core::num::NonZeroU32;
 
-use hyperdrive::volatile::{ReadWrite, Volatile, WriteOnly};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
 
 const TIMER_DIVIDE_CONFIG_REG: usize = 0x3E0;
 const TIMER_INIT_COUNT_REG: usize = 0x380;

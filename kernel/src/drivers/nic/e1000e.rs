@@ -16,7 +16,7 @@ use beskar_core::{
 };
 use hyperdrive::{
     locks::mcs::MUMcsLock,
-    volatile::{ReadWrite, Volatile},
+    ptrs::volatile::{ReadWrite, Volatile},
 };
 
 use super::Nic;
@@ -24,6 +24,7 @@ use crate::{
     drivers::pci::{self, Bar, with_pci_handler},
     mem::page_alloc::pmap::{self, PhysicalMapping},
     network::l2::ethernet::MacAddress,
+    process,
 };
 
 const RX_BUFFERS: usize = 32;
@@ -117,12 +118,20 @@ impl E1000e<'_> {
 
     // RCTL
 
+    /// Receiver Enable
     const RCTL_EN: u32 = 1 << 1;
+    /// Store Bad Packets
     const RCTL_SBP: u32 = 1 << 2;
+    /// Unicast Promiscuous Mode
     const RCTL_UPE: u32 = 1 << 3;
+    /// Multicast Promiscuous Mode
     const RCTL_MPE: u32 = 1 << 4;
+    /// Long Packet Enable
     const RCTL_LPE: u32 = 1 << 5;
-    const RCTL_LBM_PHY: u32 = 0b11 << 6;
+    /// Loopback mode: Normal Operation (default)
+    const RCTL_LBM_PHY: u32 = 0b00 << 6;
+    /// Loopback mode: MAC Loopback (testing)
+    const RCTL_LBM_MAC: u32 = 0b10 << 6;
     const RCTL_RDMTS_HALF: u32 = 0b00 << 8;
     const RCTL_RDMTS_QUARTER: u32 = 0b01 << 8;
     const RCTL_RDMTS_EIGHTH: u32 = 0b10 << 8;
@@ -161,6 +170,7 @@ impl E1000e<'_> {
     const TCTL_RR_NOTHRESH: u32 = 0b11 << 29;
 
     fn init(&mut self, rxdesc_paddr: PhysAddr, txdesc_paddr: PhysAddr, nb_rx: usize, nb_tx: usize) {
+        // Software Initialization Sequence: p.77
         self.reset();
         self.configure_descriptors(rxdesc_paddr, txdesc_paddr, nb_rx, nb_tx);
         self.enable_int();
@@ -193,6 +203,8 @@ impl E1000e<'_> {
         } else {
             unreachable!("No MSI or MSI-X capability found for the network controller.");
         }
+
+        self.write_reg(Self::IMS, 1); // RXDW
     }
 
     fn configure_descriptors(
@@ -217,13 +229,12 @@ impl E1000e<'_> {
         self.write_reg(Self::RDT, rdt_val);
         self.rx_curr = 0;
         let rctl_value = Self::RCTL_EN
-            | Self::RCTL_SBP
             | Self::RCTL_UPE
             | Self::RCTL_MPE
+            | Self::RCTL_LBM_PHY
             | Self::RCTL_RDMTS_HALF
             | Self::RCTL_BAM
-            | Self::RCTL_BSIZE_4096
-            | Self::RCTL_SECRC;
+            | Self::RCTL_BSIZE_4096;
         self.write_reg(Self::RCTL, rctl_value);
 
         assert!(txdesc_paddr.as_u64().trailing_zeros() >= 4);
@@ -342,9 +353,10 @@ impl BufferSet<'_> {
         // The easiest way I found to do this is to allocate a full frame for each object.
         // It gives a very nice 4096 bytes buffer, which is common.
 
-        let descriptor_page =
-            crate::mem::page_alloc::with_page_allocator(|palloc| palloc.allocate_pages(1).unwrap())
-                .start;
+        let descriptor_page = process::current()
+            .address_space()
+            .with_pgalloc(|palloc| palloc.allocate_pages(1).unwrap())
+            .start;
         let flags = pmap::FLAGS_MMIO;
         let descriptor_frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
             let frame = fralloc.alloc::<M4KiB>().unwrap();
@@ -369,9 +381,9 @@ impl BufferSet<'_> {
             )
         };
 
-        let page_range = crate::mem::page_alloc::with_page_allocator(|palloc| {
-            palloc.allocate_pages(nb_rx as u64 + nb_tx as u64).unwrap()
-        });
+        let page_range = process::current()
+            .address_space()
+            .with_pgalloc(|palloc| palloc.allocate_pages(nb_rx as u64 + nb_tx as u64).unwrap());
 
         for (i, page) in page_range.into_iter().take(nb_rx).enumerate() {
             let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
@@ -485,7 +497,9 @@ impl Drop for BufferSet<'_> {
             });
             crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.free(frame));
         }
-        crate::mem::page_alloc::with_page_allocator(|palloc| palloc.free_pages(buffer_page_range));
+        process::current()
+            .address_space()
+            .with_pgalloc(|palloc| palloc.free_pages(buffer_page_range));
 
         let descriptors_page =
             Page::<M4KiB>::from_start_address(VirtAddr::new(self.rx_descriptors.as_ptr() as u64))
@@ -496,7 +510,7 @@ impl Drop for BufferSet<'_> {
             frame
         });
         crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.free(descriptors_frame));
-        crate::mem::page_alloc::with_page_allocator(|palloc| {
+        process::current().address_space().with_pgalloc(|palloc| {
             palloc.free_pages(Page::range_inclusive(descriptors_page, descriptors_page));
         });
     }

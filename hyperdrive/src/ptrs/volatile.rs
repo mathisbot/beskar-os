@@ -5,7 +5,7 @@
 //! ## Example
 //!
 //! ```rust
-//! # use hyperdrive::volatile::{Volatile, ReadWrite};
+//! # use hyperdrive::ptrs::volatile::{Volatile, ReadWrite};
 //! #
 //! let mut value = 0;
 //! let volatile_ptr = Volatile::<ReadWrite, _>::from_mut(&mut value);
@@ -17,7 +17,7 @@
 //! In real world applications, you will not have to specify `::<Access, _>` as the compiler will infer it :
 //!
 //! ```rust
-//! # use hyperdrive::volatile::{Volatile, ReadWrite};
+//! # use hyperdrive::ptrs::volatile::{Volatile, ReadWrite};
 //! # use core::ptr::NonNull;
 //! #
 //! struct MyStruct {

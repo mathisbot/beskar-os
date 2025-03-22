@@ -1,7 +1,7 @@
 use core::ptr::NonNull;
 
 use beskar_core::arch::commons::VirtAddr;
-use hyperdrive::volatile::{ReadWrite, Volatile};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
 #[derive(Clone, Copy)]
 pub struct PortRegistersSet {

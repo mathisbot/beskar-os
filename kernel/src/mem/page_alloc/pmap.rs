@@ -2,13 +2,17 @@
 //!
 //! It is useful as ACPI tables must me mapped before being read, but are not needed after that.
 
-use beskar_core::arch::commons::{
-    PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, Page},
+use crate::{
+    mem::{address_space, frame_alloc},
+    process,
 };
-use beskar_core::arch::x86_64::paging::page_table::{Flags, PageTable};
-
-use crate::mem::{address_space, frame_alloc, page_alloc};
+use beskar_core::arch::{
+    commons::{
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, Page},
+    },
+    x86_64::paging::page_table::{Flags, PageTable},
+};
 
 #[derive(Debug)]
 /// Physical Mapping structure
@@ -50,9 +54,9 @@ where
 
         let count = end_frame - start_frame + 1;
 
-        let page_range = page_alloc::with_page_allocator(|page_allocator| {
-            page_allocator.allocate_pages::<S>(count).unwrap()
-        });
+        let page_range = process::current()
+            .address_space()
+            .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<S>(count).unwrap());
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             address_space::with_kernel_pt(|page_table| {
@@ -108,8 +112,10 @@ where
             }
         });
 
-        page_alloc::with_page_allocator(|page_allocator| {
-            page_allocator.free_pages(page_range);
-        });
+        process::current()
+            .address_space()
+            .with_pgalloc(|page_allocator| {
+                page_allocator.free_pages(page_range);
+            });
     }
 }

@@ -45,12 +45,12 @@ impl core::fmt::Display for MacAddress {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 /// Ethernet Ethertype II frame header
 pub struct Header {
-    mac_dest: [u8; 6],
-    mac_src: [u8; 6],
-    // vlan_tag: u32,
+    mac_dest: MacAddress,
+    mac_src: MacAddress,
+    qtag: Option<QTag>,
     ethertype: Ethertype,
 }
 
@@ -61,6 +61,12 @@ pub enum Ethertype {
     Arp = 0x0806,
     Ipv4 = 0x0800,
     Ipv6 = 0x86DD,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct QTag {
+    tpid: u16,
+    tci: u16,
 }
 
 // Even though `Copy` could be derived, considering the size of the struct,
@@ -104,13 +110,12 @@ impl Packet {
         assert!(data_length >= 46);
         assert!(data_length <= 1500);
 
-        let mac_src = crate::drivers::nic::with_nic(|nic| nic.mac_address())
-            .unwrap()
-            .0;
+        let mac_src = crate::drivers::nic::with_nic(|nic| nic.mac_address()).unwrap();
 
         let header = Header {
-            mac_dest: mac_dest.0,
+            mac_dest,
             mac_src,
+            qtag: None,
             ethertype,
         };
 
@@ -128,8 +133,8 @@ impl Packet {
     fn into_raw(self) -> [u8; 1518] {
         let mut raw = [0; 1518];
 
-        raw[..6].copy_from_slice(&self.header.mac_dest);
-        raw[6..12].copy_from_slice(&self.header.mac_src);
+        raw[..6].copy_from_slice(&self.header.mac_dest.0);
+        raw[6..12].copy_from_slice(&self.header.mac_src.0);
         raw[12..14].copy_from_slice(&(self.header.ethertype as u16).to_be_bytes());
         raw[14..14 + usize::from(self.data_length)]
             .copy_from_slice(&self.data[..self.data_length as usize]);
