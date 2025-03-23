@@ -48,9 +48,9 @@ pub struct Bpb {
     /// Flags.
     flags: u16,
     /// Major version.
-    version_major: u16,
+    version_major: u8,
     /// Minor version.
-    version_minor: u16,
+    version_minor: u8,
     /// Cluster number of the root directory.
     root_cluster: u32,
     /// Sector number of the FS Information Sector.
@@ -153,5 +153,67 @@ impl Bpb {
     /// Returns the file system type.
     pub const fn fs_type(&self) -> &[u8] {
         &self.fs_type
+    }
+
+    #[must_use]
+    pub fn validate(&self) -> bool {
+        /// Maximum bytes per cluster for maximum compatibility.
+        const MAX_BYTES_PER_CLUSTER: u32 = 32 * 1024; // 32 KiB
+        /// Maximum number of supported FAT
+        const MAX_FAT_COUNT: u8 = 2;
+
+        // TODO: Check version?
+
+        // Check bytes per sector
+        if !self.bytes_per_sector.is_power_of_two()
+            || self.bytes_per_sector < 512
+            || self.bytes_per_sector > 4096
+        {
+            return false;
+        }
+
+        // Check sectors per cluster
+        if !self.sectors_per_cluster.is_power_of_two()
+            || (u32::from(self.bytes_per_sector) * u32::from(self.sectors_per_cluster)
+                > MAX_BYTES_PER_CLUSTER)
+        {
+            return false;
+        }
+
+        // Check reserved sectors
+        if self.reserved_sectors == 0
+            || self.backup_boot_sector >= self.reserved_sectors
+            || self.fs_info_sector >= self.reserved_sectors
+        {
+            return false;
+        }
+
+        // Check FAT count
+        if self.fat_count == 0 || self.fat_count > MAX_FAT_COUNT {
+            return false;
+        }
+
+        // Check root entries
+        if self.root_entries != 0
+            || (usize::from(self.root_entries) * super::DIR_ENTRY_SIZE
+                % usize::from(self.bytes_per_sector)
+                != 0)
+        {
+            return false;
+        }
+
+        // Check total sectors
+        if self.total_sectors != 0 || self.total_sectors_large == 0 {
+            return false;
+        }
+
+        // Check sectors per fat
+        if self.sectors_per_fat == 0 {
+            return false;
+        }
+
+        // TODO: Check clusters
+
+        true
     }
 }
