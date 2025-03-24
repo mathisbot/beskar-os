@@ -38,30 +38,148 @@ pub enum PixelFormat {
 #[repr(transparent)]
 pub struct Pixel(u32);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PixelComponents {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+impl PixelComponents {
+    pub const WHITE: Self = Self {
+        red: 0xFF,
+        green: 0xFF,
+        blue: 0xFF,
+    };
+    pub const BLACK: Self = Self {
+        red: 0x00,
+        green: 0x00,
+        blue: 0x00,
+    };
+
+    pub const RED: Self = Self {
+        red: 0xFF,
+        green: 0x00,
+        blue: 0x00,
+    };
+    pub const GREEN: Self = Self {
+        red: 0x00,
+        green: 0xFF,
+        blue: 0x00,
+    };
+    pub const BLUE: Self = Self {
+        red: 0x00,
+        green: 0x00,
+        blue: 0xFF,
+    };
+
+    pub const CYAN: Self = Self {
+        red: 0x00,
+        green: 0xFF,
+        blue: 0xFF,
+    };
+    pub const MAGENTA: Self = Self {
+        red: 0xFF,
+        green: 0x00,
+        blue: 0xFF,
+    };
+    pub const YELLOW: Self = Self {
+        red: 0xFF,
+        green: 0xFF,
+        blue: 0x00,
+    };
+
+    #[must_use]
+    #[inline]
+    pub const fn new(red: u8, green: u8, blue: u8) -> Self {
+        Self { red, green, blue }
+    }
+}
+
+impl core::ops::Add<Self> for PixelComponents {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            red: self.red.saturating_add(rhs.red),
+            green: self.green.saturating_add(rhs.green),
+            blue: self.blue.saturating_add(rhs.blue),
+        }
+    }
+}
+
+impl core::ops::Mul<Self> for PixelComponents {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self {
+            red: u8::try_from((u16::from(self.red) * u16::from(rhs.red) + 128) >> 8).unwrap(),
+            green: u8::try_from((u16::from(self.green) * u16::from(rhs.green) + 128) >> 8).unwrap(),
+            blue: u8::try_from((u16::from(self.blue) * u16::from(rhs.blue) + 128) >> 8).unwrap(),
+        }
+    }
+}
+
 impl Pixel {
     pub const BLACK: Self = Self(0);
     pub const WHITE: Self = Self(u32::MAX);
 
     #[must_use]
     #[inline]
-    pub fn from_format(format: PixelFormat, red: u8, green: u8, blue: u8) -> Self {
+    pub fn from_format(format: PixelFormat, components: PixelComponents) -> Self {
         match format {
-            PixelFormat::Rgb => Self::new_rgb(red, green, blue),
-            PixelFormat::Bgr => Self::new_bgr(red, green, blue),
+            PixelFormat::Rgb => Self::new_rgb(components),
+            PixelFormat::Bgr => Self::new_bgr(components),
             PixelFormat::Bitmask(_mask) => todo!("Bitmask pixel format"),
         }
     }
 
     #[must_use]
     #[inline]
-    fn new_rgb(red: u8, green: u8, blue: u8) -> Self {
-        Self(((u32::from(blue)) << 16) | ((u32::from(green)) << 8) | u32::from(red))
+    fn new_rgb(components: PixelComponents) -> Self {
+        Self(
+            ((u32::from(components.blue)) << 16)
+                | ((u32::from(components.green)) << 8)
+                | u32::from(components.red),
+        )
     }
 
     #[must_use]
     #[inline]
-    fn new_bgr(red: u8, green: u8, blue: u8) -> Self {
-        Self(((u32::from(red)) << 16) | ((u32::from(green)) << 8) | u32::from(blue))
+    fn new_bgr(components: PixelComponents) -> Self {
+        Self(
+            ((u32::from(components.red)) << 16)
+                | ((u32::from(components.green)) << 8)
+                | u32::from(components.blue),
+        )
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn components_by_format(self, format: PixelFormat) -> PixelComponents {
+        match format {
+            PixelFormat::Rgb => self.components_rgb(),
+            PixelFormat::Bgr => self.components_bgr(),
+            PixelFormat::Bitmask(_mask) => todo!("Bitmask pixel format"),
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    fn components_bgr(self) -> PixelComponents {
+        let red = u8::try_from((self.0 >> 16) & 0xFF).unwrap();
+        let green = u8::try_from((self.0 >> 8) & 0xFF).unwrap();
+        let blue = u8::try_from(self.0 & 0xFF).unwrap();
+        PixelComponents { red, green, blue }
+    }
+
+    #[must_use]
+    #[inline]
+    fn components_rgb(self) -> PixelComponents {
+        let blue = u8::try_from((self.0 >> 16) & 0xFF).unwrap();
+        let green = u8::try_from((self.0 >> 8) & 0xFF).unwrap();
+        let red = u8::try_from(self.0 & 0xFF).unwrap();
+        PixelComponents { red, green, blue }
     }
 }
 
@@ -196,5 +314,44 @@ impl FrameBuffer {
                 self.info().size(),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pixel_components_ops() {
+        let pixel_components_1 = PixelComponents {
+            red: 0x10,
+            green: 0x20,
+            blue: 0x30,
+        };
+        let pixel_components_2 = PixelComponents {
+            red: 0x40,
+            green: 0x50,
+            blue: 0x60,
+        };
+
+        let sum = pixel_components_1 + pixel_components_2;
+        assert_eq!(
+            sum,
+            PixelComponents {
+                red: 0x50,
+                green: 0x70,
+                blue: 0x90,
+            }
+        );
+
+        let mul = pixel_components_1 * pixel_components_2;
+        assert_eq!(
+            mul,
+            PixelComponents {
+                red: 0x04,
+                green: 0x0A,
+                blue: 0x12,
+            }
+        );
     }
 }

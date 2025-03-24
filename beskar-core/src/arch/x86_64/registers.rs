@@ -94,7 +94,12 @@ impl Cr3 {
 pub struct Cr4;
 
 impl Cr4 {
+    pub const TSD: u64 = 1 << 2;
+    pub const PAE: u64 = 1 << 5;
+    pub const OSFXSR: u64 = 1 << 9;
+    pub const SMXE: u64 = 1 << 14;
     pub const FSGSBASE: u64 = 1 << 16;
+    pub const PCIDE: u64 = 1 << 17;
 
     #[must_use]
     #[inline]

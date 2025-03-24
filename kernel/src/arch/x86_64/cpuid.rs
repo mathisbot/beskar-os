@@ -133,6 +133,12 @@ impl CpuFeature {
         bit: 0,
         name: "SSE3",
     };
+    pub const PCID: Self = Self {
+        leaf: 1,
+        reg: CpuidReg::Ecx,
+        bit: 17,
+        name: "PCID",
+    };
     pub const X2APIC: Self = Self {
         leaf: 1,
         reg: CpuidReg::Ecx,

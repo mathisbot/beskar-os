@@ -56,6 +56,8 @@ impl PathBuf {
         Self(String::from(path))
     }
 
+    #[must_use]
+    #[inline]
     pub fn push(&mut self, path: &str) {
         self.0.push_str(path);
     }
@@ -64,5 +66,12 @@ impl PathBuf {
     #[inline]
     pub fn as_path(&self) -> Path {
         Path(&self.0)
+    }
+}
+
+impl<'a> From<&'a str> for Path<'a> {
+    #[inline]
+    fn from(value: &'a str) -> Self {
+        Self(value)
     }
 }
