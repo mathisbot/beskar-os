@@ -22,6 +22,6 @@ pub fn print(msg: &str) {
 // instead of buffering the output.
 macro_rules! println {
     ($($arg:tt)*) => {
-        ::beskar_lib::io::print(&::alloc::format!($($arg)*));
+        $crate::io::print(&::alloc::format!($($arg)*));
     };
 }

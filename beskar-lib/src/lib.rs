@@ -3,6 +3,8 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
+extern crate alloc;
+
 pub use ::beskar_core::syscall::ExitCode;
 use ::beskar_core::syscall::Syscall;
 
@@ -14,7 +16,7 @@ pub mod rand;
 
 #[panic_handler]
 fn panic(_info: &::core::panic::PanicInfo) -> ! {
-    exit(ExitCode::Failure)
+    exit(ExitCode::Failure);
 }
 
 #[inline]
@@ -30,12 +32,11 @@ macro_rules! entry_point {
     ($path:path) => {
         extern crate alloc;
 
-        #[inline]
         #[unsafe(export_name = "_start")]
         pub extern "C" fn __program_entry() {
-            unsafe { ::beskar_lib::__init() };
+            unsafe { $crate::__init() };
             ($path)();
-            ::beskar_lib::exit(::beskar_lib::ExitCode::Success);
+            $crate::exit($crate::ExitCode::Success);
         }
     };
 }

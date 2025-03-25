@@ -74,7 +74,7 @@ fn remove_mapping<const N: usize>(
             let l3 = u64::from(level_indices[1]);
             let l2 = u64::from(level_indices[2]);
             let l1 = u64::from(level_indices[3]);
-            let vaddr = VirtAddr::new((l4 << 39) | (l3 << 30) | (l2 << 21) | (l1 << 12));
+            let vaddr = VirtAddr::new_extend((l4 << 39) | (l3 << 30) | (l2 << 21) | (l1 << 12));
 
             let entry: &Entries = unsafe { &*(vaddr.as_ptr()) };
             remove_mapping(level - 1, entry, &level_indices, vaddrs);
@@ -100,7 +100,10 @@ impl<const N: usize> PageAllocator<N> {
     #[inline]
     pub fn new_range(start: VirtAddr, end: VirtAddr) -> Self {
         let mut vaddrs = MemoryRanges::new();
-        vaddrs.insert(MemoryRange::new(start.as_u64(), end.as_u64()));
+        vaddrs.insert(MemoryRange::new(
+            start.as_u64() & MAX_VALID_VADDR,
+            end.as_u64() & MAX_VALID_VADDR,
+        ));
         Self { vranges: vaddrs }
     }
 
@@ -166,7 +169,7 @@ impl<const N: usize> PageAllocator<N> {
         let size = M4KiB::SIZE * (count + 2);
         let alignment = M4KiB::SIZE;
 
-        let start_vaddr = VirtAddr::new(
+        let start_vaddr = VirtAddr::new_extend(
             u64::try_from(self.vranges.allocate::<1>(
                 size,
                 alignment,
@@ -193,6 +196,18 @@ impl<const N: usize> PageAllocator<N> {
             pages.start.start_address().as_u64(),
             pages.end.start_address().as_u64() + (S::SIZE - 1),
         ));
+    }
+
+    #[must_use]
+    #[inline]
+    pub(super) const fn ranges(&self) -> &MemoryRanges<N> {
+        &self.vranges
+    }
+
+    #[inline]
+    /// Reduce the available ranges by the given ranges
+    pub(super) fn intersection(&mut self, ranges: &MemoryRanges<N>) {
+        self.vranges = self.vranges.intersection(ranges);
     }
 }
 

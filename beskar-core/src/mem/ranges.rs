@@ -335,6 +335,21 @@ impl<const N: usize> MemoryRanges<N> {
             addr
         })
     }
+
+    #[must_use]
+    pub fn intersection(&self, other: &Self) -> Self {
+        let mut ranges = Self::new();
+
+        for range in self.entries() {
+            for other_range in other.entries() {
+                if let Some(intersection) = range.overlaps(other_range) {
+                    ranges.insert(intersection);
+                }
+            }
+        }
+
+        ranges
+    }
 }
 
 #[non_exhaustive]

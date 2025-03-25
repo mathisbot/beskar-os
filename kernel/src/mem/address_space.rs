@@ -34,7 +34,7 @@ pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
                 | (recursive_index << 30)
                 | (recursive_index << 21)
                 | (recursive_index << 12);
-            VirtAddr::new(vaddr)
+            VirtAddr::new_extend(vaddr)
         };
 
         // Safety: The page table given by the bootloader is valid
@@ -51,6 +51,7 @@ pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
             lvl4_paddr: frame.start_address(),
             cr3_flags: flags,
             pgalloc,
+            pgalloc_pml4_idx: 0, // Kernel process never uses this
         }
     });
 }
@@ -69,6 +70,11 @@ pub struct AddressSpace {
     // FIXME: Make it less than 1KiB!
     /// The process-specific page allocator
     pgalloc: McsLock<super::page_alloc::PageAllocator<PROCESS_PGALLOC_VRANGES>>,
+    /// The index of the PML4 entry used by the page allocator
+    ///
+    /// Currently, this is only used to check if the address space owns any address
+    /// in the syscall handler.
+    pgalloc_pml4_idx: u16,
 }
 
 impl Default for AddressSpace {
@@ -138,6 +144,17 @@ impl AddressSpace {
 
         pte.set(frame.start_address(), Flags::PRESENT | Flags::WRITABLE);
 
+        // We will need another free index to give to the page allocator
+        let free_idx = u16::try_from(
+            pt.iter_entries_mut()
+                .enumerate()
+                .filter(|(_, e)| e.is_null())
+                .next_back()
+                .unwrap()
+                .0,
+        )
+        .unwrap();
+
         unsafe { page.start_address().as_mut_ptr::<Entries>().write(pt) };
 
         // Unmap the page from the current address space as we're done with it
@@ -152,24 +169,15 @@ impl AddressSpace {
             VirtAddr::new_extend((i << 39) | (i << 30) | (i << 21) | (i << 12))
         };
 
-        // Create a new process page allocator with the whole recursive index area free (256TiB)
+        // Create a new process page allocator with a whole PLM4 index area free (256TiB)
         let pgalloc = {
-            // FIXME: Starting at p3 1 results in a "already mapped" error
-            let start_page =
-                Page::<M4KiB>::from_p4p3p2p1(recursive_idx.try_into().unwrap(), 1, 0, 0);
-            let end_page =
-                Page::<M4KiB>::from_p4p3p2p1(recursive_idx.try_into().unwrap(), 511, 511, 511);
+            let start_page = Page::<M4KiB>::from_p4p3p2p1(free_idx, 0, 0, 0);
+            let end_page = Page::<M4KiB>::from_p4p3p2p1(free_idx, 511, 511, 511);
 
             let start_vaddr = start_page.start_address();
             let end_vaddr = end_page.start_address() + (M4KiB::SIZE - 1);
 
-            let mut whole_pgalloc = page_alloc::PageAllocator::new_range(start_vaddr, end_vaddr);
-
-            // The page table pages are not free
-            whole_pgalloc
-                .allocate_specific_page(Page::<M4KiB>::from_start_address(lvl4_vaddr).unwrap());
-
-            whole_pgalloc
+            page_alloc::PageAllocator::new_range(start_vaddr, end_vaddr)
         };
 
         Self {
@@ -177,6 +185,7 @@ impl AddressSpace {
             lvl4_paddr: frame.start_address(),
             cr3_flags: 0,
             pgalloc: McsLock::new(pgalloc),
+            pgalloc_pml4_idx: free_idx,
         }
     }
 
@@ -184,18 +193,15 @@ impl AddressSpace {
     #[inline]
     /// Returns wether a certain memory range is owned by the address space.
     pub fn is_addr_owned(&self, start: VirtAddr, end: VirtAddr) -> bool {
-        let recursive_idx = self.pt.with_locked(|pt| pt.recursive_index());
+        let idx = self.pgalloc_pml4_idx;
 
-        let lvl4_start = {
-            let i = u64::from(recursive_idx);
-            VirtAddr::new_extend((i << 39) | (i << 30) | (i << 21) | (i << 12))
-        };
-        let lvl4_end = lvl4_start + (M4KiB::SIZE - 1);
+        let start_page = Page::from_p4p3p2p1(idx, 0, 0, 0);
+        let end_page = Page::from_p4p3p2p1(idx, 511, 511, 511);
 
-        // Currently, a process owns the whole recursive index area EXCEPT the page table pages
-        start.p4_index() == recursive_idx
-            && end.p4_index() == recursive_idx
-            && (start > lvl4_end || end < lvl4_start)
+        let start_vaddr = start_page.start_address();
+        let end_vaddr = end_page.start_address() + (M4KiB::SIZE - 1);
+
+        start >= start_vaddr && end <= end_vaddr
     }
 
     #[must_use]

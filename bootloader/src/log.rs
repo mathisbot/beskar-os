@@ -23,7 +23,12 @@ pub fn init_screen() {
 
 pub fn log(severity: Severity, args: core::fmt::Arguments) {
     SERIAL.with_locked_if_init(|serial| {
+        serial.write_char('[').unwrap();
+        serial.write_str(severity.as_str()).unwrap();
+        serial.write_char(']').unwrap();
+        serial.write_char(' ').unwrap();
         serial.write_fmt(args).unwrap();
+        serial.write_char('\n').unwrap();
     });
     SCREEN_LOGGER.with_locked_if_init(|writer| {
         writer.write_char('[').unwrap();

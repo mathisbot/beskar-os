@@ -37,7 +37,12 @@ pub fn set_screen_logging(enable: bool) {
 pub fn log(severity: Severity, args: core::fmt::Arguments) {
     #[cfg(debug_assertions)]
     SERIAL.with_locked_if_init(|serial| {
+        serial.write_char('[').unwrap();
+        serial.write_str(severity.as_str()).unwrap();
+        serial.write_char(']').unwrap();
+        serial.write_char(' ').unwrap();
         serial.write_fmt(args).unwrap();
+        serial.write_char('\n').unwrap();
     });
     if LOG_ON_SCREEN.load(core::sync::atomic::Ordering::Acquire) {
         SCREEN_LOGGER.with_locked_if_init(|writer| {

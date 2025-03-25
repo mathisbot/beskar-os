@@ -199,7 +199,8 @@ impl<'t> PageTable<'t> {
     #[must_use]
     #[inline]
     pub fn new(entries: &'t mut Entries) -> Self {
-        let page = Page::<M4KiB>::containing_address(VirtAddr::new(entries.0.as_ptr() as u64));
+        let page =
+            Page::<M4KiB>::from_start_address(VirtAddr::new(entries.0.as_ptr() as u64)).unwrap();
         let l4_index = page.p4_index();
 
         if page.p3_index() != l4_index || page.p2_index() != l4_index || page.p1_index() != l4_index
@@ -374,7 +375,9 @@ impl Mapper<M4KiB> for PageTable<'_> {
 
         assert!(
             p1[usize::from(page.p1_index())].is_null(),
-            "Page already mapped"
+            "Page {:#x} already mapped to {:#x}",
+            page.start_address().as_u64(),
+            p1[usize::from(page.p1_index())].addr().as_u64()
         );
         p1[usize::from(page.p1_index())].set(frame.start_address(), flags | Flags::PRESENT);
 
@@ -543,7 +546,9 @@ impl Mapper<M2MiB> for PageTable<'_> {
 
         assert!(
             p2[usize::from(page.p2_index())].is_null(),
-            "Page already mapped"
+            "Page {:#x} already mapped to {:#x}",
+            page.start_address().as_u64(),
+            p2[usize::from(page.p2_index())].addr().as_u64()
         );
         p2[usize::from(page.p2_index())].set(frame.start_address(), Flags::HUGE_PAGE | flags);
 
