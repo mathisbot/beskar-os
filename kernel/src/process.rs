@@ -1,10 +1,9 @@
-use core::sync::atomic::{AtomicU64, Ordering};
-
 use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
 use beskar_core::arch::x86_64::userspace::Ring;
+use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use hyperdrive::{once::Once, ptrs::view::View};
 
 use crate::mem::address_space::{self, AddressSpace};
@@ -186,4 +185,32 @@ impl<'a> BinaryData<'a> {
 #[inline]
 pub fn current() -> Arc<Process> {
     scheduler::current_process()
+}
+
+/// A struct representing a PCID.
+///
+/// Its valid values are 0 to 4095.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pcid(u16);
+
+static PCID_COUNTER: AtomicU16 = AtomicU16::new(0);
+
+impl Pcid {
+    #[must_use]
+    #[inline]
+    pub fn new() -> Self {
+        let raw: u16 = PCID_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+        if raw > 4095 {
+            todo!("PCID recycling");
+        }
+
+        Self(raw % 4096)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn as_u16(&self) -> u16 {
+        self.0
+    }
 }

@@ -1,19 +1,17 @@
-use beskar_core::arch::{
-    commons::paging::MemSize as _,
-    x86_64::{
-        paging::page_table::{Entries, Flags, PageTable},
-        registers::Cr3,
-    },
-};
+use crate::{arch::cpuid, process::scheduler};
 use beskar_core::{
-    arch::commons::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, M4KiB, Mapper as _, Page},
+    arch::{
+        commons::{
+            PhysAddr, VirtAddr,
+            paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _, Page},
+        },
+        x86_64::{
+            paging::page_table::{Entries, Flags, PageTable},
+            registers::{Cr3, Efer},
+        },
     },
     boot::KernelInfo,
 };
-
-use crate::process::scheduler;
 
 use super::{frame_alloc, page_alloc};
 use hyperdrive::{locks::mcs::McsLock, once::Once};
@@ -43,13 +41,16 @@ pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
         PageTable::new(bootloader_pt)
     };
 
+    if cpuid::check_feature(cpuid::CpuFeature::TCE) {
+        unsafe { Efer::insert_flags(Efer::TRANSLATION_CACHE_EXTENSION) };
+    }
+
     KERNEL_ADDRESS_SPACE.call_once(|| {
-        let (frame, flags) = Cr3::read();
+        let (frame, _flags) = Cr3::read();
         let pgalloc = McsLock::new(page_alloc::PageAllocator::new_from_pt(&kernel_pt));
         AddressSpace {
             pt: McsLock::new(kernel_pt),
             lvl4_paddr: frame.start_address(),
-            cr3_flags: flags,
             pgalloc,
             pgalloc_pml4_idx: 0, // Kernel process never uses this
         }
@@ -66,7 +67,6 @@ pub struct AddressSpace {
     pt: McsLock<PageTable<'static>>,
     /// Physical address of the level 4 page table
     lvl4_paddr: PhysAddr,
-    cr3_flags: u16,
     // FIXME: Make it less than 1KiB!
     /// The process-specific page allocator
     pgalloc: McsLock<super::page_alloc::PageAllocator<PROCESS_PGALLOC_VRANGES>>,
@@ -150,7 +150,7 @@ impl AddressSpace {
                 .enumerate()
                 .filter(|(_, e)| e.is_null())
                 .next_back()
-                .unwrap()
+                .expect("No free index for the page allocator")
                 .0,
         )
         .unwrap();
@@ -183,7 +183,6 @@ impl AddressSpace {
         Self {
             pt: McsLock::new(PageTable::new(unsafe { &mut *lvl4_vaddr.as_mut_ptr() })),
             lvl4_paddr: frame.start_address(),
-            cr3_flags: 0,
             pgalloc: McsLock::new(pgalloc),
             pgalloc_pml4_idx: free_idx,
         }
@@ -214,7 +213,9 @@ impl AddressSpace {
     #[must_use]
     #[inline]
     pub const fn cr3_flags(&self) -> u16 {
-        self.cr3_flags
+        // The only two valid CR3 flags are CACHE_WRITETHROUGH and CACHE_DISABLE
+        // These two are better set at the page table entry level
+        0
     }
 
     #[must_use]

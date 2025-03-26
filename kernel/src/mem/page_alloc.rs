@@ -197,18 +197,6 @@ impl<const N: usize> PageAllocator<N> {
             pages.end.start_address().as_u64() + (S::SIZE - 1),
         ));
     }
-
-    #[must_use]
-    #[inline]
-    pub(super) const fn ranges(&self) -> &MemoryRanges<N> {
-        &self.vranges
-    }
-
-    #[inline]
-    /// Reduce the available ranges by the given ranges
-    pub(super) fn intersection(&mut self, ranges: &MemoryRanges<N>) {
-        self.vranges = self.vranges.intersection(ranges);
-    }
 }
 
 /// Reserve a page for the AP trampoline code

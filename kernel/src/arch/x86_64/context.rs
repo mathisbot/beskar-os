@@ -40,8 +40,13 @@ pub unsafe extern "C" fn switch(old_stack: *mut *mut u8, new_stack: *const u8, c
             "mov rax, cr0",
             "or rax, {}",
             "mov cr0, rax",
-            // Load the new CR3
+            // Check if CR3 is different
+            "mov rax, cr3",
+            "cmp rax, rdx",
+            "je 2f",
+            // Load the new CR3 ONLY if it is different
             "mov cr3, rdx",
+            "2:",
             // Load the new context from the stack
             "pop r15",
             "pop r14",

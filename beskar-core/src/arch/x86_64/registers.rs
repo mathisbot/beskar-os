@@ -138,6 +138,7 @@ pub struct Efer;
 impl Efer {
     pub const SYSTEM_CALL_EXTENSIONS: u64 = 1 << 0;
     pub const NO_EXECUTE_ENABLE: u64 = 1 << 11;
+    pub const TRANSLATION_CACHE_EXTENSION: u64 = 1 << 15;
 
     const MSR: Msr<0xC000_0080> = Msr;
 

@@ -175,6 +175,12 @@ impl CpuFeature {
         bit: 11,
         name: "SYSCALL",
     };
+    pub const TCE: Self = Self {
+        leaf: 0x8000_0001,
+        reg: CpuidReg::Ecx,
+        bit: 17,
+        name: "TCE",
+    };
 }
 
 /// List of required features for the kernel to run

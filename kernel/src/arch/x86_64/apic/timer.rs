@@ -94,12 +94,13 @@ impl LapicTimer {
         self.set(Mode::Inactive);
 
         let elapsed_ticks = (u32::MAX - 1) - ticks;
-        let rate_mhz = 2 * elapsed_ticks * 20 / 1_000_000;
+
+        let rate_mhz = u32::try_from(2 * 20 * u64::from(elapsed_ticks) / 1_000_000).unwrap();
         if rate_mhz == 0 {
             return None;
         }
 
-        NonZeroU32::new(if rate_mhz > 5 {
+        NonZeroU32::new(if rate_mhz > 14 {
             ((rate_mhz + 5) / 10) * 10
         } else {
             // Avoid 0
