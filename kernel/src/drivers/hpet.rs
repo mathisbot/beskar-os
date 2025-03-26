@@ -1,7 +1,5 @@
 // FIXME: Support for multiple HPET blocks?
 
-use core::sync::atomic::{AtomicU64, Ordering};
-
 use crate::{
     drivers::acpi::{self, sdt::hpet_table::ParsedHpetTable},
     mem::page_alloc::pmap::PhysicalMapping,
@@ -13,12 +11,13 @@ use beskar_core::{
     },
     drivers::{DriverError, DriverResult},
 };
-use hyperdrive::locks::mcs::MUMcsLock;
+use core::num::NonZeroU32;
+use hyperdrive::{locks::mcs::MUMcsLock, once::Once};
 
 static HPET: MUMcsLock<Hpet> = MUMcsLock::uninit();
 
 /// HPET Period in pico-seconds
-static HPET_PERIOD_PS: AtomicU64 = AtomicU64::new(0);
+static HPET_PERIOD_PS: Once<u32> = Once::uninit();
 
 #[derive(Debug)]
 /// High Precision Event Timer (HPET) configuration.
@@ -495,10 +494,7 @@ pub fn init() -> DriverResult<()> {
     general_configuration.set_enable_cnf(true);
     crate::debug!("HPET enabled");
 
-    HPET_PERIOD_PS.store(
-        u64::from(general_capabilities.period()) / 1_000,
-        Ordering::Relaxed,
-    );
+    HPET_PERIOD_PS.call_once(|| general_capabilities.period() / 1_000);
 
     let hpet = Hpet {
         general_capabilities,
@@ -523,7 +519,12 @@ pub fn main_counter_value() -> u64 {
     hpet.main_counter_value().get_value()
 }
 
-pub fn ticks_per_ms() -> u64 {
-    const PS_PER_MS: u64 = 1_000_000_000;
-    PS_PER_MS / HPET_PERIOD_PS.load(Ordering::Relaxed)
+pub fn ticks_per_ms() -> Option<NonZeroU32> {
+    const PS_PER_MS: u32 = 1_000_000_000;
+    // Safety:
+    // Result is null if, and only if, HPET_PERIOD_PS > PS_PER_MS.
+    // HPET_PERIOD_PS comes from the period in fs, that fits in a u32.
+    // Thus, its max value is 4 294 967 295 so when divided by 1 000,
+    // it is 4 294 967 <= 1 000 000 000.
+    Some(unsafe { NonZeroU32::new_unchecked(PS_PER_MS / HPET_PERIOD_PS.get()?) })
 }

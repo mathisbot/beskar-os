@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicUsize;
 
 use crate::{
     arch::{self, apic, interrupts},
-    drivers, locals, mem, process, screen, syscall, time,
+    drivers, locals, mem, process, screen, storage, syscall, time,
 };
 use beskar_core::boot::{BootInfo, RamdiskInfo};
 use hyperdrive::once::Once;
@@ -79,7 +79,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     apic::init_lapic();
     apic::init_ioapic();
 
-    crate::storage::init();
+    storage::init();
 }
 
 /// Rust entry point for APs

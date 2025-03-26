@@ -166,6 +166,12 @@ impl CpuFeature {
         bit: 0,
         name: "FSGSBASE",
     };
+    pub const INVPCID: Self = Self {
+        leaf: 7,
+        reg: CpuidReg::Ebx,
+        bit: 10,
+        name: "INVPCID",
+    };
 
     // XLEAF 1
 
