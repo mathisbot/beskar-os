@@ -6,10 +6,15 @@ use core::{
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
-    commons::paging::{
-        CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive,
+    commons::{
+        VirtAddr,
+        paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
     },
-    x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags, userspace::Ring},
+    x86_64::{
+        instructions::STACK_DEBUG_INSTR,
+        registers::{FS, Rflags},
+        userspace::Ring,
+    },
 };
 use hyperdrive::{
     once::Once,
@@ -34,6 +39,8 @@ pub struct Thread {
     stack: Option<ThreadStacks>,
     /// Keeps track of where the stack is.
     last_stack_ptr: *mut u8,
+    /// Thread Local Storage
+    tls: Once<Box<[u8]>>,
 
     /// Link to the next thread in the queue.
     link: Link<Self>,
@@ -70,6 +77,7 @@ impl Thread {
             // Will be overwritten before being used.
             last_stack_ptr: core::ptr::null_mut(),
             link: Link::default(),
+            tls: Once::uninit(),
         }
     }
 
@@ -95,6 +103,7 @@ impl Thread {
             stack: Some(ThreadStacks::new(stack)),
             last_stack_ptr: stack_ptr,
             link: Link::default(),
+            tls: Once::uninit(),
         }
     }
 
@@ -168,6 +177,7 @@ impl Thread {
             stack: None,
             last_stack_ptr: core::ptr::null_mut(),
             link: Link::default(),
+            tls: Once::uninit(),
         }
     }
 
@@ -211,6 +221,13 @@ impl Thread {
     /// Returns a mutable pointer to the last stack pointer.
     pub const fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
         &mut self.last_stack_ptr
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the thread local storage of the thread.
+    pub fn tls(&self) -> Option<VirtAddr> {
+        self.tls.get().map(|tls| VirtAddr::new(tls.as_ptr() as u64))
     }
 }
 
@@ -279,7 +296,7 @@ extern "C" fn user_trampoline() -> ! {
     let root_proc = super::current_process();
 
     // Load the binary into the process' address space.
-    let entry_point = root_proc.load_binary();
+    let loaded_binary = root_proc.load_binary();
 
     // Allocate a user stack
     let rsp = super::get_scheduler()
@@ -287,7 +304,26 @@ extern "C" fn user_trampoline() -> ! {
         .with_locked(|t| t.stack.as_mut().map(|ts| ts.allocate_user(4 * M4KiB::SIZE)))
         .expect("Thread stack not found");
 
-    unsafe { crate::arch::userspace::enter_usermode(entry_point, rsp) };
+    if let Some(tlst) = loaded_binary.tls_template() {
+        let mut tls = alloc::vec![0; usize::try_from(tlst.mem_size()).unwrap()].into_boxed_slice();
+        // Copy TLS initialization image from binary
+        unsafe {
+            tls.as_mut_ptr().copy_from_nonoverlapping(
+                tlst.start().as_ptr(),
+                tlst.file_size().try_into().unwrap(),
+            );
+        }
+
+        let tls_vaddr = VirtAddr::new(tls.as_ptr() as u64);
+        // Locking the scheduler's current thread is a bit risky, but it is better than force locking it
+        // (as otherwise the schduler could get stuck on `Once::get`).
+        super::get_scheduler()
+            .current_thread
+            .with_locked(|t| t.tls.call_once(|| tls));
+        unsafe { FS::write_base(tls_vaddr) };
+    }
+
+    unsafe { crate::arch::userspace::enter_usermode(loaded_binary.entry_point(), rsp) };
 }
 
 struct ThreadStacks {

@@ -253,10 +253,7 @@ impl<'t> PageTable<'t> {
             existed = false;
 
             let frame = allocator.allocate_frame().unwrap();
-            entry.set(
-                frame.start_address(),
-                Flags::PRESENT | Flags::WRITABLE | insert_flags,
-            );
+            entry.set(frame.start_address(), insert_flags);
         } else {
             entry.update_flags(insert_flags);
         }

@@ -1,4 +1,4 @@
-use super::{BinaryResult, LoadedBinary};
+use super::{BinaryResult, LoadedBinary, TlsTemplate};
 use crate::{mem::frame_alloc, process};
 use beskar_core::arch::{
     commons::{
@@ -118,7 +118,10 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
         unsafe { core::mem::transmute::<*const (), extern "C" fn()>(entry_point) }
     };
 
-    Ok(LoadedBinary { entry_point })
+    Ok(LoadedBinary {
+        entry_point,
+        tls_template: load_res.unwrap().tls_template,
+    })
 }
 
 #[inline]
@@ -143,15 +146,31 @@ fn sanity_check(elf: &ElfFile) -> BinaryResult<()> {
     Ok(())
 }
 
-fn load_segments(elf: &ElfFile, offset: VirtAddr, working_offset: VirtAddr) -> BinaryResult<()> {
+struct LoadedSegmentsInfo {
+    tls_template: Option<TlsTemplate>,
+}
+
+fn load_segments(
+    elf: &ElfFile,
+    offset: VirtAddr,
+    working_offset: VirtAddr,
+) -> BinaryResult<LoadedSegmentsInfo> {
+    let mut tls_template = None;
+
     for ph in elf.program_iter() {
         match faillible!(ph.get_type()) {
             Type::Load => {
                 handle_segment_load(elf, ph, offset, working_offset)?;
             }
             Type::Tls => {
-                // TODO: TLS support
-                crate::warn!("TLS segment found, but not supported");
+                if tls_template.is_some() {
+                    return Err(LoadError::InvalidBinary);
+                }
+                tls_template = Some(TlsTemplate {
+                    start: offset + ph.virtual_addr(),
+                    file_size: ph.file_size(),
+                    mem_size: ph.mem_size(),
+                });
             }
             Type::Interp => {
                 return Err(LoadError::InvalidBinary);
@@ -174,7 +193,7 @@ fn load_segments(elf: &ElfFile, offset: VirtAddr, working_offset: VirtAddr) -> B
         }
     }
 
-    Ok(())
+    Ok(LoadedSegmentsInfo { tls_template })
 }
 
 fn handle_segment_load(

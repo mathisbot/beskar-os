@@ -4,6 +4,7 @@ use core::{
 };
 
 use alloc::{boxed::Box, sync::Arc};
+use beskar_core::arch::{commons::VirtAddr, x86_64::registers::FS};
 use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
 use thread::Thread;
@@ -69,6 +70,7 @@ pub struct ContextSwitch {
     old_stack: *mut *mut u8,
     new_stack: *const u8,
     cr3: u64,
+    fs: Option<VirtAddr>,
 }
 
 impl ContextSwitch {
@@ -79,6 +81,7 @@ impl ContextSwitch {
     ///
     /// See `kernel::arch::context::context_switch`.
     pub unsafe fn perform(&self) {
+        unsafe { FS::write_base(self.fs.unwrap_or(VirtAddr::new(0))) };
         unsafe { crate::arch::context::switch(self.old_stack, self.new_stack, self.cr3) };
     }
 }
@@ -161,6 +164,7 @@ impl Scheduler {
             let new_stack = thread.last_stack_ptr();
 
             let cr3 = thread.process().address_space().cr3_raw();
+            let fs = thread.tls();
 
             if old_should_exit {
                 // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
@@ -174,6 +178,7 @@ impl Scheduler {
                 old_stack,
                 new_stack,
                 cr3,
+                fs,
             })
         })?
     }

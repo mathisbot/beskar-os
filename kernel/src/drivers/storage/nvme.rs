@@ -185,12 +185,13 @@ impl NvmeControllers {
             unsafe { ptr.read_volatile() }
         };
 
-        self.max_transfer_sz = if let Some(raw) = identify_result.maximum_data_transfer_size() {
-            let mps_min = u64::from(self.capabilities().mpsmin());
-            mps_min.checked_mul(1 << raw.get()).unwrap_or(u64::MAX)
-        } else {
-            u64::MAX
-        };
+        self.max_transfer_sz =
+            identify_result
+                .maximum_data_transfer_size()
+                .map_or(u64::MAX, |raw| {
+                    let mps_min = u64::from(self.capabilities().mpsmin());
+                    mps_min.checked_mul(1 << raw.get()).unwrap_or(u64::MAX)
+                });
 
         // --- Part Three: I/O queues creation ---
 

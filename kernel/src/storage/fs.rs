@@ -56,7 +56,6 @@ impl PathBuf {
         Self(String::from(path))
     }
 
-    #[must_use]
     #[inline]
     pub fn push(&mut self, path: &str) {
         self.0.push_str(path);
@@ -76,7 +75,7 @@ impl<'a> From<&'a str> for Path<'a> {
     }
 }
 
-impl<'a> core::ops::Deref for Path<'a> {
+impl core::ops::Deref for Path<'_> {
     type Target = str;
 
     #[inline]

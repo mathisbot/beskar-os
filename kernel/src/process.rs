@@ -3,6 +3,7 @@ use alloc::{
     sync::Arc,
 };
 use beskar_core::arch::x86_64::userspace::Ring;
+use binary::LoadedBinary;
 use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use hyperdrive::{once::Once, ptrs::view::View};
 
@@ -84,10 +85,10 @@ impl Process {
     /// # Panics
     ///
     /// Panics if there is no binary data associated with the process.
-    fn load_binary(&self) -> extern "C" fn() {
+    fn load_binary(&self) -> LoadedBinary {
         let binary_data = self.binary_data.as_ref().unwrap();
         binary_data.load();
-        binary_data.loaded.get().unwrap().entry_point()
+        *binary_data.loaded.get().unwrap()
     }
 }
 
@@ -194,6 +195,12 @@ pub fn current() -> Arc<Process> {
 pub struct Pcid(u16);
 
 static PCID_COUNTER: AtomicU16 = AtomicU16::new(0);
+
+impl Default for Pcid {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Pcid {
     #[must_use]
