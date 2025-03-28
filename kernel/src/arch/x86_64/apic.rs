@@ -10,6 +10,7 @@ use timer::LapicTimer;
 
 use super::cpuid;
 use crate::{
+    drivers::acpi::sdt::madt::Lint,
     locals,
     mem::{address_space, frame_alloc},
     process,
@@ -103,6 +104,7 @@ pub struct LocalApic {
     base: Volatile<ReadWrite, u32>,
     timer: LapicTimer,
     paddr: PhysAddr,
+    acpi_id: u8,
 }
 
 impl LocalApic {
@@ -136,6 +138,59 @@ impl LocalApic {
             });
         });
 
+        let acpi_id = crate::drivers::acpi::ACPI
+            .get()
+            .map(|acpi| {
+                let apic_id = locals!().apic_id();
+                acpi.madt()
+                    .lapics()
+                    .iter()
+                    .find(|candidate| candidate.id() == apic_id)
+                    .map(|found| found.acpi_id())
+                    .expect("APIC ACPI ID not found")
+            })
+            .unwrap();
+
+        // Handle NMI sources
+        let apic_lint0 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x350) };
+        let apic_lint1 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x360) };
+        crate::drivers::acpi::ACPI.get().map(|acpi| {
+            acpi.madt().local_nmis().iter().for_each(|nmi| {
+                if nmi.acpi_id() != 0xFF || nmi.acpi_id() != acpi_id {
+                    return;
+                }
+
+                let triggermode: u32 = match nmi.flags().trigger_mode() {
+                    crate::drivers::acpi::sdt::madt::TriggerMode::Edge => 0,
+                    crate::drivers::acpi::sdt::madt::TriggerMode::Level => 1,
+                    // Apparently bus default is edge
+                    crate::drivers::acpi::sdt::madt::TriggerMode::BusDefault => 0,
+                };
+                let polarity: u32 = match nmi.flags().polarity() {
+                    crate::drivers::acpi::sdt::madt::Polarity::High => 0,
+                    crate::drivers::acpi::sdt::madt::Polarity::Low => 1,
+                    // Apparently bus default is high
+                    crate::drivers::acpi::sdt::madt::Polarity::BusDefault => 0,
+                };
+
+                let mut value = 0_u32;
+                value |= triggermode << 15;
+                value |= polarity << 13;
+                value |= 0b100 << 8; // NMI delivery mode
+                // TODO: Allocate at runtime for the current core
+                value |= u32::from(super::interrupts::Irq::LocalNmi as u8);
+
+                match nmi.lint() {
+                    Lint::Lint0 => {
+                        *apic_lint0 = value;
+                    }
+                    Lint::Lint1 => {
+                        *apic_lint1 = value;
+                    }
+                }
+            })
+        });
+
         // Register spurious interrupt handler
         let base_ptr: *mut u32 = page.start_address().as_mut_ptr();
         let apic_spurious = unsafe { &mut *base_ptr.byte_add(0xF0) };
@@ -149,6 +204,7 @@ impl LocalApic {
             base,
             timer: timer::LapicTimer::new(timer::Configuration::new(base, Irq::Timer)),
             paddr,
+            acpi_id,
         }
     }
 
@@ -189,6 +245,12 @@ impl LocalApic {
     #[inline]
     pub const fn paddr(&self) -> PhysAddr {
         self.paddr
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn acpi_id(&self) -> u8 {
+        self.acpi_id
     }
 }
 
@@ -389,13 +451,54 @@ impl IoApic {
 
         // TODO: Setup redirection entries (See MADT)
         let isos = crate::drivers::acpi::ACPI.get().unwrap().madt().io_iso();
+        let nmi_sources = crate::drivers::acpi::ACPI
+            .get()
+            .unwrap()
+            .madt()
+            .io_nmi_sources();
+
+        let mut idx_counter = 0;
         for iso in isos {
-            // TODO: Implement Redirection
-            // let red = Redirection {
-            //     // ???
-            // }
-            // self.set_redirection(iso.gsi(), iso.redirection());
-            crate::warn!("Unhandled IOAPIC redirection: {:?}", iso);
+            if iso.gsi() < self.gsi_base {
+                continue;
+            }
+
+            let idx = idx_counter;
+            idx_counter += 1;
+            if idx >= self.max_red_ent() {
+                crate::warn!("IOAPIC has too many redirections. Skipping");
+                break;
+            }
+
+            let (is_nmi, flags) =
+                if let Some(nmis) = nmi_sources.iter().find(|nmis| nmis.gsi() == iso.gsi()) {
+                    (true, nmis.flags())
+                } else {
+                    (false, iso.flags())
+                };
+
+            let red = Redirection {
+                delivery_mode: if is_nmi {
+                    DeliveryMode::Nmi
+                } else {
+                    DeliveryMode::Fixed
+                },
+                trigger_mode: match flags.trigger_mode() {
+                    crate::drivers::acpi::sdt::madt::TriggerMode::Edge => TriggerMode::Edge,
+                    crate::drivers::acpi::sdt::madt::TriggerMode::Level => TriggerMode::Level,
+                    crate::drivers::acpi::sdt::madt::TriggerMode::BusDefault => TriggerMode::Edge,
+                },
+                pin_polarity: match flags.polarity() {
+                    crate::drivers::acpi::sdt::madt::Polarity::High => PinPolarity::High,
+                    crate::drivers::acpi::sdt::madt::Polarity::Low => PinPolarity::Low,
+                    crate::drivers::acpi::sdt::madt::Polarity::BusDefault => PinPolarity::High,
+                },
+                remote_irr: false,
+                int_vec: super::interrupts::Irq::IoIso as u8, // TODO: Allocate at runtime
+                interrupt_mask: true,                         // FIXME: Do not mask
+                destination: Destination::Physical(0),        // Always go to BSP
+            };
+            self.set_redirection(idx, red);
         }
 
         enable_disable_interrupts(true);
@@ -446,17 +549,6 @@ impl IoApic {
             index < self.max_red_ent(),
             "Redirection index must be less than the max redirection entries"
         );
-
-        let nmi_sources = crate::drivers::acpi::ACPI
-            .get()
-            .unwrap()
-            .madt()
-            .io_nmi_sources();
-        for _nmi_source in nmi_sources {
-            // TODO: Check if NMI source
-            // If NMI source, don't forget to use nmi_source.flags() to set the flags
-            // and to switch delivery mode to NMI
-        }
 
         let reg = IoApicReg::Redirection(index);
 

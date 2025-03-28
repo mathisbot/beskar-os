@@ -68,6 +68,8 @@ pub fn init() {
     idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
     idt[Irq::Nic as u8].set_handler_fn(nic_interrupt_handler);
     idt[Irq::Nvme as u8].set_handler_fn(nvme_interrupt_handler);
+    idt[Irq::LocalNmi as u8].set_handler_fn(local_nmi_handler);
+    idt[Irq::IoIso as u8].set_handler_fn(io_iso_handler);
 
     idt.load();
 
@@ -248,6 +250,16 @@ extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFra
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
+extern "x86-interrupt" fn local_nmi_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("Local NMI on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
+extern "x86-interrupt" fn io_iso_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("IO ISO on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 /// Represents a programmable interrupt index
@@ -259,6 +271,8 @@ pub enum Irq {
     Xhci = 34,
     Nic = 35,
     Nvme = 36,
+    LocalNmi = 37,
+    IoIso = 38,
 }
 
 #[inline]
