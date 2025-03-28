@@ -13,5 +13,5 @@ fn main() {
 
     let _test_vec = alloc::vec![0; 10];
 
-    beskar_lib::println!("Random u64: {}", random_u64);
+    beskar_lib::println!("Random u64: {:#x}", random_u64);
 }

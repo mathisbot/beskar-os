@@ -11,9 +11,8 @@ It defines:
 - Locks
     - Mellor, Crumley and Scott
     - Read-Write
-- Borrow
-    - Tether
 - Pointers
+    - Views
     - Volatile Pointers with compile-time Access Rights
 - Queues
     - Multiple Producer, Single Consumer and intrusive

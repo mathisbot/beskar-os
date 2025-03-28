@@ -2,9 +2,11 @@ use super::{Pixel, PixelComponents};
 use crate::video::Info;
 
 mod chars;
-use chars::{
-    BORDER_PADDING, CHAR_HEIGHT, CHAR_WIDTH, LETTER_SPACING, LINE_SPACING, get_raster_backed,
-};
+use chars::{CHAR_HEIGHT, CHAR_WIDTH, get_raster_backed};
+
+pub const LINE_SPACING: usize = 2;
+pub const LETTER_SPACING: usize = 0;
+pub const BORDER_PADDING: usize = 3;
 
 /// Allows logging text to a pixel-based framebuffer.
 pub struct FramebufferWriter {
@@ -20,8 +22,8 @@ impl FramebufferWriter {
     pub fn new(info: Info) -> Self {
         Self {
             info,
-            x: 0,
-            y: 0,
+            x: BORDER_PADDING,
+            y: BORDER_PADDING,
             curr_color: Pixel::WHITE.components_by_format(info.pixel_format()),
         }
     }

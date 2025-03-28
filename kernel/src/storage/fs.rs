@@ -5,7 +5,7 @@ pub mod ext2;
 pub mod fat32;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Handle(pub usize);
+pub struct Handle(usize);
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -73,5 +73,14 @@ impl<'a> From<&'a str> for Path<'a> {
     #[inline]
     fn from(value: &'a str) -> Self {
         Self(value)
+    }
+}
+
+impl<'a> core::ops::Deref for Path<'a> {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.0
     }
 }

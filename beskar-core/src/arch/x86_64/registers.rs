@@ -372,28 +372,35 @@ impl<const P: u32> Msr<P> {
 pub struct GS;
 
 impl GS {
+    const MSR: Msr<0xC000_0101> = Msr;
+
     #[must_use]
     #[inline]
     pub fn read_base() -> VirtAddr {
-        let base: u64;
-        unsafe {
-            core::arch::asm!(
-                "rdgsbase {}",
-                out(reg) base,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
+        let base = Self::MSR.read();
         VirtAddr::new(base)
     }
 
     #[inline]
     pub unsafe fn write_base(base: VirtAddr) {
-        unsafe {
-            core::arch::asm!(
-                "wrgsbase {}",
-                in(reg) base.as_u64(),
-                options(nostack, preserves_flags)
-            );
-        }
+        unsafe { Self::MSR.write(base.as_u64()) };
+    }
+}
+
+pub struct FS;
+
+impl FS {
+    const MSR: Msr<0xC000_0100> = Msr;
+
+    #[must_use]
+    #[inline]
+    pub fn read_base() -> VirtAddr {
+        let base = Self::MSR.read();
+        VirtAddr::new(base)
+    }
+
+    #[inline]
+    pub unsafe fn write_base(base: VirtAddr) {
+        unsafe { Self::MSR.write(base.as_u64()) };
     }
 }

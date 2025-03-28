@@ -42,7 +42,7 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
         .program_iter()
         .map(|ph| ph.virtual_addr() + ph.mem_size())
         .max()
-        .unwrap();
+        .unwrap_or(0);
 
     let page_count = total_size.div_ceil(M4KiB::SIZE);
     let page_range = process::current()

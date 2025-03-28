@@ -152,11 +152,11 @@ pub fn make_mappings(
     // Map kernel
     let (kernel_entry_point, kernel_info) = {
         let kernel_paddr = PhysAddr::new(kernel.input.as_ptr() as u64);
-        let kernel_len = u64::try_from(kernel.input.len()).unwrap();
 
         let kernel_elf::LoadedKernelInfo {
             image_offset: kernel_vaddr,
             entry_point: kernel_entry_point,
+            kernel_size,
         } = crate::kernel_elf::load_kernel_elf(kernel_elf::KernelLoadingUtils::new(
             kernel,
             &mut level_4_entries,
@@ -173,7 +173,7 @@ pub fn make_mappings(
             KernelInfo::new(
                 kernel_paddr,
                 unsafe { core::mem::transmute(kernel_vaddr) },
-                kernel_len,
+                kernel_size,
             ),
         )
     };

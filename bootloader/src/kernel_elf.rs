@@ -104,9 +104,17 @@ pub fn load_kernel_elf(mut klu: KernelLoadingUtils) -> LoadedKernelInfo {
 
     let _lsi = load_segments(&mut klu, virtual_address_offset);
 
+    let total_size = klu
+        .kernel
+        .program_iter()
+        .map(|ph| ph.virtual_addr() + ph.mem_size())
+        .max()
+        .unwrap_or(0);
+
     LoadedKernelInfo {
         entry_point: VirtAddr::new(virtual_address_offset + klu.kernel.header.pt2.entry_point()),
         image_offset: VirtAddr::new(virtual_address_offset),
+        kernel_size: total_size,
     }
 }
 
@@ -616,8 +624,9 @@ fn handle_segment_gnurelro(
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct LoadedKernelInfo {
     pub entry_point: VirtAddr,
     pub image_offset: VirtAddr,
+    pub kernel_size: u64,
 }
