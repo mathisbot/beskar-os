@@ -10,11 +10,12 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
 ## Features
 
 - Arch
-    - [ ] x86_64
+    - [X] x86_64
         - [x] Interrupts/GDT
-        - [ ] APIC
+        - [X] CPUID
+        - [X] APIC
             - [x] LAPIC
-            - [ ] IOAPIC
+            - [X] IOAPIC
         - [x] AP startup
         - [x] Randomness
         - [x] Systemcalls
@@ -29,7 +30,7 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [x] Devices
         - [X] MSI/MSI-X
     - [ ] USB
-        - [ ] xHCI driver
+        - [ ] xHCI driver (partial)
         - [ ] USB 1/2/3 driver
         - [ ] Keyboard driver
     - [x] Time
@@ -37,29 +38,31 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [x] x86_64
             - [x] TSC
             - [x] APIC Timer
-    - Network
-        - [ ] NICs
-            - [ ] Intel e1000e
-        - [ ] Network stack
-            - [ ] ARP
-            - [ ] ICMP
-            - [ ] IPv4
-            - [ ] UDP
-            - [ ] TCP
-        - [ ] Services
-            - [ ] DHCP
-            - [ ] DNS
-            - [ ] Sockets
     - Storage
         - [ ] AHCI
         - [ ] NVMe (partial)
 - Memory
     - [x] Paging
     - [x] Physical/Virtual Allocators
-    - [x] Address spaces
-- FS
+    - [x] Address spaces / VMM
+- Network
+    - [ ] NICs
+        - [ ] Intel e1000e (partial)
+    - [ ] Network stack
+        - [ ] ARP
+        - [ ] ICMP
+        - [ ] IPv4
+        - [ ] UDP
+        - [ ] TCP
+    - [ ] Services
+        - [ ] DHCP
+        - [ ] DNS
+        - [ ] Sockets
+- Storage
     - [ ] GPT
-    - [ ] ext2/ext4
+    - [ ] FS
+        - [ ] FAT32
+        - [ ] ext2
     - [ ] VFS
 - Processes
     - [x] Scheduling
