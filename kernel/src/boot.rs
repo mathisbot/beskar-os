@@ -66,20 +66,25 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     locals!().gdt().init_load();
 
     process::init();
+    crate::info!("Process subsystem initialized");
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
     rsdp_paddr.map(drivers::acpi::init);
 
     time::init();
+    crate::info!("Time subsystem initialized");
 
     interrupts::init();
+    crate::info!("Interrupts initialized");
 
     syscall::init();
 
+    // TODO: Move into an architecture agnostic module
     apic::init_lapic();
     apic::init_ioapic();
 
     storage::init();
+    crate::info!("Storage subsystem initialized");
 }
 
 /// Rust entry point for APs

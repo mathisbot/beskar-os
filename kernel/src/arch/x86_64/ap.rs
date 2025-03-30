@@ -140,6 +140,8 @@ pub fn start_up_aps(core_count: usize) {
     while locals::get_ready_core_count() != core_count {
         core::hint::spin_loop();
     }
+
+    crate::info!("All APs have been awakened!");
 }
 
 fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
