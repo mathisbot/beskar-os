@@ -38,6 +38,8 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [x] x86_64
             - [x] TSC
             - [x] APIC Timer
+    - [ ] NICs
+        - [ ] Intel e1000e (partial)
     - Storage
         - [ ] AHCI
         - [ ] NVMe (partial)
@@ -46,8 +48,6 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
     - [x] Physical/Virtual Allocators
     - [x] Address spaces / VMM
 - Network
-    - [ ] NICs
-        - [ ] Intel e1000e (partial)
     - [ ] Network stack
         - [ ] ARP
         - [ ] ICMP
