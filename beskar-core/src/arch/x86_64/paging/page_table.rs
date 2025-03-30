@@ -159,12 +159,12 @@ impl Entries {
     }
 
     #[inline]
-    pub fn iter(&self) -> core::slice::Iter<Entry> {
+    pub fn iter_entries(&self) -> core::slice::Iter<Entry> {
         self.0.iter()
     }
 
     #[inline]
-    pub fn iter_mut(&mut self) -> core::slice::IterMut<Entry> {
+    pub fn iter_entries_mut(&mut self) -> core::slice::IterMut<Entry> {
         self.0.iter_mut()
     }
 
@@ -199,7 +199,8 @@ impl<'t> PageTable<'t> {
     #[must_use]
     #[inline]
     pub fn new(entries: &'t mut Entries) -> Self {
-        let page = Page::<M4KiB>::containing_address(VirtAddr::new(entries.0.as_ptr() as u64));
+        let page =
+            Page::<M4KiB>::from_start_address(VirtAddr::new(entries.0.as_ptr() as u64)).unwrap();
         let l4_index = page.p4_index();
 
         if page.p3_index() != l4_index || page.p2_index() != l4_index || page.p1_index() != l4_index
@@ -234,6 +235,12 @@ impl<'t> PageTable<'t> {
         self.entries
     }
 
+    #[must_use]
+    #[inline]
+    pub const fn recursive_index(&self) -> u16 {
+        self.recursive_index
+    }
+
     unsafe fn create_next_level<'a, A: FrameAllocator<M4KiB>>(
         entry: &'a mut Entry,
         next_table: Page,
@@ -246,10 +253,7 @@ impl<'t> PageTable<'t> {
             existed = false;
 
             let frame = allocator.allocate_frame().unwrap();
-            entry.set(
-                frame.start_address(),
-                Flags::PRESENT | Flags::WRITABLE | insert_flags,
-            );
+            entry.set(frame.start_address(), insert_flags);
         } else {
             entry.update_flags(insert_flags);
         }
@@ -368,7 +372,9 @@ impl Mapper<M4KiB> for PageTable<'_> {
 
         assert!(
             p1[usize::from(page.p1_index())].is_null(),
-            "Page already mapped"
+            "Page {:#x} already mapped to {:#x}",
+            page.start_address().as_u64(),
+            p1[usize::from(page.p1_index())].addr().as_u64()
         );
         p1[usize::from(page.p1_index())].set(frame.start_address(), flags | Flags::PRESENT);
 
@@ -537,7 +543,9 @@ impl Mapper<M2MiB> for PageTable<'_> {
 
         assert!(
             p2[usize::from(page.p2_index())].is_null(),
-            "Page already mapped"
+            "Page {:#x} already mapped to {:#x}",
+            page.start_address().as_u64(),
+            p2[usize::from(page.p2_index())].addr().as_u64()
         );
         p2[usize::from(page.p2_index())].set(frame.start_address(), Flags::HUGE_PAGE | flags);
 

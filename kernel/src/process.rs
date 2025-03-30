@@ -1,16 +1,15 @@
-use core::sync::atomic::{AtomicU64, Ordering};
-
 use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
 use beskar_core::arch::x86_64::userspace::Ring;
-use hyperdrive::{once::Once, tether::Tether};
+use binary::LoadedBinary;
+use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use hyperdrive::{once::Once, ptrs::view::View};
 
 use crate::mem::address_space::{self, AddressSpace};
 
 pub mod binary;
-pub mod dummy;
 pub mod scheduler;
 
 static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();
@@ -20,7 +19,7 @@ pub fn init() {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: Tether::Reference(address_space::get_kernel_address_space()),
+            address_space: View::Reference(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
             binary_data: None,
         })
@@ -37,7 +36,7 @@ pub fn init() {
 pub struct Process {
     name: String,
     pid: ProcessId,
-    address_space: Tether<'static, AddressSpace>,
+    address_space: View<'static, AddressSpace>,
     kind: Kind,
     // FIXME: Shouldn't be 'static
     binary_data: Option<BinaryData<'static>>,
@@ -50,7 +49,7 @@ impl Process {
         Self {
             name: name.to_string(),
             pid: ProcessId::new(),
-            address_space: Tether::Owned(AddressSpace::new()),
+            address_space: View::Owned(AddressSpace::new()),
             kind,
             binary_data: binary.map(BinaryData::new),
         }
@@ -86,10 +85,10 @@ impl Process {
     /// # Panics
     ///
     /// Panics if there is no binary data associated with the process.
-    fn load_binary(&self) -> extern "C" fn() {
+    fn load_binary(&self) -> LoadedBinary {
         let binary_data = self.binary_data.as_ref().unwrap();
         binary_data.load();
-        binary_data.loaded.get().unwrap().entry_point()
+        *binary_data.loaded.get().unwrap()
     }
 }
 
@@ -113,8 +112,16 @@ impl Default for ProcessId {
 }
 
 impl ProcessId {
+    #[must_use]
+    #[inline]
     pub fn new() -> Self {
         Self(PID_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn as_u64(&self) -> u64 {
+        self.0
     }
 }
 
@@ -172,5 +179,45 @@ impl<'a> BinaryData<'a> {
     /// Panics if the binary is invalid.
     pub fn load(&self) {
         self.loaded.call_once(|| self.input.load().unwrap());
+    }
+}
+
+#[must_use]
+#[inline]
+pub fn current() -> Arc<Process> {
+    scheduler::current_process()
+}
+
+/// A struct representing a PCID.
+///
+/// Its valid values are 0 to 4095.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pcid(u16);
+
+static PCID_COUNTER: AtomicU16 = AtomicU16::new(0);
+
+impl Default for Pcid {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Pcid {
+    #[must_use]
+    #[inline]
+    pub fn new() -> Self {
+        let raw: u16 = PCID_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+        if raw > 4095 {
+            todo!("PCID recycling");
+        }
+
+        Self(raw % 4096)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn as_u16(&self) -> u16 {
+        self.0
     }
 }

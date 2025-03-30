@@ -8,11 +8,20 @@ crate::impl_sdt!(Madt);
 pub struct ParsedMadt {
     // Related to Local APIC
     lapic_paddr: PhysAddr,
+    lapics: Vec<ParsedLapic>,
+    local_nmis: Vec<ParsedLocalNmi>,
 
     // Related to I/O APIC
     io_apics: Vec<ParsedIoApic>,
     io_nmi_sources: Vec<ParsedIoNmiSource>,
     io_iso: Vec<ParsedIoIso>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParsedLapic {
+    id: u8,
+    acpi_id: u8,
+    flags: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +42,35 @@ pub struct ParsedIoIso {
     source: u8,
     gsi: u32,
     flags: InterruptFlags,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParsedLocalNmi {
+    flags: InterruptFlags,
+    /// The ACPI ID of the CPU
+    ///
+    /// 0xFF means all CPUs
+    acpi_id: u8,
+    /// Local APIC interrupt input `LINTn` to which NMI is connected.
+    lint: Lint,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lint {
+    Lint0,
+    Lint1,
+}
+
+impl TryFrom<u8> for Lint {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Lint::Lint0),
+            1 => Ok(Lint::Lint1),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,23 +112,48 @@ struct IoApic {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct InterruptFlags(u16);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Polarity {
+    High,
+    Low,
+    BusDefault,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerMode {
+    Edge,
+    Level,
+    BusDefault,
+}
 
 impl InterruptFlags {
     #[must_use]
     #[inline]
-    pub fn active_low(self) -> bool {
+    pub fn polarity(self) -> Polarity {
         // Polarity flag is 2-bit wide, but only 01 (high) and 11 (low) are handled.
-        assert_eq!(self.0 & 0b01, 1, "Unexpected polarity flag.");
-        self.0 & 0b10 != 0
+        // (00 means same as bus)
+        assert_ne!(self.0 & 0b11, 10, "Reserved polarity flag.");
+        match self.0 & 0b11 {
+            0b01 => Polarity::High,
+            0b11 => Polarity::Low,
+            _ => Polarity::BusDefault,
+        }
     }
 
     #[must_use]
     #[inline]
-    pub fn level_triggered(self) -> bool {
+    pub fn trigger_mode(self) -> TriggerMode {
         // Trigger mode flag is 2-bit wide, but only 01 (edge) and 11 (level) are handled.
-        assert_eq!(self.0 & 0b0100, 4, "Unexpected polarity flag.");
-        self.0 & 0b1000 != 0
+        // (00 means same as bus, which apparently is always edge triggered)
+        assert_ne!(self.0 & 0b1100, 0b1000, "Reserved trigger mode flag.");
+        match self.0 & 0b1100 {
+            0b0100 => TriggerMode::Edge,
+            0b1100 => TriggerMode::Level,
+            _ => TriggerMode::BusDefault,
+        }
     }
 }
 
@@ -178,9 +241,11 @@ impl Madt {
                 .read_unaligned()
         }));
 
+        let mut lapics = Vec::<ParsedLapic>::new();
         let mut io_apics = Vec::<ParsedIoApic>::new();
         let mut io_nmi_sources = Vec::<ParsedIoNmiSource>::new();
         let mut io_iso = Vec::<ParsedIoIso>::new();
+        let mut local_nmis = Vec::<ParsedLocalNmi>::new();
 
         let madt_header_end = unsafe {
             self.start_vaddr
@@ -197,8 +262,23 @@ impl Madt {
             match entry_header.entry_type {
                 0 => {
                     assert_eq!(usize::from(entry_header.length), size_of::<Lapic>());
-                    // Local APIC
-                    // This entry could be used to find the ACPI ID of the core, matching by APIC ID.
+
+                    let lapic = unsafe { entry_start.cast::<Lapic>().read_unaligned() };
+
+                    // Unpack packed fields
+                    let id = lapic.id;
+                    let acpi_id = lapic.acpi_id;
+                    let flags = lapic.flags;
+
+                    let parsed_lapic = ParsedLapic { id, acpi_id, flags };
+                    if parsed_lapic.flags & 0b1 == 0b1 {
+                        lapics.push(parsed_lapic);
+                    } else if parsed_lapic.flags & 0b10 == 0b10 {
+                        unreachable!("Bootloader should have enabled this LAPIC.");
+                    } else {
+                        // LAPIC is disabled
+                        crate::warn!("LAPIC {} is disabled", parsed_lapic.id);
+                    }
                 }
                 1 => {
                     assert_eq!(usize::from(entry_header.length), size_of::<IoApic>());
@@ -251,8 +331,19 @@ impl Madt {
                     assert_eq!(usize::from(entry_header.length), size_of::<LocalNmi>());
 
                     let local_nmi = unsafe { entry_start.cast::<LocalNmi>().read_unaligned() };
-                    // TODO: Handle Local NMI.
-                    crate::warn!("Unhandled Local NMI entry: {:?}", local_nmi);
+
+                    // Unpack packed fields
+                    let flags = local_nmi.flags;
+                    let acpi_id = local_nmi.acpi_id;
+                    let lint = local_nmi.lint;
+
+                    let local_nmi = ParsedLocalNmi {
+                        flags,
+                        acpi_id,
+                        lint: Lint::try_from(lint).expect("Invalid LINT value in Local NMI entry."),
+                    };
+
+                    local_nmis.push(local_nmi);
                 }
                 5 => {
                     assert_eq!(
@@ -277,6 +368,8 @@ impl Madt {
                     );
                     // Local x2APIC
                     // Same as Local APIC
+                    let local_x2apic = unsafe { entry_start.cast::<X2Apic>().read_unaligned() };
+                    crate::debug!("Unused Local x2APIC: {:?}", local_x2apic);
                 }
                 10 => {
                     assert_eq!(
@@ -314,6 +407,8 @@ impl Madt {
 
         ParsedMadt {
             lapic_paddr,
+            lapics,
+            local_nmis,
             io_apics,
             io_nmi_sources,
             io_iso,
@@ -326,6 +421,18 @@ impl ParsedMadt {
     #[inline]
     pub const fn lapic_paddr(&self) -> PhysAddr {
         self.lapic_paddr
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn lapics(&self) -> &[ParsedLapic] {
+        &self.lapics
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn local_nmis(&self) -> &[ParsedLocalNmi] {
+        &self.local_nmis
     }
 
     #[must_use]
@@ -398,5 +505,49 @@ impl ParsedIoNmiSource {
     #[inline]
     pub const fn gsi(&self) -> u32 {
         self.gsi
+    }
+}
+
+impl ParsedLapic {
+    #[must_use]
+    #[inline]
+    pub const fn id(&self) -> u8 {
+        self.id
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn acpi_id(&self) -> u8 {
+        self.acpi_id
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn flags(&self) -> u32 {
+        self.flags
+    }
+}
+
+impl ParsedLocalNmi {
+    #[must_use]
+    #[inline]
+    pub const fn flags(&self) -> InterruptFlags {
+        self.flags
+    }
+
+    #[must_use]
+    #[inline]
+    /// The ACPI ID of the CPU
+    ///
+    /// 0xFF means all CPUs
+    pub const fn acpi_id(&self) -> u8 {
+        self.acpi_id
+    }
+
+    #[must_use]
+    #[inline]
+    /// Local APIC interrupt input `LINTn` to which NMI is connected.
+    pub const fn lint(&self) -> Lint {
+        self.lint
     }
 }

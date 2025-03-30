@@ -1,6 +1,6 @@
 use core::cell::UnsafeCell;
 
-use beskar_core::arch::x86_64::registers::Cr2;
+use beskar_core::arch::x86_64::registers::{Cr0, Cr2};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use super::gdt::{DOUBLE_FAULT_IST, PAGE_FAULT_IST};
@@ -68,6 +68,8 @@ pub fn init() {
     idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
     idt[Irq::Nic as u8].set_handler_fn(nic_interrupt_handler);
     idt[Irq::Nvme as u8].set_handler_fn(nvme_interrupt_handler);
+    idt[Irq::LocalNmi as u8].set_handler_fn(local_nmi_handler);
+    idt[Irq::IoIso as u8].set_handler_fn(io_iso_handler);
 
     idt.load();
 
@@ -177,7 +179,6 @@ panic_isr!(breakpoint_handler);
 panic_isr!(overflow_handler);
 panic_isr!(bound_range_exceeded_handler);
 panic_isr!(invalid_opcode_handler);
-panic_isr!(device_not_available_handler); // TODO: Save FPU/SIMD state
 panic_isr_with_errcode!(invalid_tss_handler);
 panic_isr_with_errcode!(segment_not_present_handler);
 panic_isr_with_errcode!(stack_segment_fault_handler);
@@ -190,6 +191,20 @@ panic_isr_with_errcode!(cp_protection_handler);
 panic_isr!(hv_injection_handler);
 panic_isr_with_errcode!(vmm_communication_handler);
 panic_isr_with_errcode!(security_exception_handler);
+
+extern "x86-interrupt" fn device_not_available_handler(_stack_frame: InterruptStackFrame) {
+    let cr0 = Cr0::read();
+    if cr0 & Cr0::TASK_SWITCHED != 0 {
+        panic!("EXCEPTION: DEVICE NOT AVAILABLE");
+    } else {
+        // TODO: Save FPU/SIMD state
+        // Choose between FXSAVE/FXRSTOR and XSAVE/XRSTOR
+        // Maybe set MP flag in CR0 and keep the Thread ID of the last FPU user?
+        todo!("Save FPU/SIMD state");
+        todo!("Restore FPU/SIMD state");
+        unsafe { Cr0::write(cr0 & !Cr0::TASK_SWITCHED) };
+    }
+}
 
 extern "x86-interrupt" fn non_maskable_interrupt_handler(_stack_frame: InterruptStackFrame) {
     if crate::kernel_has_panicked() {
@@ -235,17 +250,29 @@ extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFra
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
+extern "x86-interrupt" fn local_nmi_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("Local NMI on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
+extern "x86-interrupt" fn io_iso_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("IO ISO on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 /// Represents a programmable interrupt index
 pub enum Irq {
-    // Because the 32 first interrupts are reserved for exceptions,
+    // As the 32 first interrupts are reserved for exceptions,
     // all numbers defined here must be greater than or equal to 32.
     Timer = 32,
     Spurious = 33,
     Xhci = 34,
     Nic = 35,
     Nvme = 36,
+    LocalNmi = 37,
+    IoIso = 38,
 }
 
 #[inline]

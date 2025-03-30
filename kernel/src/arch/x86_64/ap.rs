@@ -1,7 +1,7 @@
 use super::apic::ipi::{self, Ipi};
 use crate::{
     locals,
-    mem::{address_space, frame_alloc, page_alloc},
+    mem::{address_space, frame_alloc},
 };
 use beskar_core::arch::{
     commons::{
@@ -131,7 +131,7 @@ pub fn start_up_aps(core_count: usize) {
             frame_allocator.free(frame);
         });
     });
-    page_alloc::with_page_allocator(|page_allocator| {
+    address_space::with_kernel_pgalloc(|page_allocator| {
         let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
         page_allocator.free_pages(Page::range_inclusive(page, page));
     });
@@ -140,6 +140,8 @@ pub fn start_up_aps(core_count: usize) {
     while locals::get_ready_core_count() != core_count {
         core::hint::spin_loop();
     }
+
+    crate::info!("All APs have been awakened!");
 }
 
 fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
@@ -152,14 +154,14 @@ fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
 }
 
 fn allocate_stack() {
-    let stack_pages = page_alloc::with_page_allocator(|page_allocator| {
+    let stack_pages = address_space::with_kernel_pgalloc(|page_allocator| {
         page_allocator
             .allocate_pages::<M4KiB>(KERNEL_STACK_NB_PAGES)
             .unwrap()
     });
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
-        crate::mem::address_space::with_kernel_pt(|page_table| {
+        address_space::with_kernel_pt(|page_table| {
             for page in stack_pages {
                 let frame = frame_allocator.alloc::<M4KiB>().unwrap();
                 page_table

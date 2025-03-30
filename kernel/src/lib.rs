@@ -2,7 +2,11 @@
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
-#![allow(clippy::missing_panics_doc, clippy::similar_names)]
+#![allow(
+    clippy::missing_panics_doc,
+    clippy::similar_names,
+    clippy::missing_errors_doc
+)]
 
 use hyperdrive::once::Once;
 
@@ -51,7 +55,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
                 unsafe { locals!().lapic().force_lock() }.send_ipi(&ipi_nmi);
                 // TODO: BSOD
             });
-        } else {
+        } else if !kernel_has_panicked() {
             // Otherwise, it should be safe to kill the process and proceed.
             unsafe { process::scheduler::exit_current_thread() };
         }

@@ -1,12 +1,7 @@
-use beskar_core::arch::{
-    commons::VirtAddr,
-    x86_64::registers::{Cr4, GS},
-};
+use beskar_core::arch::{commons::VirtAddr, x86_64::registers::GS};
 
 #[cold]
 pub fn store_locals(locals: &crate::locals::CoreLocalsInfo) {
-    unsafe { Cr4::insert_flags(Cr4::FSGSBASE) };
-
     unsafe {
         GS::write_base(VirtAddr::new(core::ptr::from_ref(locals) as u64));
     }

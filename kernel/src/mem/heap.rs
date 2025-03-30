@@ -1,18 +1,13 @@
-//! TODO: Is having per-core heaps a good idea?
-
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    ptr::NonNull,
-};
-
-use crate::mem::page_alloc;
+use crate::mem::{address_space, frame_alloc};
 use beskar_core::arch::{
     commons::paging::{CacheFlush as _, M2MiB, Mapper as _, MemSize, PageRangeInclusive},
     x86_64::paging::page_table::Flags,
 };
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    ptr::NonNull,
+};
 use hyperdrive::locks::mcs::MUMcsLock;
-
-use super::frame_alloc;
 
 /// Number of 2 MiB pages to allocate for the kernel heap.
 const KERNEL_HEAP_PAGES: u64 = 4; // 8 MiB
@@ -23,7 +18,7 @@ static KERNEL_HEAP: MUMcsLock<Heap> = MUMcsLock::uninit();
 static GLOBAL_ALLOCATOR: HeapGA = HeapGA;
 
 pub fn init() {
-    let page_range = page_alloc::with_page_allocator(|page_allocator| {
+    let page_range = address_space::with_kernel_pgalloc(|page_allocator| {
         page_allocator.allocate_pages(KERNEL_HEAP_PAGES).unwrap()
     });
 

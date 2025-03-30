@@ -1,6 +1,5 @@
-use core::ops::{Index, IndexMut};
-
 use super::{MemoryRegion, MemoryRegionUsage};
+use core::ops::{Index, IndexMut};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 /// Represents a range of memory addresses.
@@ -44,6 +43,18 @@ impl MemoryRange {
     /// Returns true if the range is inside the other range.
     pub const fn is_inside(&self, other: &Self) -> bool {
         self.start >= other.start && self.end <= other.end
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn start(&self) -> u64 {
+        self.start
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn end(&self) -> u64 {
+        self.end
     }
 }
 
@@ -132,16 +143,18 @@ impl<const N: usize> MemoryRanges<N> {
         self.used
     }
 
+    #[must_use]
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     fn delete(&mut self, index: usize) {
         assert!(index < self.len(), "Index out of bounds");
 
-        // The deleted range is put at the end of the array like a bubble
-        for i in index..self.len() - 1 {
-            self.ranges.swap(i, i + 1);
-        }
-
         // Note that self.used is not 0 because of the assert above
         self.used -= 1;
+        self.ranges.swap(index, self.used);
     }
 
     pub fn insert(&mut self, mut range: MemoryRange) {
@@ -321,6 +334,21 @@ impl<const N: usize> MemoryRanges<N> {
             self.remove(MemoryRange::new(start, end));
             addr
         })
+    }
+
+    #[must_use]
+    pub fn intersection(&self, other: &Self) -> Self {
+        let mut ranges = Self::new();
+
+        for range in self.entries() {
+            for other_range in other.entries() {
+                if let Some(intersection) = range.overlaps(other_range) {
+                    ranges.insert(intersection);
+                }
+            }
+        }
+
+        ranges
     }
 }
 

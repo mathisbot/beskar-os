@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicUsize;
 
 use crate::{
     arch::{self, apic, interrupts},
-    drivers, locals, mem, process, screen, syscall, time,
+    drivers, locals, mem, process, screen, storage, syscall, time,
 };
 use beskar_core::boot::{BootInfo, RamdiskInfo};
 use hyperdrive::once::Once;
@@ -65,20 +65,26 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     locals!().gdt().init_load();
 
+    process::init();
+    crate::info!("Process subsystem initialized");
+
     // If the bootloader provided an RSDP address, we can initialize ACPI.
     rsdp_paddr.map(drivers::acpi::init);
 
     time::init();
+    crate::info!("Time subsystem initialized");
 
     interrupts::init();
+    crate::info!("Interrupts initialized");
 
-    process::init();
     syscall::init();
 
+    // TODO: Move into an architecture agnostic module
     apic::init_lapic();
     apic::init_ioapic();
 
-    drivers::init();
+    storage::init();
+    crate::info!("Storage subsystem initialized");
 }
 
 /// Rust entry point for APs

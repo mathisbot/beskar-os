@@ -60,6 +60,10 @@ impl Barrier {
     #[must_use]
     #[inline]
     /// Creates a new barrier that allows `count` threads to synchronize.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `count` is 0.
     pub const fn new(count: usize) -> Self {
         assert!(count > 0, "Barrier must have a count greater than 0.");
         Self {

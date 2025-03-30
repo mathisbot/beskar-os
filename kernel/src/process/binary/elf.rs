@@ -1,5 +1,5 @@
-use super::{super::scheduler, BinaryResult, LoadedBinary};
-use crate::mem::{frame_alloc, page_alloc};
+use super::{BinaryResult, LoadedBinary, TlsTemplate};
+use crate::{mem::frame_alloc, process};
 use beskar_core::arch::{
     commons::{
         VirtAddr,
@@ -38,84 +38,79 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
     let elf = faillible!(ElfFile::new(input));
     sanity_check(&elf)?;
 
-    let total_size = {
-        let mut max_vaddr = 0;
-        for ph in elf.program_iter() {
-            let vaddr = ph.virtual_addr() + ph.mem_size();
-            if vaddr > max_vaddr {
-                max_vaddr = vaddr;
-            }
-        }
-        max_vaddr
-    };
+    let total_size = elf
+        .program_iter()
+        .map(|ph| ph.virtual_addr() + ph.mem_size())
+        .max()
+        .unwrap_or(0);
 
-    // FIXME: We are using the kernel's page allocator, which is not ideal as
-    // we may be in a different address space.
-
-    let page_range = page_alloc::with_page_allocator(|palloc| {
-        palloc.allocate_pages::<M4KiB>(total_size.div_ceil(M4KiB::SIZE))
-    })
-    .unwrap();
+    let page_count = total_size.div_ceil(M4KiB::SIZE);
+    let page_range = process::current()
+        .address_space()
+        .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
+        .unwrap();
     let offset = page_range.start.start_address();
     // During the loading process, we will have to modify the page flags.
     // The pages we'll be writing to may not have the WRITABLE flag set anymore.
     // To overcome this problem, we will map a set of "working" pages, which will have the
     // correct flags set. These pages will be unmapped after the loading process.
-    let working_page_range = page_alloc::with_page_allocator(|palloc| {
-        palloc.allocate_pages::<M4KiB>(total_size.div_ceil(M4KiB::SIZE))
-    })
-    .unwrap();
+    let working_page_range = process::current()
+        .address_space()
+        .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
+        .unwrap();
     let working_offset = working_page_range.start.start_address();
 
-    debug_assert_eq!(page_range.size(), working_page_range.size());
-
     frame_alloc::with_frame_allocator(|fralloc| {
-        let mut dummy_flags = Flags::PRESENT | Flags::NO_EXECUTE;
-        // FIXME: Not setting the USER_ACCESSIBLE flag results in a page fault.
-        // I don't understand why, as the below code should set the correct flags when needed.
-        if scheduler::current_process().kind().ring() == Ring::User {
+        let mut dummy_flags = Flags::PRESENT | Flags::NO_EXECUTE | Flags::WRITABLE;
+        if process::current().kind().ring() == Ring::User {
             dummy_flags = dummy_flags | Flags::USER_ACCESSIBLE;
         }
-        scheduler::current_process()
-            .address_space()
-            .with_page_table(|pt| {
-                for (page, working_page) in page_range.into_iter().zip(working_page_range) {
-                    let frame = fralloc.allocate_frame().unwrap();
-                    pt.map(page, frame, dummy_flags, fralloc).flush();
-                    pt.map(
-                        working_page,
-                        frame,
-                        Flags::PRESENT | Flags::WRITABLE,
-                        fralloc,
-                    )
+        process::current().address_space().with_page_table(|pt| {
+            for (page, wp) in page_range.into_iter().zip(working_page_range) {
+                let frame = fralloc.allocate_frame().unwrap();
+                pt.map(page, frame, dummy_flags, fralloc).flush();
+                pt.map(wp, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)
                     .flush();
-                }
-            });
+            }
+        });
     });
 
     #[cfg(debug_assertions)]
     unsafe {
-        let page_start = working_offset.as_mut_ptr::<u8>();
-        page_start.write_bytes(
+        working_offset.as_mut_ptr::<u8>().write_bytes(
             beskar_core::arch::x86_64::instructions::STACK_DEBUG_INSTR,
             usize::try_from(working_page_range.size()).unwrap(),
         );
     }
 
-    load_segments(&elf, offset, working_offset)?;
+    let load_res = load_segments(&elf, offset, working_offset);
 
     // Unmap and free "working" pages
-    scheduler::current_process()
-        .address_space()
-        .with_page_table(|pt| {
-            for page in working_page_range {
-                // Note that we cannot free the frames as they are used by the binary!
-                pt.unmap(page).unwrap().1.flush();
-            }
-        });
-    page_alloc::with_page_allocator(|palloc| {
+    process::current().address_space().with_page_table(|pt| {
+        for page in working_page_range {
+            // Note that we cannot free the frames as they are used by the binary!
+            pt.unmap(page).unwrap().1.flush();
+        }
+    });
+    process::current().address_space().with_pgalloc(|palloc| {
         palloc.free_pages(working_page_range);
     });
+
+    if let Err(e) = load_res {
+        frame_alloc::with_frame_allocator(|fralloc| {
+            process::current().address_space().with_page_table(|pt| {
+                for page in page_range {
+                    let (frame, tlb) = pt.unmap(page).unwrap();
+                    tlb.flush();
+                    fralloc.free(frame);
+                }
+            });
+        });
+        process::current().address_space().with_pgalloc(|palloc| {
+            palloc.free_pages(page_range);
+        });
+        return Err(e);
+    }
 
     let entry_point = {
         let raw_entry_point = elf.header.pt2.entry_point().try_into().unwrap();
@@ -123,7 +118,10 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
         unsafe { core::mem::transmute::<*const (), extern "C" fn()>(entry_point) }
     };
 
-    Ok(LoadedBinary { entry_point })
+    Ok(LoadedBinary {
+        entry_point,
+        tls_template: load_res.unwrap().tls_template,
+    })
 }
 
 #[inline]
@@ -134,8 +132,10 @@ fn sanity_check(elf: &ElfFile) -> BinaryResult<()> {
     }
 
     ensure!(elf.header.pt1.class() == header::Class::SixtyFour);
+    #[cfg(target_arch = "x86_64")]
     ensure!(elf.header.pt2.machine().as_machine() == header::Machine::X86_64);
-    // FIXME: Is it safe to assume that the endianness is always little?
+    #[cfg(target_arch = "aarch64")]
+    ensure!(elf.header.pt2.machine().as_machine() == header::Machine::AArch64);
     ensure!(elf.header.pt1.data() == header::Data::LittleEndian);
     ensure!(
         elf.header.pt1.os_abi() == header::OsAbi::SystemV
@@ -146,14 +146,31 @@ fn sanity_check(elf: &ElfFile) -> BinaryResult<()> {
     Ok(())
 }
 
-fn load_segments(elf: &ElfFile, offset: VirtAddr, working_offset: VirtAddr) -> BinaryResult<()> {
+struct LoadedSegmentsInfo {
+    tls_template: Option<TlsTemplate>,
+}
+
+fn load_segments(
+    elf: &ElfFile,
+    offset: VirtAddr,
+    working_offset: VirtAddr,
+) -> BinaryResult<LoadedSegmentsInfo> {
+    let mut tls_template = None;
+
     for ph in elf.program_iter() {
         match faillible!(ph.get_type()) {
             Type::Load => {
                 handle_segment_load(elf, ph, offset, working_offset)?;
             }
             Type::Tls => {
-                crate::warn!("TLS segment found, but not supported");
+                if tls_template.is_some() {
+                    return Err(LoadError::InvalidBinary);
+                }
+                tls_template = Some(TlsTemplate {
+                    start: offset + ph.virtual_addr(),
+                    file_size: ph.file_size(),
+                    mem_size: ph.mem_size(),
+                });
             }
             Type::Interp => {
                 return Err(LoadError::InvalidBinary);
@@ -176,7 +193,7 @@ fn load_segments(elf: &ElfFile, offset: VirtAddr, working_offset: VirtAddr) -> B
         }
     }
 
-    Ok(())
+    Ok(LoadedSegmentsInfo { tls_template })
 }
 
 fn handle_segment_load(
@@ -192,38 +209,36 @@ fn handle_segment_load(
     if !ph.flags().is_execute() {
         segment_flags = segment_flags | Flags::NO_EXECUTE;
     }
-    if scheduler::current_process().kind().ring() == Ring::User {
+    if process::current().kind().ring() == Ring::User {
         segment_flags = segment_flags | Flags::USER_ACCESSIBLE;
     }
 
-    scheduler::current_process()
-        .address_space()
-        .with_page_table(|pt| {
-            let segment_start_vaddr = offset + ph.virtual_addr();
+    process::current().address_space().with_page_table(|pt| {
+        let segment_start_vaddr = offset + ph.virtual_addr();
 
-            if ph.file_size() != 0 {
-                let segment_start_page = Page::<M4KiB>::containing_address(segment_start_vaddr);
-                let segment_end_page =
-                    Page::<M4KiB>::containing_address(segment_start_vaddr + ph.file_size() - 1);
+        if ph.file_size() != 0 {
+            let segment_start_page = Page::<M4KiB>::containing_address(segment_start_vaddr);
+            let segment_end_page =
+                Page::<M4KiB>::containing_address(segment_start_vaddr + ph.file_size() - 1);
 
-                for page in Page::range_inclusive(segment_start_page, segment_end_page) {
-                    pt.update_flags(page, segment_flags).unwrap().flush();
-                }
-
-                // Copy the segment data from elf.input to the new location
-                let dest = (working_offset + ph.virtual_addr()).as_mut_ptr::<u8>();
-                let src = elf.input[usize::try_from(ph.offset()).unwrap()..].as_ptr();
-                unsafe {
-                    dest.copy_from(src, usize::try_from(ph.file_size()).unwrap());
-                }
+            for page in Page::range_inclusive(segment_start_page, segment_end_page) {
+                pt.update_flags(page, segment_flags).unwrap().flush();
             }
 
-            if ph.mem_size() > ph.file_size() {
-                zero_bss(ph, pt, offset, working_offset);
+            // Copy the segment data from elf.input to the new location
+            let dest = (working_offset + ph.virtual_addr()).as_mut_ptr::<u8>();
+            let src = elf.input[usize::try_from(ph.offset()).unwrap()..].as_ptr();
+            unsafe {
+                dest.copy_from(src, usize::try_from(ph.file_size()).unwrap());
             }
+        }
 
-            Ok(())
-        })
+        if ph.mem_size() > ph.file_size() {
+            zero_bss(ph, pt, offset, working_offset);
+        }
+
+        Ok(())
+    })
 }
 
 fn zero_bss(
@@ -262,7 +277,7 @@ fn zero_bss(
     if !ph.flags().is_execute() {
         segment_flags = segment_flags | Flags::NO_EXECUTE;
     }
-    if scheduler::current_process().kind().ring() == Ring::User {
+    if process::current().kind().ring() == Ring::User {
         segment_flags = segment_flags | Flags::USER_ACCESSIBLE;
     }
 
@@ -365,24 +380,22 @@ fn handle_segment_dynamic(
 }
 
 fn handle_segment_gnurelro(ph: program::ProgramHeader, offset: VirtAddr) -> BinaryResult<()> {
-    scheduler::current_process()
-        .address_space()
-        .with_page_table(|pt| {
-            let start_vaddr = offset + ph.virtual_addr();
+    process::current().address_space().with_page_table(|pt| {
+        let start_vaddr = offset + ph.virtual_addr();
 
-            let start_page = Page::<M4KiB>::containing_address(start_vaddr);
-            let end_page = Page::<M4KiB>::containing_address(start_vaddr + ph.mem_size() - 1);
+        let start_page = Page::<M4KiB>::containing_address(start_vaddr);
+        let end_page = Page::<M4KiB>::containing_address(start_vaddr + ph.mem_size() - 1);
 
-            for page in Page::range_inclusive(start_page, end_page) {
-                let (_frame, flags) = pt.translate(page).unwrap();
+        for page in Page::range_inclusive(start_page, end_page) {
+            let (_frame, flags) = pt.translate(page).unwrap();
 
-                if flags.contains(Flags::WRITABLE) {
-                    pt.update_flags(page, flags.without(Flags::WRITABLE))
-                        .unwrap()
-                        .flush();
-                }
+            if flags.contains(Flags::WRITABLE) {
+                pt.update_flags(page, flags.without(Flags::WRITABLE))
+                    .unwrap()
+                    .flush();
             }
+        }
 
-            Ok(())
-        })
+        Ok(())
+    })
 }

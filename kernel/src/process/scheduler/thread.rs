@@ -6,17 +6,22 @@ use core::{
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
-    commons::paging::{
-        CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive,
+    commons::{
+        VirtAddr,
+        paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
     },
-    x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags, userspace::Ring},
+    x86_64::{
+        instructions::STACK_DEBUG_INSTR,
+        registers::{FS, Rflags},
+        userspace::Ring,
+    },
 };
 use hyperdrive::{
     once::Once,
     queues::mpsc::{Link, Queueable},
 };
 
-use crate::mem::{frame_alloc, page_alloc};
+use crate::mem::frame_alloc;
 
 use super::{super::Process, priority::Priority};
 
@@ -33,10 +38,12 @@ pub struct Thread {
     /// Used to keep ownership of the stack when needed.
     stack: Option<ThreadStacks>,
     /// Keeps track of where the stack is.
-    pub(super) last_stack_ptr: *mut u8,
+    last_stack_ptr: *mut u8,
+    /// Thread Local Storage
+    tls: Once<Box<[u8]>>,
 
     /// Link to the next thread in the queue.
-    pub(super) link: Link<Self>,
+    link: Link<Self>,
 }
 
 impl Unpin for Thread {}
@@ -70,6 +77,7 @@ impl Thread {
             // Will be overwritten before being used.
             last_stack_ptr: core::ptr::null_mut(),
             link: Link::default(),
+            tls: Once::uninit(),
         }
     }
 
@@ -79,7 +87,7 @@ impl Thread {
         root_proc: Arc<Process>,
         priority: Priority,
         mut stack: Vec<u8>,
-        entry_point: extern "C" fn(),
+        entry_point: extern "C" fn() -> !,
     ) -> Self {
         let mut stack_ptr = stack.as_mut_ptr(); // Stack grows downwards
 
@@ -95,6 +103,7 @@ impl Thread {
             stack: Some(ThreadStacks::new(stack)),
             last_stack_ptr: stack_ptr,
             link: Link::default(),
+            tls: Once::uninit(),
         }
     }
 
@@ -119,7 +128,11 @@ impl Thread {
     }
 
     /// Setup the stack and move stack pointer to the end of the stack.
-    fn setup_stack(stack_ptr: *mut u8, stack: &mut [u8], entry_point: extern "C" fn()) -> usize {
+    fn setup_stack(
+        stack_ptr: *mut u8,
+        stack: &mut [u8],
+        entry_point: extern "C" fn() -> !,
+    ) -> usize {
         // Can be used to detect stack overflow
         #[cfg(debug_assertions)]
         stack.fill(STACK_DEBUG_INSTR);
@@ -164,6 +177,7 @@ impl Thread {
             stack: None,
             last_stack_ptr: core::ptr::null_mut(),
             link: Link::default(),
+            tls: Once::uninit(),
         }
     }
 
@@ -198,15 +212,22 @@ impl Thread {
     #[must_use]
     #[inline]
     /// Returns the value of the last stack pointer.
-    pub fn last_stack_ptr(&self) -> *const u8 {
+    pub const fn last_stack_ptr(&self) -> *const u8 {
         self.last_stack_ptr
     }
 
     #[must_use]
     #[inline]
     /// Returns a mutable pointer to the last stack pointer.
-    pub fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
+    pub const fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
         &mut self.last_stack_ptr
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the thread local storage of the thread.
+    pub fn tls(&self) -> Option<VirtAddr> {
+        self.tls.get().map(|tls| VirtAddr::new(tls.as_ptr() as u64))
     }
 }
 
@@ -271,11 +292,11 @@ pub struct ThreadRegisters {
 ///
 /// This function should not be called directly, but rather be used
 /// as an entry point for threads.
-extern "C" fn user_trampoline() {
+extern "C" fn user_trampoline() -> ! {
     let root_proc = super::current_process();
 
     // Load the binary into the process' address space.
-    let entry_point = root_proc.load_binary();
+    let loaded_binary = root_proc.load_binary();
 
     // Allocate a user stack
     let rsp = super::get_scheduler()
@@ -283,7 +304,26 @@ extern "C" fn user_trampoline() {
         .with_locked(|t| t.stack.as_mut().map(|ts| ts.allocate_user(4 * M4KiB::SIZE)))
         .expect("Thread stack not found");
 
-    unsafe { crate::arch::userspace::enter_usermode(entry_point, rsp) };
+    if let Some(tlst) = loaded_binary.tls_template() {
+        let mut tls = alloc::vec![0; usize::try_from(tlst.mem_size()).unwrap()].into_boxed_slice();
+        // Copy TLS initialization image from binary
+        unsafe {
+            tls.as_mut_ptr().copy_from_nonoverlapping(
+                tlst.start().as_ptr(),
+                tlst.file_size().try_into().unwrap(),
+            );
+        }
+
+        let tls_vaddr = VirtAddr::new(tls.as_ptr() as u64);
+        // Locking the scheduler's current thread is a bit risky, but it is better than force locking it
+        // (as otherwise the schduler could get stuck on `Once::get`).
+        super::get_scheduler()
+            .current_thread
+            .with_locked(|t| t.tls.call_once(|| tls));
+        unsafe { FS::write_base(tls_vaddr) };
+    }
+
+    unsafe { crate::arch::userspace::enter_usermode(loaded_binary.entry_point(), rsp) };
 }
 
 struct ThreadStacks {
@@ -309,11 +349,10 @@ impl ThreadStacks {
     pub fn allocate_user(&self, size: u64) -> *mut u8 {
         assert!(size > 0);
 
-        // FIXME: Use the process' page allocator to allocate the stack.
-        let (page_range, _guard) = page_alloc::with_page_allocator(|palloc| {
-            palloc.allocate_guarded::<M4KiB>(size.div_ceil(M4KiB::SIZE))
-        })
-        .unwrap();
+        let (_guard_start, page_range, _guard_end) = super::current_process()
+            .address_space()
+            .with_pgalloc(|palloc| palloc.allocate_guarded(size.div_ceil(M4KiB::SIZE)))
+            .unwrap();
 
         let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
         frame_alloc::with_frame_allocator(|fralloc| {
@@ -344,30 +383,10 @@ impl ThreadStacks {
     }
 }
 
-impl Drop for ThreadStacks {
-    fn drop(&mut self) {
-        if let Some(&page_range) = self.user_pages.get() {
-            // FIXME: This is WRONG!!!
-            // The process in charge of cleaning threads is a Kernel process,
-            // thus it does not have the stack in its address space.
-            // How to recover the frames used and free them ?
-            // frame_alloc::with_frame_allocator(|fralloc| {
-            //     super::current_process()
-            //         .address_space()
-            //         .with_page_table(|pt| {
-            //             for page in Page::range_inclusive(start_page, end_page) {
-            //                 let (frame, tlb) = pt.unmap(page).unwrap();
-            //                 fralloc.deallocate_frame(frame);
-            //                 tlb.flush();
-            //             }
-            //         });
-            // });
-
-            // TODO: When the process' page allocator is implemented, remove this
-            // as the allocator does not exist anymore.
-            page_alloc::with_page_allocator(|palloc| {
-                palloc.free_pages(page_range);
-            });
-        }
-    }
-}
+// impl Drop for ThreadStacks {
+//     #[inline]
+//     fn drop(&mut self) {
+//         // TODO:
+//         // How to recover the alocated frames and free them ?
+//     }
+// }

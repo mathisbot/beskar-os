@@ -106,7 +106,7 @@ fn calibrate_with_hpet() -> bool {
         let start = read_tsc_fenced();
 
         let hpet_end = hpet.main_counter_value().get_value()
-            + crate::drivers::hpet::ticks_per_ms() * CALIBRATION_TIME_MS;
+            + u64::from(crate::drivers::hpet::ticks_per_ms().unwrap().get()) * CALIBRATION_TIME_MS;
         while hpet.main_counter_value().get_value() < hpet_end {
             core::hint::spin_loop();
         }

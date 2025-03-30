@@ -3,6 +3,7 @@ use crate::arch::commons::{PhysAddr, VirtAddr, paging::Frame};
 pub struct Cr0;
 
 impl Cr0 {
+    pub const TASK_SWITCHED: u64 = 1 << 3;
     pub const WRITE_PROTECT: u64 = 1 << 16;
     pub const CACHE_DISABLE: u64 = 1 << 30;
 
@@ -93,7 +94,12 @@ impl Cr3 {
 pub struct Cr4;
 
 impl Cr4 {
+    pub const TSD: u64 = 1 << 2;
+    pub const PAE: u64 = 1 << 5;
+    pub const OSFXSR: u64 = 1 << 9;
+    pub const SMXE: u64 = 1 << 14;
     pub const FSGSBASE: u64 = 1 << 16;
+    pub const PCIDE: u64 = 1 << 17;
 
     #[must_use]
     #[inline]
@@ -132,6 +138,7 @@ pub struct Efer;
 impl Efer {
     pub const SYSTEM_CALL_EXTENSIONS: u64 = 1 << 0;
     pub const NO_EXECUTE_ENABLE: u64 = 1 << 11;
+    pub const TRANSLATION_CACHE_EXTENSION: u64 = 1 << 15;
 
     const MSR: Msr<0xC000_0080> = Msr;
 
@@ -365,28 +372,35 @@ impl<const P: u32> Msr<P> {
 pub struct GS;
 
 impl GS {
+    const MSR: Msr<0xC000_0101> = Msr;
+
     #[must_use]
     #[inline]
     pub fn read_base() -> VirtAddr {
-        let base: u64;
-        unsafe {
-            core::arch::asm!(
-                "rdgsbase {}",
-                out(reg) base,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
+        let base = Self::MSR.read();
         VirtAddr::new(base)
     }
 
     #[inline]
     pub unsafe fn write_base(base: VirtAddr) {
-        unsafe {
-            core::arch::asm!(
-                "wrgsbase {}",
-                in(reg) base.as_u64(),
-                options(nostack, preserves_flags)
-            );
-        }
+        unsafe { Self::MSR.write(base.as_u64()) };
+    }
+}
+
+pub struct FS;
+
+impl FS {
+    const MSR: Msr<0xC000_0100> = Msr;
+
+    #[must_use]
+    #[inline]
+    pub fn read_base() -> VirtAddr {
+        let base = Self::MSR.read();
+        VirtAddr::new(base)
+    }
+
+    #[inline]
+    pub unsafe fn write_base(base: VirtAddr) {
+        unsafe { Self::MSR.write(base.as_u64()) };
     }
 }

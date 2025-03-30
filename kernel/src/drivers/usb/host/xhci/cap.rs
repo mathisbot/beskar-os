@@ -1,7 +1,7 @@
 use core::ptr::NonNull;
 
 use beskar_core::arch::commons::VirtAddr;
-use hyperdrive::volatile::{ReadOnly, Volatile};
+use hyperdrive::ptrs::volatile::{ReadOnly, Volatile};
 
 #[derive(Clone, Copy)]
 pub struct CapabilitiesRegisters {

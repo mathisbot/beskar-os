@@ -106,7 +106,7 @@ fn efi_entry() -> Status {
 
     let boot_info = bootloader::create_boot_info(fralloc, &mut pt, &mut mappings);
 
-    bootloader::log::log(format_args!("\n=== JUMPING TO KERNEL ===\n\n"));
+    bootloader::info!("=== JUMPING TO KERNEL ===");
 
     bootloader::video::clear_screen();
 

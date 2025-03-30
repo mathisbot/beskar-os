@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-noto-sans-mono-bitmap = { version = "0.3.1", features = ["size_20"] }
+noto-sans-mono-bitmap = { version = "0.3.1", default-features = false, features = ["font_weights_default", "size_20", "unicode_ranges_all"] }
 thiserror = { workspace = true }

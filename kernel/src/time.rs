@@ -52,7 +52,7 @@ impl Clock for HpetClock {
 
     #[inline]
     fn ticks_per_ms(&self) -> u64 {
-        hpet::ticks_per_ms()
+        u64::from(hpet::ticks_per_ms().unwrap().get())
     }
 }
 

@@ -1,5 +1,7 @@
-use beskar_core::syscall::{Syscall, SyscallExitCode};
+use crate::arch::syscalls;
+use ::beskar_core::syscall::{Syscall, SyscallExitCode};
 
+#[inline]
 /// Print a message to the console
 ///
 /// ## Panics
@@ -7,15 +9,19 @@ use beskar_core::syscall::{Syscall, SyscallExitCode};
 /// Panics if the syscall fails (should never happen
 /// for valid input).
 pub fn print(msg: &str) {
-    let res_code: u64;
-    unsafe {
-        ::core::arch::asm!(
-            "syscall",
-            in("rax") Syscall::Print as u64,
-            lateout("rax") res_code,
-            in("rdi") msg.as_ptr(),
-            in("rsi") msg.len(),
-        );
-    }
-    assert_eq!(res_code, SyscallExitCode::Success as _);
+    let res = syscalls::syscall_2(
+        Syscall::Print,
+        msg.as_ptr() as u64,
+        msg.len().try_into().unwrap(),
+    );
+    assert_eq!(SyscallExitCode::from(res), SyscallExitCode::Success);
+}
+
+#[macro_export]
+// FIXME: When stdout is implemented, maybe change it to multiple syscalls
+// instead of buffering the output.
+macro_rules! println {
+    ($($arg:tt)*) => {
+        $crate::io::print(&::alloc::format!($($arg)*));
+    };
 }

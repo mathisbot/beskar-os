@@ -2,13 +2,14 @@
 //!
 //! It is useful as ACPI tables must me mapped before being read, but are not needed after that.
 
-use beskar_core::arch::commons::{
-    PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, Page},
+use crate::{mem::frame_alloc, process};
+use beskar_core::arch::{
+    commons::{
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, Page},
+    },
+    x86_64::paging::page_table::{Flags, PageTable},
 };
-use beskar_core::arch::x86_64::paging::page_table::{Flags, PageTable};
-
-use crate::mem::{address_space, frame_alloc, page_alloc};
 
 #[derive(Debug)]
 /// Physical Mapping structure
@@ -50,18 +51,20 @@ where
 
         let count = end_frame - start_frame + 1;
 
-        let page_range = page_alloc::with_page_allocator(|page_allocator| {
-            page_allocator.allocate_pages::<S>(count).unwrap()
-        });
+        let page_range = process::current()
+            .address_space()
+            .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<S>(count).unwrap());
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
-            address_space::with_kernel_pt(|page_table| {
-                for (frame, page) in frame_range.into_iter().zip(page_range) {
-                    page_table
-                        .map(page, frame, flags | Flags::PRESENT, frame_allocator)
-                        .flush();
-                }
-            });
+            process::current()
+                .address_space()
+                .with_page_table(|page_table| {
+                    for (frame, page) in frame_range.into_iter().zip(page_range) {
+                        page_table
+                            .map(page, frame, flags | Flags::PRESENT, frame_allocator)
+                            .flush();
+                    }
+                });
         });
 
         Self {
@@ -101,15 +104,19 @@ where
         let page_range =
             Page::<S>::range_inclusive(self.start_page, self.start_page + self.count - 1);
 
-        address_space::with_kernel_pt(|page_table| {
-            for page in page_range {
-                let (_frame, tlb) = page_table.unmap(page).unwrap();
-                tlb.flush();
-            }
-        });
+        process::current()
+            .address_space()
+            .with_page_table(|page_table| {
+                for page in page_range {
+                    let (_frame, tlb) = page_table.unmap(page).unwrap();
+                    tlb.flush();
+                }
+            });
 
-        page_alloc::with_page_allocator(|page_allocator| {
-            page_allocator.free_pages(page_range);
-        });
+        process::current()
+            .address_space()
+            .with_pgalloc(|page_allocator| {
+                page_allocator.free_pages(page_range);
+            });
     }
 }

@@ -5,7 +5,26 @@ pub enum Syscall {
     /// The first argument is a pointer to the string to print.
     /// The second argument is the length of the string.
     Print = 0,
+    /// Exit syscall.
+    ///
+    /// The first argument is the exit code.
     Exit = 1,
+    /// RandomGen syscall.
+    ///
+    /// Fills a given buffer with random data.
+    ///
+    /// The first argument is a pointer to the buffer.
+    /// The second argument is the length of the buffer.
+    RandomGen = 2,
+    /// MemoryMap syscall.
+    ///
+    /// Allocates memory and gives the user a pointer to it.
+    ///
+    /// The first argument is the size of the memory to allocate.
+    MemoryMap = 3,
+    /// Invalid syscall.
+    ///
+    /// Any syscall that is not recognized.
     Invalid = 0xFF,
 }
 
@@ -14,6 +33,8 @@ impl From<u64> for Syscall {
         match value {
             0 => Self::Print,
             1 => Self::Exit,
+            2 => Self::RandomGen,
+            3 => Self::MemoryMap,
             _ => Self::Invalid,
         }
     }
@@ -21,8 +42,23 @@ impl From<u64> for Syscall {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SyscallExitCode {
+    /// The syscall succeeded
     Success = 0,
+    /// The syscall failed
     Failure = 1,
+
+    /// Any other (invalid) exit code.
+    Other,
+}
+
+impl From<u64> for SyscallExitCode {
+    fn from(value: u64) -> Self {
+        match value {
+            0 => Self::Success,
+            1 => Self::Failure,
+            _ => Self::Other,
+        }
+    }
 }
 
 impl SyscallExitCode {
@@ -34,6 +70,23 @@ impl SyscallExitCode {
     /// Panics if the syscall exit code is not a success.
     pub fn unwrap(self) {
         assert_ne!(self, Self::Failure, "Syscall failed!");
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SyscallReturnValue {
+    Code(SyscallExitCode),
+    Value(u64),
+}
+
+impl SyscallReturnValue {
+    #[must_use]
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
+        match self {
+            Self::Code(code) => code as u64,
+            Self::Value(value) => value,
+        }
     }
 }
 

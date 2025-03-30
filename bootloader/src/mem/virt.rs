@@ -152,11 +152,11 @@ pub fn make_mappings(
     // Map kernel
     let (kernel_entry_point, kernel_info) = {
         let kernel_paddr = PhysAddr::new(kernel.input.as_ptr() as u64);
-        let kernel_len = u64::try_from(kernel.input.len()).unwrap();
 
         let kernel_elf::LoadedKernelInfo {
             image_offset: kernel_vaddr,
             entry_point: kernel_entry_point,
+            kernel_size,
         } = crate::kernel_elf::load_kernel_elf(kernel_elf::KernelLoadingUtils::new(
             kernel,
             &mut level_4_entries,
@@ -173,7 +173,7 @@ pub fn make_mappings(
             KernelInfo::new(
                 kernel_paddr,
                 unsafe { core::mem::transmute(kernel_vaddr) },
-                kernel_len,
+                kernel_size,
             ),
         )
     };
@@ -287,15 +287,16 @@ pub fn make_mappings(
         let gdt_frame = frame_allocator
             .allocate_frame()
             .expect("Failed to allocate a frame");
-
+        // Identity-map
         let gdt_virt_addr = VirtAddr::new(gdt_frame.start_address().as_u64());
-        let ptr: *mut GlobalDescriptorTable = gdt_virt_addr.as_mut_ptr();
+
         let mut gdt = GlobalDescriptorTable::new();
 
         let code_selector = gdt.append(x86_64::structures::gdt::Descriptor::kernel_code_segment());
         let data_selector = gdt.append(x86_64::structures::gdt::Descriptor::kernel_data_segment());
 
         unsafe {
+            let ptr: *mut GlobalDescriptorTable = gdt_virt_addr.as_mut_ptr();
             ptr.write(gdt);
             &*ptr
         }
@@ -306,7 +307,7 @@ pub fn make_mappings(
             segmentation::SS::set_reg(data_selector);
         }
 
-        let gdt_page = Page::containing_address(VirtAddr::new(gdt_frame.start_address().as_u64()));
+        let gdt_page = Page::from_start_address(gdt_virt_addr).unwrap();
         unsafe {
             page_tables.kernel.map_to_with_table_flags(
                 gdt_page,
@@ -319,7 +320,7 @@ pub fn make_mappings(
         .expect("Failed to map GDT page")
         .flush();
 
-        info!("Mapped GDT");
+        info!("Mapped GDT to {:#x}", gdt_page.start_address().as_u64());
         debug!("GDT at {:#x}", gdt_frame.start_address().as_u64());
     }
 

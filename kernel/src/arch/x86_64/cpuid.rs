@@ -133,6 +133,12 @@ impl CpuFeature {
         bit: 0,
         name: "SSE3",
     };
+    pub const PCID: Self = Self {
+        leaf: 1,
+        reg: CpuidReg::Ecx,
+        bit: 17,
+        name: "PCID",
+    };
     pub const X2APIC: Self = Self {
         leaf: 1,
         reg: CpuidReg::Ecx,
@@ -160,6 +166,12 @@ impl CpuFeature {
         bit: 0,
         name: "FSGSBASE",
     };
+    pub const INVPCID: Self = Self {
+        leaf: 7,
+        reg: CpuidReg::Ebx,
+        bit: 10,
+        name: "INVPCID",
+    };
 
     // XLEAF 1
 
@@ -169,12 +181,18 @@ impl CpuFeature {
         bit: 11,
         name: "SYSCALL",
     };
+    pub const TCE: Self = Self {
+        leaf: 0x8000_0001,
+        reg: CpuidReg::Ecx,
+        bit: 17,
+        name: "TCE",
+    };
 }
 
 /// List of required features for the kernel to run
 ///
 /// Please keep the list sorted by leaf number
-const REQUIRED_FEATURES: [CpuFeature; 5] = [
+const REQUIRED_FEATURES: [CpuFeature; 4] = [
     // Leaf 1
     // CpuFeature::FPU,
     CpuFeature::PSE,
@@ -182,8 +200,6 @@ const REQUIRED_FEATURES: [CpuFeature; 5] = [
     // CpuFeature::PAT,
     // CpuFeature::FXSR,
     CpuFeature::XSAVE,
-    // Leaf 7
-    CpuFeature::FSGSBASE, // TLS support
     // XLeaf 1
     CpuFeature::SYSCALL,
 ];

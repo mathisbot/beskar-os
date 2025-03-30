@@ -1,8 +1,10 @@
+use core::num::NonZeroU8;
+
 use beskar_core::{
     arch::commons::{PhysAddr, paging::Frame},
     drivers::DriverResult,
 };
-use hyperdrive::volatile::{ReadWrite, Volatile};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
 use super::{CompletionEntry, CompletionQueue, SubmissionEntry, SubmissionQueue};
 
@@ -206,9 +208,8 @@ impl IdentifyController {
     #[inline]
     /// The value is in units of the minimum memory page size (CAP.MPSMIN)
     /// and is reported as a power of two (2^n).
-    /// A value of 0h indicates that there is no maximum data transfer size.
-    pub const fn maximum_data_transfer_size(&self) -> u8 {
-        self.maximum_data_transfer_size
+    pub const fn maximum_data_transfer_size(&self) -> Option<NonZeroU8> {
+        NonZeroU8::new(self.maximum_data_transfer_size)
     }
 
     #[must_use]
