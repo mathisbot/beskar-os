@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use beskar_core::{
     arch::commons::{
         PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
+        paging::{CacheFlush as _, Flags, M4KiB, Mapper, MemSize as _, Page},
     },
     drivers::{DriverError, DriverResult},
 };
@@ -22,7 +22,7 @@ use hyperdrive::{
 use super::Nic;
 use crate::{
     drivers::pci::{self, Bar, with_pci_handler},
-    mem::page_alloc::pmap::{self, PhysicalMapping},
+    mem::page_alloc::pmap::PhysicalMapping,
     network::l2::ethernet::MacAddress,
     process,
 };
@@ -47,7 +47,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     // Section 10.1.1.5 (p.287): If needed, IO memory is in BAR2.
     // Section 10.1.1.3 (p.286): MSI-X tables are in BAR3.
 
-    let flags = pmap::FLAGS_MMIO;
+    let flags = Flags::MMIO_SUITABLE;
     // Max size is 128 KiB
     let pmap = PhysicalMapping::<M4KiB>::new(reg_paddr, 128 * 1024, flags);
     let reg_vaddr = pmap.translate(reg_paddr).unwrap();
@@ -357,7 +357,7 @@ impl BufferSet<'_> {
             .address_space()
             .with_pgalloc(|palloc| palloc.allocate_pages(1).unwrap())
             .start;
-        let flags = pmap::FLAGS_MMIO;
+        let flags = Flags::MMIO_SUITABLE;
         let descriptor_frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
             let frame = fralloc.alloc::<M4KiB>().unwrap();
             process::current()

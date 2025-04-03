@@ -237,6 +237,7 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
 
 extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFrame) {
     crate::info!("xHCI INTERRUPT on core {}", locals!().core_id());
+    crate::drivers::usb::host::handle_usb_interrupt();
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 

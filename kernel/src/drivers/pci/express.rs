@@ -4,11 +4,13 @@ use alloc::vec::Vec;
 use hyperdrive::locks::mcs::MUMcsLock;
 
 use crate::{
-    drivers::acpi::sdt::mcfg::ParsedConfigurationSpace,
-    mem::page_alloc::pmap::{self, PhysicalMapping},
+    drivers::acpi::sdt::mcfg::ParsedConfigurationSpace, mem::page_alloc::pmap::PhysicalMapping,
 };
 use beskar_core::{
-    arch::commons::{PhysAddr, paging::M2MiB},
+    arch::commons::{
+        PhysAddr,
+        paging::{Flags, M2MiB},
+    },
     drivers::{DriverError, DriverResult},
 };
 
@@ -55,7 +57,7 @@ impl PciExpressHandler {
                 )
                 .unwrap();
 
-                let flags = pmap::FLAGS_MMIO;
+                let flags = Flags::MMIO_SUITABLE;
                 PhysicalMapping::<M2MiB>::new(*cs.address_range().start(), length, flags)
             })
             .collect::<Vec<_>>();

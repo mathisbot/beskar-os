@@ -79,7 +79,7 @@ macro_rules! read_write_reg {
             ///
             /// Does NOT validate the content of the register.
             fn new(paddr: PhysAddr, $($field_name: $field_type),*) -> Self {
-                let flags = $crate::mem::page_alloc::pmap::FLAGS_MMIO;
+                let flags = ::beskar_core::arch::x86_64::paging::page_table::Flags::MMIO_SUITABLE;
 
                 let physical_mapping = PhysicalMapping::new(paddr, size_of::<u64>(), flags);
                 let vaddr = physical_mapping.translate(paddr).unwrap();

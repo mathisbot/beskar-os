@@ -25,11 +25,6 @@ where
     count: u64,
 }
 
-pub const FLAGS_MMIO: Flags = Flags::PRESENT
-    .union(Flags::WRITABLE)
-    .union(Flags::NO_EXECUTE)
-    .union(Flags::CACHE_DISABLED);
-
 impl<S: MemSize> PhysicalMapping<S>
 where
     for<'a> PageTable<'a>: Mapper<S>,

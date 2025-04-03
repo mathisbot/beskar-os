@@ -7,7 +7,7 @@ use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 use crate::arch::interrupts::Irq;
 use crate::locals;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
-use beskar_core::arch::commons::paging::M4KiB;
+use beskar_core::arch::commons::paging::{Flags, M4KiB};
 
 use super::super::{PciHandler, commons::CapabilityHeader, iter_capabilities};
 
@@ -65,7 +65,7 @@ impl MsiX {
             panic!("MSI-X: PBA BAR is not a memory BAR");
         };
 
-        let flags = crate::mem::page_alloc::pmap::FLAGS_MMIO;
+        let flags = Flags::MMIO_SUITABLE;
 
         let table_size = usize::from(msix_cap.table_size) * size_of::<TableEntry>();
         let pmap_table = PhysicalMapping::<M4KiB>::new(

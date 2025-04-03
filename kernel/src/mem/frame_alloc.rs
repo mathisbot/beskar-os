@@ -63,7 +63,6 @@ impl FrameAllocator {
     }
 
     #[must_use]
-    #[inline]
     /// Allocate a frame according to a specific request.
     pub fn alloc_request<S: MemSize, const M: usize>(
         &mut self,
