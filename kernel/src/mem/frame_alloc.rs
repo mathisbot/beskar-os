@@ -9,10 +9,7 @@ use beskar_core::arch::commons::{
     PhysAddr,
     paging::{Frame, M4KiB, MemSize},
 };
-use beskar_core::mem::{
-    MemoryRegion, MemoryRegionUsage,
-    ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
-};
+use beskar_core::mem::ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges};
 
 use hyperdrive::locks::mcs::MUMcsLock;
 
@@ -20,28 +17,24 @@ const MAX_MEMORY_REGIONS: usize = 256;
 
 static KFRAME_ALLOC: MUMcsLock<FrameAllocator> = MUMcsLock::uninit();
 
-pub fn init(regions: &[MemoryRegion]) {
-    // Count usable memory regions
-    let mut usable_regions = 0;
-    for region in regions {
-        if region.kind() == MemoryRegionUsage::Usable {
-            usable_regions += 1;
-        }
-    }
-    assert!(usable_regions > 0, "No usable memory regions found");
-    if usable_regions >= MAX_MEMORY_REGIONS {
+pub fn init(ranges: &[MemoryRange]) {
+    assert!(ranges.len() > 0, "No usable memory regions found");
+    if ranges.len() >= MAX_MEMORY_REGIONS {
         crate::warn!(
             "Too many usable memory regions, using only the first {}",
             MAX_MEMORY_REGIONS
         );
     }
 
-    let ranges = MemoryRanges::<MAX_MEMORY_REGIONS>::from_regions(regions);
+    let mut mranges = MemoryRanges::<MAX_MEMORY_REGIONS>::new();
+    ranges.iter().take(MAX_MEMORY_REGIONS).for_each(|r| {
+        mranges.insert(*r);
+    });
 
-    crate::info!("Free memory: {} MiB", ranges.sum() / 1_048_576);
+    crate::info!("Free memory: {} MiB", mranges.sum() / 1_048_576);
 
     let mut frallocator = FrameAllocator {
-        memory_ranges: ranges,
+        memory_ranges: mranges,
     };
 
     // Make sure physical frame for the AP trampoline code is reserved

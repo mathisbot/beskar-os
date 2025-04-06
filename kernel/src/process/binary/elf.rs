@@ -229,7 +229,7 @@ fn handle_segment_load(
             let dest = (working_offset + ph.virtual_addr()).as_mut_ptr::<u8>();
             let src = elf.input[usize::try_from(ph.offset()).unwrap()..].as_ptr();
             unsafe {
-                dest.copy_from(src, usize::try_from(ph.file_size()).unwrap());
+                dest.copy_from_nonoverlapping(src, usize::try_from(ph.file_size()).unwrap());
             }
         }
 

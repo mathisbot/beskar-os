@@ -191,11 +191,11 @@ fn get_scheduler() -> &'static Scheduler {
 
 extern "C" fn clean_thread() -> ! {
     loop {
-        if let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
+        while let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
             drop(thread);
-        } else {
-            core::hint::spin_loop();
-            thread_yield();
+        }
+        if !thread_yield() {
+            crate::arch::halt();
         }
     }
 }
@@ -204,7 +204,7 @@ extern "C" fn clean_thread() -> ! {
 #[inline]
 /// Reschedules the scheduler.
 ///
-/// If rescheduling happens, interrupts are disabled.
+/// If rescheduling happens (i.e. returned value is `Some`), interrupts are disabled.
 ///
 /// ## Warning
 ///
@@ -282,13 +282,19 @@ pub unsafe fn exit_current_thread() -> ! {
     }
 }
 
-pub fn thread_yield() {
+/// Hint to the scheduler to reschedule the current thread.
+///
+/// Returns `true` if the thread was rescheduled, `false` otherwise.
+pub fn thread_yield() -> bool {
     let context_switch = reschedule();
 
-    // If no other thread is waiting, then we can't continue doing nothing
+    // If no other thread is waiting, then we can continue doing nothing
     // in the current thread.
     if let Some(context_switch) = context_switch {
         unsafe { context_switch.perform() };
+        true
+    } else {
+        false
     }
 }
 
