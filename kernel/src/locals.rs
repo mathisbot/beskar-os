@@ -3,7 +3,10 @@ use core::{ptr::NonNull, sync::atomic::AtomicUsize};
 use alloc::boxed::Box;
 
 use crate::arch::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts};
-use hyperdrive::{locks::mcs::MUMcsLock, once::Once};
+use hyperdrive::{
+    locks::mcs::{MUMcsLock, McsLock},
+    once::Once,
+};
 
 /// Count APs that got around of their trampoline code
 ///
@@ -61,7 +64,7 @@ pub(crate) fn core_jumped() {
 pub struct CoreLocalsInfo {
     core_id: usize,
     apic_id: u8,
-    gdt: Gdt,
+    gdt: McsLock<Gdt>,
     interrupts: Interrupts,
     lapic: MUMcsLock<LocalApic>,
 }
@@ -73,7 +76,7 @@ impl CoreLocalsInfo {
         Self {
             core_id: 0,
             apic_id: 0,
-            gdt: Gdt::uninit(),
+            gdt: McsLock::new(Gdt::uninit()),
             interrupts: Interrupts::new(),
             lapic: MUMcsLock::uninit(),
         }
@@ -93,7 +96,7 @@ impl CoreLocalsInfo {
 
     #[must_use]
     #[inline]
-    pub const fn gdt(&self) -> &Gdt {
+    pub const fn gdt(&self) -> &McsLock<Gdt> {
         &self.gdt
     }
 

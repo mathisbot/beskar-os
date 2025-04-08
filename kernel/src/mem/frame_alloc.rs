@@ -18,7 +18,7 @@ const MAX_MEMORY_REGIONS: usize = 256;
 static KFRAME_ALLOC: MUMcsLock<FrameAllocator> = MUMcsLock::uninit();
 
 pub fn init(ranges: &[MemoryRange]) {
-    assert!(ranges.len() > 0, "No usable memory regions found");
+    assert!(!ranges.is_empty(), "No usable memory regions found");
     if ranges.len() >= MAX_MEMORY_REGIONS {
         crate::warn!(
             "Too many usable memory regions, using only the first {}",

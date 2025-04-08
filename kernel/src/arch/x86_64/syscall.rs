@@ -1,22 +1,11 @@
-use beskar_core::{
-    arch::{
-        commons::paging::{CacheFlush, Flags, FrameAllocator, Mapper},
-        x86_64::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors},
-    },
-    syscall::Syscall,
-};
-use hyperdrive::once::Once;
-
 use crate::{
     locals,
-    mem::{address_space, frame_alloc},
     syscall::{Arguments, syscall},
 };
-
-// FIXME: Determine the number of stacks dynamically
-static SYSCALL_STACK_PTRS: [Once<*mut u8>; 256] = [const { Once::uninit() }; 256];
-
-const SYSCALL_STACK_NB_PAGES: u64 = 4; // 16 KiB
+use beskar_core::{
+    arch::x86_64::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors},
+    syscall::Syscall,
+};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(8))]
@@ -78,19 +67,21 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
     // Currently, we are on the user stack. It is undefined wether we are right where the
     // assembly stub left us (because of Rust), but the place we want to be is in the `regs` argument.
 
-    let kernel_stack = *SYSCALL_STACK_PTRS[locals!().core_id()].get().unwrap();
+    let kernel_stack = crate::process::scheduler::current_thread_snapshot()
+        .kernel_stack_top()
+        .unwrap();
     unsafe {
+        // Note that pushing `ustack` and pushing the return address via `call`
+        // correctly keeps the 16-byte alignment of the stack.
         core::arch::asm!(
-            // Note that pushing `ustack` and pushing the return address via `call`
-            // correctly keeps the 16-byte alignment of the stack.
             "mov {ustack}, rsp", // Keep track of user stack (0)
             "mov rsp, {}", // Switch to kernel stack
-            // "sti",
+            "sti",
             "push {ustack}", // Keep track of user stack (1)
             "call {}", // Perform the function call with `regs` in rdi
-            // "cli",
+            "cli",
             "pop rsp", // Switch back to user stack
-            in(reg) kernel_stack,
+            in(reg) kernel_stack.as_ptr(),
             sym syscall_handler_inner,
             in("rdi") regs,
             ustack = out(reg) _,
@@ -119,40 +110,17 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
 
 pub fn init_syscalls() {
     LStar::write(syscall_handler_arch);
-    Star::write(StarSelectors::new(
-        locals!().gdt().kernel_code_selector().0,
-        locals!().gdt().kernel_data_selector().0,
-        locals!().gdt().user_code_selector().0,
-        locals!().gdt().user_data_selector().0,
-    ));
-    // Disable interrupts on syscall
-    // FIXME: Because of this, if a malicious user spams syscalls,
-    // it will prevent scheduling other threads
-    unsafe { SFMask::write(Rflags::IF) };
 
-    SYSCALL_STACK_PTRS[locals!().core_id()].call_once(|| allocate_stack(SYSCALL_STACK_NB_PAGES));
-
-    unsafe { Efer::insert_flags(Efer::SYSTEM_CALL_EXTENSIONS) };
-}
-
-// Allocate a stack for the syscall handler and return the top of the stack
-fn allocate_stack(nb_pages: u64) -> *mut u8 {
-    let (_guard_start, page_range, _guard_end) =
-        address_space::with_kernel_pgalloc(|palloc| palloc.allocate_guarded(nb_pages).unwrap());
-
-    frame_alloc::with_frame_allocator(|fralloc| {
-        address_space::with_kernel_pt(|kpt| {
-            for page in page_range {
-                let frame = fralloc.allocate_frame().unwrap();
-                kpt.map(page, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)
-                    .flush();
-            }
-        });
+    locals!().gdt().with_locked(|gdt| {
+        Star::write(StarSelectors::new(
+            gdt.kernel_code_selector().unwrap().0,
+            gdt.kernel_data_selector().unwrap().0,
+            gdt.user_code_selector().unwrap().0,
+            gdt.user_data_selector().unwrap().0,
+        ));
     });
 
-    // We need the stack to be 16-byte aligned.
-    // Here, it is 4096-byte aligned!
-    let stack_bottom = page_range.start().start_address() + page_range.size();
-    debug_assert_eq!(stack_bottom.align_down(16), stack_bottom);
-    stack_bottom.as_mut_ptr()
+    unsafe { SFMask::write(Rflags::IF) };
+
+    unsafe { Efer::insert_flags(Efer::SYSTEM_CALL_EXTENSIONS) };
 }

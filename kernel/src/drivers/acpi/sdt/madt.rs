@@ -66,8 +66,8 @@ impl TryFrom<u8> for Lint {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(Lint::Lint0),
-            1 => Ok(Lint::Lint1),
+            0 => Ok(Self::Lint0),
+            1 => Ok(Self::Lint1),
             _ => Err(()),
         }
     }

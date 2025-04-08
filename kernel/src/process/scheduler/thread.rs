@@ -232,8 +232,8 @@ impl Thread {
     #[must_use]
     /// Get a snapshot of the thread's state.
     pub fn snapshot(&self) -> ThreadSnapshot {
-        let rsp0 = self.stack.as_ref().and_then(|s| s.rsp0_stack_top());
-        ThreadSnapshot::new(self.id, rsp0)
+        let kst = self.stack.as_ref().map(ThreadStacks::kernel_stack_top);
+        ThreadSnapshot::new(self.id, kst)
     }
 }
 
@@ -251,14 +251,17 @@ pub struct ThreadSnapshot {
     /// The unique identifier of the thread.
     id: ThreadId,
     /// RSP0.
-    rsp0: Option<NonNull<u8>>,
+    kernel_stack_top: Option<NonNull<u8>>,
 }
 
 impl ThreadSnapshot {
     #[must_use]
     #[inline]
-    pub(super) const fn new(id: ThreadId, rsp0: Option<NonNull<u8>>) -> Self {
-        Self { id, rsp0 }
+    pub(super) const fn new(id: ThreadId, kst: Option<NonNull<u8>>) -> Self {
+        Self {
+            id,
+            kernel_stack_top: kst,
+        }
     }
 
     #[must_use]
@@ -269,8 +272,8 @@ impl ThreadSnapshot {
 
     #[must_use]
     #[inline]
-    pub const fn rsp0(&self) -> Option<NonNull<u8>> {
-        self.rsp0
+    pub const fn kernel_stack_top(&self) -> Option<NonNull<u8>> {
+        self.kernel_stack_top
     }
 }
 
@@ -406,13 +409,9 @@ struct ThreadStacks {
     ///
     /// This can be the only stack used (ring0 processes) or
     /// only used by the trampoline function (ring3 processes).
-    _kernel: Vec<u8>,
+    kernel: Vec<u8>,
     /// Page range in the process' address space of the stack.
     user_pages: Once<PageRangeInclusive>,
-    // FIXME: This value isn't used anywhere as the allocation is done
-    // within the address space "owned addresses" (user-space accessible via syscall).
-    /// Page range in the process' address space of RSP0.
-    rsp0_ranges: Once<PageRangeInclusive>,
 }
 
 impl ThreadStacks {
@@ -422,15 +421,13 @@ impl ThreadStacks {
     #[inline]
     pub const fn new(stack: Vec<u8>) -> Self {
         Self {
-            _kernel: stack,
+            kernel: stack,
             user_pages: Once::uninit(),
-            rsp0_ranges: Once::uninit(),
         }
     }
 
     pub fn allocate_all(&self, size: u64) {
         self.allocate_user(size);
-        self.allocate_rsp0(size);
     }
 
     pub fn allocate_user(&self, size: u64) {
@@ -451,29 +448,17 @@ impl ThreadStacks {
             })
     }
 
-    pub fn allocate_rsp0(&self, size: u64) {
-        let flags = Flags::PRESENT | Flags::WRITABLE;
-        let page_range = Self::allocate(size, flags);
-
-        // FIXME: Even if the stack is already allocated, the above allocations still happens.
-        self.rsp0_ranges.call_once(|| page_range);
-    }
-
     #[must_use]
-    pub fn rsp0_stack_top(&self) -> Option<NonNull<u8>> {
-        self.rsp0_ranges
-            .get()
-            .map(|r| r.start().start_address() + r.size())
-            .map(|p| unsafe {
-                NonNull::new_unchecked(p.align_down(Self::STACK_ALIGNMENT).as_mut_ptr())
-            })
+    pub fn kernel_stack_top(&self) -> NonNull<u8> {
+        let stack_start = self.kernel.as_ptr() as usize;
+        let stack_vaddr = VirtAddr::new(u64::try_from(stack_start).unwrap());
+        let stack_end = stack_vaddr + u64::try_from(self.kernel.len()).unwrap();
+        unsafe { NonNull::new_unchecked(stack_end.align_down(Self::STACK_ALIGNMENT).as_mut_ptr()) }
     }
 
     fn allocate(size: u64, flags: Flags) -> PageRangeInclusive {
         assert!(size >= Self::STACK_ALIGNMENT);
 
-        // FIXME: Allocate outside of the address space "owned addresses"
-        // (user-space accessible via syscall).
         let (_guard_start, page_range, _guard_end) = super::current_process()
             .address_space()
             .with_pgalloc(|palloc| palloc.allocate_guarded(size.div_ceil(M4KiB::SIZE)))

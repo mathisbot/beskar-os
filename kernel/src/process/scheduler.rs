@@ -70,7 +70,6 @@ pub struct ContextSwitch {
     old_stack: *mut *mut u8,
     new_stack: *const u8,
     cr3: u64,
-    fs: Option<VirtAddr>,
 }
 
 impl ContextSwitch {
@@ -81,7 +80,6 @@ impl ContextSwitch {
     ///
     /// See `kernel::arch::context::context_switch`.
     pub unsafe fn perform(&self) {
-        unsafe { FS::write_base(self.fs.unwrap_or(VirtAddr::new(0))) };
         unsafe { crate::arch::context::switch(self.old_stack, self.new_stack, self.cr3) };
     }
 }
@@ -165,8 +163,12 @@ impl Scheduler {
 
             let cr3 = thread.process().address_space().cr3_raw();
             let fs = thread.tls();
+            unsafe { FS::write_base(fs.unwrap_or(VirtAddr::new(0))) };
 
-            // FIXME: Set RSP0 in TSS
+            if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
+                let tss = unsafe { locals!().gdt().force_lock() }.tss_mut().unwrap();
+                tss.privilege_stack_table[0] = x86_64::VirtAddr::new(rsp0.as_ptr() as u64);
+            }
 
             if old_should_exit {
                 // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
@@ -180,7 +182,6 @@ impl Scheduler {
                 old_stack,
                 new_stack,
                 cr3,
-                fs,
             })
         })?
     }
@@ -301,14 +302,10 @@ pub unsafe fn exit_current_thread() -> ! {
 pub fn thread_yield() -> bool {
     let context_switch = reschedule();
 
-    // If no other thread is waiting, then we can continue doing nothing
-    // in the current thread.
-    if let Some(context_switch) = context_switch {
-        unsafe { context_switch.perform() };
+    context_switch.is_some_and(|cs| {
+        unsafe { cs.perform() };
         true
-    } else {
-        false
-    }
+    })
 }
 
 pub fn is_scheduling_init() -> bool {

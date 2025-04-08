@@ -38,7 +38,7 @@ pub unsafe extern "C" fn switch(old_stack: *mut *mut u8, new_stack: *const u8, c
             "mov rsp, rsi",
             // Set TS bit in CR0
             "mov rax, cr0",
-            "or rax, {}",
+            "or rax, {ts}",
             "mov cr0, rax",
             // Check if CR3 is different
             "mov rax, cr3",
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn switch(old_stack: *mut *mut u8, new_stack: *const u8, c
             // Finally, return to the new stack
             "sti",
             "ret",
-            const Cr0::TASK_SWITCHED,
+            ts = const Cr0::TASK_SWITCHED,
         );
     }
 }

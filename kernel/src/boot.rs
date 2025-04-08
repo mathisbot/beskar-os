@@ -63,7 +63,10 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     locals::init();
 
-    locals!().gdt().init_load();
+    // Safety: `locals!` provide a `'static` reference to the core locals.
+    locals!()
+        .gdt()
+        .with_locked(|gdt| unsafe { gdt.init_load() });
 
     process::init();
     crate::info!("Process subsystem initialized");
@@ -113,7 +116,10 @@ fn ap_init() {
 
     locals::init();
 
-    locals!().gdt().init_load();
+    // Safety: `locals!` provide a `'static` reference to the core locals.
+    locals!()
+        .gdt()
+        .with_locked(|gdt| unsafe { gdt.init_load() });
 
     process::init();
 

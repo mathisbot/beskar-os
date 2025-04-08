@@ -1,4 +1,4 @@
-use core::{cell::UnsafeCell, mem::MaybeUninit};
+use core::mem::MaybeUninit;
 
 use x86_64::{
     registers::segmentation::{CS, Segment},
@@ -21,33 +21,39 @@ pub const PAGE_FAULT_IST: u16 = 1;
 
 const RSP0_STACK_PAGE_COUNT: u64 = 16; // 64 KiB
 
-#[derive(Debug)]
 pub struct Gdt {
-    // This field is needed to escalate from a borrow to a mutable borrow
-    inner: UnsafeCell<InnerGdt>,
+    loaded: bool,
+    gdt: MaybeUninit<GlobalDescriptorTable>,
+    tss: MaybeUninit<TaskStateSegment>,
+    kernel_code_selector: MaybeUninit<SegmentSelector>,
+    kernel_data_selector: MaybeUninit<SegmentSelector>,
+    user_code_selector: MaybeUninit<SegmentSelector>,
+    user_data_selector: MaybeUninit<SegmentSelector>,
 }
 
 impl Gdt {
     #[must_use]
+    #[inline]
     pub const fn uninit() -> Self {
         Self {
-            inner: UnsafeCell::new(InnerGdt {
-                gdt: MaybeUninit::uninit(),
-                tss: MaybeUninit::uninit(),
-                kernel_code_selector: MaybeUninit::uninit(),
-                kernel_data_selector: MaybeUninit::uninit(),
-                user_code_selector: MaybeUninit::uninit(),
-                user_data_selector: MaybeUninit::uninit(),
-            }),
+            loaded: false,
+            gdt: MaybeUninit::uninit(),
+            tss: MaybeUninit::uninit(),
+            kernel_code_selector: MaybeUninit::uninit(),
+            kernel_data_selector: MaybeUninit::uninit(),
+            user_code_selector: MaybeUninit::uninit(),
+            user_data_selector: MaybeUninit::uninit(),
         }
     }
 
-    pub fn init_load(&'static self) {
-        // Safety:
-        // Called only once per core on startup
-        let inner = unsafe { &mut *self.inner.get() };
-
-        let tss = inner.tss.write(Self::create_tss());
+    #[must_use]
+    /// Initializes the GDT and TSS and load them.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be valid for `'static` and remain valid afterwards.
+    pub unsafe fn init_load(&mut self) {
+        let tss = Self::create_tss();
 
         let mut gdt = GlobalDescriptorTable::new();
 
@@ -60,22 +66,33 @@ impl Gdt {
             gdt.append(x86_64::structures::gdt::Descriptor::user_data_segment());
         let user_code_selector =
             gdt.append(x86_64::structures::gdt::Descriptor::user_code_segment());
-        inner.kernel_code_selector.write(kernel_code_selector);
-        inner.kernel_data_selector.write(kernel_data_selector);
-        inner.user_data_selector.write(user_data_selector);
-        inner.user_code_selector.write(user_code_selector);
 
+        self.gdt.write(gdt);
+        self.tss.write(tss);
+        self.kernel_code_selector.write(kernel_code_selector);
+        self.kernel_data_selector.write(kernel_data_selector);
+        self.user_code_selector.write(user_code_selector);
+        self.user_data_selector.write(user_data_selector);
+
+        // Safety: We just initialized the GDT.
+        // According to function's safety guards, `self` is valid for `'static`.
+        let gdt = unsafe { &mut *core::ptr::from_mut(self.gdt.assume_init_mut()) };
+
+        // Safety: We just initialized the TSS.
+        // According to function's safety guards, `self` is valid for `'static`.
+        let tss = unsafe { &*core::ptr::from_ref(self.tss.assume_init_ref()) };
         let tss_selector = gdt
             .append(x86_64::structures::gdt::Descriptor::tss_segment(tss))
             .0;
 
-        let gdt = inner.gdt.write(gdt);
         gdt.load();
 
         unsafe {
             CS::set_reg(kernel_code_selector);
             load_tss(tss_selector);
         }
+
+        self.loaded = true;
     }
 
     #[must_use]
@@ -115,39 +132,71 @@ impl Gdt {
 
     #[must_use]
     #[inline]
-    pub fn kernel_code_selector(&self) -> SegmentSelector {
-        let inner = unsafe { &*self.inner.get() };
-        unsafe { inner.kernel_code_selector.assume_init() }
+    pub const fn kernel_code_selector(&self) -> Option<SegmentSelector> {
+        if self.loaded {
+            Some(unsafe { self.kernel_code_selector.assume_init() })
+        } else {
+            None
+        }
     }
 
     #[must_use]
     #[inline]
-    pub fn kernel_data_selector(&self) -> SegmentSelector {
-        let inner = unsafe { &*self.inner.get() };
-        unsafe { inner.kernel_data_selector.assume_init() }
+    pub const fn kernel_data_selector(&self) -> Option<SegmentSelector> {
+        if self.loaded {
+            Some(unsafe { self.kernel_data_selector.assume_init() })
+        } else {
+            None
+        }
     }
 
     #[must_use]
     #[inline]
-    pub fn user_code_selector(&self) -> SegmentSelector {
-        let inner = unsafe { &*self.inner.get() };
-        unsafe { inner.user_code_selector.assume_init() }
+    pub const fn user_code_selector(&self) -> Option<SegmentSelector> {
+        if self.loaded {
+            Some(unsafe { self.user_code_selector.assume_init() })
+        } else {
+            None
+        }
     }
 
     #[must_use]
     #[inline]
-    pub fn user_data_selector(&self) -> SegmentSelector {
-        let inner = unsafe { &*self.inner.get() };
-        unsafe { inner.user_data_selector.assume_init() }
+    pub const fn user_data_selector(&self) -> Option<SegmentSelector> {
+        if self.loaded {
+            Some(unsafe { self.user_data_selector.assume_init() })
+        } else {
+            None
+        }
     }
-}
 
-#[derive(Debug)]
-struct InnerGdt {
-    gdt: MaybeUninit<GlobalDescriptorTable>,
-    tss: MaybeUninit<TaskStateSegment>,
-    kernel_code_selector: MaybeUninit<SegmentSelector>,
-    kernel_data_selector: MaybeUninit<SegmentSelector>,
-    user_code_selector: MaybeUninit<SegmentSelector>,
-    user_data_selector: MaybeUninit<SegmentSelector>,
+    #[must_use]
+    #[inline]
+    pub const fn tss(&self) -> Option<&TaskStateSegment> {
+        if self.loaded {
+            Some(unsafe { self.tss.assume_init_ref() })
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn tss_mut(&mut self) -> Option<&mut TaskStateSegment> {
+        if self.loaded {
+            Some(unsafe { self.tss.assume_init_mut() })
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn gdt(&self) -> Option<&GlobalDescriptorTable> {
+        if self.loaded {
+            Some(unsafe { self.gdt.assume_init_ref() })
+        } else {
+            None
+        }
+    }
 }

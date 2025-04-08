@@ -10,7 +10,7 @@ use timer::LapicTimer;
 
 use super::cpuid;
 use crate::{
-    drivers::acpi::sdt::madt::Lint,
+    drivers::acpi::{self, sdt::madt::Lint},
     locals,
     mem::{address_space, frame_alloc},
     process,
@@ -44,7 +44,7 @@ pub fn init_lapic() {
         crate::warn!("x2APIC not supported");
     }
 
-    let lapic_paddr = crate::drivers::acpi::ACPI
+    let lapic_paddr = acpi::ACPI
         .get()
         .map_or_else(LocalApic::get_paddr_from_msr, |acpi| {
             acpi.madt().lapic_paddr()
@@ -71,7 +71,7 @@ pub fn init_lapic() {
 ///
 /// This function must only be called once by the BSP.
 pub fn init_ioapic() {
-    if let Some(acpi) = crate::drivers::acpi::ACPI.get() {
+    if let Some(acpi) = acpi::ACPI.get() {
         for io_apic in acpi.madt().io_apics() {
             let io_apic = IoApic::new(io_apic.addr(), io_apic.gsi_base());
             io_apic.init();
@@ -138,7 +138,7 @@ impl LocalApic {
             });
         });
 
-        let acpi_id = crate::drivers::acpi::ACPI
+        let acpi_id = acpi::ACPI
             .get()
             .map(|acpi| {
                 let apic_id = locals!().apic_id();
@@ -146,7 +146,7 @@ impl LocalApic {
                     .lapics()
                     .iter()
                     .find(|candidate| candidate.id() == apic_id)
-                    .map(|found| found.acpi_id())
+                    .map(acpi::sdt::madt::ParsedLapic::acpi_id)
                     .expect("APIC ACPI ID not found")
             })
             .unwrap();
@@ -154,23 +154,23 @@ impl LocalApic {
         // Handle NMI sources
         let apic_lint0 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x350) };
         let apic_lint1 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x360) };
-        crate::drivers::acpi::ACPI.get().map(|acpi| {
+        if let Some(acpi) = acpi::ACPI.get() {
             acpi.madt().local_nmis().iter().for_each(|nmi| {
                 if nmi.acpi_id() != 0xFF || nmi.acpi_id() != acpi_id {
                     return;
                 }
 
                 let triggermode: u32 = match nmi.flags().trigger_mode() {
-                    crate::drivers::acpi::sdt::madt::TriggerMode::Edge => 0,
-                    crate::drivers::acpi::sdt::madt::TriggerMode::Level => 1,
+                    acpi::sdt::madt::TriggerMode::Edge => 0,
+                    acpi::sdt::madt::TriggerMode::Level => 1,
                     // Apparently bus default is edge
-                    crate::drivers::acpi::sdt::madt::TriggerMode::BusDefault => 0,
+                    acpi::sdt::madt::TriggerMode::BusDefault => 0,
                 };
                 let polarity: u32 = match nmi.flags().polarity() {
-                    crate::drivers::acpi::sdt::madt::Polarity::High => 0,
-                    crate::drivers::acpi::sdt::madt::Polarity::Low => 1,
+                    acpi::sdt::madt::Polarity::High => 0,
+                    acpi::sdt::madt::Polarity::Low => 1,
                     // Apparently bus default is high
-                    crate::drivers::acpi::sdt::madt::Polarity::BusDefault => 0,
+                    acpi::sdt::madt::Polarity::BusDefault => 0,
                 };
 
                 let mut value = 0_u32;
@@ -188,8 +188,8 @@ impl LocalApic {
                         *apic_lint1 = value;
                     }
                 }
-            })
-        });
+            });
+        };
 
         // Register spurious interrupt handler
         let base_ptr: *mut u32 = page.start_address().as_mut_ptr();
@@ -450,12 +450,8 @@ impl IoApic {
         self.set_id(u8::try_from(cpu_count).unwrap() + id_offset);
 
         // TODO: Setup redirection entries (See MADT)
-        let isos = crate::drivers::acpi::ACPI.get().unwrap().madt().io_iso();
-        let nmi_sources = crate::drivers::acpi::ACPI
-            .get()
-            .unwrap()
-            .madt()
-            .io_nmi_sources();
+        let isos = acpi::ACPI.get().unwrap().madt().io_iso();
+        let nmi_sources = acpi::ACPI.get().unwrap().madt().io_nmi_sources();
 
         let mut idx_counter = 0;
         for iso in isos {
@@ -472,12 +468,10 @@ impl IoApic {
                 break;
             }
 
-            let (is_nmi, flags) =
-                if let Some(nmis) = nmi_sources.iter().find(|nmis| nmis.gsi() == iso.gsi()) {
-                    (true, nmis.flags())
-                } else {
-                    (false, iso.flags())
-                };
+            let (is_nmi, flags) = nmi_sources
+                .iter()
+                .find(|nmis| nmis.gsi() == iso.gsi())
+                .map_or_else(|| (false, iso.flags()), |nmis| (true, nmis.flags()));
 
             let red = Redirection {
                 delivery_mode: if is_nmi {
@@ -486,14 +480,14 @@ impl IoApic {
                     DeliveryMode::Fixed
                 },
                 trigger_mode: match flags.trigger_mode() {
-                    crate::drivers::acpi::sdt::madt::TriggerMode::Edge => TriggerMode::Edge,
-                    crate::drivers::acpi::sdt::madt::TriggerMode::Level => TriggerMode::Level,
-                    crate::drivers::acpi::sdt::madt::TriggerMode::BusDefault => TriggerMode::Edge,
+                    acpi::sdt::madt::TriggerMode::Edge => TriggerMode::Edge,
+                    acpi::sdt::madt::TriggerMode::Level => TriggerMode::Level,
+                    acpi::sdt::madt::TriggerMode::BusDefault => TriggerMode::Edge,
                 },
                 pin_polarity: match flags.polarity() {
-                    crate::drivers::acpi::sdt::madt::Polarity::High => PinPolarity::High,
-                    crate::drivers::acpi::sdt::madt::Polarity::Low => PinPolarity::Low,
-                    crate::drivers::acpi::sdt::madt::Polarity::BusDefault => PinPolarity::High,
+                    acpi::sdt::madt::Polarity::High => PinPolarity::High,
+                    acpi::sdt::madt::Polarity::Low => PinPolarity::Low,
+                    acpi::sdt::madt::Polarity::BusDefault => PinPolarity::High,
                 },
                 remote_irr: false,
                 int_vec: super::interrupts::Irq::IoIso as u8, // TODO: Allocate at runtime
