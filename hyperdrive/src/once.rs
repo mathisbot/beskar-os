@@ -61,9 +61,9 @@ impl State {
     /// Converts the state to a `u8` value.
     const fn as_u8(self) -> u8 {
         match self {
-            State::Uninitialized => 0,
-            State::Initializing => 1,
-            State::Initialized => 2,
+            Self::Uninitialized => 0,
+            Self::Initializing => 1,
+            Self::Initialized => 2,
         }
     }
 
@@ -73,9 +73,9 @@ impl State {
     /// Returns `None` if the value is not a valid state.
     const fn from_u8(value: u8) -> Option<Self> {
         match value {
-            0 => Some(State::Uninitialized),
-            1 => Some(State::Initializing),
-            2 => Some(State::Initialized),
+            0 => Some(Self::Uninitialized),
+            1 => Some(Self::Initializing),
+            2 => Some(Self::Initialized),
             _ => None,
         }
     }

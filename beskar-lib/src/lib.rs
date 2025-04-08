@@ -47,6 +47,7 @@ macro_rules! entry_point {
 /// ## Safety
 ///
 /// Do not call this function.
+#[allow(clippy::missing_panics_doc)]
 pub unsafe fn __init() {
     let res = mem::mmap(mem::HEAP_SIZE);
     unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };

@@ -260,7 +260,7 @@ impl LStar {
 
     #[inline]
     pub fn write(f: unsafe extern "sysv64" fn()) {
-        unsafe { Self::MSR.write(f as u64) };
+        unsafe { Self::MSR.write(u64::try_from(f as usize).unwrap()) };
     }
 }
 

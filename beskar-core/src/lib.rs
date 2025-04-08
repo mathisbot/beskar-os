@@ -5,7 +5,8 @@
 #![allow(
     clippy::missing_panics_doc,
     clippy::missing_errors_doc,
-    clippy::missing_safety_doc
+    clippy::missing_safety_doc,
+    clippy::doc_markdown
 )]
 
 pub mod arch;
