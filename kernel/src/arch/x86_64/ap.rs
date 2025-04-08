@@ -176,7 +176,7 @@ fn allocate_stack() {
         });
     });
 
-    let stack_top = (stack_pages.end.start_address() + M4KiB::SIZE - 1).align_down(16_u64);
+    let stack_top = (stack_pages.end().start_address() + (M4KiB::SIZE - 1)).align_down(16_u64);
 
     let previous_ap_stack = AP_STACK_TOP_ADDR.swap(stack_top.as_u64(), Ordering::SeqCst);
     assert_eq!(previous_ap_stack, 0, "AP stack allocated twice");

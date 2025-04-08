@@ -55,26 +55,40 @@ enum State {
     Initialized,
 }
 
-impl TryFrom<u8> for State {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Uninitialized),
-            1 => Ok(Self::Initializing),
-            2 => Ok(Self::Initialized),
-            _ => Err(()),
-        }
-    }
-}
-
-impl From<State> for u8 {
-    fn from(state: State) -> Self {
-        match state {
+impl State {
+    #[must_use]
+    #[inline]
+    /// Converts the state to a `u8` value.
+    const fn as_u8(self) -> u8 {
+        match self {
             State::Uninitialized => 0,
             State::Initializing => 1,
             State::Initialized => 2,
         }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Converts a `u8` value to a `State`.
+    /// Returns `None` if the value is not a valid state.
+    const fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(State::Uninitialized),
+            1 => Some(State::Initializing),
+            2 => Some(State::Initialized),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Converts a `u8` value to a `State`.
+    ///
+    /// # Safety
+    ///
+    /// The value must be a valid state.
+    const unsafe fn from_u8_unchecked(value: u8) -> Self {
+        unsafe { Self::from_u8(value).unwrap_unchecked() }
     }
 }
 
@@ -85,19 +99,22 @@ impl AtomicState {
     #[must_use]
     #[inline]
     const fn uninit() -> Self {
-        Self(AtomicU8::new(State::Uninitialized as u8))
+        Self(AtomicU8::new(State::Uninitialized.as_u8()))
     }
 
     #[must_use]
     #[inline]
     const fn new(state: State) -> Self {
-        Self(AtomicU8::new(state as u8))
+        Self(AtomicU8::new(state.as_u8()))
     }
 
     #[must_use]
     #[inline]
     fn load(&self, order: Ordering) -> State {
-        self.0.load(order).try_into().unwrap()
+        let raw = self.0.load(order);
+        // Safety: `AtomicState`'s API only allows storing valid states.
+        // Thus, we can safely convert the raw value to a `State`.
+        unsafe { State::from_u8_unchecked(raw) }
     }
 
     #[inline]
@@ -109,12 +126,12 @@ impl AtomicState {
         failure: Ordering,
     ) -> Result<u8, u8> {
         self.0
-            .compare_exchange(current.into(), new.into(), success, failure)
+            .compare_exchange(current.as_u8(), new.as_u8(), success, failure)
     }
 
     #[inline]
     fn store(&self, value: State, order: Ordering) {
-        self.0.store(value.into(), order);
+        self.0.store(value.as_u8(), order);
     }
 }
 

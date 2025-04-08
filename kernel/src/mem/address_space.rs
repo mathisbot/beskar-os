@@ -93,7 +93,7 @@ impl AddressSpace {
         let page = curr_addr_space
             .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<M4KiB>(1))
             .unwrap()
-            .start;
+            .start();
 
         let frame = frame_alloc::with_frame_allocator(|frame_allocator| {
             let frame = frame_allocator.alloc().unwrap();

@@ -1,9 +1,4 @@
-use core::{
-    mem::offset_of,
-    pin::Pin,
-    sync::atomic::{AtomicU64, Ordering},
-};
-
+use crate::mem::frame_alloc;
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
     commons::{
@@ -16,12 +11,16 @@ use beskar_core::arch::{
         userspace::Ring,
     },
 };
+use core::{
+    mem::offset_of,
+    pin::Pin,
+    ptr::NonNull,
+    sync::atomic::{AtomicU64, Ordering},
+};
 use hyperdrive::{
     once::Once,
     queues::mpsc::{Link, Queueable},
 };
-
-use crate::mem::frame_alloc;
 
 use super::{super::Process, priority::Priority};
 
@@ -40,7 +39,7 @@ pub struct Thread {
     /// Keeps track of where the stack is.
     last_stack_ptr: *mut u8,
     /// Thread Local Storage
-    tls: Once<Box<[u8]>>,
+    tls: Once<VirtAddr>,
 
     /// Link to the next thread in the queue.
     link: Link<Self>,
@@ -227,7 +226,51 @@ impl Thread {
     #[inline]
     /// Returns the thread local storage of the thread.
     pub fn tls(&self) -> Option<VirtAddr> {
-        self.tls.get().map(|tls| VirtAddr::new(tls.as_ptr() as u64))
+        self.tls.get().copied()
+    }
+
+    #[must_use]
+    /// Get a snapshot of the thread's state.
+    pub fn snapshot(&self) -> ThreadSnapshot {
+        let rsp0 = self.stack.as_ref().and_then(|s| s.rsp0_stack_top());
+        ThreadSnapshot::new(self.id, rsp0)
+    }
+}
+
+// impl Drop for Thread {
+//     #[inline]
+//     fn drop(&mut self) {
+//         // TODO:
+//         // How to recover allocated frames and free them ?
+//     }
+// }
+
+#[derive(Debug, Clone, Copy)]
+/// Represents a snapshot of a thread's state.
+pub struct ThreadSnapshot {
+    /// The unique identifier of the thread.
+    id: ThreadId,
+    /// RSP0.
+    rsp0: Option<NonNull<u8>>,
+}
+
+impl ThreadSnapshot {
+    #[must_use]
+    #[inline]
+    pub(super) const fn new(id: ThreadId, rsp0: Option<NonNull<u8>>) -> Self {
+        Self { id, rsp0 }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn id(&self) -> ThreadId {
+        self.id
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn rsp0(&self) -> Option<NonNull<u8>> {
+        self.rsp0
     }
 }
 
@@ -301,25 +344,57 @@ extern "C" fn user_trampoline() -> ! {
     // Allocate a user stack
     let rsp = super::get_scheduler()
         .current_thread
-        .with_locked(|t| t.stack.as_mut().map(|ts| ts.allocate_user(4 * M4KiB::SIZE)))
-        .expect("Thread stack not found");
+        .with_locked(|t| {
+            t.stack.as_mut().map(|ts| {
+                ts.allocate_all(4 * M4KiB::SIZE);
+                ts.user_stack_top().unwrap()
+            })
+        })
+        .expect("Thread stack not found")
+        .as_ptr();
 
     if let Some(tlst) = loaded_binary.tls_template() {
-        let mut tls = alloc::vec![0; usize::try_from(tlst.mem_size()).unwrap()].into_boxed_slice();
+        let tls_size = tlst.mem_size();
+        let num_pages = tls_size.div_ceil(M4KiB::SIZE);
+        let pages = super::current_process()
+            .address_space()
+            .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(num_pages))
+            .unwrap();
+
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
+        frame_alloc::with_frame_allocator(|fralloc| {
+            super::current_process()
+                .address_space()
+                .with_page_table(|pt| {
+                    for page in pages {
+                        let frame = fralloc.allocate_frame().unwrap();
+                        pt.map(page, frame, flags, fralloc).flush();
+                    }
+                });
+        });
+
+        let tls_vaddr = pages.start().start_address();
+
         // Copy TLS initialization image from binary
         unsafe {
-            tls.as_mut_ptr().copy_from_nonoverlapping(
+            tls_vaddr.as_mut_ptr::<u8>().copy_from_nonoverlapping(
                 tlst.start().as_ptr(),
                 tlst.file_size().try_into().unwrap(),
             );
         }
+        // Zero the rest of the TLS area
+        unsafe {
+            tls_vaddr
+                .as_mut_ptr::<u8>()
+                .byte_add(tlst.file_size().try_into().unwrap())
+                .write_bytes(0, (tlst.mem_size() - tlst.file_size()).try_into().unwrap());
+        }
 
-        let tls_vaddr = VirtAddr::new(tls.as_ptr() as u64);
-        // Locking the scheduler's current thread is a bit risky, but it is better than force locking it
-        // (as otherwise the schduler could get stuck on `Once::get`).
+        // Locking the scheduler's current thread is a bit ugly, but it is better than force locking it
+        // (as otherwise the scheduler could get stuck on `Once::get`).
         super::get_scheduler()
             .current_thread
-            .with_locked(|t| t.tls.call_once(|| tls));
+            .with_locked(|t| t.tls.call_once(|| tls_vaddr));
         unsafe { FS::write_base(tls_vaddr) };
     }
 
@@ -334,52 +409,97 @@ struct ThreadStacks {
     _kernel: Vec<u8>,
     /// Page range in the process' address space of the stack.
     user_pages: Once<PageRangeInclusive>,
+    // FIXME: This value isn't used anywhere as the allocation is done
+    // within the address space "owned addresses" (user-space accessible via syscall).
+    /// Page range in the process' address space of RSP0.
+    rsp0_ranges: Once<PageRangeInclusive>,
 }
 
 impl ThreadStacks {
+    const STACK_ALIGNMENT: u64 = 16;
+
     #[must_use]
     #[inline]
     pub const fn new(stack: Vec<u8>) -> Self {
         Self {
             _kernel: stack,
             user_pages: Once::uninit(),
+            rsp0_ranges: Once::uninit(),
         }
     }
 
-    pub fn allocate_user(&self, size: u64) -> *mut u8 {
-        assert!(size > 0);
+    pub fn allocate_all(&self, size: u64) {
+        self.allocate_user(size);
+        self.allocate_rsp0(size);
+    }
 
+    pub fn allocate_user(&self, size: u64) {
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
+        let page_range = Self::allocate(size, flags);
+
+        // FIXME: Even if the stack is already allocated, the above allocations still happens.
+        self.user_pages.call_once(|| page_range);
+    }
+
+    #[must_use]
+    pub fn user_stack_top(&self) -> Option<NonNull<u8>> {
+        self.user_pages
+            .get()
+            .map(|r| r.start().start_address() + r.size())
+            .map(|p| unsafe {
+                NonNull::new_unchecked(p.align_down(Self::STACK_ALIGNMENT).as_mut_ptr())
+            })
+    }
+
+    pub fn allocate_rsp0(&self, size: u64) {
+        let flags = Flags::PRESENT | Flags::WRITABLE;
+        let page_range = Self::allocate(size, flags);
+
+        // FIXME: Even if the stack is already allocated, the above allocations still happens.
+        self.rsp0_ranges.call_once(|| page_range);
+    }
+
+    #[must_use]
+    pub fn rsp0_stack_top(&self) -> Option<NonNull<u8>> {
+        self.rsp0_ranges
+            .get()
+            .map(|r| r.start().start_address() + r.size())
+            .map(|p| unsafe {
+                NonNull::new_unchecked(p.align_down(Self::STACK_ALIGNMENT).as_mut_ptr())
+            })
+    }
+
+    fn allocate(size: u64, flags: Flags) -> PageRangeInclusive {
+        assert!(size >= Self::STACK_ALIGNMENT);
+
+        // FIXME: Allocate outside of the address space "owned addresses"
+        // (user-space accessible via syscall).
         let (_guard_start, page_range, _guard_end) = super::current_process()
             .address_space()
             .with_pgalloc(|palloc| palloc.allocate_guarded(size.div_ceil(M4KiB::SIZE)))
             .unwrap();
 
-        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
         frame_alloc::with_frame_allocator(|fralloc| {
             super::current_process()
                 .address_space()
                 .with_page_table(|pt| {
-                    let frame = fralloc.allocate_frame().unwrap();
                     for page in page_range {
+                        let frame = fralloc.allocate_frame().unwrap();
                         pt.map(page, frame, flags, fralloc).flush();
                     }
                 });
         });
 
-        // FIXME: Even if the stack is already allocated, the above allocations still happen.
-        self.user_pages.call_once(|| page_range);
-
-        // Return the stack TOP
-        let stack_bottom = page_range.start.start_address();
-        let size = page_range.size();
         #[cfg(debug_assertions)]
         unsafe {
+            let stack_bottom = page_range.start().start_address();
+            let size = page_range.size();
             stack_bottom
                 .as_mut_ptr::<u8>()
                 .write_bytes(STACK_DEBUG_INSTR, size.try_into().unwrap());
         }
-        let stack_top = (stack_bottom + (size - 1)).align_down(16_u64);
-        stack_top.as_mut_ptr()
+
+        page_range
     }
 }
 
@@ -387,6 +507,6 @@ impl ThreadStacks {
 //     #[inline]
 //     fn drop(&mut self) {
 //         // TODO:
-//         // How to recover the alocated frames and free them ?
+//         // How to recover allocated frames and free them ?
 //     }
 // }

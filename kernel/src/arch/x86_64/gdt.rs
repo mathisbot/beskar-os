@@ -102,7 +102,7 @@ impl Gdt {
                 });
             });
 
-            x86_64::VirtAddr::new(page_range.end.start_address().as_u64() + (M4KiB::SIZE - 1))
+            x86_64::VirtAddr::new(page_range.end().start_address().as_u64() + (M4KiB::SIZE - 1))
                 .align_down(16_u64)
         }
 

@@ -166,6 +166,8 @@ impl Scheduler {
             let cr3 = thread.process().address_space().cr3_raw();
             let fs = thread.tls();
 
+            // FIXME: Set RSP0 in TSS
+
             if old_should_exit {
                 // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
                 // This job should be done by a cleaning thread.
@@ -217,9 +219,20 @@ pub(crate) fn reschedule() -> Option<ContextSwitch> {
 /// Returns the current thread ID.
 pub fn current_thread_id() -> thread::ThreadId {
     // Safety:
-    // Swapping current thread is done using a memory swap of a `Box` (pointer), so it is impossible
-    // that the current thread is "partly" read before swap and "partly" after swap.
+    // If the scheduler changes the values mid read,
+    // it means the current thread is no longer executed.
+    // Upon return, the thread will be the same as before!
     unsafe { get_scheduler().current_thread.force_lock() }.id()
+}
+
+#[must_use]
+/// Returns the current thread's state.
+pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
+    // Safety:
+    // If the scheduler changes the values mid read,
+    // it means the current thread is no longer executed.
+    // Upon return, the thread will be the same as before!
+    unsafe { get_scheduler().current_thread.force_lock() }.snapshot()
 }
 
 #[must_use]

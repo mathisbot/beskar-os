@@ -356,7 +356,7 @@ impl BufferSet<'_> {
         let descriptor_page = process::current()
             .address_space()
             .with_pgalloc(|palloc| palloc.allocate_pages(1).unwrap())
-            .start;
+            .start();
         let flags = Flags::MMIO_SUITABLE;
         let descriptor_frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
             let frame = fralloc.alloc::<M4KiB>().unwrap();

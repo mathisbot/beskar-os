@@ -92,7 +92,7 @@ Copy the contents of the `efi_disk` folder to a FAT32 file system, on a GPT (or 
 
 #### Warning
 
-Disk drivers are not yet implemented. When they are, and especially at first, don't run the OS on a machine you use frequently (at the risk of potentially corrupting your disk if my implementation is incorrect).
+Do not run the OS on a machine you care about (at the risk of potentially corrupting your disk if my implementation is incorrect).
 
 #### Troubleshooting
 

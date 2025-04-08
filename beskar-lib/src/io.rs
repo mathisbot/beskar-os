@@ -18,8 +18,6 @@ pub fn print(msg: &str) {
 }
 
 #[macro_export]
-// FIXME: When stdout is implemented, maybe change it to multiple syscalls
-// instead of buffering the output.
 macro_rules! println {
     ($($arg:tt)*) => {
         $crate::io::print(&::alloc::format!($($arg)*));

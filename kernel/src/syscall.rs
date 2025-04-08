@@ -129,5 +129,5 @@ fn sc_mmap(args: &Arguments) -> u64 {
 
     // FIXME: Should the area be zeroed?
 
-    page_range.start.start_address().as_u64()
+    page_range.start().start_address().as_u64()
 }

@@ -24,7 +24,7 @@ pub fn init() {
 
     crate::debug!(
         "Kernel heap allocated at {:#x}",
-        page_range.start.start_address().as_u64()
+        page_range.start().start_address().as_u64()
     );
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
@@ -53,12 +53,12 @@ struct Heap {
 
 impl Heap {
     pub fn new(page_range: PageRangeInclusive<M2MiB>) -> Self {
-        let start_address = page_range.start.start_address().as_u64();
-        let end_address = page_range.end.start_address().as_u64() + (M2MiB::SIZE - 1);
+        let start_address = page_range.start().start_address().as_u64();
+        let end_address = page_range.end().start_address().as_u64() + (M2MiB::SIZE - 1);
 
         let size = usize::try_from(end_address - start_address + 1).unwrap();
         let linked_list = unsafe {
-            linked_list_allocator::Heap::new(page_range.start.start_address().as_mut_ptr(), size)
+            linked_list_allocator::Heap::new(page_range.start().start_address().as_mut_ptr(), size)
         };
 
         Self { linked_list }

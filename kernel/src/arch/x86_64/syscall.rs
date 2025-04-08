@@ -81,10 +81,14 @@ extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
     let kernel_stack = *SYSCALL_STACK_PTRS[locals!().core_id()].get().unwrap();
     unsafe {
         core::arch::asm!(
+            // Note that pushing `ustack` and pushing the return address via `call`
+            // correctly keeps the 16-byte alignment of the stack.
             "mov {ustack}, rsp", // Keep track of user stack (0)
             "mov rsp, {}", // Switch to kernel stack
+            // "sti",
             "push {ustack}", // Keep track of user stack (1)
             "call {}", // Perform the function call with `regs` in rdi
+            // "cli",
             "pop rsp", // Switch back to user stack
             in(reg) kernel_stack,
             sym syscall_handler_inner,
@@ -148,7 +152,7 @@ fn allocate_stack(nb_pages: u64) -> *mut u8 {
 
     // We need the stack to be 16-byte aligned.
     // Here, it is 4096-byte aligned!
-    let stack_bottom = page_range.start.start_address() + page_range.size();
+    let stack_bottom = page_range.start().start_address() + page_range.size();
     debug_assert_eq!(stack_bottom.align_down(16), stack_bottom);
     stack_bottom.as_mut_ptr()
 }

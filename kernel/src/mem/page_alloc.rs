@@ -142,7 +142,7 @@ impl<const N: usize> PageAllocator<N> {
         Some(Page::range_inclusive(first_page, first_page + (count - 1)))
     }
 
-    pub fn allocate_specific_page<S: MemSize>(&mut self, page: Page<S>) -> Option<Page<S>> {
+    fn allocate_specific<S: MemSize>(&mut self, page: Page<S>) -> Option<Page<S>> {
         if page.start_address().as_u64() == 0 {
             return None; // Can't allocate the null page (not the first two pages)
         }
@@ -193,8 +193,8 @@ impl<const N: usize> PageAllocator<N> {
 
     pub fn free_pages<S: MemSize>(&mut self, pages: PageRangeInclusive<S>) {
         self.vranges.insert(MemoryRange::new(
-            pages.start.start_address().as_u64(),
-            pages.end.start_address().as_u64() + (S::SIZE - 1),
+            pages.start().start_address().as_u64(),
+            pages.end().start_address().as_u64() + (S::SIZE - 1),
         ));
     }
 }
@@ -209,7 +209,7 @@ fn reserve_tramp_page<const N: usize>(allocator: &mut PageAllocator<N>) {
     let page = Page::<M4KiB>::from_start_address(vaddr).unwrap();
 
     assert!(
-        allocator.allocate_specific_page(page).is_some(),
+        allocator.allocate_specific(page).is_some(),
         "Failed to allocate AP page"
     );
 }

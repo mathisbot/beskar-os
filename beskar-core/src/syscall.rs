@@ -1,4 +1,5 @@
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u64)]
 pub enum Syscall {
     /// Print syscall.
     ///
@@ -25,7 +26,7 @@ pub enum Syscall {
     /// Invalid syscall.
     ///
     /// Any syscall that is not recognized.
-    Invalid = 0xFF,
+    Invalid = u64::MAX,
 }
 
 impl From<u64> for Syscall {

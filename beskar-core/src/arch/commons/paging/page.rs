@@ -170,11 +170,23 @@ impl<S: MemSize> Sub<Self> for Page<S> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageRangeInclusive<S: MemSize = M4KiB> {
-    pub start: Page<S>,
-    pub end: Page<S>,
+    start: Page<S>,
+    end: Page<S>,
 }
 
 impl<S: MemSize> PageRangeInclusive<S> {
+    #[must_use]
+    #[inline]
+    pub const fn start(&self) -> Page<S> {
+        self.start
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn end(&self) -> Page<S> {
+        self.end
+    }
+
     #[must_use]
     #[inline]
     pub fn is_empty(&self) -> bool {

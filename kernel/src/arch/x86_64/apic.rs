@@ -127,7 +127,7 @@ impl LocalApic {
         let page = process::current()
             .address_space()
             .with_pgalloc(|page_allocator| {
-                page_allocator.allocate_pages::<M4KiB>(1).unwrap().start
+                page_allocator.allocate_pages::<M4KiB>(1).unwrap().start()
             });
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
@@ -416,7 +416,7 @@ impl IoApic {
             .address_space()
             .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<M4KiB>(1))
             .unwrap()
-            .start;
+            .start();
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
             address_space::with_kernel_pt(|page_table| {
@@ -463,6 +463,8 @@ impl IoApic {
                 continue;
             }
 
+            // TODO: special handling for source 9 (System Control Interrupt)
+
             let idx = idx_counter;
             idx_counter += 1;
             if idx >= self.max_red_ent() {
@@ -500,6 +502,8 @@ impl IoApic {
             };
             self.set_redirection(idx, red);
         }
+
+        // TODO: Manually map IRQ1 (PS/2 keyboard) if not present in ISOs
 
         enable_disable_interrupts(true);
     }
@@ -592,6 +596,7 @@ impl IoApic {
 
 // Raw register access
 impl IoApic {
+    #[inline]
     /// Updates the value of a register.
     ///
     /// Specifically, it will update bits \[idx..idx+len\[ of the register `reg`

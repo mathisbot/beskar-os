@@ -64,7 +64,7 @@ where
 
         Self {
             start_frame,
-            start_page: page_range.start,
+            start_page: page_range.start(),
             count,
         }
     }
