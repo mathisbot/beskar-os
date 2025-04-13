@@ -14,4 +14,14 @@ fn main() {
     let _test_vec = alloc::vec![0; 10];
 
     beskar_lib::println!("Random u64: {:#x}", random_u64);
+
+    loop {
+        if let Some(event) = beskar_lib::io::poll_keyboard() {
+            let key = event.key();
+            let pressed = event.pressed();
+            beskar_lib::println!("Key: {:?} Pressed: {:?}", key, pressed,);
+        } else {
+            core::hint::spin_loop();
+        }
+    }
 }

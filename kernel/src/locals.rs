@@ -115,6 +115,16 @@ impl CoreLocalsInfo {
 
 #[must_use]
 #[inline]
+/// Returns a specific core local info
+pub fn get_specific_core_locals(core_id: usize) -> Option<&'static CoreLocalsInfo> {
+    ALL_CORE_LOCALS[core_id]
+        .get()
+        .copied()
+        .map(|ptr| unsafe { ptr.as_ref() })
+}
+
+#[must_use]
+#[inline]
 /// Returns this core's local info.
 pub fn get_core_locals() -> &'static CoreLocalsInfo {
     crate::arch::locals::load_locals()

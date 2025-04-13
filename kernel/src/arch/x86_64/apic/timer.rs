@@ -173,16 +173,13 @@ impl LapicTimer {
 pub struct Configuration {
     apic_base: Volatile<ReadWrite, u32>,
     rate_mhz: u32,
-    ivt: crate::arch::interrupts::Irq,
+    ivt: u8,
     mode: Mode,
 }
 
 impl Configuration {
     #[must_use]
-    pub const fn new(
-        apic_base: Volatile<ReadWrite, u32>,
-        ivt: crate::arch::interrupts::Irq,
-    ) -> Self {
+    pub const fn new(apic_base: Volatile<ReadWrite, u32>, ivt: u8) -> Self {
         Self {
             apic_base,
             rate_mhz: 0,

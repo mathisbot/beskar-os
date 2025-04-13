@@ -71,14 +71,14 @@ pub struct InterruptRegisterSetSnapshot {
     /// Bits 0-15: Number of valid ERST entires. Should be between 1 and ERST Max (HCSPARAMS2).
     ///            This value can be 0 for secondary interrupters.
     /// Bits 16-31: Reserved
-    erstsz: u32,
+    pub erstsz: u32,
     _reserved: u32,
     /// Event Ring Segment Table Base Address
     ///
     /// Bits 0-5: Reserved
     /// Bits 6-63: Address of the ERST.
     ///            For primary interrupters, can only be written to if HCHalt is set.
-    erstba: u64,
+    pub erstba: u64,
     /// Event Ring Dequeue Pointer
     ///
     /// Software updates this pointer when it is finished processing an event.
@@ -87,7 +87,7 @@ pub struct InterruptRegisterSetSnapshot {
     ///           that the ER Dequeue Pointer resides in.
     /// Bit 3: Set to 1 when Interrupt Pending is set (IMAN).
     ///        Should be cleared when Dequeue Pointer is updated.
-    erdp: u64,
+    pub erdp: u64,
 }
 static_assert!(size_of::<InterruptRegisterSetSnapshot>() == 32);
 
@@ -106,6 +106,11 @@ impl InterruptRegisters {
     #[inline]
     pub fn read(self) -> InterruptRegisterSetSnapshot {
         unsafe { self.base.read() }
+    }
+
+    #[inline]
+    pub fn write(&self, value: InterruptRegisterSetSnapshot) {
+        unsafe { self.base.write(value) }
     }
 }
 
@@ -138,5 +143,14 @@ impl InterruptRegisterSetSnapshot {
     #[inline]
     pub const fn erdp(&self) -> u64 {
         self.erdp
+    }
+
+    #[inline]
+    pub fn set_interrupt_enable(&mut self, enable: bool) {
+        if enable {
+            self.iman |= 1 << 1;
+        } else {
+            self.iman &= !(1 << 1);
+        }
     }
 }

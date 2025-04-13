@@ -4,8 +4,7 @@ use core::ptr::NonNull;
 
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
-use crate::arch::interrupts::Irq;
-use crate::locals;
+use crate::locals::get_specific_core_locals;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 use beskar_core::arch::commons::paging::{Flags, M4KiB};
 
@@ -96,12 +95,13 @@ impl MsiX {
         })
     }
 
-    pub fn setup_int(&self, vector: Irq, table_idx: u16) {
+    pub fn setup_int(&self, vector: u8, table_idx: u16, core_id: usize) {
         assert!(table_idx < self.capability.table_size);
         let endry_ptr = unsafe { self.table.byte_add(usize::from(table_idx) * 16) };
 
-        let lapic_paddr = unsafe { locals!().lapic().force_lock().paddr() };
-        let lapic_id = locals!().apic_id(); // TODO: Load balance between APs?
+        let core_locals = get_specific_core_locals(core_id).unwrap();
+        let lapic_paddr = unsafe { core_locals.lapic().force_lock() }.paddr();
+        let lapic_id = core_locals.apic_id();
 
         let msg_addr = lapic_paddr.as_u64() | (u64::from(lapic_id) << 12);
 

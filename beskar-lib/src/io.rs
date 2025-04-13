@@ -1,5 +1,6 @@
 use crate::arch::syscalls;
-use ::beskar_core::syscall::{Syscall, SyscallExitCode};
+pub use beskar_core::drivers::keyboard::KeyEvent;
+use beskar_core::syscall::{Syscall, SyscallExitCode};
 
 #[inline]
 /// Print a message to the console
@@ -14,7 +15,10 @@ pub fn print(msg: &str) {
         msg.as_ptr() as u64,
         msg.len().try_into().unwrap(),
     );
-    assert_eq!(SyscallExitCode::from(res), SyscallExitCode::Success);
+    assert_eq!(
+        SyscallExitCode::try_from(res).unwrap_or(SyscallExitCode::Other),
+        SyscallExitCode::Success
+    );
 }
 
 #[macro_export]
@@ -22,4 +26,12 @@ macro_rules! println {
     ($($arg:tt)*) => {
         $crate::io::print(&::alloc::format!($($arg)*));
     };
+}
+
+#[must_use]
+#[inline]
+/// Poll the kernel to get keyboard events
+pub fn poll_keyboard() -> Option<KeyEvent> {
+    let res = syscalls::syscall_0(Syscall::KeyboardPoll);
+    unsafe { KeyEvent::unpack_option(res) }
 }

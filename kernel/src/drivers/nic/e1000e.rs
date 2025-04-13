@@ -18,10 +18,12 @@ use hyperdrive::{
     locks::mcs::MUMcsLock,
     ptrs::volatile::{ReadWrite, Volatile},
 };
+use x86_64::structures::idt::InterruptStackFrame;
 
 use super::Nic;
 use crate::{
     drivers::pci::{self, Bar, with_pci_handler},
+    locals,
     mem::page_alloc::pmap::PhysicalMapping,
     network::l2::ethernet::MacAddress,
     process,
@@ -192,12 +194,14 @@ impl E1000e<'_> {
             None
         };
 
+        let (irq, core_id) = crate::arch::interrupts::new_irq(nic_interrupt_handler, None);
+
         if let Some(msix) = msix {
-            msix.setup_int(crate::arch::interrupts::Irq::Nic, 0);
+            msix.setup_int(irq, 0, core_id);
             pci::with_pci_handler(|handler| msix.enable(handler));
         } else if let Some(msi) = msi {
             pci::with_pci_handler(|handler| {
-                msi.setup_int(crate::arch::interrupts::Irq::Nic, handler);
+                msi.setup_int(irq, handler, core_id);
                 msi.enable(handler);
             });
         } else {
@@ -292,6 +296,11 @@ impl E1000e<'_> {
     {
         unsafe { self.base.byte_add(offset).update(f) };
     }
+}
+
+extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("NIC INTERRUPT on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
 impl Nic for E1000e<'_> {

@@ -22,27 +22,35 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
     - [ ] aarch64
 - Drivers
     - [ ] ACPI
-        - [x] MADT
-        - [x] HPET
-        - [x] MCFG
         - [ ] FADT
+        - [x] HPET
+        - [x] MADT
+        - [x] MCFG
+    - [ ] NICs
+        - [ ] Intel e1000e (partial)
     - [X] PCI/PCIe
         - [x] Devices
         - [X] MSI/MSI-X
-    - [ ] USB
-        - [ ] xHCI driver (partial)
-        - [ ] USB 1/2/3 driver
-        - [ ] Keyboard driver
+    - [ ] PS/2
+        - [X] Keyboard
+        - [ ] Mouse
+    - Storage
+        - [ ] AHCI
+        - [ ] NVMe (partial)
     - [x] Time
         - [x] HPET
         - [x] x86_64
             - [x] TSC
             - [x] APIC Timer
-    - [ ] NICs
-        - [ ] Intel e1000e (partial)
-    - Storage
-        - [ ] AHCI
-        - [ ] NVMe (partial)
+    - [ ] USB
+        - [ ] Controllers
+            - [ ] xHCI (partial)
+            - [ ] EHCI
+        - USB
+            - [ ] USB 3
+            - [ ] USB 2
+        - Devices
+            - [ ] Generic Keyboard
 - Memory
     - [x] Paging
     - [x] Physical/Virtual Allocators

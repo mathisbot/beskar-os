@@ -20,8 +20,3 @@ pub fn init(usb_controllers: &[Device]) -> DriverResult<()> {
 
     xhci::init(xhci)
 }
-
-#[inline]
-pub fn handle_usb_interrupt() {
-    xhci::handle_xhci_interrupt();
-}

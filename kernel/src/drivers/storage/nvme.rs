@@ -6,6 +6,7 @@
 
 use crate::{
     drivers::pci::{self, Bar, Device, msix::MsiX},
+    locals,
     mem::{frame_alloc, page_alloc::pmap::PhysicalMapping},
 };
 use beskar_core::{
@@ -21,6 +22,7 @@ use hyperdrive::{
     ptrs::volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
 };
 use queue::admin::{AdminCompletionQueue, AdminSubmissionQueue};
+use x86_64::structures::idt::InterruptStackFrame;
 
 mod queue;
 
@@ -123,7 +125,9 @@ impl NvmeControllers {
             core::hint::spin_loop();
         }
 
-        self.msix.setup_int(crate::arch::interrupts::Irq::Nvme, 0);
+        let (irq, core_id) = crate::arch::interrupts::new_irq(nvme_interrupt_handler, None);
+
+        self.msix.setup_int(irq, 0, core_id);
         pci::with_pci_handler(|handler| self.msix.enable(handler));
 
         if self.capabilities().mpsmin() > u32::try_from(M4KiB::SIZE).unwrap() {
@@ -277,6 +281,11 @@ impl NvmeControllers {
         let ptr = unsafe { self.registers_base.as_mut_ptr::<u64>().byte_add(0x30) };
         unsafe { ptr.write_volatile(addr.as_u64() & !0xFFF) };
     }
+}
+
+extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("NVMe INTERRUPT on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

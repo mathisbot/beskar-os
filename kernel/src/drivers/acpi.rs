@@ -1,6 +1,5 @@
-use core::sync::atomic::AtomicU8;
-
 use beskar_core::arch::commons::PhysAddr;
+use core::sync::atomic::AtomicU8;
 use hyperdrive::once::Once;
 
 mod rsdp;

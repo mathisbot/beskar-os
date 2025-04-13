@@ -102,7 +102,10 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
         six: regs.r9,
     };
 
-    let res = syscall(Syscall::from(regs.rax), &args);
+    let res = syscall(
+        Syscall::try_from(regs.rax).unwrap_or(Syscall::Invalid),
+        &args,
+    );
 
     // Store result
     regs.rax = res.as_u64();

@@ -1,10 +1,8 @@
-use core::cell::UnsafeCell;
-
-use beskar_core::arch::x86_64::registers::{Cr0, Cr2};
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-
 use super::gdt::{DOUBLE_FAULT_IST, PAGE_FAULT_IST};
 use crate::locals;
+use beskar_core::arch::x86_64::registers::{Cr0, Cr2};
+use core::{cell::UnsafeCell, sync::atomic::AtomicU8};
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 pub fn init() {
     let interrupts = locals!().interrupts();
@@ -58,18 +56,7 @@ pub fn init() {
             .set_stack_index(PAGE_FAULT_IST)
     };
 
-    // IRQs
-
-    idt[Irq::Timer as u8].set_handler_fn(timer_interrupt_handler);
-    idt[Irq::Spurious as u8].set_handler_fn(spurious_interrupt_handler);
-
-    // TODO: Allocate these at runtime
-    // This is hard because they need to be set for all cores
-    idt[Irq::Xhci as u8].set_handler_fn(xhci_interrupt_handler);
-    idt[Irq::Nic as u8].set_handler_fn(nic_interrupt_handler);
-    idt[Irq::Nvme as u8].set_handler_fn(nvme_interrupt_handler);
-    idt[Irq::LocalNmi as u8].set_handler_fn(local_nmi_handler);
-    idt[Irq::IoIso as u8].set_handler_fn(io_iso_handler);
+    idt[0xFF].set_handler_fn(spurious_interrupt_handler);
 
     idt.load();
 
@@ -160,19 +147,6 @@ macro_rules! info_isr {
     };
 }
 
-macro_rules! info_isr_eoi {
-    ($name:ident) => {
-        extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
-            crate::info!(
-                "{} INTERRUPT on core {}",
-                stringify!($name),
-                locals!().core_id()
-            );
-            unsafe { locals!().lapic().force_lock() }.send_eoi();
-        }
-    };
-}
-
 panic_isr!(divide_error_handler);
 info_isr!(debug_handler);
 panic_isr!(breakpoint_handler);
@@ -218,63 +192,7 @@ extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFram
     panic!("EXCEPTION: MACHINE CHECK");
 }
 
-info_isr_eoi!(spurious_interrupt_handler);
-
-extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    let rescheduling_result = crate::process::scheduler::reschedule();
-
-    // Safety:
-    // `send_eoi` is safe to use on locked LAPICs (see its documentation).
-    // Also, the LAPIC is initialized if the interrupt has been received ;).
-    unsafe { locals!().lapic().force_lock() }.send_eoi();
-
-    if let Some(context_switch) = rescheduling_result {
-        // Safety:
-        // If rescheduling happened, interrupts were disabled.
-        unsafe { context_switch.perform() };
-    }
-}
-
-extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("xHCI INTERRUPT on core {}", locals!().core_id());
-    crate::drivers::usb::host::handle_usb_interrupt();
-    unsafe { locals!().lapic().force_lock() }.send_eoi();
-}
-
-extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("NIC INTERRUPT on core {}", locals!().core_id());
-    unsafe { locals!().lapic().force_lock() }.send_eoi();
-}
-
-extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("NVMe INTERRUPT on core {}", locals!().core_id());
-    unsafe { locals!().lapic().force_lock() }.send_eoi();
-}
-
-extern "x86-interrupt" fn local_nmi_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("Local NMI on core {}", locals!().core_id());
-    unsafe { locals!().lapic().force_lock() }.send_eoi();
-}
-
-extern "x86-interrupt" fn io_iso_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("IO ISO on core {}", locals!().core_id());
-    unsafe { locals!().lapic().force_lock() }.send_eoi();
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-/// Represents a programmable interrupt index
-pub enum Irq {
-    // As the 32 first interrupts are reserved for exceptions,
-    // all numbers defined here must be greater than or equal to 32.
-    Timer = 32,
-    Spurious = 33,
-    Xhci = 34,
-    Nic = 35,
-    Nvme = 36,
-    LocalNmi = 37,
-    IoIso = 38,
-}
+info_isr!(spurious_interrupt_handler);
 
 #[inline]
 pub fn int_disable() {
@@ -288,4 +206,36 @@ pub fn int_enable() {
     unsafe {
         core::arch::asm!("sti", options(nomem, preserves_flags, nostack));
     }
+}
+
+#[inline]
+/// Allocates a new IRQ handler in the IDT and return its index.
+///
+/// A CPU index may be passed to bind the IRQ to a specific CPU core.
+pub fn new_irq(
+    handler: extern "x86-interrupt" fn(InterruptStackFrame),
+    core: Option<usize>,
+) -> (u8, usize) {
+    /// IDT index counter.
+    ///
+    /// It skips the first 32 entries, which are reserved for exceptions.
+    static IDX: AtomicU8 = AtomicU8::new(32);
+
+    let core_id = core.unwrap_or_else(|| locals!().core_id());
+    let core_locals = crate::locals::get_specific_core_locals(core_id).unwrap();
+
+    let idx = IDX.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    assert!(idx < 255, "No more IRQs available");
+
+    let idt = unsafe { &mut *core_locals.interrupts().idt.get() };
+
+    assert_eq!(
+        idt[idx].handler_addr(),
+        x86_64::VirtAddr::zero(),
+        "IRQ {} is already used",
+        idx
+    );
+    idt[idx].set_handler_fn(handler);
+
+    (idx, core_id)
 }

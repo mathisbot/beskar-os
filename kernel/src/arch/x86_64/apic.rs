@@ -4,9 +4,9 @@ use core::{
     ptr::NonNull,
     sync::atomic::{AtomicU8, Ordering},
 };
-
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
 use timer::LapicTimer;
+use x86_64::structures::idt::InterruptStackFrame;
 
 use super::cpuid;
 use crate::{
@@ -23,8 +23,6 @@ use beskar_core::arch::{
     },
     x86_64::port::{self, Port},
 };
-
-use super::interrupts::Irq;
 
 pub mod ipi;
 pub mod timer;
@@ -173,12 +171,14 @@ impl LocalApic {
                     acpi::sdt::madt::Polarity::BusDefault => 0,
                 };
 
+                let (irq, _) =
+                    super::interrupts::new_irq(local_nmi_handler, Some(locals!().core_id()));
+
                 let mut value = 0_u32;
                 value |= triggermode << 15;
                 value |= polarity << 13;
                 value |= 0b100 << 8; // NMI delivery mode
-                // TODO: Allocate at runtime for the current core
-                value |= u32::from(super::interrupts::Irq::LocalNmi as u8);
+                value |= u32::from(irq);
 
                 match nmi.lint() {
                     Lint::Lint0 => {
@@ -195,14 +195,17 @@ impl LocalApic {
         let base_ptr: *mut u32 = page.start_address().as_mut_ptr();
         let apic_spurious = unsafe { &mut *base_ptr.byte_add(0xF0) };
         *apic_spurious &= !0xFF; // Clear spurious handler index
-        *apic_spurious |= u32::from(super::interrupts::Irq::Spurious as u8); // Set spurious handler index
+        *apic_spurious |= u32::from(0xFF_u8); // Set spurious handler index
         *apic_spurious |= 0x100; // Enable spurious interrupt
 
         let base = Volatile::new(NonNull::new(base_ptr).unwrap());
 
+        let (irq, _) =
+            super::interrupts::new_irq(timer_interrupt_handler, Some(locals!().core_id()));
+
         Self {
             base,
-            timer: timer::LapicTimer::new(timer::Configuration::new(base, Irq::Timer)),
+            timer: timer::LapicTimer::new(timer::Configuration::new(base, irq)),
             paddr,
             acpi_id,
         }
@@ -251,6 +254,23 @@ impl LocalApic {
     #[inline]
     pub const fn acpi_id(&self) -> u8 {
         self.acpi_id
+    }
+}
+
+extern "x86-interrupt" fn local_nmi_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("Local NMI on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
+extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    let rescheduling_result = crate::process::scheduler::reschedule();
+
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+
+    if let Some(context_switch) = rescheduling_result {
+        // Safety:
+        // If rescheduling happened, interrupts were disabled.
+        unsafe { context_switch.perform() };
     }
 }
 
@@ -453,19 +473,9 @@ impl IoApic {
         let isos = acpi::ACPI.get().unwrap().madt().io_iso();
         let nmi_sources = acpi::ACPI.get().unwrap().madt().io_nmi_sources();
 
-        let mut idx_counter = 0;
         for iso in isos {
             if iso.gsi() < self.gsi_base {
                 continue;
-            }
-
-            // TODO: special handling for source 9 (System Control Interrupt)
-
-            let idx = idx_counter;
-            idx_counter += 1;
-            if idx >= self.max_red_ent() {
-                crate::warn!("IOAPIC has too many redirections. Skipping");
-                break;
             }
 
             let (is_nmi, flags) = nmi_sources
@@ -473,6 +483,12 @@ impl IoApic {
                 .find(|nmis| nmis.gsi() == iso.gsi())
                 .map_or_else(|| (false, iso.flags()), |nmis| (true, nmis.flags()));
 
+            // Mask GSI 2 (PIC cascade)
+            let mask = iso.gsi() == 2;
+
+            let idx = iso.gsi().checked_sub(self.gsi_base).unwrap();
+            let core_id = 0; // Always go to BSP
+            let (irq, _) = super::interrupts::new_irq(io_iso_handler, Some(usize::from(core_id)));
             let red = Redirection {
                 delivery_mode: if is_nmi {
                     DeliveryMode::Nmi
@@ -490,17 +506,39 @@ impl IoApic {
                     acpi::sdt::madt::Polarity::BusDefault => PinPolarity::High,
                 },
                 remote_irr: false,
-                int_vec: super::interrupts::Irq::IoIso as u8, // TODO: Allocate at runtime
-                interrupt_mask: true,                         // FIXME: Do not mask
-                destination: Destination::Physical(0),        // Always go to BSP
+                int_vec: irq,
+                interrupt_mask: mask,
+                destination: Destination::Physical(core_id),
             };
-            self.set_redirection(idx, red);
+            self.set_redirection(idx.try_into().unwrap(), red);
         }
 
-        // TODO: Manually map IRQ1 (PS/2 keyboard) if not present in ISOs
+        // Manually map IRQ1 (PS/2 keyboard) if not present in ISOs
+        let idx = 1_u32.checked_sub(self.gsi_base).unwrap();
+        let (irq, core_id) = super::interrupts::new_irq(ps2_keyboard_interrupt_handler, None);
+        let red = Redirection {
+            delivery_mode: DeliveryMode::Fixed,
+            trigger_mode: TriggerMode::Edge,
+            pin_polarity: PinPolarity::High,
+            remote_irr: false,
+            int_vec: irq,
+            interrupt_mask: false,
+            destination: Destination::Physical(u8::try_from(core_id).unwrap()),
+        };
+        self.set_redirection(idx.try_into().unwrap(), red);
 
         enable_disable_interrupts(true);
     }
+}
+
+extern "x86-interrupt" fn io_iso_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("IO ISO on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
+extern "x86-interrupt" fn ps2_keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::drivers::ps2::handle_keyboard_interrupt();
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
 // Safe register access
