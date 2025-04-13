@@ -1,5 +1,5 @@
 use crate::arch::syscalls;
-pub use beskar_core::drivers::keyboard::KeyEvent;
+pub use beskar_core::drivers::keyboard::{KeyCode, KeyEvent, KeyState};
 use beskar_core::syscall::{Syscall, SyscallExitCode};
 
 #[inline]

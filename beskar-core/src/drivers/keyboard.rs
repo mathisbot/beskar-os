@@ -180,6 +180,43 @@ pub enum KeyCode {
     Unknown,
 }
 
+impl KeyCode {
+    #[must_use]
+    pub const fn as_char(&self) -> char {
+        match self {
+            Self::A => 'a',
+            Self::B => 'b',
+            Self::C => 'c',
+            Self::D => 'd',
+            Self::E => 'e',
+            Self::F => 'f',
+            Self::G => 'g',
+            Self::H => 'h',
+            Self::I => 'i',
+            Self::J => 'j',
+            Self::K => 'k',
+            Self::L => 'l',
+            Self::M => 'm',
+            Self::N => 'n',
+            Self::O => 'o',
+            Self::P => 'p',
+            Self::Q => 'q',
+            Self::R => 'r',
+            Self::S => 's',
+            Self::T => 't',
+            Self::U => 'u',
+            Self::V => 'v',
+            Self::W => 'w',
+            Self::X => 'x',
+            Self::Y => 'y',
+            Self::Z => 'z',
+            Self::Space => ' ',
+
+            _ => '\0',
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u8)]
 pub enum KeyState {
