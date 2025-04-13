@@ -67,11 +67,11 @@ impl Ipi {
 
         let mode = match self.delivery_mode {
             DeliveryMode::Fixed(irq) => {
-                low |= u32::from(irq as u8);
+                low |= u32::from(irq);
                 0b000
             }
             DeliveryMode::LowestPriority(irq) => {
-                low |= u32::from(irq as u8);
+                low |= u32::from(irq);
                 0b001
             }
             DeliveryMode::Smi => 0b010,

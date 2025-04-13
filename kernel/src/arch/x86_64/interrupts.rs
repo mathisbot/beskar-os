@@ -232,8 +232,7 @@ pub fn new_irq(
     assert_eq!(
         idt[idx].handler_addr(),
         x86_64::VirtAddr::zero(),
-        "IRQ {} is already used",
-        idx
+        "IRQ {idx} is already used",
     );
     idt[idx].set_handler_fn(handler);
 

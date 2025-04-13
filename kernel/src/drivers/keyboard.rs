@@ -9,7 +9,7 @@ use hyperdrive::{
 static KEYBOARD_MANAGER: Once<KeyboardManager> = Once::uninit();
 
 pub fn init() {
-    KEYBOARD_MANAGER.call_once(|| KeyboardManager::new());
+    KEYBOARD_MANAGER.call_once(KeyboardManager::new);
 }
 
 struct QueuedKeyEvent {
@@ -55,18 +55,28 @@ pub struct KeyboardManager {
     event_queue: MpscQueue<QueuedKeyEvent>,
 }
 
+impl Default for KeyboardManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeyboardManager {
+    #[must_use]
+    #[inline]
     pub fn new() -> Self {
         Self {
             event_queue: MpscQueue::new(Box::new(QueuedKeyEvent::new(KeyEvent::stub()))),
         }
     }
-
+    #[inline]
     pub fn push_event(&self, event: KeyEvent) {
         let queued_event = Box::new(QueuedKeyEvent::new(event));
         self.event_queue.enqueue(queued_event);
     }
 
+    #[must_use]
+    #[inline]
     pub fn poll_event(&self) -> Option<KeyEvent> {
         self.event_queue.dequeue().map(|event| event.event())
     }

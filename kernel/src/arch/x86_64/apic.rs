@@ -189,7 +189,7 @@ impl LocalApic {
                     }
                 }
             });
-        };
+        }
 
         // Register spurious interrupt handler
         let base_ptr: *mut u32 = page.start_address().as_mut_ptr();

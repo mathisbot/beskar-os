@@ -1,17 +1,12 @@
+use crate::locals;
+use alloc::{boxed::Box, sync::Arc};
 use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
 };
-
-use alloc::{boxed::Box, sync::Arc};
-use beskar_core::arch::{commons::VirtAddr, x86_64::registers::FS};
 use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
 use thread::Thread;
-
-use crate::locals;
-
-use super::Process;
 
 pub mod priority;
 pub mod thread;
@@ -162,8 +157,9 @@ impl Scheduler {
             let new_stack = thread.last_stack_ptr();
 
             let cr3 = thread.process().address_space().cr3_raw();
-            let fs = thread.tls();
-            unsafe { FS::write_base(fs.unwrap_or(VirtAddr::new(0))) };
+            if let Some(tls) = thread.tls() {
+                crate::arch::locals::store_thread_locals(tls)
+            }
 
             if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
                 let tss = unsafe { locals!().gdt().force_lock() }.tss_mut().unwrap();
@@ -238,7 +234,7 @@ pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
 
 #[must_use]
 /// Returns the current process.
-pub fn current_process() -> Arc<Process> {
+pub fn current_process() -> Arc<super::Process> {
     // Safety:
     // Swapping current thread is done using a memory swap of a `Box` (pointer), so it is impossible
     // that the current thread is "partly" read before swap and "partly" after swap.

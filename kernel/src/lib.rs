@@ -5,7 +5,8 @@
 #![allow(
     clippy::missing_panics_doc,
     clippy::similar_names,
-    clippy::missing_errors_doc
+    clippy::missing_errors_doc,
+    clippy::doc_markdown
 )]
 
 use hyperdrive::once::Once;

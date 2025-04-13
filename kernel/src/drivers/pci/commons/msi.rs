@@ -58,9 +58,9 @@ impl Msi {
             },
         );
 
-        let message_data = vector as u16;
+        let message_data = u32::from(vector);
         // FIXME: If not Extended Message Capable, writing to the upper DWORD is not allowed
-        handler.write_raw(message_data_base, u32::from(message_data));
+        handler.write_raw(message_data_base, message_data);
     }
 
     pub fn enable(&self, handler: &mut dyn PciHandler) {

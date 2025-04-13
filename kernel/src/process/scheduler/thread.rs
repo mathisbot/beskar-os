@@ -1,4 +1,4 @@
-use crate::mem::frame_alloc;
+use crate::{arch::context::ThreadRegisters, mem::frame_alloc};
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
     commons::{
@@ -34,12 +34,12 @@ pub struct Thread {
     root_proc: Arc<Process>,
     /// The priority of the thread.
     priority: Priority,
-    /// Used to keep ownership of the stack when needed.
+    /// Used to keep ownership of the stacks when needed.
     stack: Option<ThreadStacks>,
-    /// Keeps track of where the stack is.
+    /// Keeps track of where the stack pointer is.
     last_stack_ptr: *mut u8,
     /// Thread Local Storage
-    tls: Once<VirtAddr>,
+    tls: Once<Tls>,
 
     /// Link to the next thread in the queue.
     link: Link<Self>,
@@ -93,8 +93,6 @@ impl Thread {
         let stack_unused = Self::setup_stack(stack_ptr, &mut stack, entry_point);
         stack_ptr = unsafe { stack_ptr.byte_add(stack_unused) }; // Move stack pointer to the end of the stack
 
-        // FIXME: Stack doesn't have guard page
-
         Self {
             id: ThreadId::new(),
             root_proc,
@@ -138,11 +136,10 @@ impl Thread {
 
         let mut stack_bottom = stack.len();
         assert!(
-            stack_bottom >= MINIMUM_LEFTOVER_STACK + 19 * size_of::<usize>(),
+            stack_bottom
+                >= MINIMUM_LEFTOVER_STACK + size_of::<ThreadRegisters>() + size_of::<usize>(),
             "Stack too small"
         );
-
-        // TODO: Write a custom thread_end function at the end of the stack
 
         // Push the return address
         let entry_point_bytes = (entry_point as usize).to_ne_bytes();
@@ -150,12 +147,11 @@ impl Thread {
         stack_bottom -= size_of::<usize>();
 
         // Push the thread registers
-        let thread_regs = ThreadRegisters {
-            rflags: (Rflags::IOPL_LOW | Rflags::IF),
-            rbp: stack_ptr as u64,
-            rip: entry_point as u64,
-            ..ThreadRegisters::default()
-        };
+        let thread_regs = ThreadRegisters::new(
+            Rflags::IOPL_LOW | Rflags::IF,
+            entry_point as u64,
+            stack_ptr as u64,
+        );
         let thread_regs_bytes = unsafe {
             core::mem::transmute::<ThreadRegisters, [u8; size_of::<ThreadRegisters>()]>(thread_regs)
         };
@@ -225,7 +221,7 @@ impl Thread {
     #[must_use]
     #[inline]
     /// Returns the thread local storage of the thread.
-    pub fn tls(&self) -> Option<VirtAddr> {
+    pub fn tls(&self) -> Option<Tls> {
         self.tls.get().copied()
     }
 
@@ -240,8 +236,8 @@ impl Thread {
 // impl Drop for Thread {
 //     #[inline]
 //     fn drop(&mut self) {
-//         // TODO:
-//         // How to recover allocated frames and free them ?
+//         // TODO: How to free TLS
+//         // (thread's address space is no longer active here)
 //     }
 // }
 
@@ -310,28 +306,6 @@ impl ThreadId {
     }
 }
 
-#[repr(C)]
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThreadRegisters {
-    r15: u64,
-    r14: u64,
-    r13: u64,
-    r12: u64,
-    r11: u64,
-    r10: u64,
-    r9: u64,
-    r8: u64,
-    rdi: u64,
-    rsi: u64,
-    rbp: u64,
-    rbx: u64,
-    rdx: u64,
-    rcx: u64,
-    rax: u64,
-    rflags: u64,
-    rip: u64,
-}
-
 /// Trampoline function to load the binary and call the entry point.
 ///
 /// ## Warning
@@ -393,12 +367,17 @@ extern "C" fn user_trampoline() -> ! {
                 .write_bytes(0, (tlst.mem_size() - tlst.file_size()).try_into().unwrap());
         }
 
+        let tls = Tls {
+            addr: tls_vaddr,
+            size: tls_size,
+        };
+
         // Locking the scheduler's current thread is a bit ugly, but it is better than force locking it
         // (as otherwise the scheduler could get stuck on `Once::get`).
         super::get_scheduler()
             .current_thread
-            .with_locked(|t| t.tls.call_once(|| tls_vaddr));
-        unsafe { FS::write_base(tls_vaddr) };
+            .with_locked(|t| t.tls.call_once(|| tls));
+        crate::arch::locals::store_thread_locals(tls);
     }
 
     unsafe { crate::arch::userspace::enter_usermode(loaded_binary.entry_point(), rsp) };
@@ -495,3 +474,25 @@ impl ThreadStacks {
 //         // How to recover allocated frames and free them ?
 //     }
 // }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Tls {
+    /// The address of the TLS area.
+    addr: VirtAddr,
+    /// The size of the TLS area.
+    size: u64,
+}
+
+impl Tls {
+    #[must_use]
+    #[inline]
+    pub const fn addr(&self) -> VirtAddr {
+        self.addr
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn size(&self) -> u64 {
+        self.size
+    }
+}

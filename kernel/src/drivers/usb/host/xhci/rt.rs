@@ -109,7 +109,7 @@ impl InterruptRegisters {
     }
 
     #[inline]
-    pub fn write(&self, value: InterruptRegisterSetSnapshot) {
+    pub fn write(self, value: InterruptRegisterSetSnapshot) {
         unsafe { self.base.write(value) }
     }
 }
@@ -146,7 +146,7 @@ impl InterruptRegisterSetSnapshot {
     }
 
     #[inline]
-    pub fn set_interrupt_enable(&mut self, enable: bool) {
+    pub const fn set_interrupt_enable(&mut self, enable: bool) {
         if enable {
             self.iman |= 1 << 1;
         } else {

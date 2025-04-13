@@ -44,13 +44,13 @@ impl PortRegistersSet {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PortRegOffset {
     /// Port Status and Control
-    PortSc = 0x0,
+    StsCtrl = 0x0,
     /// Port Power Management Status and Control
-    PortPmsc = 0x4,
+    Pmsc = 0x4,
     /// Port Link Info
-    PortLi = 0x8,
+    LinkInfo = 0x8,
     /// Port Hardware LPM Control
-    PortHlpmc = 0xC,
+    Hlpmc = 0xC,
 }
 
 /// Port Speed ID values
@@ -74,34 +74,39 @@ pub struct PortRegisters {
 }
 
 impl PortRegisters {
-    /// Get the raw register at the specified offset
     #[must_use]
-    pub fn reg_at_offset(&self, offset: PortRegOffset) -> Volatile<ReadWrite, u32> {
+    #[inline]
+    /// Get the raw register at the specified offset
+    pub const fn reg_at_offset(&self, offset: PortRegOffset) -> Volatile<ReadWrite, u32> {
         unsafe { self.base.byte_add(offset as usize) }
     }
 
+    #[must_use]
+    #[inline]
     /// Get the Port Status and Control register
-    #[must_use]
     pub fn port_sc(&self) -> PortStatusControl {
-        PortStatusControl(self.reg_at_offset(PortRegOffset::PortSc))
+        PortStatusControl(self.reg_at_offset(PortRegOffset::StsCtrl))
     }
 
+    #[must_use]
+    #[inline]
     /// Get the Port Power Management Status and Control register
-    #[must_use]
     pub fn port_pmsc(&self) -> Volatile<ReadWrite, u32> {
-        self.reg_at_offset(PortRegOffset::PortPmsc)
+        self.reg_at_offset(PortRegOffset::Pmsc)
     }
 
+    #[must_use]
+    #[inline]
     /// Get the Port Link Info register
-    #[must_use]
     pub fn port_li(&self) -> Volatile<ReadOnly, u32> {
-        self.reg_at_offset(PortRegOffset::PortLi).change_access()
+        self.reg_at_offset(PortRegOffset::LinkInfo).change_access()
     }
 
-    /// Get the Port Hardware LPM Control register
     #[must_use]
+    #[inline]
+    /// Get the Port Hardware LPM Control register
     pub fn port_hlpmc(&self) -> Volatile<ReadWrite, u32> {
-        self.reg_at_offset(PortRegOffset::PortHlpmc)
+        self.reg_at_offset(PortRegOffset::Hlpmc)
     }
 }
 
@@ -122,43 +127,50 @@ impl PortStatusControl {
     const PORT_ENABLED_CHANGE: u32 = 1 << 18;
     const PORT_RESET_CHANGE: u32 = 1 << 21;
 
-    /// Read the raw register value
     #[must_use]
+    #[inline]
+    /// Read the raw register value
     pub fn read_raw(&self) -> u32 {
         unsafe { self.0.read() }
     }
 
+    #[inline]
     /// Write the raw register value
     pub fn write_raw(&self, value: u32) {
         unsafe { self.0.write(value) }
     }
 
-    /// Check if a device is connected to the port
     #[must_use]
+    #[inline]
+    /// Check if a device is connected to the port
     pub fn connected(&self) -> bool {
         self.read_raw() & Self::CURRENT_CONNECT_STATUS != 0
     }
 
-    /// Check if the port is enabled
     #[must_use]
+    #[inline]
+    /// Check if the port is enabled
     pub fn enabled(&self) -> bool {
         self.read_raw() & Self::PORT_ENABLED != 0
     }
 
-    /// Check if the port is in reset
     #[must_use]
+    #[inline]
+    /// Check if the port is in reset
     pub fn in_reset(&self) -> bool {
         self.read_raw() & Self::PORT_RESET != 0
     }
 
-    /// Check if the port is powered
     #[must_use]
+    #[inline]
+    /// Check if the port is powered
     pub fn powered(&self) -> bool {
         self.read_raw() & Self::PORT_POWER != 0
     }
 
-    /// Get the port speed
     #[must_use]
+    #[inline]
+    /// Get the port speed
     pub fn speed(&self) -> Option<PortSpeed> {
         let speed_id = (self.read_raw() & Self::PORT_SPEED_MASK) >> Self::PORT_SPEED_SHIFT;
         match speed_id {
@@ -171,39 +183,46 @@ impl PortStatusControl {
         }
     }
 
-    /// Check if the connect status has changed
     #[must_use]
+    #[inline]
+    /// Check if the connect status has changed
     pub fn connect_status_change(&self) -> bool {
         self.read_raw() & Self::CONNECT_STATUS_CHANGE != 0
     }
 
-    /// Check if the port enabled status has changed
     #[must_use]
+    #[inline]
+    /// Check if the port enabled status has changed
     pub fn port_enabled_change(&self) -> bool {
         self.read_raw() & Self::PORT_ENABLED_CHANGE != 0
     }
 
-    /// Check if the port reset status has changed
     #[must_use]
+    #[inline]
+    /// Check if the port reset status has changed
     pub fn port_reset_change(&self) -> bool {
         self.read_raw() & Self::PORT_RESET_CHANGE != 0
     }
 
+    #[inline]
     /// Clear the connect status change bit
     pub fn clear_connect_status_change(&self) {
         self.write_raw(Self::CONNECT_STATUS_CHANGE);
     }
 
+    #[inline]
     /// Clear the port enabled change bit
     pub fn clear_port_enabled_change(&self) {
         self.write_raw(Self::PORT_ENABLED_CHANGE);
     }
 
+    #[inline]
     /// Clear the port reset change bit
     pub fn clear_port_reset_change(&self) {
         self.write_raw(Self::PORT_RESET_CHANGE);
     }
 
+    #[inline]
     /// Clear all status change bits
     pub fn clear_all_change_bits(&self) {
         self.write_raw(
@@ -211,24 +230,28 @@ impl PortStatusControl {
         );
     }
 
+    #[inline]
     /// Power on the port
     pub fn power_on(&self) {
         let value = self.read_raw();
         self.write_raw((value & !Self::PORT_POWER) | Self::PORT_POWER);
     }
 
+    #[inline]
     /// Power off the port
     pub fn power_off(&self) {
         let value = self.read_raw();
         self.write_raw(value & !Self::PORT_POWER);
     }
 
+    #[inline]
     /// Reset the port
     pub fn reset(&self) {
         let value = self.read_raw();
         self.write_raw((value & !Self::PORT_RESET) | Self::PORT_RESET);
     }
 
+    #[inline]
     /// Clear the port reset bit
     pub fn clear_reset(&self) {
         let value = self.read_raw();

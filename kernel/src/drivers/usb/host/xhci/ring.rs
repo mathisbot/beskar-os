@@ -44,9 +44,10 @@ impl<T: RingElement + Sized> Ring<T> {
         assert!(capacity > 0, "Ring capacity must be greater than 0");
         assert!(usize::from(capacity) * size_of::<T>() <= usize::try_from(M4KiB::SIZE).unwrap());
 
-        let ring_frame =
-            crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.alloc::<M4KiB>())
-                .unwrap();
+        let ring_frame = crate::mem::frame_alloc::with_frame_allocator(
+            crate::mem::frame_alloc::FrameAllocator::alloc::<M4KiB>,
+        )
+        .unwrap();
 
         let flags = Flags::MMIO_SUITABLE | Flags::WRITABLE;
         let physical_mapping = PhysicalMapping::<M4KiB>::new(
@@ -218,6 +219,7 @@ impl EventRingSegment {
     ///
     /// Panics if memory allocation fails
     #[must_use]
+    #[inline]
     pub fn new(capacity: u8) -> Self {
         let ring = Ring::new(capacity);
 
@@ -243,7 +245,8 @@ pub struct EventRingSegmentTableEntry {
 
 impl EventRingSegmentTableEntry {
     #[must_use]
-    pub fn new(_segment: &EventRingSegment) -> Self {
+    #[inline]
+    pub const fn new(_segment: &EventRingSegment) -> Self {
         Self {}
     }
 }
@@ -284,9 +287,10 @@ impl EventRing {
             table_size <= usize::try_from(M4KiB::SIZE).unwrap(),
             "Segment table size exceeds page size"
         );
-        let frame =
-            crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.alloc::<M4KiB>())
-                .unwrap();
+        let frame = crate::mem::frame_alloc::with_frame_allocator(
+            crate::mem::frame_alloc::FrameAllocator::alloc::<M4KiB>,
+        )
+        .unwrap();
         let segment_table_mapping =
             PhysicalMapping::<M4KiB>::new(frame.start_address(), table_size, flags);
 
@@ -307,33 +311,37 @@ impl EventRing {
         }
     }
 
-    /// Get the physical address of the segment table
     #[must_use]
     #[inline]
+    /// Get the physical address of the segment table
     pub const fn segment_table_phys_addr(&self) -> PhysAddr {
         self.segment_table_paddr
     }
 
-    /// Get the number of entries in the segment table
     #[must_use]
-    pub fn segment_table_size(&self) -> usize {
+    #[inline]
+    /// Get the number of entries in the segment table
+    pub const fn segment_table_size(&self) -> usize {
         self.segment_table.len()
     }
 
-    /// Get the current consumer index
     #[must_use]
+    #[inline]
+    /// Get the current consumer index
     pub const fn dequeue_index(&self) -> usize {
         self.dequeue_index
     }
 
-    /// Get the current segment index
     #[must_use]
+    #[inline]
+    /// Get the current segment index
     pub const fn segment_index(&self) -> usize {
         self.segment_index
     }
 
-    /// Get the current segment
     #[must_use]
+    #[inline]
+    /// Get the current segment
     pub fn current_segment(&self) -> &EventRingSegment {
         &self.segments[self.segment_index]
     }

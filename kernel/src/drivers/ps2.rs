@@ -65,6 +65,12 @@ enum Ps2Command {
     KeyboardResetAndSelfTest = 0xFF,
 }
 
+impl Default for Ps2Controller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ps2Controller {
     const DATA_PORT: u16 = 0x60;
     const CMD_STS_PORT: u16 = 0x64;
@@ -72,7 +78,7 @@ impl Ps2Controller {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
-        Ps2Controller {
+        Self {
             data_port: McsLock::new(Port::new(Self::DATA_PORT)),
             cmd_sts_port: McsLock::new(Port::new(Self::CMD_STS_PORT)),
             has_two_ports: AtomicBool::new(false),
@@ -199,7 +205,6 @@ impl Ps2Controller {
         Err(Ps2Error::SendingFailed)
     }
 
-    #[must_use]
     /// Receive a Device to Host command from the PS/2 controller.
     fn recv(&self) -> Ps2Result<u8> {
         for _ in 0..PS2_RETRIES {
@@ -210,7 +215,6 @@ impl Ps2Controller {
         Err(Ps2Error::ReceivingFailed)
     }
 
-    #[must_use]
     #[inline]
     /// Send a command to the PS/2 controller and receive a response.
     fn send_recv(&self, value: u8) -> Ps2Result<u8> {
@@ -231,7 +235,6 @@ pub struct Ps2Keyboard<'c> {
 }
 
 impl<'a> Ps2Keyboard<'a> {
-    #[must_use]
     #[inline]
     pub fn new(controller: &'a Ps2Controller) -> DriverResult<Self> {
         const DEFAULT_SCANCODE_SET: ScancodeSet = ScancodeSet::Set1;
@@ -246,7 +249,6 @@ impl<'a> Ps2Keyboard<'a> {
             crate::warn!("PS/2 keyboard failed to receive reset command");
             return Err(beskar_core::drivers::DriverError::Invalid);
         };
-        crate::debug!("PS/2 keyboard reset value: {:#X}", value);
         if value != 0xFA {
             crate::warn!("PS/2 keyboard didn't acknowledge");
             return Err(beskar_core::drivers::DriverError::Invalid);
@@ -298,7 +300,6 @@ impl<'a> Ps2Keyboard<'a> {
                 return Ok(value);
             } else if value == 0xFE {
                 // Resend
-                continue;
             } else if value == 0xFC || value == 0xFD {
                 // SelfTestFail
                 return Err(Ps2Error::KeyboardResetFailed);
@@ -327,7 +328,7 @@ impl<'a> Ps2Keyboard<'a> {
     #[must_use]
     pub fn scancode_to_keycode(&self, scancode: u8) -> Option<KeyEvent> {
         match self.scancode_set {
-            ScancodeSet::Set1 => self.scancode_set1_to_keycode(scancode),
+            ScancodeSet::Set1 => Self::scancode_set1_to_keycode(scancode),
             // 2 => self.scancode_set2_to_char(scancode),
             // 3 => self.scancode_set3_to_char(scancode),
             _ => None,
@@ -335,7 +336,7 @@ impl<'a> Ps2Keyboard<'a> {
     }
 
     #[must_use]
-    fn scancode_set1_to_keycode(&self, mut scancode: u8) -> Option<KeyEvent> {
+    fn scancode_set1_to_keycode(mut scancode: u8) -> Option<KeyEvent> {
         let pressed = if scancode & 0x80 == 0 {
             KeyState::Pressed
         } else {
@@ -486,9 +487,9 @@ pub fn handle_keyboard_interrupt() {
     };
 
     if scan_code == 0xE0 {
-        assert!(EXTENDED.load(Ordering::Acquire) == false);
+        assert!(!EXTENDED.load(Ordering::Acquire));
         EXTENDED.store(true, Ordering::Relaxed);
-        return;
+        // Do nothing, wait for the next byte
     } else if scan_code == 0xE1 {
         // TODO: Handle pause/break key
         EXTENDED.store(true, Ordering::Relaxed);

@@ -71,3 +71,52 @@ pub unsafe extern "C" fn switch(old_stack: *mut *mut u8, new_stack: *const u8, c
         );
     }
 }
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+/// Registers that are relevant for the thread context.
+pub struct ThreadRegisters {
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
+    r11: u64,
+    r10: u64,
+    r9: u64,
+    r8: u64,
+    rdi: u64,
+    rsi: u64,
+    rbp: u64,
+    rbx: u64,
+    rdx: u64,
+    rcx: u64,
+    rax: u64,
+    rflags: u64,
+    rip: u64,
+}
+
+impl ThreadRegisters {
+    #[must_use]
+    #[inline]
+    pub const fn new(rflags: u64, rip: u64, rbp: u64) -> Self {
+        Self {
+            r15: 0,
+            r14: 0,
+            r13: 0,
+            r12: 0,
+            r11: 0,
+            r10: 0,
+            r9: 0,
+            r8: 0,
+            rdi: 0,
+            rsi: 0,
+            rbp,
+            rbx: 0,
+            rdx: 0,
+            rcx: 0,
+            rax: 0,
+            rflags,
+            rip,
+        }
+    }
+}

@@ -161,11 +161,11 @@ impl Xhci {
         let dcbaa_virt_addr = dcbaa_mapping.translate(dcbaa_phys_addr).unwrap();
 
         // Create the DCBAA
-        let dcbaa_ptr = dcbaa_virt_addr.as_mut_ptr() as *mut context::DeviceContextBaseAddressArray;
+        let dcbaa_ptr = dcbaa_virt_addr.as_mut_ptr();
         unsafe {
             *dcbaa_ptr = context::DeviceContextBaseAddressArray::new(
                 core::slice::from_raw_parts_mut(
-                    dcbaa_virt_addr.as_mut_ptr() as *mut u64,
+                    dcbaa_virt_addr.as_mut_ptr(),
                     usize::from(max_slots) + 1,
                 ),
                 usize::from(max_slots),
@@ -192,7 +192,7 @@ impl Xhci {
         irs_snapshot.erstba = erst_addr.as_u64();
 
         // Set the Event Ring Segment Table Size Register
-        irs_snapshot.erstsz = erst_size as u32;
+        irs_snapshot.erstsz = u32::try_from(erst_size).unwrap();
 
         // Set the Event Ring Dequeue Pointer Register
         let dequeue_ptr = self

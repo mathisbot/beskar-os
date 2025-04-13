@@ -9,19 +9,20 @@ use super::ring::RingElement;
 #[repr(C, align(16))]
 pub struct Trb {
     /// Parameter field (8 bytes)
-    pub parameter: u64,
+    parameter: u64,
     /// Status field (4 bytes)
-    pub status: u32,
+    status: u32,
     /// Control field (4 bytes)
-    pub control: u32,
+    control: u32,
 }
 
 impl Trb {
     /// Size of a TRB in bytes
     pub const SIZE: usize = size_of::<Self>();
 
-    /// Create a new TRB with all fields set to 0
     #[must_use]
+    #[inline]
+    /// Create a new TRB with all fields set to 0
     pub const fn new() -> Self {
         Self {
             parameter: 0,
@@ -30,31 +31,36 @@ impl Trb {
         }
     }
 
-    /// Get the TRB type from the control field
     #[must_use]
-    pub fn trb_type(&self) -> TrbType {
+    #[inline]
+    /// Get the TRB type from the control field
+    pub const fn trb_type(&self) -> TrbType {
         let type_val = (self.control >> 10) & 0x3F;
         TrbType::from_u8(type_val as u8).unwrap()
     }
 
+    #[inline]
     /// Set the TRB type in the control field
-    pub fn set_trb_type(&mut self, trb_type: TrbType) {
+    pub const fn set_trb_type(&mut self, trb_type: TrbType) {
         self.control = (self.control & !(0x3F << 10)) | ((trb_type as u32) << 10);
     }
 
-    /// Get the cycle bit from the control field
     #[must_use]
-    pub fn cycle_bit(&self) -> bool {
+    #[inline]
+    /// Get the cycle bit from the control field
+    pub const fn cycle_bit(&self) -> bool {
         (self.control & 0x1) != 0
     }
 
+    #[inline]
     /// Set the cycle bit in the control field
     pub fn set_cycle_bit(&mut self, cycle: bool) {
         self.control = (self.control & !0x1) | u32::from(cycle);
     }
 
+    #[inline]
     /// Toggle the cycle bit in the control field
-    pub fn toggle_cycle_bit(&mut self) {
+    pub const fn toggle_cycle_bit(&mut self) {
         self.control ^= 0x1;
     }
 }
@@ -265,8 +271,8 @@ pub struct EnableSlotCommandTrb {
 }
 
 impl EnableSlotCommandTrb {
-    /// Create a new Enable Slot Command TRB
     #[must_use]
+    /// Create a new Enable Slot Command TRB
     pub fn new(slot_type: u8) -> Self {
         let mut trb = Trb::new();
         trb.set_trb_type(TrbType::EnableSlotCommand);
@@ -274,14 +280,17 @@ impl EnableSlotCommandTrb {
         Self { trb }
     }
 
-    /// Convert to a generic TRB
     #[must_use]
+    #[inline]
+    /// Convert to a generic TRB
     pub const fn as_trb(&self) -> &Trb {
         &self.trb
     }
 
+    #[must_use]
+    #[inline]
     /// Convert to a mutable generic TRB
-    pub fn as_trb_mut(&mut self) -> &mut Trb {
+    pub const fn as_trb_mut(&mut self) -> &mut Trb {
         &mut self.trb
     }
 }
@@ -293,8 +302,8 @@ pub struct AddressDeviceCommandTrb {
 }
 
 impl AddressDeviceCommandTrb {
-    /// Create a new Address Device Command TRB
     #[must_use]
+    /// Create a new Address Device Command TRB
     pub fn new(input_context_ptr: u64, slot_id: u8) -> Self {
         let mut trb = Trb::new();
         trb.parameter = input_context_ptr;
@@ -303,14 +312,17 @@ impl AddressDeviceCommandTrb {
         Self { trb }
     }
 
-    /// Convert to a generic TRB
     #[must_use]
+    #[inline]
+    /// Convert to a generic TRB
     pub const fn as_trb(&self) -> &Trb {
         &self.trb
     }
 
+    #[must_use]
+    #[inline]
     /// Convert to a mutable generic TRB
-    pub fn as_trb_mut(&mut self) -> &mut Trb {
+    pub const fn as_trb_mut(&mut self) -> &mut Trb {
         &mut self.trb
     }
 }
@@ -322,8 +334,8 @@ pub struct ConfigureEndpointCommandTrb {
 }
 
 impl ConfigureEndpointCommandTrb {
-    /// Create a new Configure Endpoint Command TRB
     #[must_use]
+    /// Create a new Configure Endpoint Command TRB
     pub fn new(input_context_ptr: u64, slot_id: u8, deconfigure: bool) -> Self {
         let mut trb = Trb::new();
         trb.parameter = input_context_ptr;
@@ -335,14 +347,17 @@ impl ConfigureEndpointCommandTrb {
         Self { trb }
     }
 
-    /// Convert to a generic TRB
     #[must_use]
+    #[inline]
+    /// Convert to a generic TRB
     pub const fn as_trb(&self) -> &Trb {
         &self.trb
     }
 
+    #[must_use]
+    #[inline]
     /// Convert to a mutable generic TRB
-    pub fn as_trb_mut(&mut self) -> &mut Trb {
+    pub const fn as_trb_mut(&mut self) -> &mut Trb {
         &mut self.trb
     }
 }
@@ -354,9 +369,9 @@ pub struct LinkTrb {
 }
 
 impl LinkTrb {
-    /// Create a new Link TRB
     #[must_use]
-    pub fn new(ring_segment_ptr: u64, toggle_cycle: bool) -> Self {
+    /// Create a new Link TRB
+    pub const fn new(ring_segment_ptr: u64, toggle_cycle: bool) -> Self {
         let mut trb = Trb::new();
         trb.parameter = ring_segment_ptr;
         trb.set_trb_type(TrbType::Link);
@@ -366,14 +381,17 @@ impl LinkTrb {
         Self { trb }
     }
 
-    /// Convert to a generic TRB
     #[must_use]
+    #[inline]
+    /// Convert to a generic TRB
     pub const fn as_trb(&self) -> &Trb {
         &self.trb
     }
 
+    #[must_use]
+    #[inline]
     /// Convert to a mutable generic TRB
-    pub fn as_trb_mut(&mut self) -> &mut Trb {
+    pub const fn as_trb_mut(&mut self) -> &mut Trb {
         &mut self.trb
     }
 }
@@ -385,8 +403,8 @@ pub struct CommandCompletionEventTrb {
 }
 
 impl CommandCompletionEventTrb {
-    /// Create a new Command Completion Event TRB
     #[must_use]
+    /// Create a new Command Completion Event TRB
     pub fn new(command_trb_ptr: u64, completion_code: CompletionCode, slot_id: u8) -> Self {
         let mut trb = Trb::new();
         trb.parameter = command_trb_ptr;
@@ -395,33 +413,38 @@ impl CommandCompletionEventTrb {
         Self { trb }
     }
 
-    /// Get the command TRB pointer
     #[must_use]
+    #[inline]
+    /// Get the command TRB pointer
     pub const fn command_trb_ptr(&self) -> u64 {
         self.trb.parameter
     }
 
-    /// Get the completion code
     #[must_use]
+    #[inline]
+    /// Get the completion code
     pub fn completion_code(&self) -> Option<CompletionCode> {
         CompletionCode::from_u8(u8::try_from(self.trb.status >> 24).unwrap())
     }
 
-    /// Get the slot ID
     #[must_use]
+    #[inline]
+    /// Get the slot ID
     pub fn slot_id(&self) -> u8 {
         u8::try_from(self.trb.control >> 24).unwrap()
     }
 
-    /// Convert to a generic TRB
     #[must_use]
+    #[inline]
+    /// Convert to a generic TRB
     pub const fn as_trb(&self) -> &Trb {
         &self.trb
     }
 
-    /// Convert from a generic TRB
     #[must_use]
-    pub fn from_trb(trb: &Trb) -> Self {
+    #[inline]
+    /// Convert from a generic TRB
+    pub const fn from_trb(trb: &Trb) -> Self {
         Self { trb: *trb }
     }
 }
@@ -444,15 +467,17 @@ impl PortStatusChangeEventTrb {
         Self { trb }
     }
 
-    /// Convert to a generic TRB
     #[must_use]
+    #[inline]
+    /// Convert to a generic TRB
     pub const fn as_trb(&self) -> &Trb {
         &self.trb
     }
 
-    /// Convert from a generic TRB
     #[must_use]
-    pub fn from_trb(trb: &Trb) -> Self {
+    #[inline]
+    /// Convert from a generic TRB
+    pub const fn from_trb(trb: &Trb) -> Self {
         Self { trb: *trb }
     }
 }
@@ -486,14 +511,17 @@ impl SetupStageTrb {
         Self { trb }
     }
 
-    /// Convert to a generic TRB
     #[must_use]
+    #[inline]
+    /// Convert to a generic TRB
     pub const fn as_trb(&self) -> &Trb {
         &self.trb
     }
 
+    #[must_use]
+    #[inline]
     /// Convert to a mutable generic TRB
-    pub fn as_trb_mut(&mut self) -> &mut Trb {
+    pub const fn as_trb_mut(&mut self) -> &mut Trb {
         &mut self.trb
     }
 }
@@ -507,7 +535,7 @@ pub struct DataStageTrb {
 impl DataStageTrb {
     /// Create a new Data Stage TRB
     #[must_use]
-    pub fn new(
+    pub const fn new(
         data_buffer_ptr: u64,
         transfer_length: u32,
         direction_in: bool,
@@ -526,14 +554,17 @@ impl DataStageTrb {
         Self { trb }
     }
 
-    /// Convert to a generic TRB
     #[must_use]
+    #[inline]
+    /// Convert to a generic TRB
     pub const fn as_trb(&self) -> &Trb {
         &self.trb
     }
 
+    #[must_use]
+    #[inline]
     /// Convert to a mutable generic TRB
-    pub fn as_trb_mut(&mut self) -> &mut Trb {
+    pub const fn as_trb_mut(&mut self) -> &mut Trb {
         &mut self.trb
     }
 }
@@ -547,7 +578,7 @@ pub struct StatusStageTrb {
 impl StatusStageTrb {
     /// Create a new Status Stage TRB
     #[must_use]
-    pub fn new(direction_in: bool, interrupt_on_completion: bool) -> Self {
+    pub const fn new(direction_in: bool, interrupt_on_completion: bool) -> Self {
         let mut trb = Trb::new();
         trb.set_trb_type(TrbType::StatusStage);
         if direction_in {
@@ -559,14 +590,17 @@ impl StatusStageTrb {
         Self { trb }
     }
 
-    /// Convert to a generic TRB
     #[must_use]
+    #[inline]
+    /// Convert to a generic TRB
     pub const fn as_trb(&self) -> &Trb {
         &self.trb
     }
 
+    #[must_use]
+    #[inline]
     /// Convert to a mutable generic TRB
-    pub fn as_trb_mut(&mut self) -> &mut Trb {
+    pub const fn as_trb_mut(&mut self) -> &mut Trb {
         &mut self.trb
     }
 }

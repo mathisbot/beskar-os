@@ -69,6 +69,7 @@ where
         }
     }
 
+    /// Translate a physical address to a virtual address within the mapping.
     pub fn translate(&self, addr: PhysAddr) -> Option<VirtAddr> {
         if addr < self.start_frame.start_address() {
             return None;
@@ -76,6 +77,22 @@ where
 
         let offset = addr - self.start_frame.start_address();
         if offset >= self.count * S::SIZE {
+            return None;
+        }
+
+        Some(self.start_page.start_address() + offset)
+    }
+
+    /// Translate a physical range to a virtual address within the mapping.
+    /// Unlike `Self::translate`, this function has the additional guarantee that the
+    /// whole range is mapped.
+    pub fn translate_range(&self, addr: PhysAddr, length: u64) -> Option<VirtAddr> {
+        if addr < self.start_frame.start_address() {
+            return None;
+        }
+
+        let offset = addr - self.start_frame.start_address();
+        if offset + length > self.count * S::SIZE {
             return None;
         }
 
@@ -94,8 +111,6 @@ where
     for<'a> PageTable<'a>: Mapper<S>,
 {
     fn drop(&mut self) {
-        // TODO: Is it possible to add frames to the frame allocator pool at some point?
-        // Be careful as the frame could be used by another mapping.
         let page_range =
             Page::<S>::range_inclusive(self.start_page, self.start_page + self.count - 1);
 

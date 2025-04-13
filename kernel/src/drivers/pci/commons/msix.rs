@@ -111,7 +111,7 @@ impl MsiX {
         // Bit 11: Edge/Level
         // Bits 12-15: Reserved
         // Bits 16-31: Destination ID (x2APIC ID)
-        let msg_data = vector as u32;
+        let msg_data = u32::from(vector);
 
         let table = TableEntry {
             msg_addr_low: u32::try_from(msg_addr & 0xFFFF_FFFC).unwrap(),

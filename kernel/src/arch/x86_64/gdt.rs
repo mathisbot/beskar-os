@@ -46,7 +46,6 @@ impl Gdt {
         }
     }
 
-    #[must_use]
     /// Initializes the GDT and TSS and load them.
     ///
     /// # Safety

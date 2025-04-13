@@ -134,12 +134,12 @@ fn sc_mmap(args: &Arguments) -> u64 {
 }
 
 fn sc_kpoll(_args: &Arguments) -> u64 {
-    use crate::drivers::keyboard::with_keyboard_manager;
+    use crate::drivers::keyboard::{KeyboardManager, with_keyboard_manager};
     use beskar_core::drivers::keyboard;
 
     // FIXME: Only one process can listen to keyboard events at a time because
     // key events are lost.
     // When VFS is implemented, this should be changed.
-    let key_event = with_keyboard_manager(|km| km.poll_event()).flatten();
+    let key_event = with_keyboard_manager(KeyboardManager::poll_event).flatten();
     keyboard::KeyEvent::pack_option(key_event)
 }
