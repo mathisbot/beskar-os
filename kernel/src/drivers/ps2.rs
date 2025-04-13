@@ -271,7 +271,9 @@ impl<'a> Ps2Keyboard<'a> {
         }
 
         // Set the scancode set
-        let res = keyboard.send_command(Ps2Command::KeyboardScancodeSet as u8).unwrap();
+        let res = keyboard
+            .send_command(Ps2Command::KeyboardScancodeSet as u8)
+            .unwrap();
         if res != 0xFA {
             crate::warn!("PS/2 keyboard didn't acknowledge scancode set command");
             return Err(beskar_core::drivers::DriverError::Invalid);
@@ -342,7 +344,6 @@ impl<'a> Ps2Keyboard<'a> {
         };
 
         let keycode = match scancode {
-            // Lettres (QWERTY)
             0x1E => Some(KeyCode::A),
             0x30 => Some(KeyCode::B),
             0x2E => Some(KeyCode::C),
@@ -370,7 +371,6 @@ impl<'a> Ps2Keyboard<'a> {
             0x15 => Some(KeyCode::Y),
             0x2C => Some(KeyCode::Z),
 
-            // Chiffres
             0x0B => Some(KeyCode::Num0),
             0x02 => Some(KeyCode::Num1),
             0x03 => Some(KeyCode::Num2),
@@ -382,7 +382,6 @@ impl<'a> Ps2Keyboard<'a> {
             0x09 => Some(KeyCode::Num8),
             0x0A => Some(KeyCode::Num9),
 
-            // Symboles
             0x0C => Some(KeyCode::Minus),
             0x0D => Some(KeyCode::Equal),
             0x1A => Some(KeyCode::LeftBracket),
@@ -395,7 +394,6 @@ impl<'a> Ps2Keyboard<'a> {
             0x34 => Some(KeyCode::Dot),
             0x35 => Some(KeyCode::Slash),
 
-            // Contrôle
             0x1C => Some(KeyCode::Enter),
             0x39 => Some(KeyCode::Space),
             0x0E => Some(KeyCode::Backspace),
@@ -406,7 +404,6 @@ impl<'a> Ps2Keyboard<'a> {
             0x1D => Some(KeyCode::CtrlLeft),
             0x38 => Some(KeyCode::AltLeft),
 
-            // Fonctions
             0x3B => Some(KeyCode::F1),
             0x3C => Some(KeyCode::F2),
             0x3D => Some(KeyCode::F3),
@@ -420,7 +417,6 @@ impl<'a> Ps2Keyboard<'a> {
             0x57 => Some(KeyCode::F11),
             0x58 => Some(KeyCode::F12),
 
-            // Numpad
             0x52 => Some(KeyCode::Numpad0),
             0x4F => Some(KeyCode::Numpad1),
             0x50 => Some(KeyCode::Numpad2),

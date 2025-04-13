@@ -39,14 +39,11 @@ impl KeyEvent {
     pub fn pack_option(key_event: Option<Self>) -> u64 {
         const NONE: u64 = u64::MAX;
 
-        match key_event {
-            Some(event) => {
-                let key = u64::from(<KeyCode as Into<u8>>::into(event.key()));
-                let pressed = u64::from(<KeyState as Into<u8>>::into(event.pressed()));
-                key | (pressed << 8)
-            }
-            None => NONE,
-        }
+        key_event.map_or(NONE, |event| {
+            let key = u64::from(<KeyCode as Into<u8>>::into(event.key()));
+            let pressed = u64::from(<KeyState as Into<u8>>::into(event.pressed()));
+            key | (pressed << 8)
+        })
     }
 
     #[must_use]

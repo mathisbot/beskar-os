@@ -16,11 +16,11 @@ pub mod drivers;
 pub mod locals;
 pub mod log;
 mod mem;
-pub mod network;
+mod network;
 pub mod process;
-pub mod screen;
-pub mod storage;
-pub mod syscall;
+mod screen;
+mod storage;
+mod syscall;
 pub mod time;
 
 extern crate alloc;
