@@ -307,3 +307,13 @@ pub fn thread_yield() -> bool {
 pub fn is_scheduling_init() -> bool {
     SCHEDULERS[locals!().core_id()].get().is_some()
 }
+
+/// A back-off stategy that yields the CPU.
+pub struct Yield;
+
+impl hyperdrive::locks::BackOff for Yield {
+    #[inline]
+    fn back_off() {
+        thread_yield();
+    }
+}

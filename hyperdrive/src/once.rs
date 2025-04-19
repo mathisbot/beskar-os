@@ -218,7 +218,6 @@ impl<T> Once<T> {
                 // Here we choose to wait instead of returning `None` if the value is being initialized.
                 // It is a risky design: if initialization panics, the waiting thread will be stuck forever.
                 // However, it reduces "false" panics when the value returned is unwrapped.
-                // FIXME: Add a timeout mechanism to avoid being stuck forever?
                 while self.state.load(Ordering::Acquire) == State::Initializing {
                     core::hint::spin_loop();
                 }

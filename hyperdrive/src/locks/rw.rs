@@ -3,14 +3,35 @@
 //! A simple implementation of a read-write lock.
 //! It is an evolution of the spinlock, where multiple readers can access the data at the same time.
 //!
+//! The structure accept a generic type `T` that is the type of the data protected by the lock.
+//! The second generic type `B` is the back-off strategy used by the lock.
+//!
+//! Note that rustc currently requires that you at least specify either the back-off strategy
+//! (and will infer the type of `T`) or the type of `T` (and will use the default `Spin`
+//! back-off strategy).
+//!
+//! ```rust
+//! # use hyperdrive::locks::rw::RwLock;
+//! # use hyperdrive::locks::Spin;
+//! #
+//! let lock = RwLock::<u32>::new(0); // `Spin` is used
+//! let lock = RwLock::<_, Spin>::new(0); // `T` is inferred
+//! ```
+//!
+//! ```rust,compile_fail
+//! # use hyperdrive::locks::rw::RwLock;
+//! let lock = RwLock::new(0);
+//! ```
+//!
 //! ## Examples
 //!
 //! Reads only:
 //!
 //! ```rust
 //! # use hyperdrive::locks::rw::RwLock;
+//! # use hyperdrive::locks::Spin;
 //! #
-//! let lock = RwLock::new(0);
+//! let lock = RwLock::<_, Spin>::new(0);
 //!
 //! let r1 = lock.read();
 //! let r2 = lock.read();
@@ -23,8 +44,9 @@
 //!
 //! ```rust
 //! # use hyperdrive::locks::rw::RwLock;
+//! # use hyperdrive::locks::Spin;
 //! #
-//! let lock = RwLock::new(0);
+//! let lock = RwLock::<_, Spin>::new(0);
 //!
 //! {
 //!     let mut w = lock.write();
@@ -36,27 +58,29 @@
 //! assert_eq!(*r, 1);
 //! ```
 
+use super::{BackOff, Spin};
 use core::{
     cell::UnsafeCell,
+    marker::PhantomData,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 #[derive(Default)]
 /// A read-write lock.
-pub struct RwLock<T> {
+pub struct RwLock<T, B: BackOff = Spin> {
     /// The data protected by the lock.
     data: UnsafeCell<T>,
     /// The state of the lock.
-    state: AtomicState,
+    state: AtomicState<B>,
 }
 
 // Safety:
 // `RwLock` is a synchronization primitive.
 #[allow(clippy::non_send_fields_in_send_ty)]
-unsafe impl<T> Send for RwLock<T> {}
-unsafe impl<T> Sync for RwLock<T> {}
+unsafe impl<T, B: BackOff> Send for RwLock<T, B> {}
+unsafe impl<T, B: BackOff> Sync for RwLock<T, B> {}
 
-impl<T> RwLock<T> {
+impl<T, B: BackOff> RwLock<T, B> {
     #[must_use]
     pub const fn new(data: T) -> Self {
         Self {
@@ -66,24 +90,24 @@ impl<T> RwLock<T> {
     }
 
     #[must_use]
-    pub fn read(&self) -> ReadGuard<T> {
+    pub fn read(&self) -> ReadGuard<T, B> {
         self.state.read_lock();
         ReadGuard { lock: self }
     }
 
     #[must_use]
-    pub fn write(&self) -> WriteGuard<T> {
+    pub fn write(&self) -> WriteGuard<T, B> {
         self.state.write_lock();
         WriteGuard { lock: self }
     }
 }
 
 /// A guard that allows read-only access to the data.
-pub struct ReadGuard<'a, T> {
-    lock: &'a RwLock<T>,
+pub struct ReadGuard<'a, T, B: BackOff> {
+    lock: &'a RwLock<T, B>,
 }
 
-impl<T> core::ops::Deref for ReadGuard<'_, T> {
+impl<T, B: BackOff> core::ops::Deref for ReadGuard<'_, T, B> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -92,18 +116,18 @@ impl<T> core::ops::Deref for ReadGuard<'_, T> {
     }
 }
 
-impl<T> Drop for ReadGuard<'_, T> {
+impl<T, B: BackOff> Drop for ReadGuard<'_, T, B> {
     fn drop(&mut self) {
         self.lock.state.read_unlock();
     }
 }
 
 /// A guard that allows mutable access to the data.
-pub struct WriteGuard<'a, T> {
-    lock: &'a RwLock<T>,
+pub struct WriteGuard<'a, T, B: BackOff> {
+    lock: &'a RwLock<T, B>,
 }
 
-impl<T> core::ops::Deref for WriteGuard<'_, T> {
+impl<T, B: BackOff> core::ops::Deref for WriteGuard<'_, T, B> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -111,14 +135,14 @@ impl<T> core::ops::Deref for WriteGuard<'_, T> {
     }
 }
 
-impl<T> core::ops::DerefMut for WriteGuard<'_, T> {
+impl<T, B: BackOff> core::ops::DerefMut for WriteGuard<'_, T, B> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         debug_assert_eq!(self.lock.state.readers.load(Ordering::Acquire), 0);
         unsafe { &mut *self.lock.data.get() }
     }
 }
 
-impl<T> Drop for WriteGuard<'_, T> {
+impl<T, B: BackOff> Drop for WriteGuard<'_, T, B> {
     fn drop(&mut self) {
         self.lock.state.write_unlock();
     }
@@ -126,27 +150,30 @@ impl<T> Drop for WriteGuard<'_, T> {
 
 #[derive(Debug, Default)]
 /// The state of the lock.
-struct AtomicState {
+struct AtomicState<B: BackOff = Spin> {
     /// The number of readers.
     readers: AtomicUsize,
     /// Whether a writer has acquired the lock.
     writer: AtomicBool,
+    /// Back-off strategy.
+    _back_off: PhantomData<B>,
 }
 
-impl AtomicState {
+impl<B: BackOff> AtomicState<B> {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
         Self {
             readers: AtomicUsize::new(0),
             writer: AtomicBool::new(false),
+            _back_off: PhantomData,
         }
     }
 
     pub fn read_lock(&self) {
         loop {
             while self.writer.load(Ordering::Acquire) {
-                core::hint::spin_loop();
+                B::back_off();
             }
 
             // TRY to acquire the lock
@@ -176,12 +203,12 @@ impl AtomicState {
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            core::hint::spin_loop();
+            B::back_off();
         }
 
         // Wait until there are no more readers
         while self.readers.load(Ordering::Acquire) != 0 {
-            core::hint::spin_loop();
+            B::back_off();
         }
     }
 
@@ -198,9 +225,11 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::thread::spawn;
 
+    type TestRwLock<T> = RwLock<T, Spin>;
+
     #[test]
     fn read() {
-        let lock = RwLock::new(0);
+        let lock = TestRwLock::new(0);
 
         let r1 = lock.read();
         let r2 = lock.read();
@@ -211,7 +240,7 @@ mod tests {
 
     #[test]
     fn write() {
-        let lock = RwLock::new(0);
+        let lock = TestRwLock::new(0);
 
         let mut w = lock.write();
 
@@ -222,7 +251,7 @@ mod tests {
 
     #[test]
     fn read_write() {
-        let lock = RwLock::new(0);
+        let lock = TestRwLock::new(0);
 
         {
             let _r = lock.read();
@@ -234,7 +263,7 @@ mod tests {
 
     #[test]
     fn write_read() {
-        let lock = RwLock::new(0);
+        let lock = TestRwLock::new(0);
 
         {
             let mut w = lock.write();
@@ -247,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_concurent_writes() {
-        let lock = Arc::new(RwLock::new(0));
+        let lock = Arc::new(TestRwLock::new(0));
 
         let num_threads = 10;
         let iterations = 50;
@@ -277,7 +306,7 @@ mod tests {
     fn test_concurent_reads() {
         let num_readers = 10;
 
-        let lock = Arc::new(RwLock::new(0));
+        let lock = Arc::new(TestRwLock::new(0));
         let barrier = Arc::new(Barrier::new(num_readers));
 
         let mut handles = Vec::with_capacity(num_readers);
@@ -299,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_concurent_readwrite() {
-        let lock = Arc::new(RwLock::new(0));
+        let lock = Arc::new(TestRwLock::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
         let w = spawn({

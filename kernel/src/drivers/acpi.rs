@@ -117,7 +117,7 @@ impl TryFrom<u8> for AcpiRevision {
     }
 }
 
-pub struct AcpiRevisionStorage(AtomicU8);
+struct AcpiRevisionStorage(AtomicU8);
 
 impl AcpiRevisionStorage {
     #[must_use]

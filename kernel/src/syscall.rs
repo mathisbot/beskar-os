@@ -59,6 +59,7 @@ fn sc_print(args: &Arguments) -> SyscallExitCode {
     SyscallExitCode::Success
 }
 
+#[must_use]
 fn sc_exit(args: &Arguments) -> ! {
     #[cfg_attr(not(debug_assertions), allow(unused_variables))]
     let exit_code = args.one;
@@ -78,6 +79,7 @@ fn sc_exit(args: &Arguments) -> ! {
     unsafe { crate::process::scheduler::exit_current_thread() }
 }
 
+#[must_use]
 fn sc_randomgen(args: &Arguments) -> SyscallExitCode {
     let Some(start_vaddr) = VirtAddr::try_new(args.one) else {
         return SyscallExitCode::Failure;
@@ -103,6 +105,7 @@ fn sc_randomgen(args: &Arguments) -> SyscallExitCode {
     }
 }
 
+#[must_use]
 fn sc_mmap(args: &Arguments) -> u64 {
     let len = args.one;
 
@@ -133,6 +136,7 @@ fn sc_mmap(args: &Arguments) -> u64 {
     page_range.start().start_address().as_u64()
 }
 
+#[must_use]
 fn sc_kpoll(_args: &Arguments) -> u64 {
     use crate::drivers::keyboard::{KeyboardManager, with_keyboard_manager};
     use beskar_core::drivers::keyboard;

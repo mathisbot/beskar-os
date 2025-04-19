@@ -47,6 +47,7 @@ pub trait FileSystem {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct PathBuf(String);
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Path<'a>(&'a str);
 
 impl PathBuf {

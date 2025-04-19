@@ -69,7 +69,7 @@ Where:
 - `<NB_CORES>` must be 1 or more, but setting it to at least 2 is better.
 - `<RAM_SIZE>` is in MiB. It must be at least 64.
 - `<CPU_ARCH>` specifies the CPU architecture to emulate. QEMU's default amd64 CPU doesn't support some features that are mandatory. A good choice is `max` (Windows) or `host` (Linux), or even `qemu64,+pse,+msr,+apic,+rdrand,+xsave` for minimal features.
-- `<ACCEL_BACKEND>` allows QEMU to use acceleration based on your OS. On Linux, you can set it to `kvm`, and to `whpx` on Windows (currently incompatible with OMVF files).
+- `<ACCEL_BACKEND>` allows QEMU to use acceleration based on your OS. On Linux, you can set it to `kvm`, and to `whpx` on Windows (currently incompatible with OVMF files).
 
 Other useful parameters:
 - `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.

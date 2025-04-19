@@ -30,8 +30,6 @@ struct SyscallRegisters {
 ///
 /// This function should not be called directly.
 unsafe extern "sysv64" fn syscall_handler_arch() {
-    // The only reason we cannot enable interrupts here is because we are using
-    // a per-core stack for syscall handling.
     unsafe {
         core::arch::naked_asm!(
             "push r11", // Previous RFLAGS
