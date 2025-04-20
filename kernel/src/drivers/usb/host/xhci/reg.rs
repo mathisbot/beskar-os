@@ -84,28 +84,28 @@ impl PortRegisters {
     #[must_use]
     #[inline]
     /// Get the Port Status and Control register
-    pub fn port_sc(&self) -> PortStatusControl {
+    pub const fn port_sc(&self) -> PortStatusControl {
         PortStatusControl(self.reg_at_offset(PortRegOffset::StsCtrl))
     }
 
     #[must_use]
     #[inline]
     /// Get the Port Power Management Status and Control register
-    pub fn port_pmsc(&self) -> Volatile<ReadWrite, u32> {
+    pub const fn port_pmsc(&self) -> Volatile<ReadWrite, u32> {
         self.reg_at_offset(PortRegOffset::Pmsc)
     }
 
     #[must_use]
     #[inline]
     /// Get the Port Link Info register
-    pub fn port_li(&self) -> Volatile<ReadOnly, u32> {
+    pub const fn port_li(&self) -> Volatile<ReadOnly, u32> {
         self.reg_at_offset(PortRegOffset::LinkInfo).change_access()
     }
 
     #[must_use]
     #[inline]
     /// Get the Port Hardware LPM Control register
-    pub fn port_hlpmc(&self) -> Volatile<ReadWrite, u32> {
+    pub const fn port_hlpmc(&self) -> Volatile<ReadWrite, u32> {
         self.reg_at_offset(PortRegOffset::Hlpmc)
     }
 }

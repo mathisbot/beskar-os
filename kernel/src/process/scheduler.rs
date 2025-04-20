@@ -16,13 +16,6 @@ pub mod thread;
 /// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
 pub const SCHEDULER_QUANTUM_MS: u32 = 30;
 
-// TODO: Runtime size for schedulers
-// Currently, it takes 4KiB of memory but on a vast majority of systems, it only needs a few schedulers.
-//
-// Because scheduler will be playing with context switching, we cannot acquire locks.
-// Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
-static SCHEDULERS: [Once<Scheduler>; 256] = [const { Once::uninit() }; 256];
-
 // It is backed by a Multiple Producer Single Consumer queue.
 // It would be a better choice to use a Multiple Producer Multiple Consumer queue,
 // but the only implemention I know uses a fixed size buffer and I don't want to bound the number of threads.
@@ -46,7 +39,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
     FINISHED_QUEUE.call_once(|| MpscQueue::new(Box::pin(Thread::new_stub(kernel_process.clone()))));
 
     let scheduler = Scheduler::new(kernel_thread);
-    SCHEDULERS[locals!().core_id()].call_once(|| scheduler);
+    locals!().scheduler().call_once(|| scheduler);
 
     SPAWN_CLEAN_THREAD.call_once(|| {
         let clean_thread = Thread::new(
@@ -98,6 +91,7 @@ impl Scheduler {
         }
     }
 
+    #[inline]
     pub fn exit_current_thread(&self) {
         self.should_exit_thread.store(true, Ordering::Relaxed);
     }
@@ -158,7 +152,7 @@ impl Scheduler {
 
             let cr3 = thread.process().address_space().cr3_raw();
             if let Some(tls) = thread.tls() {
-                crate::arch::locals::store_thread_locals(tls)
+                crate::arch::locals::store_thread_locals(tls);
             }
 
             if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
@@ -183,9 +177,10 @@ impl Scheduler {
     }
 }
 
+#[must_use]
 #[inline]
 fn get_scheduler() -> &'static Scheduler {
-    SCHEDULERS[locals!().core_id()].get().unwrap()
+    locals!().scheduler().get().unwrap()
 }
 
 extern "C" fn clean_thread() -> ! {
@@ -213,6 +208,7 @@ pub(crate) fn reschedule() -> Option<ContextSwitch> {
 }
 
 #[must_use]
+#[inline]
 /// Returns the current thread ID.
 pub fn current_thread_id() -> thread::ThreadId {
     // Safety:
@@ -223,6 +219,7 @@ pub fn current_thread_id() -> thread::ThreadId {
 }
 
 #[must_use]
+#[inline]
 /// Returns the current thread's state.
 pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
     // Safety:
@@ -233,6 +230,7 @@ pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
 }
 
 #[must_use]
+#[inline]
 /// Returns the current process.
 pub fn current_process() -> Arc<super::Process> {
     // Safety:
@@ -241,6 +239,7 @@ pub fn current_process() -> Arc<super::Process> {
     unsafe { get_scheduler().current_thread.force_lock() }.process()
 }
 
+#[inline]
 pub fn spawn_thread(thread: Pin<Box<Thread>>) {
     QUEUE.get().unwrap().append(thread);
 }
@@ -267,6 +266,7 @@ pub fn set_scheduling(enable: bool) {
     });
 }
 
+#[inline]
 pub fn change_current_thread_priority(priority: priority::Priority) {
     get_scheduler().change_current_thread_priority(priority);
 }
@@ -304,8 +304,10 @@ pub fn thread_yield() -> bool {
     })
 }
 
+#[must_use]
+#[inline]
 pub fn is_scheduling_init() -> bool {
-    SCHEDULERS[locals!().core_id()].get().is_some()
+    locals!().scheduler().get().is_some()
 }
 
 /// A back-off stategy that yields the CPU.

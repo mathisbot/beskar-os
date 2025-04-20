@@ -67,6 +67,7 @@ pub struct CoreLocalsInfo {
     gdt: McsLock<Gdt>,
     interrupts: Interrupts,
     lapic: MUMcsLock<LocalApic>,
+    scheduler: Once<crate::process::scheduler::Scheduler>,
 }
 
 impl CoreLocalsInfo {
@@ -79,6 +80,7 @@ impl CoreLocalsInfo {
             gdt: McsLock::new(Gdt::uninit()),
             interrupts: Interrupts::new(),
             lapic: MUMcsLock::uninit(),
+            scheduler: Once::uninit(),
         }
     }
 
@@ -110,6 +112,12 @@ impl CoreLocalsInfo {
     #[inline]
     pub const fn lapic(&self) -> &MUMcsLock<LocalApic> {
         &self.lapic
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn scheduler(&self) -> &Once<crate::process::scheduler::Scheduler> {
+        &self.scheduler
     }
 }
 

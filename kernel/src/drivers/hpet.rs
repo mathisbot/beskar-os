@@ -515,6 +515,7 @@ pub fn try_with_hpet<R>(f: impl FnOnce(&mut Hpet) -> R) -> Option<R> {
 }
 
 pub fn main_counter_value() -> u64 {
+    assert!(HPET.is_initialized());
     let hpet = unsafe { HPET.force_lock() };
     hpet.main_counter_value().get_value()
 }

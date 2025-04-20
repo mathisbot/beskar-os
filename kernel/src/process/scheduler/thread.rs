@@ -5,11 +5,7 @@ use beskar_core::arch::{
         VirtAddr,
         paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
     },
-    x86_64::{
-        instructions::STACK_DEBUG_INSTR,
-        registers::{FS, Rflags},
-        userspace::Ring,
-    },
+    x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags, userspace::Ring},
 };
 use core::{
     mem::offset_of,

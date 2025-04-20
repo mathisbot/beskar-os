@@ -59,7 +59,6 @@ fn sc_print(args: &Arguments) -> SyscallExitCode {
     SyscallExitCode::Success
 }
 
-#[must_use]
 fn sc_exit(args: &Arguments) -> ! {
     #[cfg_attr(not(debug_assertions), allow(unused_variables))]
     let exit_code = args.one;
