@@ -41,7 +41,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
         with_pci_handler(|handler| handler.read_bar(&network_controller, 0))
     else {
         // FIXME: Apparently, some network controllers use IO BARs
-        crate::warn!("Network controller does not have a memory BAR");
+        video::warn!("Network controller does not have a memory BAR");
         return Err(DriverError::Absent);
     };
 
@@ -70,7 +70,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     };
     e1000e.init(rxdesc_paddr, txdesc_paddr, nb_rx, nb_tx);
 
-    crate::info!(
+    video::info!(
         "Intel e1000e network controller initialized. MAC: {}",
         e1000e.mac_address()
     );
@@ -301,7 +301,7 @@ impl E1000e<'_> {
 }
 
 extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("NIC INTERRUPT on core {}", locals!().core_id());
+    video::info!("NIC INTERRUPT on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 

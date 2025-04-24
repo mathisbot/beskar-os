@@ -11,7 +11,7 @@ pub mod userspace;
 
 pub fn init() {
     cpuid::check_cpuid();
-    crate::debug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
+    video::debug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
 }
 
 #[inline]

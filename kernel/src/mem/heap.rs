@@ -22,7 +22,7 @@ pub fn init() {
         page_allocator.allocate_pages(KERNEL_HEAP_PAGES).unwrap()
     });
 
-    crate::debug!(
+    video::debug!(
         "Kernel heap allocated at {:#x}",
         page_range.start().start_address().as_u64()
     );

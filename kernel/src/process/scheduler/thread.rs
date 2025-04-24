@@ -213,7 +213,7 @@ impl Thread {
     #[inline]
     /// Returns a mutable pointer to the last stack pointer.
     pub const fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
-        &mut self.last_stack_ptr
+        &raw mut self.last_stack_ptr
     }
 
     #[must_use]

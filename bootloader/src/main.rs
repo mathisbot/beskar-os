@@ -33,7 +33,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
             let mut x = 0_u64;
             for i in 0..100_000_000 {
                 unsafe {
-                    core::ptr::write_volatile(&mut x, i);
+                    core::ptr::write_volatile(&raw mut x, i);
                 }
             }
         }

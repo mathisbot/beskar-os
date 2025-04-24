@@ -20,7 +20,7 @@ static KFRAME_ALLOC: MUMcsLock<FrameAllocator> = MUMcsLock::uninit();
 pub fn init(ranges: &[MemoryRange]) {
     assert!(!ranges.is_empty(), "No usable memory regions found");
     if ranges.len() >= MAX_MEMORY_REGIONS {
-        crate::warn!(
+        video::warn!(
             "Too many usable memory regions, using only the first {}",
             MAX_MEMORY_REGIONS
         );
@@ -31,7 +31,7 @@ pub fn init(ranges: &[MemoryRange]) {
         mranges.insert(*r);
     });
 
-    crate::info!("Free memory: {} MiB", mranges.sum() / 1_048_576);
+    video::info!("Free memory: {} MiB", mranges.sum() / 1_048_576);
 
     let mut frallocator = FrameAllocator {
         memory_ranges: mranges,

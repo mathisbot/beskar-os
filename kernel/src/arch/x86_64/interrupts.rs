@@ -100,13 +100,13 @@ extern "x86-interrupt" fn page_fault_handler(
     _stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    crate::error!(
+    video::error!(
         "EXCEPTION: PAGE FAULT {:b} in Thread {}",
         error_code,
         crate::process::scheduler::current_thread_id().as_u64()
     );
-    crate::error!("Accessed Address: {:#x}", Cr2::read().as_u64());
-    // crate::error!("{:#?}", stack_frame);
+    video::error!("Accessed Address: {:#x}", Cr2::read().as_u64());
+    // video::error!("{:#?}", stack_frame);
     panic!();
 }
 
@@ -140,7 +140,7 @@ macro_rules! panic_isr_with_errcode {
 macro_rules! info_isr {
     ($name:ident) => {
         extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
-            crate::info!(
+            video::info!(
                 "{} INTERRUPT on core {} - t{}",
                 stringify!($name),
                 locals!().core_id(),

@@ -134,7 +134,7 @@ pub fn init() -> DriverResult<()> {
     STARTUP_TIME.store(unsafe { core::arch::x86_64::_rdtsc() }, Ordering::Relaxed);
 
     if calibrate_with_rdtsc() || calibrate_with_hpet() || calibrate_with_pit() {
-        crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
+        video::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
         Ok(())
     } else {
         Err(DriverError::Unknown)

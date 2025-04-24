@@ -15,10 +15,8 @@ mod arch;
 pub mod boot;
 pub mod drivers;
 pub mod locals;
-pub mod log;
 mod mem;
 pub mod process;
-mod screen;
 mod syscall;
 pub mod time;
 
@@ -29,9 +27,9 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     arch::interrupts::int_disable();
 
     #[cfg(debug_assertions)]
-    crate::error!("[PANIC]: Core {} - {}", locals!().core_id(), panic_info);
+    video::error!("[PANIC]: Core {} - {}", locals!().core_id(), panic_info);
     #[cfg(not(debug_assertions))]
-    crate::error!(
+    video::error!(
         "[PANIC]: Core {} - {}",
         locals!().core_id(),
         panic_info.message()
@@ -43,7 +41,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         if process::scheduler::current_process().kind() == process::Kind::Kernel {
             // If a kernel (vital) process panics, crash the whole system.
             KERNEL_PANIC.call_once(|| {
-                crate::error!("Kernel process panicked. Sending NMI to all cores.");
+                video::error!("Kernel process panicked. Sending NMI to all cores.");
                 let ipi_nmi =
                     ipi::Ipi::new(ipi::DeliveryMode::Nmi, ipi::Destination::AllExcludingSelf);
                 // FIXME: While the system is unlikely to panic during logging,

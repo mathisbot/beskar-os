@@ -19,7 +19,7 @@ pub static ACPI: Once<Acpi> = Once::uninit();
 pub fn init(rsdp_paddr: PhysAddr) {
     let acpi = Acpi::from_rsdp_paddr(rsdp_paddr);
     ACPI.call_once(|| acpi);
-    crate::debug!("ACPI initialized");
+    video::debug!("ACPI initialized");
 }
 
 /// Advanced Configuration and Power Interface (ACPI) support.
@@ -45,11 +45,11 @@ impl Acpi {
         // TODO: Support multiple HPET blocks?
         let hpet_paddr = rsdt.locate_table(sdt::Signature::Hpet);
         if hpet_paddr.is_none() {
-            crate::warn!("HPET table not found");
+            video::warn!("HPET table not found");
         }
         let mcfg_paddr = rsdt.locate_table(sdt::Signature::Mcfg);
         if mcfg_paddr.is_none() {
-            crate::warn!("MCFG table not found");
+            video::warn!("MCFG table not found");
         }
 
         drop(rsdt);
