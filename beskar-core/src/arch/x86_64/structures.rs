@@ -1,6 +1,9 @@
-use core::marker::PhantomData;
-
-use crate::arch::commons::VirtAddr;
+use super::userspace::Ring;
+use crate::{arch::commons::VirtAddr, static_assert};
+use core::{
+    marker::PhantomData,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -455,6 +458,9 @@ pub struct DescriptorTable {
     limit: u16,
     base: VirtAddr,
 }
+static_assert!(size_of::<DescriptorTable>() == 10);
+static_assert!(core::mem::offset_of!(DescriptorTable, limit) == 0);
+static_assert!(core::mem::offset_of!(DescriptorTable, base) == 2);
 
 impl DescriptorTable {
     #[must_use]
@@ -473,5 +479,254 @@ impl DescriptorTable {
     #[inline]
     pub const fn limit(&self) -> u16 {
         self.limit
+    }
+}
+
+#[repr(transparent)]
+pub struct GdtEntry(AtomicU64);
+
+impl GdtEntry {
+    #[must_use]
+    #[inline]
+    pub const fn new(value: u64) -> Self {
+        Self(AtomicU64::new(value))
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn as_u64(&self) -> u64 {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
+pub struct GlobalDescriptorTable<const SIZE: usize = 8> {
+    table: [GdtEntry; SIZE],
+    len: usize,
+}
+
+impl<const SIZE: usize> GlobalDescriptorTable<SIZE> {
+    #[must_use]
+    #[inline]
+    pub const fn empty() -> Self {
+        assert!(SIZE > 0 && SIZE <= (1 << 13));
+        Self {
+            table: [const { GdtEntry::new(0) }; SIZE],
+            // Null descriptor at index 0
+            len: 1,
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn entries(&self) -> &[GdtEntry] {
+        &self.table[..self.len]
+    }
+
+    /// Appends the given segment descriptor to the GDT, returning the segment selector.
+    ///
+    /// Note that depending on the type of the descriptor this may append
+    /// either one or two new [`Entry`]s to the table.
+    pub fn append(&mut self, entry: GdtDescriptor) -> u16 {
+        let index = match entry {
+            GdtDescriptor::UserSegment(value) => {
+                assert!(self.len < self.table.len(), "GDT is full");
+                self.push(value)
+            }
+            GdtDescriptor::SystemSegment(value_low, value_high) => {
+                assert!(self.len + 2 <= self.table.len(), "GDT is full");
+                let low_idx = self.push(value_low);
+                self.push(value_high);
+                low_idx
+            }
+        };
+        u16::try_from(index << 3).unwrap() | u16::from(entry.dpl().as_u8())
+    }
+
+    const fn push(&mut self, value: u64) -> usize {
+        let idx = self.len;
+        self.table[idx] = GdtEntry::new(value);
+        self.len += 1;
+        idx
+    }
+
+    pub fn load(&self) {
+        let descriptor = DescriptorTable::new(
+            VirtAddr::from_ptr(self.table.as_ptr()),
+            u16::try_from((self.len * size_of::<GdtEntry>()) - 1).unwrap(),
+        );
+        unsafe { super::instructions::load_gdt(&descriptor) };
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum GdtDescriptor {
+    /// Code/Data segment descriptor.
+    UserSegment(u64),
+    /// System segment descriptor (LDT/TSS).
+    SystemSegment(u64, u64),
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
+pub struct GdtDescriptorFlags(u64);
+
+impl GdtDescriptorFlags {
+    /// Set by the processor if this segment has been accessed. Only cleared by software.
+    pub const ACCESSED: Self = Self(1 << 40);
+    /// For code segments, sets the segment as “conforming”, influencing the
+    /// privilege checks that occur on control transfers. Ignored for data segments.
+    pub const CONFORMING: Self = Self(1 << 42);
+    /// This flag must be set for code segments and unset for data segments.
+    pub const EXECUTABLE: Self = Self(1 << 43);
+    /// This flag must be set for user segments.
+    pub const USER_SEGMENT: Self = Self(1 << 44);
+    /// Descriptor Privilege Level 0 (kernel mode).
+    pub const DPL_RING_0: Self = Self(0b00);
+    /// Descriptor Privilege Level 1 (drivers).
+    pub const DPL_RING_1: Self = Self(0b01 << 45);
+    /// Descriptor Privilege Level 2 (hypervisors).
+    pub const DPL_RING_2: Self = Self(0b10 << 45);
+    /// Descriptor Privilege Level 3 (user mode).
+    pub const DPL_RING_3: Self = Self(0b11 << 45);
+    /// Must be set for every segment.
+    pub const PRESENT: Self = Self(1 << 47);
+    /// Must be set for 64-bit code segments.
+    pub const LONG_MODE: Self = Self(1 << 53);
+    /// For code segments, use 32-bit operands. If `Self::LONG_MODE` is set,
+    /// this must be unset. Ignored for data segments.
+    pub const DEFAULT_SIZE: Self = Self(1 << 54);
+
+    /// Ignored in long mode.
+    const WRITABLE: Self = Self(1 << 41);
+
+    /// Mask bits 0 to 23 (included) of the base field.
+    /// Ignored, except for `FS` and `GS` segments.
+    pub const BASE_0_23: Self = Self(0xFF_FFFF << 16);
+    /// Mask bits 24 to 31 (included) of the base field.
+    /// Ignored, except for `FS` and `GS` segments.
+    pub const BASE_24_31: Self = Self(0xFF << 56);
+}
+
+impl core::ops::BitOr for GdtDescriptorFlags {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl GdtDescriptorFlags {
+    const BASE: Self =
+        Self(Self::USER_SEGMENT.0 | Self::PRESENT.0 | Self::ACCESSED.0 | Self::WRITABLE.0);
+    /// A kernel data segment
+    pub const KERNEL_DATA: Self = Self::BASE;
+    /// A 64-bit kernel code segment
+    pub const KERNEL_CODE: Self = Self(Self::BASE.0 | Self::EXECUTABLE.0 | Self::LONG_MODE.0);
+    /// A user data segment
+    pub const USER_DATA: Self = Self(Self::KERNEL_DATA.0 | Self::DPL_RING_3.0);
+    /// A 64-bit user code segment
+    pub const USER_CODE: Self = Self(Self::KERNEL_CODE.0 | Self::DPL_RING_3.0);
+}
+
+impl GdtDescriptor {
+    #[must_use]
+    #[inline]
+    /// Returns the Descriptor Privilege Level.
+    pub fn dpl(self) -> Ring {
+        let value_low = match self {
+            Self::UserSegment(v) | Self::SystemSegment(v, _) => v,
+        };
+        let dpl = (value_low & GdtDescriptorFlags::DPL_RING_3.0) >> 45;
+        Ring::from_u8(u8::try_from(dpl).unwrap())
+    }
+
+    #[must_use]
+    #[inline]
+    /// Creates a segment descriptor for a 64-bit kernel code segment.
+    pub const fn kernel_code_segment() -> Self {
+        Self::UserSegment(GdtDescriptorFlags::KERNEL_CODE.0)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Creates a segment descriptor for a kernel data segment.
+    pub const fn kernel_data_segment() -> Self {
+        Self::UserSegment(GdtDescriptorFlags::KERNEL_DATA.0)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Creates a segment descriptor for a ring 3 data segment.
+    pub const fn user_data_segment() -> Self {
+        Self::UserSegment(GdtDescriptorFlags::USER_DATA.0)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Creates a segment descriptor for a 64-bit ring 3 code segment.
+    pub const fn user_code_segment() -> Self {
+        Self::UserSegment(GdtDescriptorFlags::USER_CODE.0)
+    }
+
+    #[must_use]
+    /// Creates a TSS system descriptor for the given TSS.
+    pub fn tss_segment(tss: &'static TaskStateSegment) -> Self {
+        let ptr = core::ptr::from_ref(tss) as u64;
+
+        let mut low = GdtDescriptorFlags::PRESENT.0;
+
+        // Set base address (low)
+        low |= (ptr & 0xFF_FFFF) << 16; // Bits 16..40
+        low |= (ptr >> 24 & 0xFF) << 56; // Bits 56..64
+
+        // Set limit
+        low |= u64::try_from(size_of::<TaskStateSegment>() - 1).unwrap() & 0xFFFF; // Bits 0..16
+
+        // Set TSS type to "available 64-bit"
+        low |= 0b1001 << 40; // Bits 40..44
+
+        // Set base address (high)
+        let mut high = 0;
+        high |= (ptr >> 32) & 0xFFFF_FFFF; // Bits 0..32
+
+        Self::SystemSegment(low, high)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed(4))]
+pub struct TaskStateSegment {
+    _reserved1: u32,
+    /// RSP0-2
+    pub privilege_stack_table: [VirtAddr; 3],
+    _reserved2: u64,
+    // ISTs
+    pub interrupt_stack_table: [VirtAddr; 7],
+    _reserved3: [u8; 10],
+    pub iomap_base: u16,
+}
+static_assert!(size_of::<TaskStateSegment>() == 0x68);
+
+impl Default for TaskStateSegment {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TaskStateSegment {
+    #[must_use]
+    #[inline]
+    pub const fn new() -> Self {
+        const NULL_VADDR: VirtAddr = unsafe { VirtAddr::new_unchecked(0) };
+        Self {
+            _reserved1: 0,
+            privilege_stack_table: [NULL_VADDR; 3],
+            _reserved2: 0,
+            interrupt_stack_table: [NULL_VADDR; 7],
+            _reserved3: [0; 10],
+            #[allow(clippy::cast_possible_truncation)] // Impossible truncation
+            iomap_base: size_of::<Self>() as u16,
+        }
     }
 }

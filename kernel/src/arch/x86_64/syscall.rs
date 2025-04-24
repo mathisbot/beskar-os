@@ -112,10 +112,10 @@ pub fn init_syscalls() {
 
     locals!().gdt().with_locked(|gdt| {
         Star::write(StarSelectors::new(
-            gdt.kernel_code_selector().unwrap().0,
-            gdt.kernel_data_selector().unwrap().0,
-            gdt.user_code_selector().unwrap().0,
-            gdt.user_data_selector().unwrap().0,
+            gdt.kernel_code_selector().unwrap(),
+            gdt.kernel_data_selector().unwrap(),
+            gdt.user_code_selector().unwrap(),
+            gdt.user_data_selector().unwrap(),
         ));
     });
 

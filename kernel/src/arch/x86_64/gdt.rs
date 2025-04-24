@@ -1,17 +1,17 @@
-use core::mem::MaybeUninit;
-
-use x86_64::structures::{
-    gdt::{GlobalDescriptorTable, SegmentSelector},
-    tss::TaskStateSegment,
-};
-
 use crate::mem::{address_space, frame_alloc};
 use beskar_core::arch::{
-    commons::paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _},
-    x86_64::{instructions::load_tss, registers::CS},
+    commons::{
+        VirtAddr,
+        paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _},
+    },
+    x86_64::{
+        instructions::load_tss,
+        paging::page_table::Flags,
+        registers::CS,
+        structures::{GdtDescriptor, GlobalDescriptorTable, TaskStateSegment},
+    },
 };
-
-use beskar_core::arch::x86_64::paging::page_table::Flags;
+use core::mem::MaybeUninit;
 
 pub const DOUBLE_FAULT_IST: u8 = 0;
 pub const PAGE_FAULT_IST: u8 = 1;
@@ -22,10 +22,10 @@ pub struct Gdt {
     loaded: bool,
     gdt: MaybeUninit<GlobalDescriptorTable>,
     tss: MaybeUninit<TaskStateSegment>,
-    kernel_code_selector: MaybeUninit<SegmentSelector>,
-    kernel_data_selector: MaybeUninit<SegmentSelector>,
-    user_code_selector: MaybeUninit<SegmentSelector>,
-    user_data_selector: MaybeUninit<SegmentSelector>,
+    kernel_code_selector: MaybeUninit<u16>,
+    kernel_data_selector: MaybeUninit<u16>,
+    user_code_selector: MaybeUninit<u16>,
+    user_data_selector: MaybeUninit<u16>,
 }
 
 impl Gdt {
@@ -51,17 +51,13 @@ impl Gdt {
     pub unsafe fn init_load(&mut self) {
         let tss = Self::create_tss();
 
-        let mut gdt = GlobalDescriptorTable::new();
+        let mut gdt = GlobalDescriptorTable::empty();
 
-        let kernel_code_selector =
-            gdt.append(x86_64::structures::gdt::Descriptor::kernel_code_segment());
-        let kernel_data_selector =
-            gdt.append(x86_64::structures::gdt::Descriptor::kernel_data_segment());
+        let kernel_code_selector = gdt.append(GdtDescriptor::kernel_code_segment());
+        let kernel_data_selector = gdt.append(GdtDescriptor::kernel_data_segment());
 
-        let user_data_selector =
-            gdt.append(x86_64::structures::gdt::Descriptor::user_data_segment());
-        let user_code_selector =
-            gdt.append(x86_64::structures::gdt::Descriptor::user_code_segment());
+        let user_data_selector = gdt.append(GdtDescriptor::user_data_segment());
+        let user_code_selector = gdt.append(GdtDescriptor::user_code_segment());
 
         self.gdt.write(gdt);
         self.tss.write(tss);
@@ -77,14 +73,12 @@ impl Gdt {
         // Safety: We just initialized the TSS.
         // According to function's safety guards, `self` is valid for `'static`.
         let tss = unsafe { &*core::ptr::from_ref(self.tss.assume_init_ref()) };
-        let tss_selector = gdt
-            .append(x86_64::structures::gdt::Descriptor::tss_segment(tss))
-            .0;
+        let tss_selector = gdt.append(GdtDescriptor::tss_segment(tss));
 
         gdt.load();
 
         unsafe {
-            CS::set(kernel_code_selector.0);
+            CS::set(kernel_code_selector);
             load_tss(tss_selector);
         }
 
@@ -93,7 +87,7 @@ impl Gdt {
 
     #[must_use]
     fn create_tss() -> TaskStateSegment {
-        fn alloc_stack(count: u64) -> x86_64::VirtAddr {
+        fn alloc_stack(count: u64) -> VirtAddr {
             let (_guard_start, page_range, _guard_end) =
                 address_space::with_kernel_pgalloc(|page_allocator| {
                     page_allocator.allocate_guarded(count).unwrap()
@@ -115,7 +109,7 @@ impl Gdt {
                 });
             });
 
-            x86_64::VirtAddr::new(page_range.end().start_address().as_u64() + (M4KiB::SIZE - 1))
+            VirtAddr::new(page_range.end().start_address().as_u64() + (M4KiB::SIZE - 1))
                 .align_down(16_u64)
         }
 
@@ -128,7 +122,7 @@ impl Gdt {
 
     #[must_use]
     #[inline]
-    pub const fn kernel_code_selector(&self) -> Option<SegmentSelector> {
+    pub const fn kernel_code_selector(&self) -> Option<u16> {
         if self.loaded {
             Some(unsafe { self.kernel_code_selector.assume_init() })
         } else {
@@ -138,7 +132,7 @@ impl Gdt {
 
     #[must_use]
     #[inline]
-    pub const fn kernel_data_selector(&self) -> Option<SegmentSelector> {
+    pub const fn kernel_data_selector(&self) -> Option<u16> {
         if self.loaded {
             Some(unsafe { self.kernel_data_selector.assume_init() })
         } else {
@@ -148,7 +142,7 @@ impl Gdt {
 
     #[must_use]
     #[inline]
-    pub const fn user_code_selector(&self) -> Option<SegmentSelector> {
+    pub const fn user_code_selector(&self) -> Option<u16> {
         if self.loaded {
             Some(unsafe { self.user_code_selector.assume_init() })
         } else {
@@ -158,7 +152,7 @@ impl Gdt {
 
     #[must_use]
     #[inline]
-    pub const fn user_data_selector(&self) -> Option<SegmentSelector> {
+    pub const fn user_data_selector(&self) -> Option<u16> {
         if self.loaded {
             Some(unsafe { self.user_data_selector.assume_init() })
         } else {

@@ -1,5 +1,6 @@
 use crate::locals;
 use alloc::{boxed::Box, sync::Arc};
+use beskar_core::arch::commons::VirtAddr;
 use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
@@ -157,7 +158,7 @@ impl Scheduler {
 
             if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
                 let tss = unsafe { locals!().gdt().force_lock() }.tss_mut().unwrap();
-                tss.privilege_stack_table[0] = x86_64::VirtAddr::new(rsp0.as_ptr() as u64);
+                tss.privilege_stack_table[0] = VirtAddr::from_ptr(rsp0.as_ptr());
             }
 
             if old_should_exit {

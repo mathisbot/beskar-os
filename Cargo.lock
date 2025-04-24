@@ -78,7 +78,6 @@ dependencies = [
  "hyperdrive",
  "linked_list_allocator",
  "thiserror",
- "x86_64",
  "xmas-elf",
 ]
 

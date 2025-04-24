@@ -10,4 +10,4 @@ uefi = { version = "0.34.1", default-features = false }
 xmas-elf = { workspace = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86_64 = { workspace = true }
+x86_64 = { version = "0.15.2", default-features = false, features = ["instructions"] }

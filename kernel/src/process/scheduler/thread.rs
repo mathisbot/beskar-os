@@ -114,6 +114,8 @@ impl Thread {
 
         let trampoline = match root_proc.kind.ring() {
             Ring::User => user_trampoline,
+            Ring::Hypervisor => todo!("Ring2 binary threads"),
+            Ring::Driver => todo!("Ring1 binary threads"),
             Ring::Kernel => todo!("Ring0 binary threads"),
         };
 
