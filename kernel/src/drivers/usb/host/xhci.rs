@@ -4,9 +4,12 @@ use crate::{
     mem::page_alloc::pmap::PhysicalMapping,
 };
 use beskar_core::{
-    arch::commons::{
-        PhysAddr,
-        paging::{Flags, M4KiB, MemSize as _},
+    arch::{
+        commons::{
+            PhysAddr,
+            paging::{Flags, M4KiB, MemSize as _},
+        },
+        x86_64::structures::InterruptStackFrame,
     },
     drivers::{DriverError, DriverResult},
 };
@@ -22,7 +25,6 @@ mod rt;
 use rt::RuntimeRegisters;
 mod db;
 use db::DoorbellRegisters;
-use x86_64::structures::idt::InterruptStackFrame;
 mod context;
 mod ring;
 mod trb;

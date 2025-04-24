@@ -200,7 +200,7 @@ impl<'t> PageTable<'t> {
     #[inline]
     pub fn new(entries: &'t mut Entries) -> Self {
         let page =
-            Page::<M4KiB>::from_start_address(VirtAddr::new(entries.0.as_ptr() as u64)).unwrap();
+            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(entries.0.as_ptr())).unwrap();
         let l4_index = page.p4_index();
 
         if page.p3_index() != l4_index || page.p2_index() != l4_index || page.p1_index() != l4_index

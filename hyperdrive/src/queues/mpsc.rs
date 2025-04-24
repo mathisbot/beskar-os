@@ -172,8 +172,10 @@ unsafe impl<T: Queueable> Sync for MpscQueue<T> {}
 
 /// The result of a dequeue operation.
 pub enum DequeueResult<T: Queueable> {
-    /// Dequeueing was successful.
-    Element(Option<T::Handle>),
+    /// Dequeueing was successful and returned an element.
+    Element(T::Handle),
+    /// The queue is empty.
+    Empty,
     /// The queue is busy.
     InUse,
 }
@@ -185,9 +187,10 @@ impl<T: Queueable> DequeueResult<T> {
     /// ## Panics
     ///
     /// Panics if the result is not of type `Element`.
-    pub fn unwrap(self) -> Option<T::Handle> {
+    pub fn unwrap(self) -> T::Handle {
         match self {
             Self::Element(res) => res,
+            Self::Empty => panic!("Unwrapped a DequeueResult::Empty"),
             Self::InUse => panic!("Unwrapped a DequeueResult::InUse"),
         }
     }
@@ -201,7 +204,7 @@ impl<T: Queueable> DequeueResult<T> {
     /// Otherwise, this is immediately undefined behavior.
     ///
     /// Refer to `core::hint::unreachable_unchecked`.
-    pub unsafe fn unwrap_unchecked(self) -> Option<T::Handle> {
+    pub unsafe fn unwrap_unchecked(self) -> T::Handle {
         let Self::Element(res) = self else {
             unsafe { core::hint::unreachable_unchecked() };
         };
@@ -256,7 +259,8 @@ impl<T: Queueable> MpscQueue<T> {
     pub fn dequeue(&self) -> Option<T::Handle> {
         loop {
             match self.try_dequeue() {
-                DequeueResult::Element(e) => break e,
+                DequeueResult::Element(e) => break Some(e),
+                DequeueResult::Empty => break None,
                 DequeueResult::InUse => core::hint::spin_loop(),
             }
         }
@@ -275,7 +279,7 @@ impl<T: Queueable> MpscQueue<T> {
 
         self.being_dequeued.store(false, Ordering::Release);
 
-        DequeueResult::Element(res)
+        res.map_or(DequeueResult::Empty, DequeueResult::Element)
     }
 
     /// ## Safety

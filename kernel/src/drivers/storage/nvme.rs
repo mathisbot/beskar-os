@@ -10,9 +10,12 @@ use crate::{
     mem::{frame_alloc, page_alloc::pmap::PhysicalMapping},
 };
 use beskar_core::{
-    arch::commons::{
-        PhysAddr, VirtAddr,
-        paging::{Flags, M4KiB, MemSize},
+    arch::{
+        commons::{
+            PhysAddr, VirtAddr,
+            paging::{Flags, M4KiB, MemSize},
+        },
+        x86_64::structures::InterruptStackFrame,
     },
     drivers::{DriverError, DriverResult},
 };
@@ -22,7 +25,6 @@ use hyperdrive::{
     ptrs::volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
 };
 use queue::admin::{AdminCompletionQueue, AdminSubmissionQueue};
-use x86_64::structures::idt::InterruptStackFrame;
 
 mod queue;
 

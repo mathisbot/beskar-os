@@ -8,9 +8,12 @@ use core::ptr::NonNull;
 
 use alloc::vec::Vec;
 use beskar_core::{
-    arch::commons::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, Flags, M4KiB, Mapper, MemSize as _, Page},
+    arch::{
+        commons::{
+            PhysAddr, VirtAddr,
+            paging::{CacheFlush as _, Flags, M4KiB, Mapper, MemSize as _, Page},
+        },
+        x86_64::structures::InterruptStackFrame,
     },
     drivers::{DriverError, DriverResult},
 };
@@ -18,7 +21,6 @@ use hyperdrive::{
     locks::mcs::MUMcsLock,
     ptrs::volatile::{ReadWrite, Volatile},
 };
-use x86_64::structures::idt::InterruptStackFrame;
 
 use super::Nic;
 use crate::{
@@ -494,7 +496,7 @@ impl BufferSet<'_> {
 impl Drop for BufferSet<'_> {
     fn drop(&mut self) {
         let buffers_start_page =
-            Page::<M4KiB>::from_start_address(VirtAddr::new(self.rx_buffers[0].as_ptr() as u64))
+            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(self.rx_buffers[0].as_ptr()))
                 .unwrap();
         let buffer_page_range = Page::range_inclusive(
             buffers_start_page,
@@ -517,7 +519,7 @@ impl Drop for BufferSet<'_> {
             .with_pgalloc(|palloc| palloc.free_pages(buffer_page_range));
 
         let descriptors_page =
-            Page::<M4KiB>::from_start_address(VirtAddr::new(self.rx_descriptors.as_ptr() as u64))
+            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(self.rx_descriptors.as_ptr()))
                 .unwrap();
         let descriptors_frame = process::current().address_space().with_page_table(|pt| {
             let (frame, tlb) = pt.unmap(descriptors_page).unwrap();

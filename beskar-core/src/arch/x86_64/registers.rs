@@ -369,6 +369,30 @@ impl<const P: u32> Msr<P> {
     }
 }
 
+pub struct CS;
+
+impl CS {
+    #[inline]
+    /// # Safety
+    ///
+    /// The value written must be a valid CS selector.
+    pub unsafe fn set(selector: u16) {
+        unsafe {
+            core::arch::asm!("mov cs, {:x}", in(reg) selector, options(nomem, nostack, preserves_flags));
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn read() -> u16 {
+        let selector: u16;
+        unsafe {
+            core::arch::asm!("mov {:x}, cs", out(reg) selector, options(nomem, nostack, preserves_flags));
+        }
+        selector
+    }
+}
+
 pub struct GS;
 
 impl GS {

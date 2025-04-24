@@ -6,7 +6,6 @@ use core::{
 };
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
 use timer::LapicTimer;
-use x86_64::structures::idt::InterruptStackFrame;
 
 use super::cpuid;
 use crate::{
@@ -15,7 +14,9 @@ use crate::{
     mem::{address_space, frame_alloc},
     process,
 };
-use beskar_core::arch::x86_64::{paging::page_table::Flags, registers::Msr};
+use beskar_core::arch::x86_64::{
+    paging::page_table::Flags, registers::Msr, structures::InterruptStackFrame,
+};
 use beskar_core::arch::{
     commons::{
         PhysAddr,

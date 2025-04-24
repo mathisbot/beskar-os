@@ -7,7 +7,7 @@ use beskar_core::arch::{
 #[cold]
 pub fn store_locals(locals: &crate::locals::CoreLocalsInfo) {
     unsafe {
-        GS::write_base(VirtAddr::new(core::ptr::from_ref(locals) as u64));
+        GS::write_base(VirtAddr::from_ptr(core::ptr::from_ref(locals)));
     }
 }
 

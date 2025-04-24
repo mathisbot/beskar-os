@@ -1,8 +1,10 @@
 use super::gdt::{DOUBLE_FAULT_IST, PAGE_FAULT_IST};
 use crate::locals;
-use beskar_core::arch::x86_64::registers::{Cr0, Cr2};
+use beskar_core::arch::x86_64::{
+    registers::{CS, Cr0, Cr2},
+    structures::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
+};
 use core::{cell::UnsafeCell, sync::atomic::AtomicU8};
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 pub fn init() {
     let interrupts = locals!().interrupts();
@@ -11,52 +13,53 @@ pub fn init() {
 
     // Exceptions
 
-    idt.divide_error.set_handler_fn(divide_error_handler);
-    idt.debug.set_handler_fn(debug_handler);
+    let cs = CS::read();
+
+    idt.divide_error.set_handler_fn(divide_error_handler, cs);
+    idt.debug.set_handler_fn(debug_handler, cs);
     idt.non_maskable_interrupt
-        .set_handler_fn(non_maskable_interrupt_handler);
-    idt.breakpoint.set_handler_fn(breakpoint_handler);
-    idt.overflow.set_handler_fn(overflow_handler);
+        .set_handler_fn(non_maskable_interrupt_handler, cs);
+    idt.breakpoint.set_handler_fn(breakpoint_handler, cs);
+    idt.overflow.set_handler_fn(overflow_handler, cs);
     idt.bound_range_exceeded
-        .set_handler_fn(bound_range_exceeded_handler);
-    idt.invalid_opcode.set_handler_fn(invalid_opcode_handler);
+        .set_handler_fn(bound_range_exceeded_handler, cs);
+    idt.invalid_opcode
+        .set_handler_fn(invalid_opcode_handler, cs);
     idt.device_not_available
-        .set_handler_fn(device_not_available_handler);
-    idt.invalid_tss.set_handler_fn(invalid_tss_handler);
+        .set_handler_fn(device_not_available_handler, cs);
+    idt.invalid_tss.set_handler_fn(invalid_tss_handler, cs);
     idt.segment_not_present
-        .set_handler_fn(segment_not_present_handler);
+        .set_handler_fn(segment_not_present_handler, cs);
     idt.stack_segment_fault
-        .set_handler_fn(stack_segment_fault_handler);
+        .set_handler_fn(stack_segment_fault_handler, cs);
     idt.general_protection_fault
-        .set_handler_fn(general_protection_fault_handler);
+        .set_handler_fn(general_protection_fault_handler, cs);
     idt.x87_floating_point
-        .set_handler_fn(x87_floating_point_handler);
-    idt.alignment_check.set_handler_fn(alignment_check_handler);
-    idt.machine_check.set_handler_fn(machine_check_handler);
+        .set_handler_fn(x87_floating_point_handler, cs);
+    idt.alignment_check
+        .set_handler_fn(alignment_check_handler, cs);
+    idt.machine_check.set_handler_fn(machine_check_handler, cs);
     idt.simd_floating_point
-        .set_handler_fn(simd_floating_point_handler);
-    idt.virtualization.set_handler_fn(virtualization_handler);
+        .set_handler_fn(simd_floating_point_handler, cs);
     idt.cp_protection_exception
-        .set_handler_fn(cp_protection_handler);
+        .set_handler_fn(cp_protection_handler, cs);
     idt.hv_injection_exception
-        .set_handler_fn(hv_injection_handler);
+        .set_handler_fn(hv_injection_handler, cs);
     idt.vmm_communication_exception
-        .set_handler_fn(vmm_communication_handler);
+        .set_handler_fn(vmm_communication_handler, cs);
     idt.security_exception
-        .set_handler_fn(security_exception_handler);
+        .set_handler_fn(security_exception_handler, cs);
 
+    idt.double_fault.set_handler_fn(double_fault_handler, cs);
     unsafe {
-        idt.double_fault
-            .set_handler_fn(double_fault_handler)
-            .set_stack_index(DOUBLE_FAULT_IST)
-    };
+        idt.double_fault.set_stack_index(DOUBLE_FAULT_IST);
+    }
+    idt.page_fault.set_handler_fn(page_fault_handler, cs);
     unsafe {
-        idt.page_fault
-            .set_handler_fn(page_fault_handler)
-            .set_stack_index(PAGE_FAULT_IST)
-    };
+        idt.page_fault.set_stack_index(PAGE_FAULT_IST);
+    }
 
-    idt[0xFF].set_handler_fn(spurious_interrupt_handler);
+    idt.irq(0xFF).set_handler_fn(spurious_interrupt_handler, cs);
 
     idt.load();
 
@@ -98,7 +101,7 @@ extern "x86-interrupt" fn page_fault_handler(
     error_code: PageFaultErrorCode,
 ) {
     crate::error!(
-        "EXCEPTION: PAGE FAULT {:?} in Thread {}",
+        "EXCEPTION: PAGE FAULT {:b} in Thread {}",
         error_code,
         crate::process::scheduler::current_thread_id().as_u64()
     );
@@ -149,7 +152,7 @@ macro_rules! info_isr {
 
 panic_isr!(divide_error_handler);
 info_isr!(debug_handler);
-panic_isr!(breakpoint_handler);
+info_isr!(breakpoint_handler);
 panic_isr!(overflow_handler);
 panic_isr!(bound_range_exceeded_handler);
 panic_isr!(invalid_opcode_handler);
@@ -160,7 +163,6 @@ panic_isr_with_errcode!(general_protection_fault_handler);
 panic_isr!(x87_floating_point_handler);
 panic_isr_with_errcode!(alignment_check_handler);
 panic_isr!(simd_floating_point_handler);
-panic_isr!(virtualization_handler);
 panic_isr_with_errcode!(cp_protection_handler);
 panic_isr!(hv_injection_handler);
 panic_isr_with_errcode!(vmm_communication_handler);
@@ -230,11 +232,11 @@ pub fn new_irq(
     let idt = unsafe { &mut *core_locals.interrupts().idt.get() };
 
     assert_eq!(
-        idt[idx].handler_addr(),
-        x86_64::VirtAddr::zero(),
+        idt.irq(idx).handler_vaddr().as_u64(),
+        0,
         "IRQ {idx} is already used",
     );
-    idt[idx].set_handler_fn(handler);
+    idt.irq(idx).set_handler_fn(handler, CS::read());
 
     (idx, core_id)
 }

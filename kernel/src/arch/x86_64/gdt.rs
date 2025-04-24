@@ -1,23 +1,20 @@
 use core::mem::MaybeUninit;
 
-use x86_64::{
-    registers::segmentation::{CS, Segment},
-    structures::{
-        gdt::{GlobalDescriptorTable, SegmentSelector},
-        tss::TaskStateSegment,
-    },
+use x86_64::structures::{
+    gdt::{GlobalDescriptorTable, SegmentSelector},
+    tss::TaskStateSegment,
 };
 
 use crate::mem::{address_space, frame_alloc};
 use beskar_core::arch::{
     commons::paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _},
-    x86_64::instructions::load_tss,
+    x86_64::{instructions::load_tss, registers::CS},
 };
 
 use beskar_core::arch::x86_64::paging::page_table::Flags;
 
-pub const DOUBLE_FAULT_IST: u16 = 0;
-pub const PAGE_FAULT_IST: u16 = 1;
+pub const DOUBLE_FAULT_IST: u8 = 0;
+pub const PAGE_FAULT_IST: u8 = 1;
 
 const RSP0_STACK_PAGE_COUNT: u64 = 16; // 64 KiB
 
@@ -87,7 +84,7 @@ impl Gdt {
         gdt.load();
 
         unsafe {
-            CS::set_reg(kernel_code_selector);
+            CS::set(kernel_code_selector.0);
             load_tss(tss_selector);
         }
 
