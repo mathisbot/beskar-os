@@ -2,14 +2,12 @@
 
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
 
-use crate::arch::interrupts::Irq;
-
 /// Represents the delivery mode of an IPI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeliveryMode {
-    Fixed(Irq),
+    Fixed(u8),
     /// This mode may not be available on all processors.
-    LowestPriority(Irq),
+    LowestPriority(u8),
     /// This IPI is mainly used by UEFI firmware to signal the processor to enter System Management Mode (SMM).
     ///
     /// For now, it shouldn't be used by the kernel.
@@ -69,11 +67,11 @@ impl Ipi {
 
         let mode = match self.delivery_mode {
             DeliveryMode::Fixed(irq) => {
-                low |= u32::from(irq as u8);
+                low |= u32::from(irq);
                 0b000
             }
             DeliveryMode::LowestPriority(irq) => {
-                low |= u32::from(irq as u8);
+                low |= u32::from(irq);
                 0b001
             }
             DeliveryMode::Smi => 0b010,

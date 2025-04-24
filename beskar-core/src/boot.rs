@@ -1,6 +1,6 @@
 use crate::{
     arch::commons::{PhysAddr, VirtAddr},
-    mem::MemoryRegion,
+    mem::ranges::MemoryRange,
     video::FrameBuffer,
 };
 
@@ -8,7 +8,7 @@ use crate::{
 #[derive(Debug)]
 pub struct BootInfo {
     /// A map of the physical memory regions.
-    pub memory_regions: &'static mut [MemoryRegion],
+    pub memory_regions: &'static mut [MemoryRange],
     /// Framebuffer for screen output.
     pub framebuffer: FrameBuffer,
     /// The page index of the recursive level 4 table.

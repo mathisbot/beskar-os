@@ -1,17 +1,13 @@
+use crate::locals;
+use alloc::{boxed::Box, sync::Arc};
+use beskar_core::arch::commons::VirtAddr;
 use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
 };
-
-use alloc::{boxed::Box, sync::Arc};
-use beskar_core::arch::{commons::VirtAddr, x86_64::registers::FS};
 use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
 use thread::Thread;
-
-use crate::locals;
-
-use super::Process;
 
 pub mod priority;
 pub mod thread;
@@ -20,13 +16,6 @@ pub mod thread;
 ///
 /// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
 pub const SCHEDULER_QUANTUM_MS: u32 = 30;
-
-// TODO: Runtime size for schedulers
-// Currently, it takes 4KiB of memory but on a vast majority of systems, it only needs a few schedulers.
-//
-// Because scheduler will be playing with context switching, we cannot acquire locks.
-// Therefore, we will have to use unsafe mutable statics, in combination with `AtomicBool`s.
-static SCHEDULERS: [Once<Scheduler>; 256] = [const { Once::uninit() }; 256];
 
 // It is backed by a Multiple Producer Single Consumer queue.
 // It would be a better choice to use a Multiple Producer Multiple Consumer queue,
@@ -51,7 +40,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
     FINISHED_QUEUE.call_once(|| MpscQueue::new(Box::pin(Thread::new_stub(kernel_process.clone()))));
 
     let scheduler = Scheduler::new(kernel_thread);
-    SCHEDULERS[locals!().core_id()].call_once(|| scheduler);
+    locals!().scheduler().call_once(|| scheduler);
 
     SPAWN_CLEAN_THREAD.call_once(|| {
         let clean_thread = Thread::new(
@@ -70,7 +59,6 @@ pub struct ContextSwitch {
     old_stack: *mut *mut u8,
     new_stack: *const u8,
     cr3: u64,
-    fs: Option<VirtAddr>,
 }
 
 impl ContextSwitch {
@@ -81,7 +69,6 @@ impl ContextSwitch {
     ///
     /// See `kernel::arch::context::context_switch`.
     pub unsafe fn perform(&self) {
-        unsafe { FS::write_base(self.fs.unwrap_or(VirtAddr::new(0))) };
         unsafe { crate::arch::context::switch(self.old_stack, self.new_stack, self.cr3) };
     }
 }
@@ -105,6 +92,7 @@ impl Scheduler {
         }
     }
 
+    #[inline]
     pub fn exit_current_thread(&self) {
         self.should_exit_thread.store(true, Ordering::Relaxed);
     }
@@ -164,7 +152,14 @@ impl Scheduler {
             let new_stack = thread.last_stack_ptr();
 
             let cr3 = thread.process().address_space().cr3_raw();
-            let fs = thread.tls();
+            if let Some(tls) = thread.tls() {
+                crate::arch::locals::store_thread_locals(tls);
+            }
+
+            if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
+                let tss = unsafe { locals!().gdt().force_lock() }.tss_mut().unwrap();
+                tss.privilege_stack_table[0] = VirtAddr::from_ptr(rsp0.as_ptr());
+            }
 
             if old_should_exit {
                 // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
@@ -178,24 +173,24 @@ impl Scheduler {
                 old_stack,
                 new_stack,
                 cr3,
-                fs,
             })
         })?
     }
 }
 
+#[must_use]
 #[inline]
 fn get_scheduler() -> &'static Scheduler {
-    SCHEDULERS[locals!().core_id()].get().unwrap()
+    locals!().scheduler().get().unwrap()
 }
 
 extern "C" fn clean_thread() -> ! {
     loop {
-        if let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
+        while let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
             drop(thread);
-        } else {
-            core::hint::spin_loop();
-            thread_yield();
+        }
+        if !thread_yield() {
+            crate::arch::halt();
         }
     }
 }
@@ -204,7 +199,7 @@ extern "C" fn clean_thread() -> ! {
 #[inline]
 /// Reschedules the scheduler.
 ///
-/// If rescheduling happens, interrupts are disabled.
+/// If rescheduling happens (i.e. returned value is `Some`), interrupts are disabled.
 ///
 /// ## Warning
 ///
@@ -214,23 +209,38 @@ pub(crate) fn reschedule() -> Option<ContextSwitch> {
 }
 
 #[must_use]
+#[inline]
 /// Returns the current thread ID.
 pub fn current_thread_id() -> thread::ThreadId {
     // Safety:
-    // Swapping current thread is done using a memory swap of a `Box` (pointer), so it is impossible
-    // that the current thread is "partly" read before swap and "partly" after swap.
+    // If the scheduler changes the values mid read,
+    // it means the current thread is no longer executed.
+    // Upon return, the thread will be the same as before!
     unsafe { get_scheduler().current_thread.force_lock() }.id()
 }
 
 #[must_use]
+#[inline]
+/// Returns the current thread's state.
+pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
+    // Safety:
+    // If the scheduler changes the values mid read,
+    // it means the current thread is no longer executed.
+    // Upon return, the thread will be the same as before!
+    unsafe { get_scheduler().current_thread.force_lock() }.snapshot()
+}
+
+#[must_use]
+#[inline]
 /// Returns the current process.
-pub fn current_process() -> Arc<Process> {
+pub fn current_process() -> Arc<super::Process> {
     // Safety:
     // Swapping current thread is done using a memory swap of a `Box` (pointer), so it is impossible
     // that the current thread is "partly" read before swap and "partly" after swap.
     unsafe { get_scheduler().current_thread.force_lock() }.process()
 }
 
+#[inline]
 pub fn spawn_thread(thread: Pin<Box<Thread>>) {
     QUEUE.get().unwrap().append(thread);
 }
@@ -257,6 +267,7 @@ pub fn set_scheduling(enable: bool) {
     });
 }
 
+#[inline]
 pub fn change_current_thread_priority(priority: priority::Priority) {
     get_scheduler().change_current_thread_priority(priority);
 }
@@ -282,16 +293,30 @@ pub unsafe fn exit_current_thread() -> ! {
     }
 }
 
-pub fn thread_yield() {
+/// Hint to the scheduler to reschedule the current thread.
+///
+/// Returns `true` if the thread was rescheduled, `false` otherwise.
+pub fn thread_yield() -> bool {
     let context_switch = reschedule();
 
-    // If no other thread is waiting, then we can't continue doing nothing
-    // in the current thread.
-    if let Some(context_switch) = context_switch {
-        unsafe { context_switch.perform() };
-    }
+    context_switch.is_some_and(|cs| {
+        unsafe { cs.perform() };
+        true
+    })
 }
 
+#[must_use]
+#[inline]
 pub fn is_scheduling_init() -> bool {
-    SCHEDULERS[locals!().core_id()].get().is_some()
+    locals!().scheduler().get().is_some()
+}
+
+/// A back-off stategy that yields the CPU.
+pub struct Yield;
+
+impl hyperdrive::locks::BackOff for Yield {
+    #[inline]
+    fn back_off() {
+        thread_yield();
+    }
 }

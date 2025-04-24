@@ -151,7 +151,7 @@ impl LapicTimer {
                 let old_vte = unsafe { apic_timer_vt.read() };
                 // Write IRQ and mode bits
                 let new_vte = (old_vte & !(MASK_IRQ | MASK_IRQ_DISABLE | MODE_MASK))
-                    | u32::from(self.configuration.ivt as u8)
+                    | u32::from(self.configuration.ivt)
                     | (self.configuration.mode.as_vte_bits() << 17);
                 unsafe { apic_timer_vt.write(new_vte) };
 
@@ -173,16 +173,13 @@ impl LapicTimer {
 pub struct Configuration {
     apic_base: Volatile<ReadWrite, u32>,
     rate_mhz: u32,
-    ivt: crate::arch::interrupts::Irq,
+    ivt: u8,
     mode: Mode,
 }
 
 impl Configuration {
     #[must_use]
-    pub const fn new(
-        apic_base: Volatile<ReadWrite, u32>,
-        ivt: crate::arch::interrupts::Irq,
-    ) -> Self {
+    pub const fn new(apic_base: Volatile<ReadWrite, u32>, ivt: u8) -> Self {
         Self {
             apic_base,
             rate_mhz: 0,

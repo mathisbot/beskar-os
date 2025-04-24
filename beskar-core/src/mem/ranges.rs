@@ -1,4 +1,3 @@
-use super::{MemoryRegion, MemoryRegionUsage};
 use core::ops::{Index, IndexMut};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -15,7 +14,7 @@ pub struct MemoryRange {
 impl MemoryRange {
     #[must_use]
     #[inline]
-    pub fn new(start: u64, end: u64) -> Self {
+    pub const fn new(start: u64, end: u64) -> Self {
         assert!(start <= end, "Invalid range");
         Self { start, end }
     }
@@ -55,18 +54,6 @@ impl MemoryRange {
     #[inline]
     pub const fn end(&self) -> u64 {
         self.end
-    }
-}
-
-impl From<MemoryRegion> for MemoryRange {
-    fn from(region: MemoryRegion) -> Self {
-        assert_eq!(
-            region.kind(),
-            MemoryRegionUsage::Usable,
-            "Memory region is not usable"
-        );
-        assert!(region.start() < region.end(), "Invalid memory region");
-        Self::new(region.start(), region.end() - 1)
     }
 }
 
@@ -114,21 +101,6 @@ impl<const N: usize> MemoryRanges<N> {
             ranges: [MemoryRange { start: 0, end: 0 }; N],
             used: 0,
         }
-    }
-
-    #[must_use]
-    pub fn from_regions(regions: &[MemoryRegion]) -> Self {
-        let mut ranges = Self::new();
-
-        for &region in regions
-            .iter()
-            .filter(|region| region.kind() == MemoryRegionUsage::Usable)
-            .take(N)
-        {
-            ranges.insert(region.into());
-        }
-
-        ranges
     }
 
     #[must_use]

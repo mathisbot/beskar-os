@@ -1,4 +1,7 @@
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[repr(u64)]
 pub enum Syscall {
     /// Print syscall.
     ///
@@ -22,25 +25,19 @@ pub enum Syscall {
     ///
     /// The first argument is the size of the memory to allocate.
     MemoryMap = 3,
+    // FIXME: When VFS is working, this syscall should be fused with a file read syscall.
+    /// KeybooardPoll syscall.
+    ///
+    /// Polls the keyboard for input.
+    KeyboardPoll = 4,
     /// Invalid syscall.
     ///
     /// Any syscall that is not recognized.
-    Invalid = 0xFF,
+    Invalid = u64::MAX,
 }
 
-impl From<u64> for Syscall {
-    fn from(value: u64) -> Self {
-        match value {
-            0 => Self::Print,
-            1 => Self::Exit,
-            2 => Self::RandomGen,
-            3 => Self::MemoryMap,
-            _ => Self::Invalid,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[repr(u64)]
 pub enum SyscallExitCode {
     /// The syscall succeeded
     Success = 0,
@@ -49,16 +46,6 @@ pub enum SyscallExitCode {
 
     /// Any other (invalid) exit code.
     Other,
-}
-
-impl From<u64> for SyscallExitCode {
-    fn from(value: u64) -> Self {
-        match value {
-            0 => Self::Success,
-            1 => Self::Failure,
-            _ => Self::Other,
-        }
-    }
 }
 
 impl SyscallExitCode {
@@ -90,20 +77,9 @@ impl SyscallReturnValue {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[repr(u64)]
 pub enum ExitCode {
     Success = 0,
     Failure = 1,
-}
-
-impl TryFrom<u64> for ExitCode {
-    type Error = ();
-
-    fn try_from(value: u64) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Success),
-            1 => Ok(Self::Failure),
-            _ => Err(()),
-        }
-    }
 }

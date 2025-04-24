@@ -7,7 +7,7 @@
 /edk2-x86_64-code.fd
 
 # Forgotten backup files
-/*.bak
+*.bak
 
 # Specifications
 /specs

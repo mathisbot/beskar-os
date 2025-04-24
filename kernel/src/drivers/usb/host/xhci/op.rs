@@ -273,8 +273,13 @@ impl OperationalRegisters {
         unsafe { self.base.cast::<u64>().byte_add(Self::DCBAAP) }
     }
 
-    #[must_use]
-    pub const fn configure(self) -> Volatile<ReadWrite, u32> {
-        unsafe { self.base.byte_add(Self::CONFIGURE) }
+    pub fn configure(self, max_slots_en: u8, u3_en: bool, ci_en: bool) {
+        let mut value = u32::from(max_slots_en);
+        value |= u32::from(u3_en) << 8;
+        value |= u32::from(ci_en) << 9;
+
+        unsafe {
+            self.base.byte_add(Self::CONFIGURE).write(value);
+        }
     }
 }

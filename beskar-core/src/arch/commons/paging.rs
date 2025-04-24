@@ -12,7 +12,13 @@ pub use crate::arch::x86_64::paging::page_table::Flags;
 
 use super::{PhysAddr, VirtAddr};
 
-pub trait MemSize: Copy + Eq + Ord + PartialOrd {
+trait Sealed {}
+impl Sealed for M4KiB {}
+impl Sealed for M2MiB {}
+impl Sealed for M1GiB {}
+
+#[allow(private_bounds)] // That's the point
+pub trait MemSize: Sealed + Copy + Eq + Ord + PartialOrd {
     const SIZE: u64;
 }
 

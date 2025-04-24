@@ -3,7 +3,8 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![allow(clippy::missing_panics_doc, clippy::similar_names)]
 
-use beskar_core::{boot::BootInfo, mem::MemoryRegion};
+use beskar_core::{boot::BootInfo, mem::ranges::MemoryRange};
+use core::alloc::Layout;
 use mem::{EarlyFrameAllocator, Mappings, PageTables};
 use x86_64::structures::paging::{FrameAllocator, Mapper, Page, PageTableFlags};
 
@@ -36,13 +37,10 @@ pub fn create_boot_info(
     page_tables: &mut PageTables,
     mappings: &mut Mappings,
 ) -> x86_64::VirtAddr {
-    let (layout, memory_regions_offset) = core::alloc::Layout::new::<BootInfo>()
-        .extend(
-            core::alloc::Layout::array::<MemoryRegion>(
-                frame_allocator.memory_map_max_region_count(),
-            )
-            .unwrap(),
-        )
+    let max_region_count = frame_allocator.memory_map_max_region_count();
+
+    let (layout, memory_regions_offset) = Layout::new::<BootInfo>()
+        .extend(Layout::array::<MemoryRange>(max_region_count).unwrap())
         .unwrap();
 
     let boot_info_addr = mappings
@@ -72,14 +70,9 @@ pub fn create_boot_info(
         }
     }
 
-    let max_region_count = frame_allocator.memory_map_max_region_count();
-
     let memory_regions = frame_allocator.construct_memory_map(
-        unsafe {
-            core::slice::from_raw_parts_mut(memory_map_regions_addr.as_mut_ptr(), max_region_count)
-        },
-        mappings.kernel_info().paddr(),
-        mappings.kernel_info().size(),
+        unsafe { core::mem::transmute(memory_map_regions_addr) },
+        max_region_count,
     );
 
     // ## Safety

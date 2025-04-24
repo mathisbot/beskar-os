@@ -1,7 +1,29 @@
 #[inline]
 pub unsafe fn load_tss(selector: u16) {
     unsafe {
-        core::arch::asm!("ltr {0:x}", in(reg) selector, options(nostack, preserves_flags));
+        core::arch::asm!("ltr {:x}", in(reg) selector, options(nostack, preserves_flags));
+    }
+}
+
+#[inline]
+pub unsafe fn load_idt(descriptor: &super::structures::DescriptorTable) {
+    unsafe {
+        core::arch::asm!(
+            "lidt [{}]",
+            in(reg) descriptor,
+            options(nostack, readonly, preserves_flags)
+        );
+    }
+}
+
+#[inline]
+pub unsafe fn load_gdt(descriptor: &super::structures::DescriptorTable) {
+    unsafe {
+        core::arch::asm!(
+            "lgdt [{}]",
+            in(reg) descriptor,
+            options(nostack, readonly, preserves_flags)
+        );
     }
 }
 

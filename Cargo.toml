@@ -16,8 +16,7 @@ beskar-lib = { path = "beskar-lib" }
 bootloader = { path = "bootloader" }
 hyperdrive = { path = "hyperdrive" }
 thiserror = { version = "2.0.12", default-features = false }
-x86_64 = { version = "0.15.2", default-features = false, features = ["abi_x86_interrupt","instructions"] }
-xmas-elf = "0.9.1"
+xmas-elf = "0.10.0"
 
 [build-dependencies]
 bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }

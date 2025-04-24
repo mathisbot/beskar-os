@@ -1,10 +1,13 @@
 // FIXME: <https://wiki.osdev.org/AHCI#Determining_what_mode_the_controller_is_in>
 use crate::{
     drivers::pci::{self, Bar, Device},
-    mem::page_alloc::pmap::{self, PhysicalMapping},
+    mem::page_alloc::pmap::PhysicalMapping,
 };
 use beskar_core::{
-    arch::commons::{VirtAddr, paging::M4KiB},
+    arch::commons::{
+        VirtAddr,
+        paging::{Flags, M4KiB},
+    },
     drivers::{DriverError, DriverResult},
 };
 
@@ -21,7 +24,7 @@ pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
 
     let ahci_paddr = bar.base_address();
 
-    let flags = pmap::FLAGS_MMIO;
+    let flags = Flags::MMIO_SUITABLE;
     let pmap = PhysicalMapping::<M4KiB>::new(ahci_paddr, 64, flags);
 
     let ahci_base = pmap.translate(ahci_paddr).unwrap();

@@ -182,10 +182,8 @@ pub fn make_mappings(
     let ramdisk_info = ramdisk.map(|ramdisk| {
         let size = u64::try_from(ramdisk.len()).unwrap();
 
-        let start_frame = {
-            let paddr = x86_64::PhysAddr::new(ramdisk.as_ptr() as u64);
-            PhysFrame::from_start_address(paddr).unwrap()
-        };
+        let ramdisk_paddr = x86_64::PhysAddr::new(ramdisk.as_ptr() as u64);
+        let start_frame = { PhysFrame::from_start_address(ramdisk_paddr).unwrap() };
         let end_frame = start_frame + (size / M4KiB::SIZE);
 
         let start_page = {

@@ -6,6 +6,7 @@ use beskar_core::{
 use core::{fmt::Write, sync::atomic::AtomicBool};
 use hyperdrive::locks::mcs::MUMcsLock;
 
+#[cfg(debug_assertions)]
 static SERIAL: MUMcsLock<SerialCom> = MUMcsLock::uninit();
 
 static LOG_ON_SCREEN: AtomicBool = AtomicBool::new(true);
@@ -15,9 +16,12 @@ static SCREEN_LOGGER: MUMcsLock<ScreenWriter> = MUMcsLock::uninit();
 ///
 /// This function should be called at the very beginning of the kernel.
 pub fn init_serial() {
-    let mut serial = SerialCom::new(ComNumber::Com1);
-    if serial.init().is_ok() {
-        SERIAL.init(serial);
+    #[cfg(debug_assertions)]
+    {
+        let mut serial = SerialCom::new(ComNumber::Com1);
+        if serial.init().is_ok() {
+            SERIAL.init(serial);
+        }
     }
 }
 

@@ -1,11 +1,7 @@
 //! Mesage Signaled Interrupts (MSI) support.
-
-use crate::arch::interrupts::Irq;
-use crate::locals;
-
 use super::super::{PciHandler, commons::CapabilityHeader, iter_capabilities};
-
 use super::PciAddress;
+use crate::locals::get_specific_core_locals;
 
 pub struct Msi {
     capability: MsiCapability,
@@ -20,9 +16,10 @@ impl Msi {
     }
 
     // TODO: Use Multiple Message
-    pub fn setup_int(&self, vector: Irq, handler: &mut dyn PciHandler) {
-        let lapic_paddr = unsafe { locals!().lapic().force_lock().paddr() };
-        let lapic_id = locals!().apic_id(); // TODO: Load balance between APs?
+    pub fn setup_int(&self, vector: u8, handler: &mut dyn PciHandler, core_id: usize) {
+        let core_locals = get_specific_core_locals(core_id).unwrap();
+        let lapic_paddr = unsafe { core_locals.lapic().force_lock() }.paddr();
+        let lapic_id = core_locals.apic_id();
 
         let msg_addr = lapic_paddr.as_u64() | (u64::from(lapic_id) << 12);
         let low_dword = u32::try_from(msg_addr & 0xFFFF_FFFC).unwrap();
@@ -61,9 +58,9 @@ impl Msi {
             },
         );
 
-        let message_data = vector as u16;
+        let message_data = u32::from(vector);
         // FIXME: If not Extended Message Capable, writing to the upper DWORD is not allowed
-        handler.write_raw(message_data_base, u32::from(message_data));
+        handler.write_raw(message_data_base, message_data);
     }
 
     pub fn enable(&self, handler: &mut dyn PciHandler) {

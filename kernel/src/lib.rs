@@ -5,7 +5,8 @@
 #![allow(
     clippy::missing_panics_doc,
     clippy::similar_names,
-    clippy::missing_errors_doc
+    clippy::missing_errors_doc,
+    clippy::doc_markdown
 )]
 
 use hyperdrive::once::Once;
@@ -16,11 +17,11 @@ pub mod drivers;
 pub mod locals;
 pub mod log;
 mod mem;
-pub mod network;
+mod network;
 pub mod process;
-pub mod screen;
-pub mod storage;
-pub mod syscall;
+mod screen;
+mod storage;
+mod syscall;
 pub mod time;
 
 extern crate alloc;

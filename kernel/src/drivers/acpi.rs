@@ -1,6 +1,5 @@
-use core::sync::atomic::AtomicU8;
-
 use beskar_core::arch::commons::PhysAddr;
+use core::sync::atomic::AtomicU8;
 use hyperdrive::once::Once;
 
 mod rsdp;
@@ -118,7 +117,7 @@ impl TryFrom<u8> for AcpiRevision {
     }
 }
 
-pub struct AcpiRevisionStorage(AtomicU8);
+struct AcpiRevisionStorage(AtomicU8);
 
 impl AcpiRevisionStorage {
     #[must_use]

@@ -2,10 +2,12 @@
 use core::ops::{Add, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 /// A virtual address.
 pub struct VirtAddr(u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 /// A physical address.
 pub struct PhysAddr(u64);
 
@@ -13,23 +15,17 @@ impl VirtAddr {
     #[must_use]
     #[inline]
     pub const fn new(addr: u64) -> Self {
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-        // Perform sign extension
-        let extended = ((addr << 16) as i64 >> 16) as u64;
-        assert!(extended == addr);
-        Self(extended)
+        Self::try_new(addr).expect("Invalid virtual address")
     }
 
     #[must_use]
     #[inline]
     pub const fn try_new(addr: u64) -> Option<Self> {
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-        // Perform sign extension
-        let extended = ((addr << 16) as i64 >> 16) as u64;
-        if extended != addr {
+        let extended = Self::new_extend(addr);
+        if extended.as_u64() != addr {
             return None;
         }
-        Some(Self(extended))
+        Some(extended)
     }
 
     #[must_use]
@@ -37,7 +33,28 @@ impl VirtAddr {
     /// Create a new valid virtual address by sign extending the address.
     pub const fn new_extend(addr: u64) -> Self {
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        // Perform sign extension
         Self(((addr << 16) as i64 >> 16) as u64)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn from_ptr<T: ?Sized>(ptr: *const T) -> Self {
+        // Safety: pointers are always canonical addresses
+        unsafe { Self::new_unchecked(ptr.cast::<()>() as u64) }
+    }
+
+    #[must_use]
+    #[inline]
+    /// # Safety
+    ///
+    /// The given address must be a canonical virtual address.
+    pub const unsafe fn new_unchecked(addr: u64) -> Self {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        {
+            debug_assert!(((addr << 16) as i64 >> 16) as u64 == addr);
+        }
+        Self(addr)
     }
 
     #[must_use]
@@ -69,7 +86,7 @@ impl VirtAddr {
     #[inline]
     pub const fn align_up(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
-        Self::new_extend((self.0 + (align - 1)) & !(align - 1))
+        Self::new_extend((self.0.checked_add(align - 1).unwrap()) & !(align - 1))
     }
 
     #[must_use]
@@ -98,12 +115,28 @@ impl VirtAddr {
 }
 
 impl PhysAddr {
+    pub const MAX_VALID: u64 = 0x000F_FFFF_FFFF_FFFF;
+
     #[must_use]
     #[inline]
     pub const fn new(addr: u64) -> Self {
-        let phys_addr = addr % (1 << 52);
-        assert!(phys_addr == addr);
-        Self(phys_addr)
+        Self::try_new(addr).expect("Invalid physical address")
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn try_new(addr: u64) -> Option<Self> {
+        let truncated = Self::new_truncate(addr);
+        if truncated.as_u64() != addr {
+            return None;
+        }
+        Some(truncated)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn new_truncate(addr: u64) -> Self {
+        Self(addr & Self::MAX_VALID)
     }
 
     #[must_use]
@@ -123,7 +156,7 @@ impl PhysAddr {
     #[inline]
     pub const fn align_up(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
-        Self::new((self.0 + (align - 1)) & !(align - 1))
+        Self::new((self.0.checked_add(align - 1).unwrap()) & !(align - 1))
     }
 }
 
@@ -210,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "assertion failed: phys_addr == addr"]
+    #[should_panic = "Invalid physical address"]
     fn test_p_reject() {
         let _ = PhysAddr::new(0x1234567890ABCDEF);
     }
@@ -251,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "assertion failed: extended == addr"]
+    #[should_panic = "Invalid virtual address"]
     fn test_v_reject() {
         let _ = VirtAddr::new(0x1234567890ABCDEF);
     }

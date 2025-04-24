@@ -41,12 +41,14 @@ macro_rules! entry_point {
     };
 }
 
-#[inline]
 /// Initialize the standard library.
 ///
 /// ## Safety
 ///
 /// Do not call this function.
+#[allow(clippy::missing_panics_doc)]
+#[doc(hidden)]
+#[inline]
 pub unsafe fn __init() {
     let res = mem::mmap(mem::HEAP_SIZE);
     unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };

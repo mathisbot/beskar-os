@@ -260,7 +260,7 @@ impl LStar {
 
     #[inline]
     pub fn write(f: unsafe extern "sysv64" fn()) {
-        unsafe { Self::MSR.write(f as u64) };
+        unsafe { Self::MSR.write(u64::try_from(f as usize).unwrap()) };
     }
 }
 
@@ -366,6 +366,30 @@ impl<const P: u32> Msr<P> {
                 options(nostack, preserves_flags)
             );
         }
+    }
+}
+
+pub struct CS;
+
+impl CS {
+    #[inline]
+    /// # Safety
+    ///
+    /// The value written must be a valid CS selector.
+    pub unsafe fn set(selector: u16) {
+        unsafe {
+            core::arch::asm!("mov cs, {:x}", in(reg) selector, options(nomem, nostack, preserves_flags));
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn read() -> u16 {
+        let selector: u16;
+        unsafe {
+            core::arch::asm!("mov {:x}, cs", out(reg) selector, options(nomem, nostack, preserves_flags));
+        }
+        selector
     }
 }
 

@@ -28,6 +28,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::Exit => sc_exit(args),
         Syscall::RandomGen => SyscallReturnValue::Code(sc_randomgen(args)),
         Syscall::MemoryMap => SyscallReturnValue::Value(sc_mmap(args)),
+        Syscall::KeyboardPoll => SyscallReturnValue::Value(sc_kpoll(args)),
         Syscall::Invalid => SyscallReturnValue::Code(SyscallExitCode::Failure),
     }
 }
@@ -77,6 +78,7 @@ fn sc_exit(args: &Arguments) -> ! {
     unsafe { crate::process::scheduler::exit_current_thread() }
 }
 
+#[must_use]
 fn sc_randomgen(args: &Arguments) -> SyscallExitCode {
     let Some(start_vaddr) = VirtAddr::try_new(args.one) else {
         return SyscallExitCode::Failure;
@@ -102,6 +104,7 @@ fn sc_randomgen(args: &Arguments) -> SyscallExitCode {
     }
 }
 
+#[must_use]
 fn sc_mmap(args: &Arguments) -> u64 {
     let len = args.one;
 
@@ -129,5 +132,17 @@ fn sc_mmap(args: &Arguments) -> u64 {
 
     // FIXME: Should the area be zeroed?
 
-    page_range.start.start_address().as_u64()
+    page_range.start().start_address().as_u64()
+}
+
+#[must_use]
+fn sc_kpoll(_args: &Arguments) -> u64 {
+    use crate::drivers::keyboard::{KeyboardManager, with_keyboard_manager};
+    use beskar_core::drivers::keyboard;
+
+    // FIXME: Only one process can listen to keyboard events at a time because
+    // key events are lost.
+    // When VFS is implemented, this should be changed.
+    let key_event = with_keyboard_manager(KeyboardManager::poll_event).flatten();
+    keyboard::KeyEvent::pack_option(key_event)
 }

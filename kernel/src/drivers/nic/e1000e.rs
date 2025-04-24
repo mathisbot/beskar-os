@@ -8,9 +8,12 @@ use core::ptr::NonNull;
 
 use alloc::vec::Vec;
 use beskar_core::{
-    arch::commons::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
+    arch::{
+        commons::{
+            PhysAddr, VirtAddr,
+            paging::{CacheFlush as _, Flags, M4KiB, Mapper, MemSize as _, Page},
+        },
+        x86_64::structures::InterruptStackFrame,
     },
     drivers::{DriverError, DriverResult},
 };
@@ -22,7 +25,8 @@ use hyperdrive::{
 use super::Nic;
 use crate::{
     drivers::pci::{self, Bar, with_pci_handler},
-    mem::page_alloc::pmap::{self, PhysicalMapping},
+    locals,
+    mem::page_alloc::pmap::PhysicalMapping,
     network::l2::ethernet::MacAddress,
     process,
 };
@@ -47,7 +51,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     // Section 10.1.1.5 (p.287): If needed, IO memory is in BAR2.
     // Section 10.1.1.3 (p.286): MSI-X tables are in BAR3.
 
-    let flags = pmap::FLAGS_MMIO;
+    let flags = Flags::MMIO_SUITABLE;
     // Max size is 128 KiB
     let pmap = PhysicalMapping::<M4KiB>::new(reg_paddr, 128 * 1024, flags);
     let reg_vaddr = pmap.translate(reg_paddr).unwrap();
@@ -192,12 +196,14 @@ impl E1000e<'_> {
             None
         };
 
+        let (irq, core_id) = crate::arch::interrupts::new_irq(nic_interrupt_handler, None);
+
         if let Some(msix) = msix {
-            msix.setup_int(crate::arch::interrupts::Irq::Nic, 0);
+            msix.setup_int(irq, 0, core_id);
             pci::with_pci_handler(|handler| msix.enable(handler));
         } else if let Some(msi) = msi {
             pci::with_pci_handler(|handler| {
-                msi.setup_int(crate::arch::interrupts::Irq::Nic, handler);
+                msi.setup_int(irq, handler, core_id);
                 msi.enable(handler);
             });
         } else {
@@ -294,6 +300,11 @@ impl E1000e<'_> {
     }
 }
 
+extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::info!("NIC INTERRUPT on core {}", locals!().core_id());
+    unsafe { locals!().lapic().force_lock() }.send_eoi();
+}
+
 impl Nic for E1000e<'_> {
     fn poll_frame(&self) -> Option<&[u8]> {
         todo!()
@@ -356,8 +367,8 @@ impl BufferSet<'_> {
         let descriptor_page = process::current()
             .address_space()
             .with_pgalloc(|palloc| palloc.allocate_pages(1).unwrap())
-            .start;
-        let flags = pmap::FLAGS_MMIO;
+            .start();
+        let flags = Flags::MMIO_SUITABLE;
         let descriptor_frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
             let frame = fralloc.alloc::<M4KiB>().unwrap();
             process::current()
@@ -485,7 +496,7 @@ impl BufferSet<'_> {
 impl Drop for BufferSet<'_> {
     fn drop(&mut self) {
         let buffers_start_page =
-            Page::<M4KiB>::from_start_address(VirtAddr::new(self.rx_buffers[0].as_ptr() as u64))
+            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(self.rx_buffers[0].as_ptr()))
                 .unwrap();
         let buffer_page_range = Page::range_inclusive(
             buffers_start_page,
@@ -508,7 +519,7 @@ impl Drop for BufferSet<'_> {
             .with_pgalloc(|palloc| palloc.free_pages(buffer_page_range));
 
         let descriptors_page =
-            Page::<M4KiB>::from_start_address(VirtAddr::new(self.rx_descriptors.as_ptr() as u64))
+            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(self.rx_descriptors.as_ptr()))
                 .unwrap();
         let descriptors_frame = process::current().address_space().with_page_table(|pt| {
             let (frame, tlb) = pt.unmap(descriptors_page).unwrap();

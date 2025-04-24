@@ -86,11 +86,23 @@ impl<S: MemSize> Sub<Self> for Frame<S> {
 #[derive(Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct FrameRangeInclusive<S: MemSize = M4KiB> {
-    pub start: Frame<S>,
-    pub end: Frame<S>,
+    start: Frame<S>,
+    end: Frame<S>,
 }
 
 impl<S: MemSize> FrameRangeInclusive<S> {
+    #[must_use]
+    #[inline]
+    pub const fn start(&self) -> Frame<S> {
+        self.start
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn end(&self) -> Frame<S> {
+        self.end
+    }
+
     #[must_use]
     #[inline]
     pub fn is_empty(&self) -> bool {

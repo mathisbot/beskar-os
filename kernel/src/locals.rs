@@ -3,7 +3,10 @@ use core::{ptr::NonNull, sync::atomic::AtomicUsize};
 use alloc::boxed::Box;
 
 use crate::arch::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts};
-use hyperdrive::{locks::mcs::MUMcsLock, once::Once};
+use hyperdrive::{
+    locks::mcs::{MUMcsLock, McsLock},
+    once::Once,
+};
 
 /// Count APs that got around of their trampoline code
 ///
@@ -61,9 +64,10 @@ pub(crate) fn core_jumped() {
 pub struct CoreLocalsInfo {
     core_id: usize,
     apic_id: u8,
-    gdt: Gdt,
+    gdt: McsLock<Gdt>,
     interrupts: Interrupts,
     lapic: MUMcsLock<LocalApic>,
+    scheduler: Once<crate::process::scheduler::Scheduler>,
 }
 
 impl CoreLocalsInfo {
@@ -73,9 +77,10 @@ impl CoreLocalsInfo {
         Self {
             core_id: 0,
             apic_id: 0,
-            gdt: Gdt::uninit(),
+            gdt: McsLock::new(Gdt::uninit()),
             interrupts: Interrupts::new(),
             lapic: MUMcsLock::uninit(),
+            scheduler: Once::uninit(),
         }
     }
 
@@ -93,7 +98,7 @@ impl CoreLocalsInfo {
 
     #[must_use]
     #[inline]
-    pub const fn gdt(&self) -> &Gdt {
+    pub const fn gdt(&self) -> &McsLock<Gdt> {
         &self.gdt
     }
 
@@ -108,6 +113,22 @@ impl CoreLocalsInfo {
     pub const fn lapic(&self) -> &MUMcsLock<LocalApic> {
         &self.lapic
     }
+
+    #[must_use]
+    #[inline]
+    pub const fn scheduler(&self) -> &Once<crate::process::scheduler::Scheduler> {
+        &self.scheduler
+    }
+}
+
+#[must_use]
+#[inline]
+/// Returns a specific core local info
+pub fn get_specific_core_locals(core_id: usize) -> Option<&'static CoreLocalsInfo> {
+    ALL_CORE_LOCALS[core_id]
+        .get()
+        .copied()
+        .map(|ptr| unsafe { ptr.as_ref() })
 }
 
 #[must_use]

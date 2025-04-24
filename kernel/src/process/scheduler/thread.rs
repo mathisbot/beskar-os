@@ -1,27 +1,22 @@
-use core::{
-    mem::offset_of,
-    pin::Pin,
-    sync::atomic::{AtomicU64, Ordering},
-};
-
+use crate::{arch::context::ThreadRegisters, mem::frame_alloc};
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
     commons::{
         VirtAddr,
         paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
     },
-    x86_64::{
-        instructions::STACK_DEBUG_INSTR,
-        registers::{FS, Rflags},
-        userspace::Ring,
-    },
+    x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags, userspace::Ring},
+};
+use core::{
+    mem::offset_of,
+    pin::Pin,
+    ptr::NonNull,
+    sync::atomic::{AtomicU64, Ordering},
 };
 use hyperdrive::{
     once::Once,
     queues::mpsc::{Link, Queueable},
 };
-
-use crate::mem::frame_alloc;
 
 use super::{super::Process, priority::Priority};
 
@@ -35,12 +30,12 @@ pub struct Thread {
     root_proc: Arc<Process>,
     /// The priority of the thread.
     priority: Priority,
-    /// Used to keep ownership of the stack when needed.
+    /// Used to keep ownership of the stacks when needed.
     stack: Option<ThreadStacks>,
-    /// Keeps track of where the stack is.
+    /// Keeps track of where the stack pointer is.
     last_stack_ptr: *mut u8,
     /// Thread Local Storage
-    tls: Once<Box<[u8]>>,
+    tls: Once<Tls>,
 
     /// Link to the next thread in the queue.
     link: Link<Self>,
@@ -94,8 +89,6 @@ impl Thread {
         let stack_unused = Self::setup_stack(stack_ptr, &mut stack, entry_point);
         stack_ptr = unsafe { stack_ptr.byte_add(stack_unused) }; // Move stack pointer to the end of the stack
 
-        // FIXME: Stack doesn't have guard page
-
         Self {
             id: ThreadId::new(),
             root_proc,
@@ -121,6 +114,8 @@ impl Thread {
 
         let trampoline = match root_proc.kind.ring() {
             Ring::User => user_trampoline,
+            Ring::Hypervisor => todo!("Ring2 binary threads"),
+            Ring::Driver => todo!("Ring1 binary threads"),
             Ring::Kernel => todo!("Ring0 binary threads"),
         };
 
@@ -139,11 +134,10 @@ impl Thread {
 
         let mut stack_bottom = stack.len();
         assert!(
-            stack_bottom >= MINIMUM_LEFTOVER_STACK + 19 * size_of::<usize>(),
+            stack_bottom
+                >= MINIMUM_LEFTOVER_STACK + size_of::<ThreadRegisters>() + size_of::<usize>(),
             "Stack too small"
         );
-
-        // TODO: Write a custom thread_end function at the end of the stack
 
         // Push the return address
         let entry_point_bytes = (entry_point as usize).to_ne_bytes();
@@ -151,12 +145,11 @@ impl Thread {
         stack_bottom -= size_of::<usize>();
 
         // Push the thread registers
-        let thread_regs = ThreadRegisters {
-            rflags: (Rflags::IOPL_LOW | Rflags::IF),
-            rbp: stack_ptr as u64,
-            rip: entry_point as u64,
-            ..ThreadRegisters::default()
-        };
+        let thread_regs = ThreadRegisters::new(
+            Rflags::IOPL_LOW | Rflags::IF,
+            entry_point as u64,
+            stack_ptr as u64,
+        );
         let thread_regs_bytes = unsafe {
             core::mem::transmute::<ThreadRegisters, [u8; size_of::<ThreadRegisters>()]>(thread_regs)
         };
@@ -226,8 +219,55 @@ impl Thread {
     #[must_use]
     #[inline]
     /// Returns the thread local storage of the thread.
-    pub fn tls(&self) -> Option<VirtAddr> {
-        self.tls.get().map(|tls| VirtAddr::new(tls.as_ptr() as u64))
+    pub fn tls(&self) -> Option<Tls> {
+        self.tls.get().copied()
+    }
+
+    #[must_use]
+    /// Get a snapshot of the thread's state.
+    pub fn snapshot(&self) -> ThreadSnapshot {
+        let kst = self.stack.as_ref().map(ThreadStacks::kernel_stack_top);
+        ThreadSnapshot::new(self.id, kst)
+    }
+}
+
+// impl Drop for Thread {
+//     #[inline]
+//     fn drop(&mut self) {
+//         // TODO: How to free TLS
+//         // (thread's address space is no longer active here)
+//     }
+// }
+
+#[derive(Debug, Clone, Copy)]
+/// Represents a snapshot of a thread's state.
+pub struct ThreadSnapshot {
+    /// The unique identifier of the thread.
+    id: ThreadId,
+    /// RSP0.
+    kernel_stack_top: Option<NonNull<u8>>,
+}
+
+impl ThreadSnapshot {
+    #[must_use]
+    #[inline]
+    pub(super) const fn new(id: ThreadId, kst: Option<NonNull<u8>>) -> Self {
+        Self {
+            id,
+            kernel_stack_top: kst,
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn id(&self) -> ThreadId {
+        self.id
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn kernel_stack_top(&self) -> Option<NonNull<u8>> {
+        self.kernel_stack_top
     }
 }
 
@@ -264,28 +304,6 @@ impl ThreadId {
     }
 }
 
-#[repr(C)]
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThreadRegisters {
-    r15: u64,
-    r14: u64,
-    r13: u64,
-    r12: u64,
-    r11: u64,
-    r10: u64,
-    r9: u64,
-    r8: u64,
-    rdi: u64,
-    rsi: u64,
-    rbp: u64,
-    rbx: u64,
-    rdx: u64,
-    rcx: u64,
-    rax: u64,
-    rflags: u64,
-    rip: u64,
-}
-
 /// Trampoline function to load the binary and call the entry point.
 ///
 /// ## Warning
@@ -301,26 +319,63 @@ extern "C" fn user_trampoline() -> ! {
     // Allocate a user stack
     let rsp = super::get_scheduler()
         .current_thread
-        .with_locked(|t| t.stack.as_mut().map(|ts| ts.allocate_user(4 * M4KiB::SIZE)))
-        .expect("Thread stack not found");
+        .with_locked(|t| {
+            t.stack.as_mut().map(|ts| {
+                ts.allocate_all(4 * M4KiB::SIZE);
+                ts.user_stack_top().unwrap()
+            })
+        })
+        .expect("Thread stack not found")
+        .as_ptr();
 
     if let Some(tlst) = loaded_binary.tls_template() {
-        let mut tls = alloc::vec![0; usize::try_from(tlst.mem_size()).unwrap()].into_boxed_slice();
+        let tls_size = tlst.mem_size();
+        let num_pages = tls_size.div_ceil(M4KiB::SIZE);
+        let pages = super::current_process()
+            .address_space()
+            .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(num_pages))
+            .unwrap();
+
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
+        frame_alloc::with_frame_allocator(|fralloc| {
+            super::current_process()
+                .address_space()
+                .with_page_table(|pt| {
+                    for page in pages {
+                        let frame = fralloc.allocate_frame().unwrap();
+                        pt.map(page, frame, flags, fralloc).flush();
+                    }
+                });
+        });
+
+        let tls_vaddr = pages.start().start_address();
+
         // Copy TLS initialization image from binary
         unsafe {
-            tls.as_mut_ptr().copy_from_nonoverlapping(
+            tls_vaddr.as_mut_ptr::<u8>().copy_from_nonoverlapping(
                 tlst.start().as_ptr(),
                 tlst.file_size().try_into().unwrap(),
             );
         }
+        // Zero the rest of the TLS area
+        unsafe {
+            tls_vaddr
+                .as_mut_ptr::<u8>()
+                .byte_add(tlst.file_size().try_into().unwrap())
+                .write_bytes(0, (tlst.mem_size() - tlst.file_size()).try_into().unwrap());
+        }
 
-        let tls_vaddr = VirtAddr::new(tls.as_ptr() as u64);
-        // Locking the scheduler's current thread is a bit risky, but it is better than force locking it
-        // (as otherwise the schduler could get stuck on `Once::get`).
+        let tls = Tls {
+            addr: tls_vaddr,
+            size: tls_size,
+        };
+
+        // Locking the scheduler's current thread is a bit ugly, but it is better than force locking it
+        // (as otherwise the scheduler could get stuck on `Once::get`).
         super::get_scheduler()
             .current_thread
             .with_locked(|t| t.tls.call_once(|| tls));
-        unsafe { FS::write_base(tls_vaddr) };
+        crate::arch::locals::store_thread_locals(tls);
     }
 
     unsafe { crate::arch::userspace::enter_usermode(loaded_binary.entry_point(), rsp) };
@@ -331,55 +386,82 @@ struct ThreadStacks {
     ///
     /// This can be the only stack used (ring0 processes) or
     /// only used by the trampoline function (ring3 processes).
-    _kernel: Vec<u8>,
+    kernel: Vec<u8>,
     /// Page range in the process' address space of the stack.
     user_pages: Once<PageRangeInclusive>,
 }
 
 impl ThreadStacks {
+    const STACK_ALIGNMENT: u64 = 16;
+
     #[must_use]
     #[inline]
     pub const fn new(stack: Vec<u8>) -> Self {
         Self {
-            _kernel: stack,
+            kernel: stack,
             user_pages: Once::uninit(),
         }
     }
 
-    pub fn allocate_user(&self, size: u64) -> *mut u8 {
-        assert!(size > 0);
+    pub fn allocate_all(&self, size: u64) {
+        self.allocate_user(size);
+    }
+
+    pub fn allocate_user(&self, size: u64) {
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
+        let page_range = Self::allocate(size, flags);
+
+        // FIXME: Even if the stack is already allocated, the above allocations still happens.
+        self.user_pages.call_once(|| page_range);
+    }
+
+    #[must_use]
+    pub fn user_stack_top(&self) -> Option<NonNull<u8>> {
+        self.user_pages
+            .get()
+            .map(|r| r.start().start_address() + r.size())
+            .map(|p| unsafe {
+                NonNull::new_unchecked(p.align_down(Self::STACK_ALIGNMENT).as_mut_ptr())
+            })
+    }
+
+    #[must_use]
+    pub fn kernel_stack_top(&self) -> NonNull<u8> {
+        let stack_start = self.kernel.as_ptr() as usize;
+        let stack_vaddr = VirtAddr::new(u64::try_from(stack_start).unwrap());
+        let stack_end = stack_vaddr + u64::try_from(self.kernel.len()).unwrap();
+        unsafe { NonNull::new_unchecked(stack_end.align_down(Self::STACK_ALIGNMENT).as_mut_ptr()) }
+    }
+
+    fn allocate(size: u64, flags: Flags) -> PageRangeInclusive {
+        assert!(size >= Self::STACK_ALIGNMENT);
 
         let (_guard_start, page_range, _guard_end) = super::current_process()
             .address_space()
             .with_pgalloc(|palloc| palloc.allocate_guarded(size.div_ceil(M4KiB::SIZE)))
             .unwrap();
 
-        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
         frame_alloc::with_frame_allocator(|fralloc| {
             super::current_process()
                 .address_space()
                 .with_page_table(|pt| {
-                    let frame = fralloc.allocate_frame().unwrap();
                     for page in page_range {
+                        let frame = fralloc.allocate_frame().unwrap();
                         pt.map(page, frame, flags, fralloc).flush();
                     }
                 });
         });
 
-        // FIXME: Even if the stack is already allocated, the above allocations still happen.
-        self.user_pages.call_once(|| page_range);
-
-        // Return the stack TOP
-        let stack_bottom = page_range.start.start_address();
-        let size = page_range.size();
         #[cfg(debug_assertions)]
         unsafe {
+            let stack_bottom = page_range.start().start_address();
+            let size = page_range.size();
             stack_bottom
                 .as_mut_ptr::<u8>()
                 .write_bytes(STACK_DEBUG_INSTR, size.try_into().unwrap());
         }
-        let stack_top = (stack_bottom + (size - 1)).align_down(16_u64);
-        stack_top.as_mut_ptr()
+
+        page_range
     }
 }
 
@@ -387,6 +469,28 @@ impl ThreadStacks {
 //     #[inline]
 //     fn drop(&mut self) {
 //         // TODO:
-//         // How to recover the alocated frames and free them ?
+//         // How to recover allocated frames and free them ?
 //     }
 // }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Tls {
+    /// The address of the TLS area.
+    addr: VirtAddr,
+    /// The size of the TLS area.
+    size: u64,
+}
+
+impl Tls {
+    #[must_use]
+    #[inline]
+    pub const fn addr(&self) -> VirtAddr {
+        self.addr
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn size(&self) -> u64 {
+        self.size
+    }
+}

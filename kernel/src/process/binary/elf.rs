@@ -49,7 +49,7 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
         .address_space()
         .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
         .unwrap();
-    let offset = page_range.start.start_address();
+    let offset = page_range.start().start_address();
     // During the loading process, we will have to modify the page flags.
     // The pages we'll be writing to may not have the WRITABLE flag set anymore.
     // To overcome this problem, we will map a set of "working" pages, which will have the
@@ -58,7 +58,7 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
         .address_space()
         .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
         .unwrap();
-    let working_offset = working_page_range.start.start_address();
+    let working_offset = working_page_range.start().start_address();
 
     frame_alloc::with_frame_allocator(|fralloc| {
         let mut dummy_flags = Flags::PRESENT | Flags::NO_EXECUTE | Flags::WRITABLE;
@@ -229,7 +229,7 @@ fn handle_segment_load(
             let dest = (working_offset + ph.virtual_addr()).as_mut_ptr::<u8>();
             let src = elf.input[usize::try_from(ph.offset()).unwrap()..].as_ptr();
             unsafe {
-                dest.copy_from(src, usize::try_from(ph.file_size()).unwrap());
+                dest.copy_from_nonoverlapping(src, usize::try_from(ph.file_size()).unwrap());
             }
         }
 
