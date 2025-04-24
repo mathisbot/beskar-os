@@ -23,39 +23,37 @@ struct SyscallRegisters {
     r11: u64,
 }
 
-#[naked]
+#[unsafe(naked)]
 /// Arch syscall handler, to be loaded into LSTAR.
 ///
 /// ## Safety
 ///
 /// This function should not be called directly.
 unsafe extern "sysv64" fn syscall_handler_arch() {
-    unsafe {
-        core::arch::naked_asm!(
-            "push r11", // Previous RFLAGS
-            "push rcx", // Previous RIP
-            "push r9",
-            "push r8",
-            "push r10",
-            "push rdx",
-            "push rsi",
-            "push rdi",
-            "push rax",
-            "mov rdi, rsp", // Regs pointer
-            "call {}",
-            "pop rax", // RAX now contains syscall exit code
-            "pop rdi",
-            "pop rsi",
-            "pop rdx",
-            "pop r10",
-            "pop r8",
-            "pop r9",
-            "pop rcx", // RIP used by sysret
-            "pop r11", // r11 contains previous RFLAGS
-            "sysretq",
-            sym syscall_handler_impl,
-        )
-    };
+    core::arch::naked_asm!(
+        "push r11", // Previous RFLAGS
+        "push rcx", // Previous RIP
+        "push r9",
+        "push r8",
+        "push r10",
+        "push rdx",
+        "push rsi",
+        "push rdi",
+        "push rax",
+        "mov rdi, rsp", // Regs pointer
+        "call {}",
+        "pop rax", // RAX now contains syscall exit code
+        "pop rdi",
+        "pop rsi",
+        "pop rdx",
+        "pop r10",
+        "pop r8",
+        "pop r9",
+        "pop rcx", // RIP used by sysret
+        "pop r11", // r11 contains previous RFLAGS
+        "sysretq",
+        sym syscall_handler_impl,
+    );
 }
 
 /// Handles stack switching and calling the actual syscall handler.
