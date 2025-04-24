@@ -85,20 +85,38 @@ pub struct Packet {
 impl Packet {
     #[must_use]
     #[inline]
-    pub fn new_arp(data_length: u16, filler: impl FnOnce(&mut [u8; 1500])) -> Self {
-        Self::new(data_length, filler, Ethertype::Arp, MacAddress::BROADCAST)
+    pub fn new_arp(
+        data_length: u16,
+        filler: impl FnOnce(&mut [u8; 1500]),
+        mac_src: MacAddress,
+    ) -> Self {
+        Self::new(
+            data_length,
+            filler,
+            Ethertype::Arp,
+            MacAddress::BROADCAST,
+            mac_src,
+        )
     }
 
     #[must_use]
     #[inline]
-    pub fn new_ipv4(data_length: u16, filler: impl FnOnce(&mut [u8; 1500])) -> Self {
-        Self::new(data_length, filler, Ethertype::Ipv4, todo!())
+    pub fn new_ipv4(
+        data_length: u16,
+        filler: impl FnOnce(&mut [u8; 1500]),
+        mac_src: MacAddress,
+    ) -> Self {
+        Self::new(data_length, filler, Ethertype::Ipv4, todo!(), mac_src)
     }
 
     #[must_use]
     #[inline]
-    pub fn new_ipv6(data_length: u16, filler: impl FnOnce(&mut [u8; 1500])) -> Self {
-        Self::new(data_length, filler, Ethertype::Ipv6, todo!())
+    pub fn new_ipv6(
+        data_length: u16,
+        filler: impl FnOnce(&mut [u8; 1500]),
+        mac_src: MacAddress,
+    ) -> Self {
+        Self::new(data_length, filler, Ethertype::Ipv6, todo!(), mac_src)
     }
 
     fn new(
@@ -106,11 +124,10 @@ impl Packet {
         filler: impl FnOnce(&mut [u8; 1500]),
         ethertype: Ethertype,
         mac_dest: MacAddress,
+        mac_src: MacAddress,
     ) -> Self {
         assert!(data_length >= 46);
         assert!(data_length <= 1500);
-
-        let mac_src = crate::drivers::nic::with_nic(|nic| nic.mac_address()).unwrap();
 
         let header = Header {
             mac_dest,

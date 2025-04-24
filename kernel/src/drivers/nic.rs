@@ -1,6 +1,6 @@
-use crate::{drivers::pci, network::l2::ethernet::MacAddress};
-
+use crate::drivers::pci;
 use beskar_core::drivers::{DriverError, DriverResult};
+use network::Nic;
 
 mod e1000e;
 
@@ -42,13 +42,6 @@ pub fn init() -> DriverResult<()> {
             Err(DriverError::Invalid)
         }
     }
-}
-
-// TODO: Custom error type
-pub trait Nic {
-    fn mac_address(&self) -> MacAddress;
-    fn poll_frame(&self) -> Option<&[u8]>;
-    fn send_frame(&self, frame: &[u8]);
 }
 
 pub fn with_nic<F, R>(f: F) -> Option<R>

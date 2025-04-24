@@ -27,9 +27,9 @@ use crate::{
     drivers::pci::{self, Bar, with_pci_handler},
     locals,
     mem::page_alloc::pmap::PhysicalMapping,
-    network::l2::ethernet::MacAddress,
     process,
 };
+use network::l2::ethernet::MacAddress;
 
 const RX_BUFFERS: usize = 32;
 const TX_BUFFERS: usize = 8;

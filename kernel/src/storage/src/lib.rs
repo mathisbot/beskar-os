@@ -1,3 +1,5 @@
+#![no_std]
+extern crate alloc;
 use thiserror::Error;
 
 pub mod fs;

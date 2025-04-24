@@ -77,6 +77,8 @@ dependencies = [
  "bootloader",
  "hyperdrive",
  "linked_list_allocator",
+ "network",
+ "storage",
  "thiserror",
  "xmas-elf",
 ]
@@ -92,6 +94,13 @@ name = "log"
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
+
+[[package]]
+name = "network"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
 
 [[package]]
 name = "noto-sans-mono-bitmap"
@@ -162,6 +171,14 @@ name = "rustversion"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eded382c5f5f786b989652c49544c4877d9f015cc22e145a5ea8ea66c2921cd2"
+
+[[package]]
+name = "storage"
+version = "0.1.0"
+dependencies = [
+ "hyperdrive",
+ "thiserror",
+]
 
 [[package]]
 name = "syn"

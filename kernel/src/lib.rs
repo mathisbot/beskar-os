@@ -1,4 +1,4 @@
-#![feature(abi_x86_interrupt, naked_functions)]
+#![feature(abi_x86_interrupt)]
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
@@ -8,7 +8,7 @@
     clippy::missing_errors_doc,
     clippy::doc_markdown
 )]
-
+extern crate alloc;
 use hyperdrive::once::Once;
 
 mod arch;
@@ -17,14 +17,10 @@ pub mod drivers;
 pub mod locals;
 pub mod log;
 mod mem;
-mod network;
 pub mod process;
 mod screen;
-mod storage;
 mod syscall;
 pub mod time;
-
-extern crate alloc;
 
 static KERNEL_PANIC: Once<()> = Once::uninit();
 
