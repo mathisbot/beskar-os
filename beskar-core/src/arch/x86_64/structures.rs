@@ -449,6 +449,15 @@ impl core::fmt::Binary for PageFaultErrorCode {
     }
 }
 
+impl core::ops::BitOr for PageFaultErrorCode {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed(2))]
 pub struct DescriptorTable {
@@ -703,5 +712,81 @@ impl TaskStateSegment {
             #[allow(clippy::cast_possible_truncation)] // Impossible truncation
             iomap_base: size_of::<Self>() as u16,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_idt_entry_set_handler_fn() {
+        extern "x86-interrupt" fn test_handler(_stack_frame: InterruptStackFrame) {}
+        let mut entry: IdtEntry<Handler> = IdtEntry::empty();
+        entry.set_handler_fn(test_handler, 0x08);
+
+        let addr = test_handler as *const () as u64;
+        assert_eq!(entry.ptr_low, (addr & 0xFFFF) as u16);
+        assert_eq!(entry.ptr_mid, ((addr >> 16) & 0xFFFF) as u16);
+        assert_eq!(entry.ptr_high, ((addr >> 32) & 0xFFFF_FFFF) as u32);
+        assert_eq!(entry.options_cs, 0x08);
+        assert_ne!(entry.options & (1 << 15), 0); // Present bit
+    }
+
+    #[test]
+    fn test_idt_entry_set_stack_index() {
+        let mut entry: IdtEntry<Handler> = IdtEntry::empty();
+        unsafe { entry.set_stack_index(3) };
+        assert_eq!(entry.options & 0x7, 4); // IST index starts at 1
+    }
+
+    #[test]
+    #[should_panic(expected = "Stack index must be less than 8")]
+    fn test_idt_entry_set_stack_index_invalid() {
+        let mut entry: IdtEntry<Handler> = IdtEntry::empty();
+        unsafe { entry.set_stack_index(8) };
+    }
+
+    #[test]
+    fn test_task_state_segment_default() {
+        let tss = TaskStateSegment::default();
+        let pst = tss.privilege_stack_table;
+        let ist = tss.interrupt_stack_table;
+        assert_eq!(pst, [VirtAddr::new(0); 3]);
+        assert_eq!(ist, [VirtAddr::new(0); 7]);
+        assert_eq!(
+            tss.iomap_base,
+            u16::try_from(size_of::<TaskStateSegment>()).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_gdt_append() {
+        let mut gdt = GlobalDescriptorTable::<3>::empty();
+        let selector = gdt.append(GdtDescriptor::kernel_code_segment());
+        gdt.append(GdtDescriptor::kernel_data_segment());
+        assert_eq!(selector, 1 << 3);
+        assert!(gdt.len == 3);
+    }
+
+    #[test]
+    #[should_panic = "GDT is full"]
+    fn test_gdt_full() {
+        let mut gdt = GlobalDescriptorTable::<4>::empty();
+        loop {
+            gdt.append(GdtDescriptor::UserSegment(0));
+        }
+    }
+
+    #[test]
+    fn test_gdt_descriptor_kernel_code_segment() {
+        let descriptor = GdtDescriptor::kernel_code_segment();
+        assert_eq!(descriptor.dpl(), Ring::Kernel);
+    }
+
+    #[test]
+    fn test_gdt_descriptor_user_code_segment() {
+        let descriptor = GdtDescriptor::user_code_segment();
+        assert_eq!(descriptor.dpl(), Ring::User);
     }
 }

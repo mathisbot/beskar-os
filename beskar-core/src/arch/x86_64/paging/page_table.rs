@@ -853,6 +853,9 @@ impl<'t> OffsetPageTable<'t> {
     }
 
     #[must_use]
+    /// Finds the next table in the page table hierarchy.
+    ///
+    /// As this function isn't aware of the page size, it doesn't check for huge pages.
     fn next_table(offset: VirtAddr, entry: &Entry) -> Option<&Entries> {
         if !entry.flags().contains(Flags::PRESENT) {
             return None;
@@ -864,6 +867,9 @@ impl<'t> OffsetPageTable<'t> {
 
     #[must_use]
     #[allow(clippy::needless_pass_by_ref_mut)]
+    /// Finds the next table in the page table hierarchy.
+    ///
+    /// As this function isn't aware of the page size, it doesn't check for huge pages.
     fn next_table_mut(offset: VirtAddr, entry: &mut Entry) -> Option<&mut Entries> {
         if !entry.flags().contains(Flags::PRESENT) {
             return None;
@@ -918,17 +924,32 @@ impl Mapper<M4KiB> for OffsetPageTable<'_> {
             Flags::PARENT
         };
 
+        assert!(
+            !self.entries[usize::from(page.p4_index())]
+                .flags()
+                .contains(Flags::HUGE_PAGE)
+        );
         let p3 = Self::create_next_table(
             self.offset,
             &mut self.entries[usize::from(page.p4_index())],
             parent_flags,
             allocator,
         );
+        assert!(
+            !p3[usize::from(page.p3_index())]
+                .flags()
+                .contains(Flags::HUGE_PAGE)
+        );
         let p2 = Self::create_next_table(
             self.offset,
             &mut p3[usize::from(page.p3_index())],
             parent_flags,
             allocator,
+        );
+        assert!(
+            !p2[usize::from(page.p2_index())]
+                .flags()
+                .contains(Flags::HUGE_PAGE)
         );
         let p1 = Self::create_next_table(
             self.offset,
@@ -939,6 +960,7 @@ impl Mapper<M4KiB> for OffsetPageTable<'_> {
 
         let p1_entry = &mut p1[usize::from(page.p1_index())];
         assert!(p1_entry.is_null(), "Page already mapped");
+        assert!(!flags.contains(Flags::HUGE_PAGE), "Huge page");
         p1_entry.set(frame.start_address(), flags);
 
         super::TlbFlush::new(page)
@@ -946,23 +968,26 @@ impl Mapper<M4KiB> for OffsetPageTable<'_> {
 
     fn translate(&self, page: Page<M4KiB>) -> Option<(Frame<M4KiB>, Flags)> {
         let p4 = &self.entries;
-        assert!(
-            !p4[usize::from(page.p4_index())]
-                .flags()
-                .contains(Flags::HUGE_PAGE)
-        );
+        if p4[usize::from(page.p4_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return None;
+        }
         let p3 = Self::next_table(self.offset, &p4[usize::from(page.p4_index())])?;
-        assert!(
-            !p3[usize::from(page.p3_index())]
-                .flags()
-                .contains(Flags::HUGE_PAGE)
-        );
+        if p3[usize::from(page.p3_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return None;
+        }
         let p2 = Self::next_table(self.offset, &p3[usize::from(page.p3_index())])?;
-        assert!(
-            !p2[usize::from(page.p2_index())]
-                .flags()
-                .contains(Flags::HUGE_PAGE)
-        );
+        if p2[usize::from(page.p2_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return None;
+        }
         let p1 = Self::next_table(self.offset, &p2[usize::from(page.p2_index())])?;
 
         let p1_entry = &p1[usize::from(page.p1_index())];
@@ -981,12 +1006,31 @@ impl Mapper<M4KiB> for OffsetPageTable<'_> {
         Frame<M4KiB>,
         impl crate::arch::commons::paging::CacheFlush<M4KiB>,
     )> {
+        if self.entries[usize::from(page.p4_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return None;
+        }
         let p3 =
             Self::next_table_mut(self.offset, &mut self.entries[usize::from(page.p4_index())])?;
+        if p3[usize::from(page.p3_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return None;
+        }
         let p2 = Self::next_table_mut(self.offset, &mut p3[usize::from(page.p3_index())])?;
+        if p2[usize::from(page.p2_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return None;
+        }
         let p1 = Self::next_table_mut(self.offset, &mut p2[usize::from(page.p2_index())])?;
 
         let p1_entry = &mut p1[usize::from(page.p1_index())];
+        assert!(!p1_entry.flags().contains(Flags::HUGE_PAGE));
         if p1_entry.is_null() {
             return None;
         }
@@ -1002,12 +1046,31 @@ impl Mapper<M4KiB> for OffsetPageTable<'_> {
         page: Page<M4KiB>,
         flags: Flags,
     ) -> Option<impl crate::arch::commons::paging::CacheFlush<M4KiB>> {
+        if self.entries[usize::from(page.p4_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return None;
+        }
         let p3 =
             Self::next_table_mut(self.offset, &mut self.entries[usize::from(page.p4_index())])?;
+        if p3[usize::from(page.p3_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return None;
+        }
         let p2 = Self::next_table_mut(self.offset, &mut p3[usize::from(page.p3_index())])?;
+        if p2[usize::from(page.p2_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return None;
+        }
         let p1 = Self::next_table_mut(self.offset, &mut p2[usize::from(page.p2_index())])?;
 
         let p1_entry = &mut p1[usize::from(page.p1_index())];
+        assert!(!p1_entry.flags().contains(Flags::HUGE_PAGE));
         if p1_entry.is_null() {
             return None;
         }
@@ -1054,6 +1117,7 @@ impl Translator for OffsetPageTable<'_> {
         let p1 = Self::next_table(self.offset, &p2[usize::from(addr.p2_index())])?;
 
         let p1_entry = &p1[usize::from(addr.p1_index())];
+        assert!(!p1_entry.flags().contains(Flags::HUGE_PAGE));
         if !p1_entry.flags().contains(Flags::PRESENT) {
             return None;
         }
@@ -1063,4 +1127,58 @@ impl Translator for OffsetPageTable<'_> {
             p1_entry.flags(),
         ))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::commons::PhysAddr;
+    use crate::arch::commons::paging::Flags;
+
+    #[test]
+    fn test_flags_operations() {
+        let flags = Flags::PRESENT | Flags::WRITABLE;
+        assert!(flags.contains(Flags::PRESENT));
+        assert!(flags.contains(Flags::WRITABLE));
+        assert!(!flags.contains(Flags::USER_ACCESSIBLE));
+
+        let new_flags = flags.union(Flags::USER_ACCESSIBLE);
+        assert!(new_flags.contains(Flags::USER_ACCESSIBLE));
+
+        let intersection = flags.intersection(Flags::WRITABLE | Flags::USER_ACCESSIBLE);
+        assert!(intersection.contains(Flags::WRITABLE));
+        assert!(!intersection.contains(Flags::USER_ACCESSIBLE));
+
+        let without_flags = flags.without(Flags::WRITABLE);
+        assert!(!without_flags.contains(Flags::WRITABLE));
+    }
+
+    #[test]
+    fn test_entry_operations() {
+        let mut entry = Entry::default();
+        let addr = PhysAddr::new(0x2000);
+        let flags = Flags::PRESENT | Flags::WRITABLE;
+
+        entry.set(addr, flags);
+        assert_eq!(entry.addr(), addr);
+        assert!(entry.flags().contains(Flags::PRESENT));
+        assert!(entry.flags().contains(Flags::WRITABLE));
+
+        entry.update_flags(Flags::USER_ACCESSIBLE);
+        assert!(entry.flags().contains(Flags::USER_ACCESSIBLE));
+    }
+
+    #[test]
+    fn test_entries_clear() {
+        let mut entries = Entries::default();
+        entries[0].set(PhysAddr::new(0x1000), Flags::PRESENT);
+        entries[1].set(PhysAddr::new(0x2000), Flags::WRITABLE);
+
+        entries.clear();
+        for entry in entries.iter_entries() {
+            assert!(entry.is_null());
+        }
+    }
+
+    // TODO: How to test page tables?
 }

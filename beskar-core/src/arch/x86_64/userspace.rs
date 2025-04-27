@@ -36,3 +36,21 @@ impl Ring {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ring() {
+        assert_eq!(Ring::Kernel.as_u8(), 0);
+        assert_eq!(Ring::Driver.as_u8(), 1);
+        assert_eq!(Ring::Hypervisor.as_u8(), 2);
+        assert_eq!(Ring::User.as_u8(), 3);
+
+        assert_eq!(Ring::from_u8(0), Ring::Kernel);
+        assert_eq!(Ring::from_u8(1), Ring::Driver);
+        assert_eq!(Ring::from_u8(2), Ring::Hypervisor);
+        assert_eq!(Ring::from_u8(3), Ring::User);
+    }
+}
