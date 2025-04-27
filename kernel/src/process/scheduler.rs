@@ -1,5 +1,5 @@
 use crate::locals;
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc};
 use beskar_core::arch::commons::VirtAddr;
 use core::{
     pin::Pin,
@@ -7,7 +7,7 @@ use core::{
 };
 use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
-use thread::Thread;
+use thread::{Thread, ThreadId};
 
 pub mod priority;
 pub mod thread;
@@ -24,7 +24,9 @@ pub const SCHEDULER_QUANTUM_MS: u32 = 30;
 static QUEUE: Once<priority::RoundRobinQueues> = Once::uninit();
 
 /// A queue for finished threads.
-static FINISHED_QUEUE: Once<MpscQueue<Thread>> = Once::uninit();
+static FINISHED: Once<MpscQueue<Thread>> = Once::uninit();
+
+static SLEEPING: McsLock<BTreeMap<ThreadId, Box<Thread>>> = McsLock::new(BTreeMap::new());
 
 /// This function initializes the scheduler with the kernel thread.
 ///
@@ -37,7 +39,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
     let kernel_process = kernel_thread.process();
 
     QUEUE.call_once(|| priority::RoundRobinQueues::create(kernel_process.clone()));
-    FINISHED_QUEUE.call_once(|| MpscQueue::new(Box::pin(Thread::new_stub(kernel_process.clone()))));
+    FINISHED.call_once(|| MpscQueue::new(Box::pin(Thread::new_stub(kernel_process.clone()))));
 
     let scheduler = Scheduler::new(kernel_thread);
     locals!().scheduler().call_once(|| scheduler);
@@ -78,6 +80,7 @@ pub struct Scheduler {
     /// A local, atomic, priority for the current thread.
     current_priority: priority::AtomicPriority,
     should_exit_thread: AtomicBool,
+    should_sleep_thread: AtomicBool,
 }
 
 impl Scheduler {
@@ -89,6 +92,7 @@ impl Scheduler {
             current_thread: McsLock::new(Box::new(kernel_thread)),
             current_priority,
             should_exit_thread: AtomicBool::new(false),
+            should_sleep_thread: AtomicBool::new(false),
         }
     }
 
@@ -135,6 +139,10 @@ impl Scheduler {
                 .swap(thread.priority(), Ordering::Relaxed);
             unsafe { old_thread.set_priority(old_priority) };
             let old_should_exit = self.should_exit_thread.swap(false, Ordering::Relaxed);
+            let old_should_wait = self.should_sleep_thread.swap(false, Ordering::Relaxed);
+
+            debug_assert_eq!(thread.state(), thread::ThreadState::Ready);
+            unsafe { thread.set_state(thread::ThreadState::Running) };
 
             // Handle stack pointers.
             let old_stack = if old_should_exit {
@@ -164,8 +172,12 @@ impl Scheduler {
             if old_should_exit {
                 // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
                 // This job should be done by a cleaning thread.
-                FINISHED_QUEUE.get().unwrap().enqueue(Pin::new(old_thread));
+                FINISHED.get().unwrap().enqueue(Pin::new(old_thread));
+            } else if old_should_wait {
+                unsafe { old_thread.set_state(thread::ThreadState::Sleeping) };
+                SLEEPING.with_locked(|wq| wq.insert(old_thread.id(), old_thread));
             } else {
+                unsafe { old_thread.set_state(thread::ThreadState::Ready) };
                 QUEUE.get().unwrap().append(Pin::new(old_thread));
             }
 
@@ -186,7 +198,7 @@ fn get_scheduler() -> &'static Scheduler {
 
 extern "C" fn clean_thread() -> ! {
     loop {
-        while let Some(thread) = FINISHED_QUEUE.get().unwrap().dequeue() {
+        while let Some(thread) = FINISHED.get().unwrap().dequeue() {
             drop(thread);
         }
         if !thread_yield() {
@@ -211,7 +223,7 @@ pub(crate) fn reschedule() -> Option<ContextSwitch> {
 #[must_use]
 #[inline]
 /// Returns the current thread ID.
-pub fn current_thread_id() -> thread::ThreadId {
+pub fn current_thread_id() -> ThreadId {
     // Safety:
     // If the scheduler changes the values mid read,
     // it means the current thread is no longer executed.
@@ -319,4 +331,28 @@ impl hyperdrive::locks::BackOff for Yield {
     fn back_off() {
         thread_yield();
     }
+}
+
+pub fn sleep() {
+    get_scheduler()
+        .should_sleep_thread
+        .store(true, Ordering::Relaxed);
+    if !thread_yield() {
+        // TODO: What to do if the thread was not rescheduled?
+        // Maybe push the thread in the sleeping queue and
+        // halt until there is something to do?
+        todo!("Thread was not rescheduled");
+    }
+}
+
+/// Wakes up a thread that is sleeping.
+///
+/// Returns `true` if the thread was woken up, `false` otherwise.
+pub fn wake_up(thread: ThreadId) -> bool {
+    SLEEPING.with_locked(|wq| {
+        wq.remove(&thread).is_some_and(|thread| {
+            QUEUE.get().unwrap().append(Pin::new(thread));
+            true
+        })
+    })
 }

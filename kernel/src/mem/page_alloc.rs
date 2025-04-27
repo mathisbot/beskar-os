@@ -7,7 +7,7 @@ use beskar_core::{
         },
         x86_64::paging::page_table::{Entries, Flags, PageTable},
     },
-    mem::ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges},
+    mem::ranges::{MemoryRange, MemoryRanges},
 };
 
 pub mod pmap;
@@ -131,9 +131,7 @@ impl<const N: usize> PageAllocator<N> {
     }
 
     pub fn allocate_pages<S: MemSize>(&mut self, count: u64) -> Option<PageRangeInclusive<S>> {
-        let start_vaddr =
-            self.vranges
-                .allocate::<1>(S::SIZE * count, S::SIZE, &MemoryRangeRequest::DontCare)?;
+        let start_vaddr = self.vranges.allocate(S::SIZE * count, S::SIZE)?;
 
         let first_page =
             Page::from_start_address(VirtAddr::new_extend(u64::try_from(start_vaddr).unwrap()))
@@ -169,14 +167,8 @@ impl<const N: usize> PageAllocator<N> {
         let size = M4KiB::SIZE * (count + 2);
         let alignment = M4KiB::SIZE;
 
-        let start_vaddr = VirtAddr::new_extend(
-            u64::try_from(self.vranges.allocate::<1>(
-                size,
-                alignment,
-                &MemoryRangeRequest::DontCare,
-            )?)
-            .unwrap(),
-        );
+        let start_vaddr =
+            VirtAddr::new_extend(u64::try_from(self.vranges.allocate(size, alignment)?).unwrap());
 
         let guard_page_start = Page::<M4KiB>::from_start_address(start_vaddr).unwrap();
 
