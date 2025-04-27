@@ -1,7 +1,7 @@
 use beskar_core::{
     arch::commons::{
         PhysAddr, VirtAddr,
-        paging::{Frame, M4KiB, MemSize as _},
+        paging::{Frame, FrameAllocator, M4KiB, MemSize as _},
     },
     mem::ranges::MemoryRange,
 };
@@ -9,7 +9,6 @@ use uefi::{
     boot::{MemoryDescriptor, MemoryType},
     mem::memory_map::{MemoryMap, MemoryMapOwned},
 };
-use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
 
 /// A physical frame allocator based on a UEFI provided memory map.
 ///
@@ -171,17 +170,23 @@ impl EarlyFrameAllocator {
     }
 }
 
-unsafe impl FrameAllocator<Size4KiB> for EarlyFrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+impl FrameAllocator<M4KiB> for EarlyFrameAllocator {
+    fn allocate_frame(&mut self) -> Option<Frame<M4KiB>> {
         while let Some(&descriptor) = self.memory_map.get(self.current_entry_index) {
             if descriptor.ty == MemoryType::CONVENTIONAL {
                 if let Some(frame) = self.allocate_frame_from_descriptor(&descriptor) {
-                    return Some(unsafe { core::mem::transmute(frame) });
+                    return Some(frame);
                 }
             }
             self.current_entry_index += 1;
         }
         None
+    }
+
+    fn deallocate_frame(&mut self, _frame: Frame<M4KiB>) {
+        // No-op, as we don't support deallocation in this allocator.
+        // This is a simple allocator that only allocates frames.
+        // Deallocation is not supported.
     }
 }
 

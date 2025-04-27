@@ -3,10 +3,16 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![allow(clippy::missing_panics_doc, clippy::similar_names)]
 
-use beskar_core::{boot::BootInfo, mem::ranges::MemoryRange};
+use beskar_core::{
+    arch::commons::{
+        VirtAddr,
+        paging::{CacheFlush as _, Flags, FrameAllocator as _, Mapper, Page},
+    },
+    boot::BootInfo,
+    mem::ranges::MemoryRange,
+};
 use core::alloc::Layout;
 use mem::{EarlyFrameAllocator, Mappings, PageTables};
-use x86_64::structures::paging::{FrameAllocator, Mapper, Page, PageTableFlags};
 
 pub mod arch;
 pub mod fs;
@@ -36,7 +42,7 @@ pub fn create_boot_info(
     mut frame_allocator: EarlyFrameAllocator,
     page_tables: &mut PageTables,
     mappings: &mut Mappings,
-) -> x86_64::VirtAddr {
+) -> VirtAddr {
     let max_region_count = frame_allocator.memory_map_max_region_count();
 
     let (layout, memory_regions_offset) = Layout::new::<BootInfo>()
@@ -54,26 +60,19 @@ pub fn create_boot_info(
     let end_page = Page::containing_address(memory_map_regions_end - 1);
 
     for page in Page::range_inclusive(start_page, end_page) {
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE;
 
         let frame = frame_allocator
             .allocate_frame()
             .expect("Failed to allocate a frame");
 
         for table in [&mut page_tables.kernel, &mut page_tables.bootloader] {
-            unsafe {
-                table
-                    .map_to(page, frame, flags, &mut frame_allocator)
-                    .expect("Failed to map boot info page")
-                    .flush();
-            }
+            table.map(page, frame, flags, &mut frame_allocator).flush();
         }
     }
 
-    let memory_regions = frame_allocator.construct_memory_map(
-        unsafe { core::mem::transmute(memory_map_regions_addr) },
-        max_region_count,
-    );
+    let memory_regions =
+        frame_allocator.construct_memory_map(memory_map_regions_addr, max_region_count);
 
     // ## Safety
     // We are writing to a valid memory region, and converting its pointer to a mutable reference.
@@ -81,9 +80,9 @@ pub fn create_boot_info(
         boot_info_addr.as_mut_ptr::<BootInfo>().write(BootInfo {
             memory_regions,
             framebuffer: crate::video::with_physical_framebuffer(|fb| {
-                fb.to_framebuffer(core::mem::transmute(mappings.framebuffer()))
+                fb.to_framebuffer(mappings.framebuffer())
             }),
-            recursive_index: u16::from(mappings.recursive_index()),
+            recursive_index: mappings.recursive_index(),
             rsdp_paddr: crate::arch::acpi::rsdp_paddr(),
             kernel_info: mappings.kernel_info(),
             ramdisk_info: mappings.ramdisk_info(),

@@ -10,7 +10,7 @@ struct Heap;
 #[global_allocator]
 static HEAP: Heap = Heap;
 
-pub const HEAP_SIZE: u64 = 1024 * 1024; // 1 MiB
+pub(crate) const HEAP_SIZE: u64 = 1024 * 1024; // 1 MiB
 
 unsafe impl core::alloc::GlobalAlloc for Heap {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {

@@ -33,5 +33,5 @@ macro_rules! println {
 /// Poll the kernel to get keyboard events
 pub fn poll_keyboard() -> Option<KeyEvent> {
     let res = syscalls::syscall_0(Syscall::KeyboardPoll);
-    unsafe { KeyEvent::unpack_option(res) }
+    KeyEvent::unpack_option(res)
 }

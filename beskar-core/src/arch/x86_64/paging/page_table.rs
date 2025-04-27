@@ -28,7 +28,7 @@ impl Flags {
 
     pub const MMIO_SUITABLE: Self = Self(1 | (1 << 1) | (1 << 4) | (1 << 63));
 
-    const ALL: Self = Self(0x8000_0000_0000_01FF);
+    const ALL: Self = Self(0x8000_0000_0000_0FFF);
     pub const EMPTY: Self = Self(0);
     /// A set of flags that are used to mark the parent entries in the page table.
     /// The flags are present and writable.
@@ -376,7 +376,7 @@ impl Mapper<M4KiB> for PageTable<'_> {
             page.start_address().as_u64(),
             p1[usize::from(page.p1_index())].addr().as_u64()
         );
-        p1[usize::from(page.p1_index())].set(frame.start_address(), flags | Flags::PRESENT);
+        p1[usize::from(page.p1_index())].set(frame.start_address(), flags);
 
         super::TlbFlush::new(page)
     }
@@ -769,7 +769,7 @@ impl Mapper<M1GiB> for PageTable<'_> {
 }
 
 impl Translator for PageTable<'_> {
-    fn translate_addr(&self, addr: VirtAddr) -> Option<PhysAddr> {
+    fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, Flags)> {
         // Here, we need to be careful, as the address can be in any size
         // of page. We need to check for it in every level of the page table.
         let page = Page::containing_address(addr);
@@ -788,8 +788,9 @@ impl Translator for PageTable<'_> {
             return None;
         }
         if p3_entry.flags() & Flags::HUGE_PAGE != Flags::EMPTY {
-            return Some(PhysAddr::new(
-                p3_entry.addr().as_u64() + addr.as_u64() % M1GiB::SIZE,
+            return Some((
+                PhysAddr::new(p3_entry.addr().as_u64() + addr.as_u64() % M1GiB::SIZE),
+                p3_entry.flags(),
             ));
         }
 
@@ -804,8 +805,9 @@ impl Translator for PageTable<'_> {
             return None;
         }
         if p2_entry.flags() & Flags::HUGE_PAGE != Flags::EMPTY {
-            return Some(PhysAddr::new(
-                p2_entry.addr().as_u64() + addr.as_u64() % M2MiB::SIZE,
+            return Some((
+                PhysAddr::new(p2_entry.addr().as_u64() + addr.as_u64() % M2MiB::SIZE),
+                p2_entry.flags(),
             ));
         }
 
@@ -819,8 +821,246 @@ impl Translator for PageTable<'_> {
             return None;
         }
 
-        Some(PhysAddr::new(
-            p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE,
+        Some((
+            PhysAddr::new(p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE),
+            p1_entry.flags(),
+        ))
+    }
+}
+
+pub struct OffsetPageTable<'t> {
+    entries: &'t mut Entries,
+    offset: VirtAddr,
+}
+
+impl<'t> OffsetPageTable<'t> {
+    #[must_use]
+    #[inline]
+    pub const fn new(entries: &'t mut Entries, offset: VirtAddr) -> Self {
+        Self { entries, offset }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn entries(&self) -> &Entries {
+        self.entries
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn entries_mut(&mut self) -> &mut Entries {
+        self.entries
+    }
+
+    #[must_use]
+    fn next_table(offset: VirtAddr, entry: &Entry) -> Option<&Entries> {
+        if !entry.flags().contains(Flags::PRESENT) {
+            return None;
+        }
+        let pt_vaddr = offset + entry.addr().as_u64();
+        let pt_ptr = pt_vaddr.as_ptr::<Entries>();
+        Some(unsafe { &*pt_ptr })
+    }
+
+    #[must_use]
+    #[allow(clippy::needless_pass_by_ref_mut)]
+    fn next_table_mut(offset: VirtAddr, entry: &mut Entry) -> Option<&mut Entries> {
+        if !entry.flags().contains(Flags::PRESENT) {
+            return None;
+        }
+        let pt_vaddr = offset + entry.addr().as_u64();
+        let pt_ptr = pt_vaddr.as_mut_ptr::<Entries>();
+        Some(unsafe { &mut *pt_ptr })
+    }
+
+    fn create_next_table<'a, A: FrameAllocator<M4KiB>>(
+        offset: VirtAddr,
+        entry: &'a mut Entry,
+        insert_flags: Flags,
+        allocator: &mut A,
+    ) -> &'a mut Entries {
+        let mut existed = true;
+
+        if entry.is_null() {
+            existed = false;
+
+            let frame = allocator.allocate_frame().unwrap();
+            entry.set(frame.start_address(), insert_flags);
+        } else {
+            entry.update_flags(insert_flags);
+        }
+
+        assert_eq!(
+            entry.flags() & Flags::HUGE_PAGE,
+            Flags::EMPTY,
+            "Cannot create huge page"
+        );
+        let next_table = Self::next_table_mut(offset, entry).unwrap();
+        if !existed {
+            next_table.clear();
+        }
+
+        next_table
+    }
+}
+
+impl Mapper<M4KiB> for OffsetPageTable<'_> {
+    fn map<A: FrameAllocator<M4KiB>>(
+        &mut self,
+        page: Page<M4KiB>,
+        frame: Frame<M4KiB>,
+        flags: Flags,
+        allocator: &mut A,
+    ) -> impl crate::arch::commons::paging::CacheFlush<M4KiB> {
+        let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
+            Flags::PARENT | Flags::USER_ACCESSIBLE
+        } else {
+            Flags::PARENT
+        };
+
+        let p3 = Self::create_next_table(
+            self.offset,
+            &mut self.entries[usize::from(page.p4_index())],
+            parent_flags,
+            allocator,
+        );
+        let p2 = Self::create_next_table(
+            self.offset,
+            &mut p3[usize::from(page.p3_index())],
+            parent_flags,
+            allocator,
+        );
+        let p1 = Self::create_next_table(
+            self.offset,
+            &mut p2[usize::from(page.p2_index())],
+            parent_flags,
+            allocator,
+        );
+
+        let p1_entry = &mut p1[usize::from(page.p1_index())];
+        assert!(p1_entry.is_null(), "Page already mapped");
+        p1_entry.set(frame.start_address(), flags);
+
+        super::TlbFlush::new(page)
+    }
+
+    fn translate(&self, page: Page<M4KiB>) -> Option<(Frame<M4KiB>, Flags)> {
+        let p4 = &self.entries;
+        assert!(
+            !p4[usize::from(page.p4_index())]
+                .flags()
+                .contains(Flags::HUGE_PAGE)
+        );
+        let p3 = Self::next_table(self.offset, &p4[usize::from(page.p4_index())])?;
+        assert!(
+            !p3[usize::from(page.p3_index())]
+                .flags()
+                .contains(Flags::HUGE_PAGE)
+        );
+        let p2 = Self::next_table(self.offset, &p3[usize::from(page.p3_index())])?;
+        assert!(
+            !p2[usize::from(page.p2_index())]
+                .flags()
+                .contains(Flags::HUGE_PAGE)
+        );
+        let p1 = Self::next_table(self.offset, &p2[usize::from(page.p2_index())])?;
+
+        let p1_entry = &p1[usize::from(page.p1_index())];
+        assert!(!p1_entry.flags().contains(Flags::HUGE_PAGE));
+        if !p1_entry.flags().contains(Flags::PRESENT) {
+            return None;
+        }
+        let frame = Frame::from_start_address(p1_entry.addr()).unwrap();
+        Some((frame, p1_entry.flags()))
+    }
+
+    fn unmap(
+        &mut self,
+        page: Page<M4KiB>,
+    ) -> Option<(
+        Frame<M4KiB>,
+        impl crate::arch::commons::paging::CacheFlush<M4KiB>,
+    )> {
+        let p3 =
+            Self::next_table_mut(self.offset, &mut self.entries[usize::from(page.p4_index())])?;
+        let p2 = Self::next_table_mut(self.offset, &mut p3[usize::from(page.p3_index())])?;
+        let p1 = Self::next_table_mut(self.offset, &mut p2[usize::from(page.p2_index())])?;
+
+        let p1_entry = &mut p1[usize::from(page.p1_index())];
+        if p1_entry.is_null() {
+            return None;
+        }
+
+        let frame = Frame::from_start_address(p1_entry.addr()).unwrap();
+        p1_entry.set(PhysAddr::new(0), Flags::EMPTY);
+
+        Some((frame, super::TlbFlush::new(page)))
+    }
+
+    fn update_flags(
+        &mut self,
+        page: Page<M4KiB>,
+        flags: Flags,
+    ) -> Option<impl crate::arch::commons::paging::CacheFlush<M4KiB>> {
+        let p3 =
+            Self::next_table_mut(self.offset, &mut self.entries[usize::from(page.p4_index())])?;
+        let p2 = Self::next_table_mut(self.offset, &mut p3[usize::from(page.p3_index())])?;
+        let p1 = Self::next_table_mut(self.offset, &mut p2[usize::from(page.p2_index())])?;
+
+        let p1_entry = &mut p1[usize::from(page.p1_index())];
+        if p1_entry.is_null() {
+            return None;
+        }
+
+        let addr = p1_entry.addr();
+        p1_entry.set(addr, flags);
+
+        Some(super::TlbFlush::new(page))
+    }
+}
+
+impl Translator for OffsetPageTable<'_> {
+    fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, Flags)> {
+        let p4 = &self.entries;
+        assert!(
+            !p4[usize::from(addr.p4_index())]
+                .flags()
+                .contains(Flags::HUGE_PAGE)
+        );
+        let p3 = Self::next_table(self.offset, &p4[usize::from(addr.p4_index())])?;
+        if p3[usize::from(addr.p3_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return Some((
+                PhysAddr::new(
+                    p3[usize::from(addr.p3_index())].addr().as_u64() + addr.as_u64() % M1GiB::SIZE,
+                ),
+                p3[usize::from(addr.p3_index())].flags(),
+            ));
+        }
+        let p2 = Self::next_table(self.offset, &p3[usize::from(addr.p3_index())])?;
+        if p2[usize::from(addr.p2_index())]
+            .flags()
+            .contains(Flags::HUGE_PAGE)
+        {
+            return Some((
+                PhysAddr::new(
+                    p2[usize::from(addr.p2_index())].addr().as_u64() + addr.as_u64() % M2MiB::SIZE,
+                ),
+                p2[usize::from(addr.p2_index())].flags(),
+            ));
+        }
+        let p1 = Self::next_table(self.offset, &p2[usize::from(addr.p2_index())])?;
+
+        let p1_entry = &p1[usize::from(addr.p1_index())];
+        if !p1_entry.flags().contains(Flags::PRESENT) {
+            return None;
+        }
+
+        Some((
+            PhysAddr::new(p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE),
+            p1_entry.flags(),
         ))
     }
 }

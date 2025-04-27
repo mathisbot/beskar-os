@@ -16,8 +16,6 @@ use core::mem::MaybeUninit;
 pub const DOUBLE_FAULT_IST: u8 = 0;
 pub const PAGE_FAULT_IST: u8 = 1;
 
-const RSP0_STACK_PAGE_COUNT: u64 = 16; // 64 KiB
-
 pub struct Gdt {
     loaded: bool,
     gdt: MaybeUninit<GlobalDescriptorTable>,
@@ -116,7 +114,6 @@ impl Gdt {
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[DOUBLE_FAULT_IST as usize] = alloc_stack(2);
         tss.interrupt_stack_table[PAGE_FAULT_IST as usize] = alloc_stack(2);
-        tss.privilege_stack_table[0] = alloc_stack(RSP0_STACK_PAGE_COUNT);
         tss
     }
 

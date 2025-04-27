@@ -32,7 +32,7 @@ impl Ring {
             1 => Self::Driver,
             2 => Self::Hypervisor,
             3 => Self::User,
-            _ => unreachable!(),
+            _ => panic!("Invalid ring value"),
         }
     }
 }

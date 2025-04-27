@@ -16,7 +16,5 @@ pub fn init() {
 
 #[inline]
 pub fn halt() {
-    unsafe {
-        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
-    }
+    beskar_core::arch::x86_64::instructions::halt();
 }

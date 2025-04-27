@@ -1,20 +1,18 @@
 use beskar_core::{
-    arch::commons::{
-        PhysAddr,
-        paging::{Frame, M1GiB, M4KiB, MemSize as _},
-    },
-    boot::{KernelInfo, RamdiskInfo},
-};
-use x86_64::{
-    VirtAddr,
-    registers::segmentation::{self, Segment},
-    structures::{
-        gdt::GlobalDescriptorTable,
-        paging::{
-            FrameAllocator, Mapper, Page, PageSize, PageTableFlags, PageTableIndex, PhysFrame,
-            Size4KiB,
+    arch::{
+        commons::{
+            PhysAddr, VirtAddr,
+            paging::{
+                CacheFlush as _, Flags, Frame, FrameAllocator as _, M1GiB, M4KiB, Mapper,
+                MemSize as _, Page,
+            },
+        },
+        x86_64::{
+            registers::{CS, SS},
+            structures::{GdtDescriptor, GlobalDescriptorTable},
         },
     },
+    boot::{KernelInfo, RamdiskInfo},
 };
 use xmas_elf::{ElfFile, program::ProgramHeader};
 
@@ -34,8 +32,8 @@ impl Level4Entries {
         let mut usage = [false; 512];
 
         // Mark identity-mapped memory as used
-        let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(0));
-        let end_page = Page::<Size4KiB>::containing_address(VirtAddr::new(max_phys_addr.as_u64()));
+        let start_page = Page::<M4KiB>::containing_address(VirtAddr::new(0));
+        let end_page = Page::<M4KiB>::containing_address(VirtAddr::new(max_phys_addr.as_u64()));
 
         for used_page in usage
             .iter_mut()
@@ -52,8 +50,8 @@ impl Level4Entries {
             (start, end)
         });
 
-        let start_page = Page::<Size4KiB>::containing_address(start);
-        let end_page = Page::<Size4KiB>::containing_address(end);
+        let start_page = Page::<M4KiB>::containing_address(start);
+        let end_page = Page::<M4KiB>::containing_address(end);
 
         for used_page in usage
             .iter_mut()
@@ -82,8 +80,8 @@ impl Level4Entries {
             let start = VirtAddr::new(virtual_address_offset + segment.virtual_addr());
             let end = start + segment.mem_size() - 1;
 
-            let start_page = Page::<Size4KiB>::containing_address(start);
-            let end_page = Page::<Size4KiB>::containing_address(end);
+            let start_page = Page::<M4KiB>::containing_address(start);
+            let end_page = Page::<M4KiB>::containing_address(end);
 
             for i in usize::from(start_page.p4_index())..=usize::from(end_page.p4_index()) {
                 self.0[i] = true;
@@ -100,7 +98,7 @@ impl Level4Entries {
     /// ## Panics
     ///
     /// Panics if no contiguous free entries are found.
-    pub fn get_free_entries(&mut self, num: usize) -> PageTableIndex {
+    pub fn get_free_entries(&mut self, num: usize) -> u16 {
         // TODO: ASLR
         let index = self
             .internal_entries()
@@ -112,7 +110,7 @@ impl Level4Entries {
             self.0[index + i] = true;
         }
 
-        PageTableIndex::new(u16::try_from(index).unwrap())
+        u16::try_from(index).unwrap()
     }
 
     /// Returns a virtual address that is not used.
@@ -128,9 +126,9 @@ impl Level4Entries {
         let needed_lvl4_entries = size.div_ceil(512 * M1GiB::SIZE);
 
         // TODO: ASLR (add random offset, need to manage alignment)
-        Page::from_page_table_indices_1gib(
+        Page::from_p4p3(
             self.get_free_entries(usize::try_from(needed_lvl4_entries).unwrap()),
-            PageTableIndex::new(0),
+            0,
         )
         .start_address()
     }
@@ -170,11 +168,7 @@ pub fn make_mappings(
 
         (
             kernel_entry_point,
-            KernelInfo::new(
-                kernel_paddr,
-                unsafe { core::mem::transmute(kernel_vaddr) },
-                kernel_size,
-            ),
+            KernelInfo::new(kernel_paddr, kernel_vaddr, kernel_size),
         )
     };
 
@@ -182,45 +176,36 @@ pub fn make_mappings(
     let ramdisk_info = ramdisk.map(|ramdisk| {
         let size = u64::try_from(ramdisk.len()).unwrap();
 
-        let ramdisk_paddr = x86_64::PhysAddr::new(ramdisk.as_ptr() as u64);
-        let start_frame = { PhysFrame::from_start_address(ramdisk_paddr).unwrap() };
+        let ramdisk_paddr = PhysAddr::new(ramdisk.as_ptr() as u64);
+        let start_frame = Frame::from_start_address(ramdisk_paddr).unwrap();
         let end_frame = start_frame + (size / M4KiB::SIZE);
 
         let start_page = {
             let start_addr = level_4_entries.get_free_address(size);
-            Page::<Size4KiB>::from_start_address(start_addr).unwrap()
+            Page::<M4KiB>::from_start_address(start_addr).unwrap()
         };
-        let end_page = start_page + (size / Size4KiB::SIZE);
+        let end_page = start_page + (size / M4KiB::SIZE);
 
         for (page, frame) in Page::range_inclusive(start_page, end_page)
-            .zip(PhysFrame::range_inclusive(start_frame, end_frame))
+            .into_iter()
+            .zip(Frame::range_inclusive(start_frame, end_frame))
         {
-            let flags = PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE;
+            let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
-            unsafe {
-                page_tables.kernel.map_to_with_table_flags(
-                    page,
-                    frame,
-                    flags,
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                    frame_allocator,
-                )
-            }
-            .expect("Failed to map ramdisk page")
-            .flush();
+            page_tables
+                .kernel
+                .map(page, frame, flags, frame_allocator)
+                .flush();
         }
 
-        RamdiskInfo::new(
-            unsafe { core::mem::transmute(start_page.start_address()) },
-            size,
-        )
+        RamdiskInfo::new(start_page.start_address(), size)
     });
 
     let stack_end_addr = {
         let stack_start_page = {
-            let guard_page = Page::<Size4KiB>::from_start_address(
+            let guard_page = Page::<M4KiB>::from_start_address(
                 // Allocate a guard page
-                level_4_entries.get_free_address(Size4KiB::SIZE + KERNEL_STACK_SIZE),
+                level_4_entries.get_free_address(M4KiB::SIZE + KERNEL_STACK_SIZE),
             )
             .unwrap();
 
@@ -235,16 +220,12 @@ pub fn make_mappings(
                 .allocate_frame()
                 .expect("Failed to allocate a frame");
 
-            let flags =
-                PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+            let flags = Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE;
 
-            unsafe {
-                page_tables
-                    .kernel
-                    .map_to(page, frame, flags, frame_allocator)
-            }
-            .expect("Failed to map stack page")
-            .flush();
+            page_tables
+                .kernel
+                .map(page, frame, flags, frame_allocator)
+                .flush();
         }
 
         info!("Setup stack");
@@ -255,25 +236,16 @@ pub fn make_mappings(
 
     // Identity map the jump code
     {
-        let chg_ctx_function_addr = x86_64::PhysAddr::new(chg_ctx as u64);
-        let chg_ctx_function_frame =
-            PhysFrame::<Size4KiB>::containing_address(chg_ctx_function_addr);
+        let chg_ctx_function_addr = PhysAddr::new(u64::try_from(chg_ctx as usize).unwrap());
+        let chg_ctx_function_frame = Frame::<M4KiB>::containing_address(chg_ctx_function_addr);
 
-        for frame in PhysFrame::range_inclusive(chg_ctx_function_frame, chg_ctx_function_frame + 1)
-        {
+        for frame in Frame::range_inclusive(chg_ctx_function_frame, chg_ctx_function_frame + 1) {
             let page = Page::containing_address(VirtAddr::new(frame.start_address().as_u64()));
 
-            unsafe {
-                page_tables.kernel.map_to_with_table_flags(
-                    page,
-                    frame,
-                    PageTableFlags::PRESENT,
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                    frame_allocator,
-                )
-            }
-            .expect("Failed to map chg_ctx page")
-            .flush();
+            page_tables
+                .kernel
+                .map(page, frame, Flags::PRESENT, frame_allocator)
+                .flush();
         }
 
         info!("Mapped jump code");
@@ -288,35 +260,28 @@ pub fn make_mappings(
         // Identity-map
         let gdt_virt_addr = VirtAddr::new(gdt_frame.start_address().as_u64());
 
-        let mut gdt = GlobalDescriptorTable::new();
+        let mut gdt = GlobalDescriptorTable::empty();
 
-        let code_selector = gdt.append(x86_64::structures::gdt::Descriptor::kernel_code_segment());
-        let data_selector = gdt.append(x86_64::structures::gdt::Descriptor::kernel_data_segment());
+        let code_selector = gdt.append(GdtDescriptor::kernel_code_segment());
+        let data_selector = gdt.append(GdtDescriptor::kernel_data_segment());
 
-        unsafe {
-            let ptr: *mut GlobalDescriptorTable = gdt_virt_addr.as_mut_ptr();
+        let ptr = gdt_virt_addr.as_mut_ptr::<GlobalDescriptorTable>();
+        let gdt = unsafe {
             ptr.write(gdt);
             &*ptr
-        }
-        .load();
+        };
+        gdt.load();
 
         unsafe {
-            segmentation::CS::set_reg(code_selector);
-            segmentation::SS::set_reg(data_selector);
+            CS::set(code_selector);
+            SS::set(data_selector);
         }
 
         let gdt_page = Page::from_start_address(gdt_virt_addr).unwrap();
-        unsafe {
-            page_tables.kernel.map_to_with_table_flags(
-                gdt_page,
-                gdt_frame,
-                PageTableFlags::PRESENT,
-                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                frame_allocator,
-            )
-        }
-        .expect("Failed to map GDT page")
-        .flush();
+        page_tables
+            .kernel
+            .map(gdt_page, gdt_frame, Flags::PRESENT, frame_allocator)
+            .flush();
 
         info!("Mapped GDT to {:#x}", gdt_page.start_address().as_u64());
         debug!("GDT at {:#x}", gdt_frame.start_address().as_u64());
@@ -330,7 +295,7 @@ pub fn make_mappings(
                 fb.start_addr() + (u64::try_from(fb.info().size()).unwrap() - 1),
             );
 
-            let start_page = Page::<Size4KiB>::from_start_address(
+            let start_page = Page::<M4KiB>::from_start_address(
                 level_4_entries.get_free_address(u64::try_from(fb.info().size()).unwrap()),
             )
             .unwrap();
@@ -343,15 +308,11 @@ pub fn make_mappings(
             .enumerate()
         {
             let page = start_page + u64::try_from(i).unwrap();
-            let flags =
-                PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
-            unsafe {
-                page_tables
-                    .kernel
-                    .map_to(page, core::mem::transmute(frame), flags, frame_allocator)
-            }
-            .expect("Failed to map framebuffer page")
-            .flush();
+            let flags = Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE;
+            page_tables
+                .kernel
+                .map(page, frame, flags, frame_allocator)
+                .flush();
         }
 
         info!("Mapped framebuffer");
@@ -364,24 +325,18 @@ pub fn make_mappings(
     let recursive_index = {
         let index = level_4_entries.get_free_entries(1);
 
-        let entry = &mut page_tables.kernel.level_4_table_mut()[index];
-        assert!(
-            entry.is_unused(),
-            "Recursive mapping entry is already in use"
-        );
+        let entry = &mut page_tables.kernel.entries_mut()[usize::from(index)];
+        assert!(entry.is_null(), "Recursive mapping entry is already in use");
 
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE;
 
-        entry.set_frame(page_tables.kernel_level_4_frame, flags);
+        entry.set(page_tables.kernel_level_4_frame.start_address(), flags);
 
         index
     };
 
     info!("Mapped recursive index");
-    debug!(
-        "Recursive page table index is {}",
-        u16::from(recursive_index)
-    );
+    debug!("Recursive page table index is {}", recursive_index);
 
     Mappings {
         stack_top: stack_end_addr,
@@ -406,7 +361,7 @@ pub struct Mappings {
     /// The start of the framebuffer.
     framebuffer: VirtAddr,
     /// The recursive mapping index in the level 4 page table.
-    recursive_index: PageTableIndex,
+    recursive_index: u16,
     /// Various kernel information.
     kernel_info: KernelInfo,
     /// Various ramdisk information.
@@ -446,7 +401,7 @@ impl Mappings {
 
     #[must_use]
     #[inline]
-    pub const fn recursive_index(&self) -> PageTableIndex {
+    pub const fn recursive_index(&self) -> u16 {
         self.recursive_index
     }
 

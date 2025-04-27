@@ -27,5 +27,12 @@ pub unsafe fn load_gdt(descriptor: &super::structures::DescriptorTable) {
     }
 }
 
+#[inline]
+pub fn halt() {
+    unsafe {
+        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+    }
+}
+
 /// This value can be used to fill the stack when debugging stack overflows.
 pub const STACK_DEBUG_INSTR: u8 = 0xCC;
