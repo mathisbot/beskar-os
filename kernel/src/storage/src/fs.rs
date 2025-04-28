@@ -1,11 +1,31 @@
 use alloc::string::String;
+use core::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
 pub mod ext2;
 pub mod fat32;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Handle(usize);
+pub struct Handle {
+    id: u64,
+}
+
+static HANDLE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+impl Handle {
+    #[must_use]
+    #[inline]
+    pub fn new() -> Self {
+        let id = HANDLE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        Self { id }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn id(&self) -> u64 {
+        self.id
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -19,9 +39,13 @@ pub enum Error {
     InvalidHandle,
     #[error("IO error")]
     IoError,
+    #[error("Permission denied")]
+    PermissionDenied,
+    #[error("Unsupported operation")]
+    UnsupportedOperation,
 }
 
-type FileResult<T> = Result<T, Error>;
+pub type FileResult<T> = Result<T, Error>;
 
 pub trait FileSystem {
     /// Creates a new file at the given path, if it does not already exist.

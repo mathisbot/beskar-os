@@ -152,5 +152,5 @@ pub fn main_counter_value() -> u64 {
 pub fn ticks_per_ms() -> u64 {
     const HZ_PER_MHZ: u64 = 1_000_000;
     const MS_PER_S: u64 = 1_000;
-    TSC_MHZ.load(Ordering::Relaxed) * HZ_PER_MHZ / MS_PER_S
+    TSC_MHZ.load(Ordering::Relaxed) * const { HZ_PER_MHZ / MS_PER_S }
 }

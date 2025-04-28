@@ -159,7 +159,7 @@ pub struct HcsParams2 {
     erst_max: u8,
     /// Number of Scratchpad Buffers that shall be reserved for the xHC.
     max_scratchpad_bufs: u16,
-    /// Wether the xHC supports Scratchpad Buffer Restore.
+    /// Whether the xHC supports Scratchpad Buffer Restore.
     scratchpad_restore: bool,
 }
 
@@ -275,7 +275,7 @@ impl HccParams1 {
 
     #[must_use]
     #[inline]
-    /// Wether the xHC has implemented the
+    /// Whether the xHC has implemented the
     /// Bandwidth Negotiation
     pub const fn bnc(self) -> bool {
         (self.value & (1 << Self::BNC)) != 0
@@ -283,7 +283,7 @@ impl HccParams1 {
 
     #[must_use]
     #[inline]
-    /// Wether xHC uses 64 byte Context data structures
+    /// Whether xHC uses 64 byte Context data structures
     pub const fn csz(self) -> bool {
         (self.value & (1 << Self::CSZ)) != 0
     }
@@ -320,7 +320,7 @@ impl HccParams1 {
 
     #[must_use]
     #[inline]
-    /// Wether the xHC supports secondary Stream IDs.
+    /// Whether the xHC supports secondary Stream IDs.
     pub const fn nss(self) -> bool {
         (self.value & (1 << Self::NSS)) != 0
     }
@@ -344,7 +344,7 @@ impl HccParams1 {
 
     #[must_use]
     #[inline]
-    /// Wether the host controller implementation Stream
+    /// Whether the host controller implementation Stream
     /// Context support a Stopped EDTLA field.
     pub const fn sec(self) -> bool {
         (self.value & (1 << Self::SEC)) != 0
@@ -352,7 +352,7 @@ impl HccParams1 {
 
     #[must_use]
     #[inline]
-    /// Wether the host controller implementation is capable of
+    /// Whether the host controller implementation is capable of
     /// matching the Frame ID of consecutive Isoch TDs.
     pub const fn cfc(self) -> bool {
         (self.value & (1 << Self::CFC)) != 0

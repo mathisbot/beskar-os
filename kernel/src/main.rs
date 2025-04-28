@@ -31,7 +31,11 @@ fn kmain() -> ! {
         use kernel::process::scheduler::{self, priority::Priority, thread::Thread};
         extern crate alloc;
 
-        let driver_proc = Arc::new(Process::new("Drivers", kernel::process::Kind::Driver, None));
+        let driver_proc = Arc::new(Process::new(
+            "Drivers",
+            beskar_core::process::Kind::Driver,
+            None,
+        ));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
             driver_proc,
             Priority::Low,
@@ -44,7 +48,7 @@ fn kmain() -> ! {
             // File loading should be done in the process itself.
             let user_proc = Arc::new(Process::new(
                 "User",
-                kernel::process::Kind::User,
+                beskar_core::process::Kind::User,
                 Some(kernel::process::binary::Binary::new(
                     ramdisk,
                     kernel::process::binary::BinaryType::Elf,

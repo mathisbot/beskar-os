@@ -4,8 +4,13 @@
 //! chapter 10  (p.286) (9 can also be useful) for more information.
 //!
 //! NB: All registers use host-endianess (LE), except for `ETherType` fiels, which use network-endianess (BE).
-use core::ptr::NonNull;
-
+use super::Nic;
+use crate::{
+    drivers::pci::{self, Bar, with_pci_handler},
+    locals,
+    mem::page_alloc::pmap::PhysicalMapping,
+    process,
+};
 use alloc::vec::Vec;
 use beskar_core::{
     arch::{
@@ -17,19 +22,12 @@ use beskar_core::{
     },
     drivers::{DriverError, DriverResult},
 };
+use core::ptr::NonNull;
+use holonet::l2::ethernet::MacAddress;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
     ptrs::volatile::{ReadWrite, Volatile},
 };
-
-use super::Nic;
-use crate::{
-    drivers::pci::{self, Bar, with_pci_handler},
-    locals,
-    mem::page_alloc::pmap::PhysicalMapping,
-    process,
-};
-use network::l2::ethernet::MacAddress;
 
 const RX_BUFFERS: usize = 32;
 const TX_BUFFERS: usize = 8;

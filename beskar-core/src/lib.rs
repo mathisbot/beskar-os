@@ -16,6 +16,7 @@ pub mod drivers;
 pub mod mem;
 pub mod process;
 pub mod syscall;
+pub mod time;
 pub mod video;
 
 #[macro_export]

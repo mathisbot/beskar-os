@@ -190,7 +190,7 @@ impl AddressSpace {
 
     #[must_use]
     #[inline]
-    /// Returns wether a certain memory range is owned by the address space.
+    /// Returns whether a certain memory range is owned by the address space.
     pub fn is_addr_owned(&self, start: VirtAddr, end: VirtAddr) -> bool {
         let idx = self.pgalloc_pml4_idx;
 

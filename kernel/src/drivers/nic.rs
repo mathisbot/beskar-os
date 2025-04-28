@@ -1,6 +1,6 @@
 use crate::drivers::pci;
 use beskar_core::drivers::{DriverError, DriverResult};
-use network::Nic;
+use holonet::Nic;
 
 mod e1000e;
 

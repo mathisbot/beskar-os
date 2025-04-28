@@ -38,7 +38,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     if process::scheduler::is_scheduling_init() {
         use crate::arch::apic::ipi;
 
-        if process::scheduler::current_process().kind() == process::Kind::Kernel {
+        if process::scheduler::current_process().kind() == beskar_core::process::Kind::Kernel {
             // If a kernel (vital) process panics, crash the whole system.
             KERNEL_PANIC.call_once(|| {
                 video::error!("Kernel process panicked. Sending NMI to all cores.");

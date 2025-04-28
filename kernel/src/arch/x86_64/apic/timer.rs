@@ -3,7 +3,6 @@
 //! instead of being a method of the Local APIC.
 
 use core::num::NonZeroU32;
-
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
 
 const TIMER_DIVIDE_CONFIG_REG: usize = 0x3E0;
@@ -88,7 +87,7 @@ impl LapicTimer {
             divider: Divider::Two,
             duration: u32::MAX - 1,
         }));
-        crate::time::wait(crate::time::Duration::from_millis(50));
+        crate::time::wait(beskar_core::time::Duration::from_millis(50));
         let ticks = self.read_curr_count_reg();
 
         self.set(Mode::Inactive);
