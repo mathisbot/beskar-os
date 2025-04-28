@@ -61,7 +61,7 @@ A great choice for most of modern CPUs is `x86_64-v3` (`v4` if it is very modern
 If you want to run the OS on a testing virtual machine on QEMU, you can do so by running the following command :
 
 ```powershell
-qemu-system-x86_64.exe -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -device usb-kbd -M q35
+qemu-system-x86_64.exe -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -M q35
 ```
 
 Where:
@@ -72,10 +72,10 @@ Where:
 - `<ACCEL_BACKEND>` allows QEMU to use acceleration based on your OS. On Linux, you can set it to `kvm`, and to `whpx` on Windows (currently incompatible with OVMF files).
 
 Other useful parameters:
-- `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.
-- `-display none`: If you're not interested in graphics (for debugging purposes).
 - `-nic user,model=e1000e`: Add a network card to the emulated computer.
 - `-device nvme,serial=<anything>`: Add a NVMe controller to the emulated computer.
+- `-device usb-kbd`: Add a USB keyboard (currently not recognized).
+- `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.
 
 #### Troubleshooting
 

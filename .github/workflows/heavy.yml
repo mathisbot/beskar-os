@@ -59,6 +59,7 @@ jobs:
       - name: Run tests
         run: |
           cargo test --package beskar-core
+          cargo test --package holonet
 
   fmt:
     name: Format & Clippy
@@ -82,6 +83,7 @@ jobs:
           cargo clippy --package beskar-core -- -D warnings
           cargo clippy --package beskar-lib -- -D warnings
           cargo clippy --package bootloader -- -D warnings
+          cargo clippy --package holonet -- -D warnings
           cargo clippy --package kernel
 
       - name: Run Rustfmt

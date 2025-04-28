@@ -29,6 +29,9 @@ pub enum NetworkError {
     #[error("Network controller is not initialized")]
     /// The network controller is not initialized
     Uninitialized,
+    #[error("Unsupported operation")]
+    /// The operation is not supported
+    Unsupported,
 }
 
 pub type NetworkResult<T> = Result<T, NetworkError>;

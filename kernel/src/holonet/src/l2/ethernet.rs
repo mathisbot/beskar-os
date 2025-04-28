@@ -139,7 +139,7 @@ impl<T: AsRef<[u8]>> Frame<T> {
     ///
     /// Returns `Invalid` if the buffer is too short.
     pub fn check_len(&self) -> NetworkResult<()> {
-        (self.buffer.as_ref().len() < HEADER_LEN)
+        (self.buffer.as_ref().len() >= HEADER_LEN)
             .then_some(())
             .ok_or(NetworkError::Invalid)
     }
