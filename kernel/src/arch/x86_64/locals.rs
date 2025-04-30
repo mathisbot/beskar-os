@@ -5,7 +5,7 @@ use beskar_core::arch::{
 };
 
 #[cold]
-pub fn store_locals(locals: &crate::locals::CoreLocalsInfo) {
+pub fn store_locals(locals: &'static crate::locals::CoreLocalsInfo) {
     unsafe {
         GS::write_base(VirtAddr::from_ptr(core::ptr::from_ref(locals)));
     }

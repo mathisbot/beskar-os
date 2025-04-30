@@ -160,9 +160,7 @@ impl Scheduler {
             let new_stack = thread.last_stack_ptr();
 
             let cr3 = thread.process().address_space().cr3_raw();
-            if let Some(tls) = thread.tls() {
-                crate::arch::locals::store_thread_locals(tls);
-            }
+            thread.tls().map(crate::arch::locals::store_thread_locals);
 
             if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
                 let tss = unsafe { locals!().gdt().force_lock() }.tss_mut().unwrap();
