@@ -34,22 +34,22 @@ static SLEEPING: McsLock<BTreeMap<ThreadId, Box<Thread>>> = McsLock::new(BTreeMa
 ///
 /// This function should only be called once, and only by the kernel, with the kernel thread.
 pub unsafe fn init(kernel_thread: thread::Thread) {
-    static SPAWN_CLEAN_THREAD: Once<()> = Once::uninit();
+    static SPAWN_GUARD_THREAD: Once<()> = Once::uninit();
 
     let kernel_process = kernel_thread.process();
 
-    QUEUE.call_once(|| priority::RoundRobinQueues::create(kernel_process.clone()));
+    QUEUE.call_once(|| priority::RoundRobinQueues::new(kernel_process.clone()));
     FINISHED.call_once(|| MpscQueue::new(Box::pin(Thread::new_stub(kernel_process.clone()))));
 
     let scheduler = Scheduler::new(kernel_thread);
     locals!().scheduler().call_once(|| scheduler);
 
-    SPAWN_CLEAN_THREAD.call_once(|| {
+    SPAWN_GUARD_THREAD.call_once(|| {
         let clean_thread = Thread::new(
             kernel_process,
             priority::Priority::Low,
             alloc::vec![0; 1024 * 128],
-            clean_thread,
+            guard_thread,
         );
 
         spawn_thread(Box::pin(clean_thread));
@@ -194,7 +194,12 @@ fn get_scheduler() -> &'static Scheduler {
     locals!().scheduler().get().unwrap()
 }
 
-extern "C" fn clean_thread() -> ! {
+/// A thread should be spawned with this function.
+///
+/// This function endlessly loops and performs the following tasks:
+/// - Drops finished threads.
+/// - Yields the CPU if no thread is ready to run.
+extern "C" fn guard_thread() -> ! {
     loop {
         while let Some(thread) = FINISHED.get().unwrap().dequeue() {
             drop(thread);
@@ -331,6 +336,7 @@ impl hyperdrive::locks::BackOff for Yield {
     }
 }
 
+/// Put the current thread to sleep.
 pub fn sleep() {
     get_scheduler()
         .should_sleep_thread

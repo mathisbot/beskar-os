@@ -76,7 +76,6 @@ impl From<Priority> for u8 {
 /// The `next` function must not allocate memory, acquire locks, ...
 /// because it will be used by interrupt handlers.
 pub unsafe trait ThreadQueue {
-    fn create(root_proc: Arc<Process>) -> Self;
     fn append(&self, thread: Pin<Box<Thread>>);
     fn next(&self) -> Option<Pin<Box<Thread>>>;
 }
@@ -91,15 +90,7 @@ pub struct RoundRobinQueues {
 }
 
 impl RoundRobinQueues {
-    /// Cycle through the priorities.
-    fn cycle_priority(&self) -> Priority {
-        let current = self.current.fetch_add(1, Ordering::Relaxed);
-        self.cycle[current % self.cycle.len()]
-    }
-}
-
-unsafe impl ThreadQueue for RoundRobinQueues {
-    fn create(root_proc: Arc<Process>) -> Self {
+    pub fn new(root_proc: Arc<Process>) -> Self {
         Self {
             cycle: [
                 Priority::High,
@@ -117,6 +108,14 @@ unsafe impl ThreadQueue for RoundRobinQueues {
         }
     }
 
+    /// Cycle through the priorities.
+    fn cycle_priority(&self) -> Priority {
+        let current = self.current.fetch_add(1, Ordering::Relaxed);
+        self.cycle[current % self.cycle.len()]
+    }
+}
+
+unsafe impl ThreadQueue for RoundRobinQueues {
     fn append(&self, thread: Pin<Box<Thread>>) {
         match thread.priority() {
             Priority::Null => {

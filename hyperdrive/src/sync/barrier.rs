@@ -35,26 +35,45 @@
 //!     handle.join().unwrap();
 //! }
 //! ```
-use core::sync::atomic::{AtomicUsize, Ordering};
+//!
+//! If you need a reusable barrier, consider using `ReusableBarrier`.
+//!
+//! ```rust
+//! # use hyperdrive::sync::barrier::ReusableBarrier;
+//! # use std::sync::Arc;
+//! # use std::thread::spawn;
+//! #
+//! let num_threads = 10;
+//! let barrier = Arc::new(ReusableBarrier::new(num_threads / 2));
+//!
+//! let handles = (0..num_threads)
+//!     .map(|_| spawn({
+//!         let barrier = barrier.clone();
+//!         move || {
+//!             barrier.wait();
+//!         }
+//!     }))
+//!     .collect::<Vec<_>>();
+//!
+//! for handle in handles {
+//!     handle.join().unwrap();
+//! }
+//! ```
+use core::sync::atomic::{AtomicU32, Ordering};
 
 /// A barrier that allows a fixed number of threads to synchronize.
+///
+/// Due to its simplicity, this barrier is not reusable.
+/// Attempting to call `wait` with a different number of threads than the one
+/// specified in the constructor will result in a panic.
+///
+/// If you need reusability, use `ReusableBarrier` instead.
 pub struct Barrier {
     /// Amount of threads that need to reach the barrier.
-    count: usize,
-    /// Rank counter.
-    ///
-    /// Used by threads to get their rank in the barrier.
-    rank: AtomicUsize,
+    count: AtomicU32,
     /// Current amount of threads that are waiting.
-    current: AtomicUsize,
-    /// Amount of threads that have exited the barrier.
-    out: AtomicUsize,
+    current: AtomicU32,
 }
-
-// Safety: The only non-Send/Sync field is `count`, which is a constant.
-#[allow(clippy::non_send_fields_in_send_ty)]
-unsafe impl Send for Barrier {}
-unsafe impl Sync for Barrier {}
 
 impl Barrier {
     #[must_use]
@@ -64,13 +83,71 @@ impl Barrier {
     /// # Panics
     ///
     /// Panics if `count` is 0.
-    pub const fn new(count: usize) -> Self {
+    pub const fn new(count: u32) -> Self {
         assert!(count > 0, "Barrier must have a count greater than 0.");
         Self {
-            count,
-            rank: AtomicUsize::new(0),
-            current: AtomicUsize::new(0),
-            out: AtomicUsize::new(0),
+            count: AtomicU32::new(count),
+            current: AtomicU32::new(0),
+        }
+    }
+
+    /// Waits for all threads to reach the barrier.
+    ///
+    /// This will block the current thread until all threads have reached the barrier.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the barrier has already been released.
+    /// This means that the number of threads that have reached the barrier is greater than the
+    /// number of threads that were specified in the constructor.
+    pub fn wait(&self) {
+        let count = self.count.load(Ordering::Relaxed);
+
+        let curr = self.current.fetch_add(1, Ordering::Acquire);
+        assert!(curr < count, "Barrier has already been released.");
+
+        // Actual waiting loop.
+        while self.current.load(Ordering::Acquire) < count {
+            core::hint::spin_loop();
+        }
+    }
+}
+
+/// A barrier that allows a fixed number of threads to synchronize.
+///
+/// Thanks to its increased size (and complexity), this barrier is reusable.
+/// This means that once the barrier is released, it can instantly be reused
+/// without having to wait for all threads to exit the barrier.
+///
+/// If you do not need reusability, consider using `Barrier` (half the size) instead.
+pub struct ReusableBarrier {
+    /// Amount of threads that need to reach the barrier.
+    count: AtomicU32,
+    /// Rank counter.
+    ///
+    /// Used by threads to get their rank in the barrier.
+    rank: AtomicU32,
+    /// Current amount of threads that are waiting.
+    current: AtomicU32,
+    /// Amount of threads that have exited the barrier.
+    out: AtomicU32,
+}
+
+impl ReusableBarrier {
+    #[must_use]
+    #[inline]
+    /// Creates a new barrier that allows `count` threads to synchronize.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `count` is 0.
+    pub const fn new(count: u32) -> Self {
+        assert!(count > 0, "Barrier must have a count greater than 0.");
+        Self {
+            count: AtomicU32::new(count),
+            rank: AtomicU32::new(0),
+            current: AtomicU32::new(0),
+            out: AtomicU32::new(0),
         }
     }
 
@@ -78,23 +155,25 @@ impl Barrier {
     ///
     /// This will block the current thread until all threads have reached the barrier.
     pub fn wait(&self) {
-        while self.rank.fetch_add(1, Ordering::AcqRel) >= self.count {
+        let count = self.count.load(Ordering::Relaxed);
+
+        while self.rank.fetch_add(1, Ordering::Acquire) >= count {
             // Avoid overflow (which would be catastrophic) by waiting instead of continuously adding.
-            while self.rank.load(Ordering::Acquire) >= self.count {
+            while self.rank.load(Ordering::Acquire) >= count {
                 core::hint::spin_loop();
             }
         }
         self.current.fetch_add(1, Ordering::AcqRel);
 
         // Actual waiting loop.
-        while self.current.load(Ordering::Acquire) < self.count {
+        while self.current.load(Ordering::Acquire) < count {
             core::hint::spin_loop();
         }
         let out = self.out.fetch_add(1, Ordering::AcqRel);
 
         // Only one thread will be responsible for resetting the barrier.
         // We simply have to wait for every thread to exit the while loop.
-        if out == self.count - 1 {
+        if out == count - 1 {
             self.current.store(0, Ordering::Release);
             self.out.store(0, Ordering::Release);
             // Release the barrier
@@ -111,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_barrier() {
-        let barrier = Barrier::new(1);
+        let barrier = ReusableBarrier::new(1);
 
         barrier.wait();
     }
@@ -119,16 +198,16 @@ mod tests {
     #[test]
     #[should_panic = "Barrier must have a count greater than 0."]
     fn test_barrier_0() {
-        let _ = Barrier::new(0);
+        let _ = ReusableBarrier::new(0);
     }
 
     #[test]
     fn test_barrier_concurrent() {
         let num_threads = 10;
 
-        let data = Arc::new(AtomicUsize::new(0));
+        let data = Arc::new(AtomicU32::new(0));
 
-        let barrier = Arc::new(Barrier::new(num_threads));
+        let barrier = Arc::new(ReusableBarrier::new(num_threads));
         let handles = (0..num_threads)
             .map(|_| {
                 spawn({
@@ -152,7 +231,7 @@ mod tests {
     fn test_barrier_reuse_concurrent() {
         let num_threads = 2 * 10;
 
-        let barrier = Arc::new(Barrier::new(2));
+        let barrier = Arc::new(ReusableBarrier::new(2));
 
         let handles = (0..num_threads)
             .map(|_| {
@@ -175,9 +254,9 @@ mod tests {
     fn test_barrier_concurrent_many_uses() {
         let num_threads = 5;
 
-        let data = Arc::new(AtomicUsize::new(0));
+        let data = Arc::new(AtomicU32::new(0));
 
-        let barrier = Arc::new(Barrier::new(num_threads));
+        let barrier = Arc::new(ReusableBarrier::new(num_threads));
         let handles = (0..num_threads)
             .map(|_| {
                 spawn({
