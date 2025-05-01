@@ -4,8 +4,13 @@
 //! chapter 10  (p.286) (9 can also be useful) for more information.
 //!
 //! NB: All registers use host-endianess (LE), except for `ETherType` fiels, which use network-endianess (BE).
-use core::ptr::NonNull;
-
+use super::Nic;
+use crate::{
+    drivers::pci::{self, Bar, with_pci_handler},
+    locals,
+    mem::page_alloc::pmap::PhysicalMapping,
+    process,
+};
 use alloc::vec::Vec;
 use beskar_core::{
     arch::{
@@ -17,18 +22,11 @@ use beskar_core::{
     },
     drivers::{DriverError, DriverResult},
 };
+use core::ptr::NonNull;
+use holonet::l2::ethernet::MacAddress;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
     ptrs::volatile::{ReadWrite, Volatile},
-};
-
-use super::Nic;
-use crate::{
-    drivers::pci::{self, Bar, with_pci_handler},
-    locals,
-    mem::page_alloc::pmap::PhysicalMapping,
-    network::l2::ethernet::MacAddress,
-    process,
 };
 
 const RX_BUFFERS: usize = 32;
@@ -41,7 +39,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
         with_pci_handler(|handler| handler.read_bar(&network_controller, 0))
     else {
         // FIXME: Apparently, some network controllers use IO BARs
-        crate::warn!("Network controller does not have a memory BAR");
+        video::warn!("Network controller does not have a memory BAR");
         return Err(DriverError::Absent);
     };
 
@@ -70,7 +68,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     };
     e1000e.init(rxdesc_paddr, txdesc_paddr, nb_rx, nb_tx);
 
-    crate::info!(
+    video::info!(
         "Intel e1000e network controller initialized. MAC: {}",
         e1000e.mac_address()
     );
@@ -301,7 +299,7 @@ impl E1000e<'_> {
 }
 
 extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("NIC INTERRUPT on core {}", locals!().core_id());
+    video::info!("NIC INTERRUPT on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 

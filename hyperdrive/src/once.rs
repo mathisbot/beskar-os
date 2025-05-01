@@ -3,7 +3,7 @@
 //! This structure is somewhat similar to `std::sync::Once`, and it does not provide interior mutability.
 //! It is used to perform a one-time initialization of a value, and then provide a reference to it.
 //!
-//! If you need one-time initialization with interior mutability, use `hyperdrive::locks::mcs::MUMcsLock` instead.
+//! If you need one-time initialization with interior mutability, consider combining this structure with a lock.
 //!
 //! ## Examples
 //!
@@ -26,9 +26,9 @@
 //! ```rust
 //! # use hyperdrive::once::Once;
 //! #
-//! static PERFORM_ONCE: Once<()> = Once::uninit();
-//!
 //! fn perform_once() {
+//!     static PERFORM_ONCE: Once<()> = Once::uninit();
+//!
 //!     PERFORM_ONCE.call_once(|| {
 //!         // Perform the operation
 //!     });
@@ -41,13 +41,13 @@
 //!
 //! Note that, in this case, if every thread calls the function `perform_once` at the same time,
 //! non-executing threads won't block on the operation.
-//! If you want to ensure the operation is complete before proceeding, you can either use a `Barrier`
-//! or call `get` on the `Once`.
+//! If you want to ensure the operation is complete before proceeding, use `Once::get`.
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU8, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 /// Possible states of the `Once` structure.
 enum State {
     Uninitialized,
@@ -98,19 +98,19 @@ struct AtomicState(AtomicU8);
 impl AtomicState {
     #[must_use]
     #[inline]
-    const fn uninit() -> Self {
+    pub const fn uninit() -> Self {
         Self(AtomicU8::new(State::Uninitialized.as_u8()))
     }
 
     #[must_use]
     #[inline]
-    const fn new(state: State) -> Self {
+    pub const fn new(state: State) -> Self {
         Self(AtomicU8::new(state.as_u8()))
     }
 
     #[must_use]
     #[inline]
-    fn load(&self, order: Ordering) -> State {
+    pub fn load(&self, order: Ordering) -> State {
         let raw = self.0.load(order);
         // Safety: `AtomicState`'s API only allows storing valid states.
         // Thus, we can safely convert the raw value to a `State`.
@@ -118,19 +118,28 @@ impl AtomicState {
     }
 
     #[inline]
-    fn compare_exchange(
+    pub fn compare_exchange(
         &self,
         current: State,
         new: State,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<u8, u8> {
-        self.0
+    ) -> Result<State, State> {
+        match self
+            .0
             .compare_exchange(current.as_u8(), new.as_u8(), success, failure)
+        {
+            Ok(_) => Ok(current),
+            Err(v) => {
+                // Safety: `AtomicState`'s API only allows storing valid states.
+                // Thus, we can safely convert the raw value to a `State`.
+                Err(unsafe { State::from_u8_unchecked(v) })
+            }
+        }
     }
 
     #[inline]
-    fn store(&self, value: State, order: Ordering) {
+    pub fn store(&self, value: State, order: Ordering) {
         self.0.store(value.as_u8(), order);
     }
 }
@@ -146,7 +155,7 @@ pub struct Once<T> {
 }
 
 // Safety:
-// `Once` only provies an immutable reference to the value when initialized.
+// `Once` only provides an immutable reference to the value when initialized.
 // On initialization, we manually make sure there are no data races.
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl<T> Send for Once<T> {}
@@ -155,6 +164,7 @@ unsafe impl<T> Sync for Once<T> {}
 impl<T> Once<T> {
     #[must_use]
     #[inline]
+    /// Creates a new `Once` structure in an uninitialized state.
     pub const fn uninit() -> Self {
         Self {
             state: AtomicState::uninit(),
@@ -164,6 +174,7 @@ impl<T> Once<T> {
 
     #[must_use]
     #[inline]
+    /// Creates a new `Once` structure in an initialized state.
     pub const fn from_init(value: T) -> Self {
         Self {
             state: AtomicState::new(State::Initialized),
@@ -171,7 +182,13 @@ impl<T> Once<T> {
         }
     }
 
-    // FIXME: What to do if the initializer panics?
+    #[must_use]
+    #[inline]
+    /// Returns true if the value has been initialized.
+    pub fn is_initialized(&self) -> bool {
+        self.state.load(Ordering::Acquire) == State::Initialized
+    }
+
     /// Initializes the value if it has not been initialized yet.
     ///
     /// Try to make the `initializer` function as less likely to panic as possible.
@@ -206,7 +223,7 @@ impl<T> Once<T> {
     #[must_use]
     /// Returns a reference to the value if it has been initialized.
     ///
-    /// If the value is still initializing, this function will wait until initialization is complete.
+    /// If the value is still initializing, this function will block until initialization is complete.
     pub fn get(&self) -> Option<&T> {
         match self.state.load(Ordering::Acquire) {
             State::Initialized => {
@@ -216,8 +233,7 @@ impl<T> Once<T> {
             }
             State::Initializing => {
                 // Here we choose to wait instead of returning `None` if the value is being initialized.
-                // It is a risky design: if initialization panics, the waiting thread will be stuck forever.
-                // However, it reduces "false" panics when the value returned is unwrapped.
+                // It has one downside: if initialization panics, the waiting thread will be stuck forever.
                 while self.state.load(Ordering::Acquire) == State::Initializing {
                     core::hint::spin_loop();
                 }
@@ -250,8 +266,10 @@ mod test {
     fn test_once() {
         let once = Once::uninit();
         assert!(once.get().is_none());
+        assert!(!once.is_initialized());
 
         once.call_once(|| 42);
+        assert!(once.is_initialized());
 
         let value = once.get().unwrap();
         assert_eq!(*value, 42);
@@ -260,6 +278,7 @@ mod test {
     #[test]
     fn test_init() {
         let once = Once::from_init(42);
+        assert!(once.is_initialized());
         once.call_once(|| panic!("This should not be called"));
         let value = once.get().unwrap();
         assert_eq!(*value, 42);

@@ -30,6 +30,7 @@ jobs:
         run: |
           cargo test --package hyperdrive
           cargo test --package beskar-core
+          cargo test --package holonet
 
       - name: Run Clippy
         run: cargo clippy

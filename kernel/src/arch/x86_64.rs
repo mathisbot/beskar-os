@@ -11,12 +11,10 @@ pub mod userspace;
 
 pub fn init() {
     cpuid::check_cpuid();
-    crate::debug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
+    video::debug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
 }
 
 #[inline]
 pub fn halt() {
-    unsafe {
-        core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
-    }
+    beskar_core::arch::x86_64::instructions::halt();
 }

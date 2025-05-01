@@ -30,6 +30,8 @@ pub struct Thread {
     root_proc: Arc<Process>,
     /// The priority of the thread.
     priority: Priority,
+    /// The state of the thread.
+    state: ThreadState,
     /// Used to keep ownership of the stacks when needed.
     stack: Option<ThreadStacks>,
     /// Keeps track of where the stack pointer is.
@@ -42,6 +44,24 @@ pub struct Thread {
 }
 
 impl Unpin for Thread {}
+
+impl PartialEq for Thread {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+impl Eq for Thread {}
+
+impl PartialOrd for Thread {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.id.partial_cmp(&other.id)
+    }
+}
+impl Ord for Thread {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.id.cmp(&other.id)
+    }
+}
 
 impl Queueable for Thread {
     type Handle = Pin<Box<Self>>;
@@ -68,6 +88,7 @@ impl Thread {
             id: ThreadId::new(),
             root_proc: kernel_process,
             priority: Priority::High,
+            state: ThreadState::Running,
             stack: None,
             // Will be overwritten before being used.
             last_stack_ptr: core::ptr::null_mut(),
@@ -93,6 +114,7 @@ impl Thread {
             id: ThreadId::new(),
             root_proc,
             priority,
+            state: ThreadState::Ready,
             stack: Some(ThreadStacks::new(stack)),
             last_stack_ptr: stack_ptr,
             link: Link::default(),
@@ -167,6 +189,7 @@ impl Thread {
             id: ThreadId::new(),
             root_proc,
             priority: Priority::Null,
+            state: ThreadState::Ready,
             stack: None,
             last_stack_ptr: core::ptr::null_mut(),
             link: Link::default(),
@@ -184,6 +207,16 @@ impl Thread {
         self.priority = priority;
     }
 
+    #[inline]
+    /// Changes the state of the thread.
+    ///
+    /// ## Safety
+    ///
+    /// This function should only be called on a currently active thread.
+    pub(super) const unsafe fn set_state(&mut self, state: ThreadState) {
+        self.state = state;
+    }
+
     #[must_use]
     #[inline]
     pub const fn id(&self) -> ThreadId {
@@ -194,6 +227,12 @@ impl Thread {
     #[inline]
     pub const fn priority(&self) -> Priority {
         self.priority
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn state(&self) -> ThreadState {
+        self.state
     }
 
     #[must_use]
@@ -213,7 +252,7 @@ impl Thread {
     #[inline]
     /// Returns a mutable pointer to the last stack pointer.
     pub const fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
-        &mut self.last_stack_ptr
+        &raw mut self.last_stack_ptr
     }
 
     #[must_use]
@@ -273,7 +312,7 @@ impl ThreadSnapshot {
 
 static TID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
 pub struct ThreadId(u64);
 
 impl core::ops::Deref for ThreadId {
@@ -493,4 +532,15 @@ impl Tls {
     pub const fn size(&self) -> u64 {
         self.size
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The state of a thread.
+pub enum ThreadState {
+    /// The thread is running.
+    Running,
+    /// The thread is ready to run.
+    Ready,
+    /// The thread is waiting for an event.
+    Sleeping,
 }

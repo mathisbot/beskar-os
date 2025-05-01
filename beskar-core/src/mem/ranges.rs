@@ -234,11 +234,50 @@ impl<const N: usize> MemoryRanges<N> {
 
     #[must_use]
     #[inline]
-    pub fn allocate<const M: usize>(
+    pub fn allocate(&mut self, size: u64, alignment: u64) -> Option<usize> {
+        // 0-sized allocations are not allowed,
+        // and alignment must be a power of 2 because of memory constraints
+        if size == 0 || !alignment.is_power_of_two() {
+            return None;
+        }
+
+        // Alignment is a power of 2, so alignment - 1 is all zeroes followed by ones
+        let alignment_mask = alignment - 1;
+
+        let mut allocation = None;
+        for range in self.entries() {
+            let alignment_offset = (alignment - (range.start & alignment_mask)) & alignment_mask;
+
+            let start = range.start;
+            let end = start.checked_add(size - 1)?.checked_add(alignment_offset)?;
+
+            if end > range.end {
+                continue;
+            }
+            let prev_size = allocation.map(|(start, end, _)| end - start);
+
+            if allocation.is_none() || end - start < prev_size.unwrap() {
+                allocation = Some((
+                    start,
+                    end,
+                    usize::try_from(start + alignment_offset).unwrap(),
+                ));
+            }
+        }
+
+        allocation.map(|(start, end, addr)| {
+            self.remove(MemoryRange::new(start, end));
+            addr
+        })
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn allocate_req<const M: usize>(
         &mut self,
         size: u64,
         alignment: u64,
-        request: &MemoryRangeRequest<M>,
+        req_ranges: &MemoryRanges<M>,
     ) -> Option<usize> {
         // 0-sized allocations are not allowed,
         // and alignment must be a power of 2 because of memory constraints
@@ -260,43 +299,28 @@ impl<const N: usize> MemoryRanges<N> {
                 continue;
             }
 
-            match request {
-                MemoryRangeRequest::MustBeWithin(req_ranges) => {
-                    for req_range in req_ranges.entries() {
-                        if let Some(overlap) = range.overlaps(req_range) {
-                            let alignment_overlap =
-                                (overlap.start.wrapping_add(alignment_mask)) & !alignment_mask;
+            for req_range in req_ranges.entries() {
+                if let Some(overlap) = range.overlaps(req_range) {
+                    let alignment_overlap =
+                        (overlap.start.wrapping_add(alignment_mask)) & !alignment_mask;
 
-                            if alignment_overlap >= overlap.start
-                                && alignment_overlap <= overlap.end
-                                && (overlap.end - alignment_overlap) >= (size - 1)
-                            {
-                                let overlap_end = alignment_overlap + (size - 1);
+                    if alignment_overlap >= overlap.start
+                        && alignment_overlap <= overlap.end
+                        && (overlap.end - alignment_overlap) >= (size - 1)
+                    {
+                        let overlap_end = alignment_overlap + (size - 1);
 
-                                let prev_size = allocation.map(|(start, end, _)| end - start);
+                        let prev_size = allocation.map(|(start, end, _)| end - start);
 
-                                if allocation.is_none()
-                                    || overlap_end - alignment_overlap < prev_size.unwrap()
-                                {
-                                    allocation = Some((
-                                        alignment_overlap,
-                                        overlap_end,
-                                        usize::try_from(alignment_overlap).unwrap(),
-                                    ));
-                                }
-                            }
+                        if allocation.is_none()
+                            || overlap_end - alignment_overlap < prev_size.unwrap()
+                        {
+                            allocation = Some((
+                                alignment_overlap,
+                                overlap_end,
+                                usize::try_from(alignment_overlap).unwrap(),
+                            ));
                         }
-                    }
-                }
-                MemoryRangeRequest::DontCare => {
-                    let prev_size = allocation.map(|(start, end, _)| end - start);
-
-                    if allocation.is_none() || end - start < prev_size.unwrap() {
-                        allocation = Some((
-                            start,
-                            end,
-                            usize::try_from(start + alignment_offset).unwrap(),
-                        ));
                     }
                 }
             }
@@ -322,12 +346,6 @@ impl<const N: usize> MemoryRanges<N> {
 
         ranges
     }
-}
-
-#[non_exhaustive]
-pub enum MemoryRangeRequest<'a, const N: usize> {
-    DontCare,
-    MustBeWithin(&'a MemoryRanges<N>),
 }
 
 #[cfg(test)]

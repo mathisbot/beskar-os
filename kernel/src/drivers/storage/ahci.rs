@@ -36,7 +36,7 @@ pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
 
     // TODO: Implement AHCI initialization
 
-    crate::debug!("AHCI controller found");
+    video::debug!("AHCI controller found");
 
     Ok(())
 }

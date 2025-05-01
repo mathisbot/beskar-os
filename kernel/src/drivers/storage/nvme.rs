@@ -34,7 +34,7 @@ const MAX_QUEUES: usize = 3;
 
 pub fn init(nvme: &[Device]) -> DriverResult<()> {
     if nvme.len() > 1 {
-        crate::warn!("Multiple NVMe controllers found, using the first one");
+        video::warn!("Multiple NVMe controllers found, using the first one");
     }
     let Some(nvme) = nvme.first() else {
         return Err(DriverError::Absent);
@@ -43,7 +43,7 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
     let mut controller = NvmeControllers::new(nvme)?;
     controller.init()?;
 
-    crate::info!(
+    video::info!(
         "NVMe controller initialized with version {}",
         controller.version()
     );
@@ -156,7 +156,7 @@ impl NvmeControllers {
         self.cc().enable();
         while !self.csts().ready() {
             if self.csts().fatal() {
-                crate::warn!("NVMe controller has encountered a fatal error when initializing");
+                video::warn!("NVMe controller has encountered a fatal error when initializing");
                 return Err(DriverError::Unknown);
             }
             core::hint::spin_loop();
@@ -286,7 +286,7 @@ impl NvmeControllers {
 }
 
 extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("NVMe INTERRUPT on core {}", locals!().core_id());
+    video::info!("NVMe INTERRUPT on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 

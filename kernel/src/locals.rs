@@ -34,10 +34,7 @@ pub fn init() {
 
     ALL_CORE_LOCALS[core_id].call_once(|| unsafe { NonNull::new_unchecked(core_locals.as_mut()) });
 
-    crate::arch::locals::store_locals(&core_locals);
-
-    // Shouldn't be dropped
-    core::mem::forget(core_locals);
+    crate::arch::locals::store_locals(Box::leak(core_locals));
 
     CORE_READY.fetch_add(1, core::sync::atomic::Ordering::Release);
 }

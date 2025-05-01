@@ -60,8 +60,8 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
 ///
 /// This function is called from the assembly stub above.
 extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
-    // Currently, we are on the user stack. It is undefined wether we are right where the
-    // assembly stub left us (because of Rust), but the place we want to be is in the `regs` argument.
+    // Currently, we are on the user stack. It is undefined whether we are right where the
+    // assembly stub left us (because of the prologue), but the place we want to be is in the `regs` argument.
 
     let kernel_stack = crate::process::scheduler::current_thread_snapshot()
         .kernel_stack_top()

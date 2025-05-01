@@ -55,7 +55,7 @@ fn sc_print(args: &Arguments) -> SyscallExitCode {
     };
 
     let tid = crate::process::scheduler::current_thread_id();
-    crate::info!("[Thread {}] {}", tid.as_u64(), msg);
+    video::info!("[Thread {}] {}", tid.as_u64(), msg);
     SyscallExitCode::Success
 }
 
@@ -69,9 +69,9 @@ fn sc_exit(args: &Arguments) -> ! {
         let tid = crate::process::scheduler::current_thread_id();
 
         if let Ok(exit_code) = exit_code {
-            crate::debug!("Thread {} exited with code {:?}", tid.as_u64(), exit_code);
+            video::debug!("Thread {} exited with code {:?}", tid.as_u64(), exit_code);
         } else {
-            crate::debug!("Thread {} exited with invalid code", tid.as_u64());
+            video::debug!("Thread {} exited with invalid code", tid.as_u64());
         }
     }
 

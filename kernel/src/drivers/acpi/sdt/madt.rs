@@ -1,9 +1,8 @@
+use super::{Sdt, SdtHeader};
 use alloc::vec::Vec;
 use beskar_core::arch::commons::PhysAddr;
 
-use super::{Sdt, SdtHeader};
-
-crate::impl_sdt!(Madt);
+super::impl_sdt!(Madt);
 
 pub struct ParsedMadt {
     // Related to Local APIC
@@ -277,7 +276,7 @@ impl Madt {
                         unreachable!("Bootloader should have enabled this LAPIC.");
                     } else {
                         // LAPIC is disabled
-                        crate::warn!("LAPIC {} is disabled", parsed_lapic.id);
+                        video::warn!("LAPIC {} is disabled", parsed_lapic.id);
                     }
                 }
                 1 => {
@@ -369,7 +368,7 @@ impl Madt {
                     // Local x2APIC
                     // Same as Local APIC
                     let local_x2apic = unsafe { entry_start.cast::<X2Apic>().read_unaligned() };
-                    crate::debug!("Unused Local x2APIC: {:?}", local_x2apic);
+                    video::debug!("Unused Local x2APIC: {:?}", local_x2apic);
                 }
                 10 => {
                     assert_eq!(
@@ -380,7 +379,7 @@ impl Madt {
 
                     let x2apic_nmi = unsafe { entry_start.cast::<X2ApicNmi>().read_unaligned() };
                     // TODO: Handle Local x2APIC NMI Structure.
-                    crate::warn!(
+                    video::warn!(
                         "Unhandled Local x2APIC NMI Structure entry: {:?}",
                         x2apic_nmi
                     );
@@ -391,7 +390,7 @@ impl Madt {
                 }
                 _ => {
                     // We shouldn't panic here
-                    crate::warn!(
+                    video::warn!(
                         "Unknown MADT entry type: {}, skipping.",
                         entry_header.entry_type
                     );

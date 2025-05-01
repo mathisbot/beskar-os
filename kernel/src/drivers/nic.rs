@@ -1,6 +1,6 @@
-use crate::{drivers::pci, network::l2::ethernet::MacAddress};
-
+use crate::drivers::pci;
 use beskar_core::drivers::{DriverError, DriverResult};
+use holonet::Nic;
 
 mod e1000e;
 
@@ -13,11 +13,11 @@ pub fn init() -> DriverResult<()> {
             .copied();
         let device = iter.next();
         if iter.next().is_some() {
-            crate::warn!("Multiple network controllers found, using the first one");
+            video::warn!("Multiple network controllers found, using the first one");
         }
         device
     }) else {
-        crate::warn!("No network controller found");
+        video::warn!("No network controller found");
         return Err(DriverError::Absent);
     };
 
@@ -25,7 +25,7 @@ pub fn init() -> DriverResult<()> {
         // TODO: Add more e1000e network controllers
         (0x8086, 0x10D3) => e1000e::init(network_controller),
         (0x8086, _) => {
-            crate::warn!(
+            video::warn!(
                 // Most Intel network controllers should be either e1000 or e1000e
                 // so they should all be supported :/
                 "Unsupported Intel network controller found. ID: {}",
@@ -34,7 +34,7 @@ pub fn init() -> DriverResult<()> {
             Err(DriverError::Invalid)
         }
         (vendor, id) => {
-            crate::warn!(
+            video::warn!(
                 "Unsupported network controller found. VendorID: {}; ID: {}",
                 vendor,
                 id
@@ -42,13 +42,6 @@ pub fn init() -> DriverResult<()> {
             Err(DriverError::Invalid)
         }
     }
-}
-
-// TODO: Custom error type
-pub trait Nic {
-    fn mac_address(&self) -> MacAddress;
-    fn poll_frame(&self) -> Option<&[u8]>;
-    fn send_frame(&self, frame: &[u8]);
 }
 
 pub fn with_nic<F, R>(f: F) -> Option<R>

@@ -21,7 +21,7 @@ pub fn init() -> DriverResult<()> {
     PS2_CONTROLLER.initialize()?;
     let ps2_keyboard = Ps2Keyboard::new(&PS2_CONTROLLER)?;
     PS2_KEYBOARD.call_once(|| ps2_keyboard);
-    crate::info!("PS/2 controller initialized");
+    video::info!("PS/2 controller initialized");
     Ok(())
 }
 
@@ -113,7 +113,7 @@ impl Ps2Controller {
         let keyboard_support = ACPI.get().unwrap().fadt().ps2_keyboard();
         PS2_AVAILABLE.store(keyboard_support, Ordering::Relaxed);
         if !keyboard_support {
-            crate::warn!("PS/2 controller not supported by ACPI");
+            video::warn!("PS/2 controller not supported by ACPI");
             return Err(beskar_core::drivers::DriverError::Absent);
         }
 
@@ -140,7 +140,7 @@ impl Ps2Controller {
                 }
             }
             if !has_passed {
-                crate::warn!("PS/2 controller self-test failed");
+                video::warn!("PS/2 controller self-test failed");
                 return Err(beskar_core::drivers::DriverError::Invalid);
             }
         }
@@ -157,7 +157,7 @@ impl Ps2Controller {
                 }
             }
             if !has_passed {
-                crate::warn!("PS/2 controller first port test failed");
+                video::warn!("PS/2 controller first port test failed");
                 return Err(beskar_core::drivers::DriverError::Invalid);
             }
         }
@@ -246,11 +246,11 @@ impl<'a> Ps2Keyboard<'a> {
 
         // Reset the keyboard
         let Ok(value) = keyboard.send_command(Ps2Command::KeyboardResetAndSelfTest as u8) else {
-            crate::warn!("PS/2 keyboard failed to receive reset command");
+            video::warn!("PS/2 keyboard failed to receive reset command");
             return Err(beskar_core::drivers::DriverError::Invalid);
         };
         if value != 0xFA {
-            crate::warn!("PS/2 keyboard didn't acknowledge");
+            video::warn!("PS/2 keyboard didn't acknowledge");
             return Err(beskar_core::drivers::DriverError::Invalid);
         }
         {
@@ -262,12 +262,12 @@ impl<'a> Ps2Keyboard<'a> {
                     break;
                 }
                 if value == 0xFC || value == 0xFD {
-                    crate::warn!("PS/2 keyboard reset failed");
+                    video::warn!("PS/2 keyboard reset failed");
                     return Err(beskar_core::drivers::DriverError::Invalid);
                 }
             }
             if !has_passed {
-                crate::warn!("PS/2 keyboard reset failed with unexpected value");
+                video::warn!("PS/2 keyboard reset failed with unexpected value");
                 return Err(beskar_core::drivers::DriverError::Unknown);
             }
         }
@@ -277,12 +277,12 @@ impl<'a> Ps2Keyboard<'a> {
             .send_command(Ps2Command::KeyboardScancodeSet as u8)
             .unwrap();
         if res != 0xFA {
-            crate::warn!("PS/2 keyboard didn't acknowledge scancode set command");
+            video::warn!("PS/2 keyboard didn't acknowledge scancode set command");
             return Err(beskar_core::drivers::DriverError::Invalid);
         }
         let res = keyboard.send_command(DEFAULT_SCANCODE_SET as u8).unwrap();
         if res != 0xFA {
-            crate::warn!("PS/2 keyboard didn't acknowledge scancode set command");
+            video::warn!("PS/2 keyboard didn't acknowledge scancode set command");
             return Err(beskar_core::drivers::DriverError::Invalid);
         }
 
@@ -505,7 +505,7 @@ fn handle_real_key(extended: bool, key: u8) {
     let keyboard = PS2_KEYBOARD.get().unwrap();
 
     let Some(key_event) = keyboard.scancode_to_keycode(key) else {
-        crate::warn!("Unknown key: {:#X}", key);
+        video::warn!("Unknown key: {:#X}", key);
         return;
     };
 

@@ -70,5 +70,5 @@ pub trait Mapper<S: MemSize> {
 }
 
 pub trait Translator {
-    fn translate_addr(&self, addr: VirtAddr) -> Option<PhysAddr>;
+    fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, Flags)>;
 }

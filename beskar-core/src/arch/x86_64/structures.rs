@@ -1,9 +1,6 @@
 use super::userspace::Ring;
 use crate::{arch::commons::VirtAddr, static_assert};
-use core::{
-    marker::PhantomData,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use core::marker::PhantomData;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -447,8 +444,17 @@ impl PageFaultErrorCode {
 impl core::fmt::Binary for PageFaultErrorCode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("PageFaultErrorCode")
-            .field("0", &format_args!("{:#b}", self.0))
+            .field("code", &format_args!("{:#b}", self.0))
             .finish()
+    }
+}
+
+impl core::ops::BitOr for PageFaultErrorCode {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
     }
 }
 
@@ -482,25 +488,8 @@ impl DescriptorTable {
     }
 }
 
-#[repr(transparent)]
-pub struct GdtEntry(AtomicU64);
-
-impl GdtEntry {
-    #[must_use]
-    #[inline]
-    pub const fn new(value: u64) -> Self {
-        Self(AtomicU64::new(value))
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn as_u64(&self) -> u64 {
-        self.0.load(Ordering::Acquire)
-    }
-}
-
 pub struct GlobalDescriptorTable<const SIZE: usize = 8> {
-    table: [GdtEntry; SIZE],
+    table: [u64; SIZE],
     len: usize,
 }
 
@@ -510,32 +499,26 @@ impl<const SIZE: usize> GlobalDescriptorTable<SIZE> {
     pub const fn empty() -> Self {
         assert!(SIZE > 0 && SIZE <= (1 << 13));
         Self {
-            table: [const { GdtEntry::new(0) }; SIZE],
+            table: [0; SIZE],
             // Null descriptor at index 0
             len: 1,
         }
     }
 
-    #[must_use]
-    #[inline]
-    pub fn entries(&self) -> &[GdtEntry] {
-        &self.table[..self.len]
-    }
-
     /// Appends the given segment descriptor to the GDT, returning the segment selector.
     ///
     /// Note that depending on the type of the descriptor this may append
-    /// either one or two new [`Entry`]s to the table.
+    /// up to two new `GdtEntry`s to the table.
     pub fn append(&mut self, entry: GdtDescriptor) -> u16 {
         let index = match entry {
-            GdtDescriptor::UserSegment(value) => {
+            GdtDescriptor::UserSegment(v) => {
                 assert!(self.len < self.table.len(), "GDT is full");
-                self.push(value)
+                self.push(v)
             }
-            GdtDescriptor::SystemSegment(value_low, value_high) => {
+            GdtDescriptor::SystemSegment(v_low, v_high) => {
                 assert!(self.len + 2 <= self.table.len(), "GDT is full");
-                let low_idx = self.push(value_low);
-                self.push(value_high);
+                let low_idx = self.push(v_low);
+                self.push(v_high);
                 low_idx
             }
         };
@@ -544,7 +527,7 @@ impl<const SIZE: usize> GlobalDescriptorTable<SIZE> {
 
     const fn push(&mut self, value: u64) -> usize {
         let idx = self.len;
-        self.table[idx] = GdtEntry::new(value);
+        self.table[idx] = value;
         self.len += 1;
         idx
     }
@@ -552,8 +535,9 @@ impl<const SIZE: usize> GlobalDescriptorTable<SIZE> {
     pub fn load(&self) {
         let descriptor = DescriptorTable::new(
             VirtAddr::from_ptr(self.table.as_ptr()),
-            u16::try_from((self.len * size_of::<GdtEntry>()) - 1).unwrap(),
+            u16::try_from((self.len * size_of::<u64>()) - 1).unwrap(),
         );
+
         unsafe { super::instructions::load_gdt(&descriptor) };
     }
 }
@@ -619,7 +603,7 @@ impl GdtDescriptorFlags {
     const BASE: Self =
         Self(Self::USER_SEGMENT.0 | Self::PRESENT.0 | Self::ACCESSED.0 | Self::WRITABLE.0);
     /// A kernel data segment
-    pub const KERNEL_DATA: Self = Self::BASE;
+    pub const KERNEL_DATA: Self = Self(Self::BASE.0 | Self::DEFAULT_SIZE.0);
     /// A 64-bit kernel code segment
     pub const KERNEL_CODE: Self = Self(Self::BASE.0 | Self::EXECUTABLE.0 | Self::LONG_MODE.0);
     /// A user data segment
@@ -679,10 +663,10 @@ impl GdtDescriptor {
         low |= (ptr & 0xFF_FFFF) << 16; // Bits 16..40
         low |= (ptr >> 24 & 0xFF) << 56; // Bits 56..64
 
-        // Set limit
+        // Set limit (bits 0..16)
         low |= u64::try_from(size_of::<TaskStateSegment>() - 1).unwrap() & 0xFFFF; // Bits 0..16
 
-        // Set TSS type to "available 64-bit"
+        // Set segment type to "available TSS 64-bit"
         low |= 0b1001 << 40; // Bits 40..44
 
         // Set base address (high)
@@ -693,7 +677,7 @@ impl GdtDescriptor {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C, packed(4))]
 pub struct TaskStateSegment {
     _reserved1: u32,
@@ -718,7 +702,7 @@ impl TaskStateSegment {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
-        const NULL_VADDR: VirtAddr = unsafe { VirtAddr::new_unchecked(0) };
+        const NULL_VADDR: VirtAddr = VirtAddr::new(0);
         Self {
             _reserved1: 0,
             privilege_stack_table: [NULL_VADDR; 3],
@@ -728,5 +712,81 @@ impl TaskStateSegment {
             #[allow(clippy::cast_possible_truncation)] // Impossible truncation
             iomap_base: size_of::<Self>() as u16,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_idt_entry_set_handler_fn() {
+        extern "x86-interrupt" fn test_handler(_stack_frame: InterruptStackFrame) {}
+        let mut entry: IdtEntry<Handler> = IdtEntry::empty();
+        entry.set_handler_fn(test_handler, 0x08);
+
+        let addr = test_handler as *const () as u64;
+        assert_eq!(entry.ptr_low, (addr & 0xFFFF) as u16);
+        assert_eq!(entry.ptr_mid, ((addr >> 16) & 0xFFFF) as u16);
+        assert_eq!(entry.ptr_high, ((addr >> 32) & 0xFFFF_FFFF) as u32);
+        assert_eq!(entry.options_cs, 0x08);
+        assert_ne!(entry.options & (1 << 15), 0); // Present bit
+    }
+
+    #[test]
+    fn test_idt_entry_set_stack_index() {
+        let mut entry: IdtEntry<Handler> = IdtEntry::empty();
+        unsafe { entry.set_stack_index(3) };
+        assert_eq!(entry.options & 0x7, 4); // IST index starts at 1
+    }
+
+    #[test]
+    #[should_panic(expected = "Stack index must be less than 8")]
+    fn test_idt_entry_set_stack_index_invalid() {
+        let mut entry: IdtEntry<Handler> = IdtEntry::empty();
+        unsafe { entry.set_stack_index(8) };
+    }
+
+    #[test]
+    fn test_task_state_segment_default() {
+        let tss = TaskStateSegment::default();
+        let pst = tss.privilege_stack_table;
+        let ist = tss.interrupt_stack_table;
+        assert_eq!(pst, [VirtAddr::new(0); 3]);
+        assert_eq!(ist, [VirtAddr::new(0); 7]);
+        assert_eq!(
+            tss.iomap_base,
+            u16::try_from(size_of::<TaskStateSegment>()).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_gdt_append() {
+        let mut gdt = GlobalDescriptorTable::<3>::empty();
+        let selector = gdt.append(GdtDescriptor::kernel_code_segment());
+        gdt.append(GdtDescriptor::kernel_data_segment());
+        assert_eq!(selector, 1 << 3);
+        assert!(gdt.len == 3);
+    }
+
+    #[test]
+    #[should_panic = "GDT is full"]
+    fn test_gdt_full() {
+        let mut gdt = GlobalDescriptorTable::<4>::empty();
+        loop {
+            gdt.append(GdtDescriptor::UserSegment(0));
+        }
+    }
+
+    #[test]
+    fn test_gdt_descriptor_kernel_code_segment() {
+        let descriptor = GdtDescriptor::kernel_code_segment();
+        assert_eq!(descriptor.dpl(), Ring::Kernel);
+    }
+
+    #[test]
+    fn test_gdt_descriptor_user_code_segment() {
+        let descriptor = GdtDescriptor::user_code_segment();
+        assert_eq!(descriptor.dpl(), Ring::User);
     }
 }

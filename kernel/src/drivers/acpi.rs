@@ -2,10 +2,12 @@ use beskar_core::arch::commons::PhysAddr;
 use core::sync::atomic::AtomicU8;
 use hyperdrive::once::Once;
 
+mod aml;
 mod rsdp;
 pub mod sdt;
 use sdt::{
     Rsdt,
+    dsdt::ParsedDsdt,
     fadt::ParsedFadt,
     hpet_table::ParsedHpetTable,
     madt::ParsedMadt,
@@ -19,7 +21,7 @@ pub static ACPI: Once<Acpi> = Once::uninit();
 pub fn init(rsdp_paddr: PhysAddr) {
     let acpi = Acpi::from_rsdp_paddr(rsdp_paddr);
     ACPI.call_once(|| acpi);
-    crate::debug!("ACPI initialized");
+    video::debug!("ACPI initialized");
 }
 
 /// Advanced Configuration and Power Interface (ACPI) support.
@@ -28,6 +30,7 @@ pub struct Acpi {
     fadt: ParsedFadt,
     hpet: Option<ParsedHpetTable>,
     mcfg: Option<ParsedMcfg>,
+    dsdt: ParsedDsdt,
 }
 
 impl Acpi {
@@ -45,11 +48,11 @@ impl Acpi {
         // TODO: Support multiple HPET blocks?
         let hpet_paddr = rsdt.locate_table(sdt::Signature::Hpet);
         if hpet_paddr.is_none() {
-            crate::warn!("HPET table not found");
+            video::warn!("HPET table not found");
         }
         let mcfg_paddr = rsdt.locate_table(sdt::Signature::Mcfg);
         if mcfg_paddr.is_none() {
-            crate::warn!("MCFG table not found");
+            video::warn!("MCFG table not found");
         }
 
         drop(rsdt);
@@ -59,11 +62,14 @@ impl Acpi {
         let hpet = hpet_paddr.map(|paddr| sdt::hpet_table::HpetTable::load(paddr).parse());
         let mcfg = mcfg_paddr.map(|paddr| mcfg::Mcfg::load(paddr).parse());
 
+        let dsdt = sdt::dsdt::Dsdt::load(fadt.dsdt()).parse();
+
         Self {
             madt,
             fadt,
             hpet,
             mcfg,
+            dsdt,
         }
     }
 

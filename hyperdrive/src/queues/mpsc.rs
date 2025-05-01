@@ -125,7 +125,7 @@ pub trait Queueable: Sized {
 
     /// Returns a pointer to the link to the next element.
     ///
-    /// Because an `MpscQueue` is non-intrusive, the link has to be provided
+    /// Because an `MpscQueue` is intrusive, the link has to be provided
     /// already allocated in memory, as a pointer.
     ///
     /// ## Safety
@@ -363,10 +363,15 @@ mod tests {
 
     struct Element {
         value: u8,
+        next: Link<Self>,
+    }
+    struct OtherElement {
+        value: u8,
         next: Option<NonNull<Element>>,
     }
 
     impl Unpin for Element {}
+    impl Unpin for OtherElement {}
 
     impl Queueable for Element {
         type Handle = Pin<Box<Self>>;
@@ -382,7 +387,26 @@ mod tests {
 
         unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
             let base = ptr.as_ptr().cast::<Link<Self>>();
-            let ptr = unsafe { base.byte_add(offset_of!(Element, next)) };
+            let ptr = unsafe { base.byte_add(offset_of!(Self, next)) };
+            unsafe { NonNull::new_unchecked(ptr) }
+        }
+    }
+
+    impl Queueable for OtherElement {
+        type Handle = Pin<Box<Self>>;
+
+        fn release(r: Self::Handle) -> NonNull<Self> {
+            let ptr = Box::into_raw(Pin::into_inner(r));
+            unsafe { NonNull::new_unchecked(ptr) }
+        }
+
+        unsafe fn capture(ptr: NonNull<Self>) -> Self::Handle {
+            Pin::new(unsafe { Box::from_raw(ptr.as_ptr()) })
+        }
+
+        unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
+            let base = ptr.as_ptr().cast::<Link<Self>>();
+            let ptr = unsafe { base.byte_add(offset_of!(Self, next)) };
             unsafe { NonNull::new_unchecked(ptr) }
         }
     }
@@ -391,16 +415,16 @@ mod tests {
     fn test_mpsc_queue() {
         let queue: MpscQueue<Element> = MpscQueue::new(Box::pin(Element {
             value: 0,
-            next: None,
+            next: Link::default(),
         }));
         assert!(queue.dequeue().is_none());
         queue.enqueue(Box::pin(Element {
             value: 1,
-            next: None,
+            next: Link::default(),
         }));
         queue.enqueue(Box::pin(Element {
             value: 2,
-            next: None,
+            next: Link::default(),
         }));
         let element1 = queue.dequeue().unwrap();
         let element2 = queue.dequeue().unwrap();
@@ -409,20 +433,42 @@ mod tests {
         assert!(queue.dequeue().is_none());
     }
 
-    #[cfg(miri)]
     #[test]
-    fn test_mpsc_drop() {
-        let queue: MpscQueue<Element> = MpscQueue::new(Box::pin(Element {
+    /// Somewhat make sure that the layout of `Link<_>` is the same as `Option<NonNull<_>>`.
+    fn test_mpsc_non_link_field() {
+        let queue: MpscQueue<OtherElement> = MpscQueue::new(Box::pin(OtherElement {
             value: 0,
             next: None,
         }));
-        queue.enqueue(Box::pin(Element {
+        queue.enqueue(Box::pin(OtherElement {
             value: 1,
             next: None,
         }));
-        queue.enqueue(Box::pin(Element {
+        queue.enqueue(Box::pin(OtherElement {
             value: 2,
             next: None,
+        }));
+
+        let element1 = queue.dequeue().unwrap();
+        let element2 = queue.dequeue().unwrap();
+        assert_eq!(element1.value, 1);
+        assert_eq!(element2.value, 2);
+    }
+
+    #[test]
+    #[cfg(miri)]
+    fn test_mpsc_drop() {
+        let queue: MpscQueue<Element> = MpscQueue::new(Box::pin(Element {
+            value: 0,
+            next: Link::default(),
+        }));
+        queue.enqueue(Box::pin(Element {
+            value: 1,
+            next: Link::default(),
+        }));
+        queue.enqueue(Box::pin(Element {
+            value: 2,
+            next: Link::default(),
         }));
     }
 
@@ -432,7 +478,7 @@ mod tests {
 
         let queue = Arc::new(MpscQueue::<Element>::new(Box::pin(Element {
             value: 0,
-            next: None,
+            next: Link::default(),
         })));
         let barrier = Arc::new(Barrier::new(num_threads));
 
@@ -446,7 +492,7 @@ mod tests {
                     barrier.wait();
                     queue.enqueue(Box::pin(Element {
                         value: 42,
-                        next: None,
+                        next: Link::default(),
                     }));
                 }
             }));
@@ -481,13 +527,13 @@ mod tests {
 
         let queue = Arc::new(MpscQueue::<Element>::new(Box::pin(Element {
             value: 0,
-            next: None,
+            next: Link::default(),
         })));
 
         for _ in 0..num_threads / 2 + 1 {
             queue.enqueue(Box::pin(Element {
                 value: 42,
-                next: None,
+                next: Link::default(),
             }));
         }
 
@@ -505,7 +551,7 @@ mod tests {
                     } else {
                         queue.enqueue(Box::pin(Element {
                             value: 1,
-                            next: None,
+                            next: Link::default(),
                         }));
                     }
                 }

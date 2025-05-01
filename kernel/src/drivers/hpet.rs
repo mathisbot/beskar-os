@@ -147,7 +147,7 @@ impl GeneralCapabilities {
 
     fn validate(self, hpet_info: &ParsedHpetTable) {
         if hpet_info.comparator_count() != self.num_timers() {
-            crate::warn!("HPET comparator count mismatch");
+            video::warn!("HPET comparator count mismatch");
         }
         assert_eq!(
             hpet_info.count_size_capable(),
@@ -394,7 +394,7 @@ impl TimerConfigCap {
     fn validate(&self) {
         assert!(self.timer < 32, "HPET timer out of range");
         if !self.size_cap() {
-            crate::warn!("HPET timer {} count size not capable", self.timer);
+            video::warn!("HPET timer {} count size not capable", self.timer);
         }
         assert!(
             // Either it is 32 bit or 64 bit and uses 64 bits
@@ -436,7 +436,7 @@ pub fn init() -> DriverResult<()> {
 
     assert_eq!(
         hpet_info.base_address().address_space(),
-        crate::drivers::acpi::sdt::AdressSpace::SystemMemory
+        crate::drivers::acpi::sdt::AddressSpace::SystemMemory
     );
 
     // TODO: Only one mapping for the whole HPET block
@@ -445,9 +445,9 @@ pub fn init() -> DriverResult<()> {
     let general_capabilities =
         GeneralCapabilities::new(PhysAddr::new(hpet_info.general_capabilities().address()));
     general_capabilities.validate(hpet_info);
-    crate::debug!("HPET period: {} ps", general_capabilities.period() / 1_000);
+    video::debug!("HPET period: {} ps", general_capabilities.period() / 1_000);
     if !hpet_info.count_size_capable() {
-        crate::warn!("HPET count size not capable");
+        video::warn!("HPET count size not capable");
     }
 
     let mut general_configuration =
@@ -492,7 +492,7 @@ pub fn init() -> DriverResult<()> {
 
     // Enable HPET
     general_configuration.set_enable_cnf(true);
-    crate::debug!("HPET enabled");
+    video::debug!("HPET enabled");
 
     HPET_PERIOD_PS.call_once(|| general_capabilities.period() / 1_000);
 

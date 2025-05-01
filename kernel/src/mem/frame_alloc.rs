@@ -9,8 +9,7 @@ use beskar_core::arch::commons::{
     PhysAddr,
     paging::{Frame, M4KiB, MemSize},
 };
-use beskar_core::mem::ranges::{MemoryRange, MemoryRangeRequest, MemoryRanges};
-
+use beskar_core::mem::ranges::{MemoryRange, MemoryRanges};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 const MAX_MEMORY_REGIONS: usize = 256;
@@ -20,7 +19,7 @@ static KFRAME_ALLOC: MUMcsLock<FrameAllocator> = MUMcsLock::uninit();
 pub fn init(ranges: &[MemoryRange]) {
     assert!(!ranges.is_empty(), "No usable memory regions found");
     if ranges.len() >= MAX_MEMORY_REGIONS {
-        crate::warn!(
+        video::warn!(
             "Too many usable memory regions, using only the first {}",
             MAX_MEMORY_REGIONS
         );
@@ -31,7 +30,7 @@ pub fn init(ranges: &[MemoryRange]) {
         mranges.insert(*r);
     });
 
-    crate::info!("Free memory: {} MiB", mranges.sum() / 1_048_576);
+    video::info!("Free memory: {} MiB", mranges.sum() / 1_048_576);
 
     let mut frallocator = FrameAllocator {
         memory_ranges: mranges,
@@ -52,19 +51,25 @@ impl FrameAllocator {
     #[inline]
     /// Allocate a frame anywhere in memory
     pub fn alloc<S: MemSize>(&mut self) -> Option<Frame<S>> {
-        self.alloc_request(&MemoryRangeRequest::<1>::DontCare)
+        let size = S::SIZE;
+        let alignment = S::SIZE;
+
+        let addr = self.memory_ranges.allocate(size, alignment)?;
+        Some(Frame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
     }
 
     #[must_use]
     /// Allocate a frame according to a specific request.
     pub fn alloc_request<S: MemSize, const M: usize>(
         &mut self,
-        req_range: &MemoryRangeRequest<M>,
+        req_ranges: &MemoryRanges<M>,
     ) -> Option<Frame<S>> {
         let size = S::SIZE;
         let alignment = S::SIZE;
 
-        let addr = self.memory_ranges.allocate(size, alignment, req_range)?;
+        let addr = self
+            .memory_ranges
+            .allocate_req(size, alignment, req_ranges)?;
         Some(Frame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
     }
 
@@ -99,7 +104,7 @@ fn reserve_tramp_frame(allocator: &mut FrameAllocator) {
     ));
 
     let _frame = allocator
-        .alloc_request::<M4KiB, 1>(&MemoryRangeRequest::MustBeWithin(&req_range))
+        .alloc_request::<M4KiB, 1>(&req_range)
         .expect("Failed to allocate AP frame");
 }
 

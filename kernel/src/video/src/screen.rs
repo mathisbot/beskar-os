@@ -1,5 +1,3 @@
-// TODO: Move into a `video` module (driver?)
-
 use beskar_core::video::{FrameBuffer, Info, Pixel};
 use hyperdrive::locks::mcs::MUMcsLock;
 

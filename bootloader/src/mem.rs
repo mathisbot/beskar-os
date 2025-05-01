@@ -1,13 +1,16 @@
-use beskar_core::arch::x86_64::registers::Cr3;
+use beskar_core::arch::{
+    commons::{
+        VirtAddr,
+        paging::{Frame, FrameAllocator as _, M4KiB, MemSize as _},
+    },
+    x86_64::{
+        paging::page_table::{Entries, OffsetPageTable},
+        registers::Cr3,
+    },
+};
 use uefi::{
     boot::MemoryType,
     mem::memory_map::{MemoryMap, MemoryMapOwned},
-};
-use x86_64::{
-    VirtAddr,
-    structures::paging::{
-        FrameAllocator, OffsetPageTable, PageSize, PageTable, PhysFrame, Size4KiB,
-    },
 };
 
 mod phys;
@@ -26,7 +29,7 @@ pub fn init(
     ramdisk: Option<&[u8]>,
 ) -> (EarlyFrameAllocator, PageTables, Mappings) {
     let total_mem_size = compute_total_memory_kib(&memory_map);
-    debug!("Usable memory size: {} MiB", total_mem_size / 1024);
+    info!("Usable memory size: {} MiB", total_mem_size / 1024);
 
     let mut frame_allocator = EarlyFrameAllocator::new(memory_map);
 
@@ -46,7 +49,7 @@ pub struct PageTables {
     /// The physical frame where the level 4 page table of the kernel address space is stored.
     ///
     /// Must be the page table that the `kernel` field of this struct refers to.
-    pub kernel_level_4_frame: PhysFrame,
+    pub kernel_level_4_frame: Frame,
 }
 
 #[must_use]
@@ -65,7 +68,7 @@ fn compute_total_memory_kib(memory_map: &MemoryMapOwned) -> u64 {
             _ => None,
         })
         .sum::<u64>()
-        * (Size4KiB::SIZE / 1024)
+        * (M4KiB::SIZE / 1024)
 }
 
 pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTables {
@@ -75,7 +78,7 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
     let bootloader_page_table = {
         let old_table = {
             let (old_frame, _) = Cr3::read();
-            let ptr: *const PageTable =
+            let ptr: *const Entries =
                 (physical_offset + old_frame.start_address().as_u64()).as_ptr();
 
             // ## Safety
@@ -89,14 +92,13 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
             .expect("Failed to allocate a frame");
 
         let table = {
-            let ptr: *mut PageTable =
-                (physical_offset + frame.start_address().as_u64()).as_mut_ptr();
+            let ptr: *mut Entries = (physical_offset + frame.start_address().as_u64()).as_mut_ptr();
 
             // ## Safety
             // We are writing a page table to a valid physical address
             // mapped in the virtual address space.
             unsafe {
-                ptr.write(PageTable::new());
+                ptr.write(Entries::new());
                 &mut *ptr
             }
         };
@@ -104,7 +106,7 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
         // Copy indexes for identity mapped memory
         let end_vaddr = VirtAddr::new(frame_allocator.max_physical_address().as_u64() - 1);
         for p4_index in 0..=usize::from(end_vaddr.p4_index()) {
-            table[p4_index] = old_table[p4_index].clone();
+            table[p4_index] = old_table[p4_index];
         }
 
         // Copy indexes for framebuffer (which is not necessarily identity mapped)
@@ -114,15 +116,13 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
             (start_vaddr, end_vaddr)
         });
         for p4_index in usize::from(start_vaddr.p4_index())..=usize::from(end_vaddr.p4_index()) {
-            table[p4_index] = old_table[p4_index].clone();
+            table[p4_index] = old_table[p4_index];
         }
 
-        info!("Switching to a new level 4 page table");
+        unsafe { Cr3::write(frame, 0) };
+        info!("Switched to a new page table");
 
-        unsafe {
-            Cr3::write(core::mem::transmute(frame), 0);
-            OffsetPageTable::new(&mut *table, physical_offset)
-        }
+        OffsetPageTable::new(&mut *table, physical_offset)
     };
 
     // Create a new page table hierarchy for the kernel
@@ -132,24 +132,21 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
             .expect("Failed to allocate a frame");
 
         debug!(
-            "Kernel level 4 page table is at {:#x}",
+            "Kernel level 4 page table is physically at {:#x}",
             frame.start_address().as_u64()
         );
 
-        let ptr: *mut PageTable = (physical_offset + frame.start_address().as_u64()).as_mut_ptr();
+        let ptr: *mut Entries = (physical_offset + frame.start_address().as_u64()).as_mut_ptr();
 
         // Safety:
         // We are writing a page table to a valid physical address
         // mapped in the virtual address space.
         let table = unsafe {
-            ptr.write(PageTable::new());
+            ptr.write(Entries::new());
             &mut *ptr
         };
 
-        (
-            unsafe { OffsetPageTable::new(table, physical_offset) },
-            frame,
-        )
+        (OffsetPageTable::new(table, physical_offset), frame)
     };
 
     PageTables {

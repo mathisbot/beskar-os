@@ -134,7 +134,7 @@ pub fn init() -> DriverResult<()> {
     STARTUP_TIME.store(unsafe { core::arch::x86_64::_rdtsc() }, Ordering::Relaxed);
 
     if calibrate_with_rdtsc() || calibrate_with_hpet() || calibrate_with_pit() {
-        crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
+        video::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
         Ok(())
     } else {
         Err(DriverError::Unknown)
@@ -152,5 +152,5 @@ pub fn main_counter_value() -> u64 {
 pub fn ticks_per_ms() -> u64 {
     const HZ_PER_MHZ: u64 = 1_000_000;
     const MS_PER_S: u64 = 1_000;
-    TSC_MHZ.load(Ordering::Relaxed) * HZ_PER_MHZ / MS_PER_S
+    TSC_MHZ.load(Ordering::Relaxed) * const { HZ_PER_MHZ / MS_PER_S }
 }

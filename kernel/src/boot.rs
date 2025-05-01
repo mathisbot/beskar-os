@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicUsize;
 
 use crate::{
     arch::{self, apic, interrupts},
-    drivers, locals, mem, process, screen, storage, syscall, time,
+    drivers, locals, mem, process, syscall, time,
 };
 use beskar_core::boot::{BootInfo, RamdiskInfo};
 use hyperdrive::once::Once;
@@ -31,7 +31,7 @@ pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> !
 
     bsp_init(boot_info);
 
-    crate::debug!("Starting up APs. Core count: {}", core_count);
+    video::debug!("Starting up APs. Core count: {}", core_count);
 
     arch::ap::start_up_aps(core_count);
 
@@ -48,18 +48,18 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         ..
     } = boot_info;
 
-    crate::log::init_serial();
-    crate::debug!("Booting on BSP");
+    video::log::init_serial();
+    video::debug!("Booting on BSP");
 
-    screen::init(framebuffer);
-    crate::log::init_screen();
+    video::screen::init(framebuffer);
+    video::log::init_screen();
 
     arch::init();
 
-    crate::info!("BeskarOS kernel starting...");
+    video::info!("BeskarOS kernel starting...");
 
     mem::init(*recursive_index, memory_regions, kernel_info);
-    crate::info!("Memory initialized");
+    video::info!("Memory initialized");
 
     locals::init();
 
@@ -69,16 +69,16 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         .with_locked(|gdt| unsafe { gdt.init_load() });
 
     process::init();
-    crate::info!("Process subsystem initialized");
+    video::info!("Process subsystem initialized");
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
     rsdp_paddr.map(drivers::acpi::init);
 
     time::init();
-    crate::info!("Time subsystem initialized");
+    video::info!("Time subsystem initialized");
 
     interrupts::init();
-    crate::info!("Interrupts initialized");
+    video::info!("Interrupts initialized");
 
     syscall::init();
 
@@ -87,7 +87,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     apic::init_ioapic();
 
     storage::init();
-    crate::info!("Storage subsystem initialized");
+    video::info!("Storage subsystem initialized");
 }
 
 /// Rust entry point for APs
@@ -106,7 +106,7 @@ pub extern "C" fn kap_entry() -> ! {
 
     ap_init();
 
-    crate::debug!("AP {} started", locals!().core_id());
+    video::debug!("AP {} started", locals!().core_id());
 
     crate::boot::enter_kmain()
 }
@@ -166,7 +166,7 @@ macro_rules! kernel_main {
         /// Entry of the kernel called by the bootloader.
         ///
         /// This should only be the entry point for the BSP.
-        fn __bootloader_entry_point(boot_info: &'static mut beskar_core::boot::BootInfo) -> ! {
+        fn __bootloader_entry_point(boot_info: &'static mut ::beskar_core::boot::BootInfo) -> ! {
             $crate::boot::kbsp_entry(boot_info, $path);
         }
         ::bootloader::entry_point!(__bootloader_entry_point);

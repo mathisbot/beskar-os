@@ -1,4 +1,4 @@
-#![feature(abi_x86_interrupt, naked_functions)]
+#![feature(abi_x86_interrupt)]
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
@@ -8,23 +8,17 @@
     clippy::missing_errors_doc,
     clippy::doc_markdown
 )]
-
+extern crate alloc;
 use hyperdrive::once::Once;
 
 mod arch;
 pub mod boot;
 pub mod drivers;
 pub mod locals;
-pub mod log;
 mod mem;
-mod network;
 pub mod process;
-mod screen;
-mod storage;
 mod syscall;
 pub mod time;
-
-extern crate alloc;
 
 static KERNEL_PANIC: Once<()> = Once::uninit();
 
@@ -33,21 +27,22 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     arch::interrupts::int_disable();
 
     #[cfg(debug_assertions)]
-    crate::error!("[PANIC]: Core {} - {}", locals!().core_id(), panic_info);
+    video::error!("[PANIC]: Core {} - {}", locals!().core_id(), panic_info);
     #[cfg(not(debug_assertions))]
-    crate::error!(
+    video::error!(
         "[PANIC]: Core {} - {}",
         locals!().core_id(),
         panic_info.message()
     );
 
-    if process::scheduler::is_scheduling_init() {
+    // If more than one core is present, then both processes and APICs are initialized.
+    if crate::locals::get_ready_core_count() > 1 {
         use crate::arch::apic::ipi;
 
-        if process::scheduler::current_process().kind() == process::Kind::Kernel {
+        if process::scheduler::current_process().kind() == beskar_core::process::Kind::Kernel {
             // If a kernel (vital) process panics, crash the whole system.
             KERNEL_PANIC.call_once(|| {
-                crate::error!("Kernel process panicked. Sending NMI to all cores.");
+                video::error!("Kernel process panicked. Sending NMI to all cores.");
                 let ipi_nmi =
                     ipi::Ipi::new(ipi::DeliveryMode::Nmi, ipi::Destination::AllExcludingSelf);
                 // FIXME: While the system is unlikely to panic during logging,
@@ -67,6 +62,11 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     }
 }
 
+#[must_use]
+#[inline]
+/// Returns true if a core has panicked in a kernel thread.
 fn kernel_has_panicked() -> bool {
+    // We are not using `Once::is_initialized` here because we want
+    // to catch the "still initializing" case as well (`get` is blocking).
     KERNEL_PANIC.get().is_some()
 }

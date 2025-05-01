@@ -1,4 +1,4 @@
-use x86_64::{VirtAddr, structures::paging::PhysFrame};
+use beskar_core::arch::commons::{VirtAddr, paging::Frame};
 
 pub mod acpi;
 
@@ -13,7 +13,7 @@ pub fn init() {
 ///
 /// The caller must ensure that the four adresses are valid.
 pub unsafe fn chg_ctx(
-    level4_frame_addr: PhysFrame,
+    level4_frame: Frame,
     stack_top: VirtAddr,
     entry_point_addr: VirtAddr,
     boot_info_addr: VirtAddr,
@@ -26,7 +26,7 @@ pub unsafe fn chg_ctx(
             mov rsp, {}
             jmp {}
             "#,
-            in(reg) level4_frame_addr.start_address().as_u64(),
+            in(reg) level4_frame.start_address().as_u64(),
             in(reg) stack_top.as_u64(),
             in(reg) entry_point_addr.as_u64(),
             in("rdi") boot_info_addr.as_u64(),

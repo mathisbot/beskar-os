@@ -34,7 +34,9 @@ impl VirtAddr {
     pub const fn new_extend(addr: u64) -> Self {
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
         // Perform sign extension
-        Self(((addr << 16) as i64 >> 16) as u64)
+        let extended = ((addr << 16) as i64 >> 16) as u64;
+        // Safety: We made sure the address is canonical
+        unsafe { Self::new_unchecked(extended) }
     }
 
     #[must_use]
@@ -91,6 +93,13 @@ impl VirtAddr {
 
     #[must_use]
     #[inline]
+    pub const fn is_aligned(self, align: u64) -> bool {
+        assert!(align.is_power_of_two());
+        self.0 & (align - 1) == 0
+    }
+
+    #[must_use]
+    #[inline]
     pub fn p4_index(self) -> u16 {
         u16::try_from((self.0 >> 39) & 0x1FF).unwrap()
     }
@@ -136,7 +145,18 @@ impl PhysAddr {
     #[must_use]
     #[inline]
     pub const fn new_truncate(addr: u64) -> Self {
-        Self(addr & Self::MAX_VALID)
+        let truncated = addr & Self::MAX_VALID;
+        // Safety: We just truncated the address to fit in the valid range
+        unsafe { Self::new_unchecked(truncated) }
+    }
+
+    #[must_use]
+    #[inline]
+    /// # Safety
+    ///
+    /// The given address must be a valid physical address.
+    pub const unsafe fn new_unchecked(addr: u64) -> Self {
+        Self(addr)
     }
 
     #[must_use]
@@ -157,6 +177,13 @@ impl PhysAddr {
     pub const fn align_up(self, align: u64) -> Self {
         assert!(align.is_power_of_two());
         Self::new((self.0.checked_add(align - 1).unwrap()) & !(align - 1))
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_aligned(self, align: u64) -> bool {
+        assert!(align.is_power_of_two());
+        self.0 & (align - 1) == 0
     }
 }
 

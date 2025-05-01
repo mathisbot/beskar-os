@@ -8,6 +8,7 @@ use beskar_core::arch::{
 use super::AcpiRevision;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 
+pub mod dsdt;
 pub mod fadt;
 pub mod hpet_table;
 pub mod madt;
@@ -224,15 +225,26 @@ pub enum Signature {
     Fadt,
     Hpet,
     Mcfg,
+    Dsdt,
 }
 
 impl From<Signature> for &'static [u8; 4] {
+    #[inline]
     fn from(sig: Signature) -> Self {
-        match sig {
+        sig.as_bytes()
+    }
+}
+
+impl Signature {
+    #[must_use]
+    #[inline]
+    pub const fn as_bytes(&self) -> &'static [u8; 4] {
+        match self {
             Signature::Madt => b"APIC",
             Signature::Fadt => b"FACP",
             Signature::Hpet => b"HPET",
             Signature::Mcfg => b"MCFG",
+            Signature::Dsdt => b"DSDT",
         }
     }
 }
@@ -261,7 +273,6 @@ unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
     PhysicalMapping::new(phys_addr, usize::try_from(table_length).unwrap(), flags)
 }
 
-#[macro_export]
 /// A macro for implementing the basics of a SDT.
 ///
 /// In particular, it provides a struct definition to handle the SDT in a proper way,
@@ -300,6 +311,7 @@ macro_rules! impl_sdt {
         }
     };
 }
+pub(self) use impl_sdt;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(C, packed)]
@@ -311,9 +323,41 @@ struct RawGenericAddress {
     address: u64,
 }
 
+impl RawGenericAddress {
+    #[must_use]
+    #[inline]
+    pub const fn address_space(&self) -> u8 {
+        self.address_space
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn bit_width(&self) -> u8 {
+        self.bit_width
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn bit_offset(&self) -> u8 {
+        self.bit_offset
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn access_size(&self) -> u8 {
+        self.access_size
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn address(&self) -> u64 {
+        self.address
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct GenericAddress {
-    address_space: AdressSpace,
+    address_space: AddressSpace,
     bit_width: u8,
     bit_offset: u8,
     access_size: AccessSize,
@@ -335,7 +379,7 @@ impl From<RawGenericAddress> for GenericAddress {
 impl GenericAddress {
     #[must_use]
     #[inline]
-    pub const fn address_space(&self) -> AdressSpace {
+    pub const fn address_space(&self) -> AddressSpace {
         self.address_space
     }
 
@@ -379,11 +423,24 @@ impl GenericAddress {
             access_size: self.access_size,
         }
     }
+
+    #[must_use]
+    #[inline]
+    /// Converts the `GenericAddress` to a `RawGenericAddress`.
+    const fn as_raw(&self) -> RawGenericAddress {
+        RawGenericAddress {
+            address_space: self.address_space as u8,
+            bit_width: self.bit_width,
+            bit_offset: self.bit_offset,
+            access_size: self.access_size as u8,
+            address: self.address,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
-pub enum AdressSpace {
+pub enum AddressSpace {
     SystemMemory = 0x00,
     SystemIO = 0x01,
     PciConfigSpace = 0x02,
@@ -399,7 +456,7 @@ pub enum AdressSpace {
     OemDefined,
 }
 
-impl From<u8> for AdressSpace {
+impl From<u8> for AddressSpace {
     fn from(value: u8) -> Self {
         match value {
             0x00 => Self::SystemMemory,

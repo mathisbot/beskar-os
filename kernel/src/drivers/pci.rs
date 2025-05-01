@@ -12,13 +12,13 @@ mod legacy;
 #[allow(clippy::option_if_let_else)]
 pub fn init() -> DriverResult<()> {
     if let Ok(device_count) = express::init() {
-        crate::info!("PCIe initialized with {} devices", device_count);
+        video::info!("PCIe initialized with {} devices", device_count);
         Ok(())
     } else if let Ok(device_count) = legacy::init() {
-        crate::info!("Legacy PCI initialized with {} devices", device_count);
+        video::info!("Legacy PCI initialized with {} devices", device_count);
         Ok(())
     } else {
-        crate::warn!("No PCI devices found");
+        video::warn!("No PCI devices found");
         Err(DriverError::Invalid)
     }
 }

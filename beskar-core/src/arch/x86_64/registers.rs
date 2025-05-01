@@ -81,7 +81,10 @@ impl Cr3 {
     }
 
     #[inline]
-    pub fn write(frame: Frame, flags: u16) {
+    /// # Safety
+    ///
+    /// The value written must be a valid CR3 value.
+    pub unsafe fn write(frame: Frame, flags: u16) {
         assert_eq!(frame.start_address().as_u64() & 0xFFF0_0000_0000_0FFF, 0);
         let value = frame.start_address().as_u64() | u64::from(flags);
 
@@ -377,8 +380,21 @@ impl CS {
     ///
     /// The value written must be a valid CS selector.
     pub unsafe fn set(selector: u16) {
+        // It is impossible to directly set CS using `mov`.
+        // The most portable way to set CS is to use a far return.
+        // This is done by pushing the selector and the address of the next instruction
+        // onto the stack, and then using `retfq` to pop them off.
         unsafe {
-            core::arch::asm!("mov cs, {:x}", in(reg) selector, options(nomem, nostack, preserves_flags));
+            core::arch::asm!(
+                "push {sel}", // Push the desired CS value
+                "lea {addr}, [2f + rip]", // Compute the return address
+                "push {addr}", // Push the return address
+                "retfq",
+                "2:",
+                sel = in(reg) u64::from(selector),
+                addr = lateout(reg) _,
+                options(nomem, preserves_flags),
+            );
         }
     }
 
@@ -390,6 +406,30 @@ impl CS {
             core::arch::asm!("mov {:x}, cs", out(reg) selector, options(nomem, nostack, preserves_flags));
         }
         selector
+    }
+}
+
+pub struct SS;
+
+impl SS {
+    #[must_use]
+    #[inline]
+    pub fn read() -> u16 {
+        let selector: u16;
+        unsafe {
+            core::arch::asm!("mov {:x}, ss", out(reg) selector, options(nomem, nostack, preserves_flags));
+        }
+        selector
+    }
+
+    #[inline]
+    /// # Safety
+    ///
+    /// The value written must be a valid SS selector.
+    pub unsafe fn set(selector: u16) {
+        unsafe {
+            core::arch::asm!("mov ss, {:x}", in(reg) selector, options(nomem, nostack, preserves_flags));
+        }
     }
 }
 

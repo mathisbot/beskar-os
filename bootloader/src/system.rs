@@ -33,7 +33,6 @@ fn enable_and_count_cores() {
         uefi::boot::open_protocol_exclusive::<MpServices>(mp_handle).unwrap()
     };
 
-    debug!("Enabling all cores...");
     for i in 0..mps.get_number_of_processors().unwrap().total {
         if i != mps.who_am_i().unwrap() {
             let info = mps.get_processor_info(i).unwrap();
@@ -54,6 +53,7 @@ fn enable_and_count_cores() {
             proc_count.enabled, proc_count.total
         );
     }
+    debug!("Enabled cores: {}", proc_count.enabled);
 
     CORE_COUNT.store(proc_count.enabled, Ordering::Relaxed);
 }

@@ -40,7 +40,7 @@ pub fn apic_id() -> u8 {
 pub fn init_lapic() {
     let x2apic_supported = cpuid::check_feature(cpuid::CpuFeature::X2APIC);
     if locals!().core_id() == 0 && !x2apic_supported {
-        crate::warn!("x2APIC not supported");
+        video::warn!("x2APIC not supported");
     }
 
     let lapic_paddr = acpi::ACPI
@@ -259,7 +259,7 @@ impl LocalApic {
 }
 
 extern "x86-interrupt" fn local_nmi_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("Local NMI on core {}", locals!().core_id());
+    video::info!("Local NMI on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
@@ -533,7 +533,7 @@ impl IoApic {
 }
 
 extern "x86-interrupt" fn io_iso_handler(_stack_frame: InterruptStackFrame) {
-    crate::info!("IO ISO on core {}", locals!().core_id());
+    video::info!("IO ISO on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 

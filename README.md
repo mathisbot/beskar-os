@@ -24,7 +24,7 @@ Throughout the development process, I always follow four objectives:
 I have many milestones ideas for the OS:
 
 1. Being completely self-hosted
-2. Succesfully ping `1.1.1.1`
+2. Successfully ping `1.1.1.1`
 3. Run Doom?
 
 ## Design and architecture
@@ -61,7 +61,7 @@ A great choice for most of modern CPUs is `x86_64-v3` (`v4` if it is very modern
 If you want to run the OS on a testing virtual machine on QEMU, you can do so by running the following command :
 
 ```powershell
-qemu-system-x86_64.exe -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -device usb-kbd -M q35
+qemu-system-x86_64.exe -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -M q35
 ```
 
 Where:
@@ -72,10 +72,10 @@ Where:
 - `<ACCEL_BACKEND>` allows QEMU to use acceleration based on your OS. On Linux, you can set it to `kvm`, and to `whpx` on Windows (currently incompatible with OVMF files).
 
 Other useful parameters:
-- `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.
-- `-display none`: If you're not interested in graphics (for debugging purposes).
 - `-nic user,model=e1000e`: Add a network card to the emulated computer.
 - `-device nvme,serial=<anything>`: Add a NVMe controller to the emulated computer.
+- `-device usb-kbd`: Add a USB keyboard (currently not recognized). This will disable QEMU's PS/2 emulated keyboard.
+- `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.
 
 #### Troubleshooting
 
@@ -99,6 +99,33 @@ Do not run the OS on a machine you care about (at the risk of potentially corrup
 If the bootloader runs but the computer stalls right after (i.e. the screen gets filled with text then turns black), the kernel has likely crashed with an INVALID OPCODE exception very early. Try to build the kernel for an older version of x86_64. If you happen to have a COM1 serial port on your hardware, you can receive debug messages when connecting to it (using PuTTY for example).
 
 In any other cases, the kernel **SHOULD** print explicit information on the screen about any problem it encounters.
+
+## Screenshots
+
+The following screenshots showcase the normal operating of the OS
+
+### Bootloader
+
+Before trying anything, the bootloader checks the firmware version as well as available features. This early process is logged into COM1.
+
+![Bootloader COM1 output](docs/images/bootloader_serial.webp)
+
+After video is enabled, the bootloader sets up a comfortable environment for the kernel to run, before switching context and jumping to it.
+
+![Bootloader Initialization](docs/images/bootloader.webp)
+
+### Kernel
+
+On startup, the kernel initializes itself with the help of information provided by the bootloader.
+After initialization, it starts a process to initialize drivers as well as a user-space process for each binary in the ramdisk.
+
+For now, the only user-space program is simple: it calls every available syscall and then enters an infinite loop waiting for keyboard inputs.
+
+![Kernel Initialization](docs/images/kernel_boot.webp)
+
+When something goes unfortunately wrong, the faulty process gets killed. On unrecoverable kernel errors, the faulty core sends an NMI to other cores to stop further processing.
+
+![Kernel Panic](docs/images/kernel_panic.webp)
 
 ## Sources and inspirations
 

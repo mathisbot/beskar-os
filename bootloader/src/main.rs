@@ -33,7 +33,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
             let mut x = 0_u64;
             for i in 0..100_000_000 {
                 unsafe {
-                    core::ptr::write_volatile(&mut x, i);
+                    core::ptr::write_volatile(&raw mut x, i);
                 }
             }
         }
@@ -49,7 +49,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         uefi::runtime::reset(uefi::runtime::ResetType::COLD, uefi::Status::ABORTED, None);
     } else {
         loop {
-            x86_64::instructions::hlt();
+            beskar_core::arch::x86_64::instructions::halt();
         }
     }
 }
@@ -94,7 +94,8 @@ fn efi_entry() -> Status {
 
     let ramdisk = bootloader::fs::load_file_from_efi_dir(cstr16!("ramdisk.img"));
     if let Some(ramdisk) = ramdisk.as_ref() {
-        info!("Ramdisk of size {}B loaded", ramdisk.len());
+        info!("Ramdisk loaded");
+        debug!("Ramdisk size: {} bytes", ramdisk.len());
     }
 
     let mut memory_map = unsafe { boot::exit_boot_services(boot::MemoryType::LOADER_DATA) };

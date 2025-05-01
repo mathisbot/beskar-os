@@ -141,7 +141,7 @@ pub fn start_up_aps(core_count: usize) {
         core::hint::spin_loop();
     }
 
-    crate::info!("All APs have been awakened!");
+    video::info!("All APs have been awakened!");
 }
 
 fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
