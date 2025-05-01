@@ -35,7 +35,8 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         panic_info.message()
     );
 
-    if process::scheduler::is_scheduling_init() {
+    // If more than one core is present, then both processes and APICs are initialized.
+    if crate::locals::get_ready_core_count() > 1 {
         use crate::arch::apic::ipi;
 
         if process::scheduler::current_process().kind() == beskar_core::process::Kind::Kernel {

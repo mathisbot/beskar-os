@@ -436,7 +436,7 @@ pub fn init() -> DriverResult<()> {
 
     assert_eq!(
         hpet_info.base_address().address_space(),
-        crate::drivers::acpi::sdt::AdressSpace::SystemMemory
+        crate::drivers::acpi::sdt::AddressSpace::SystemMemory
     );
 
     // TODO: Only one mapping for the whole HPET block

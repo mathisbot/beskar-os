@@ -2,10 +2,12 @@ use beskar_core::arch::commons::PhysAddr;
 use core::sync::atomic::AtomicU8;
 use hyperdrive::once::Once;
 
+mod aml;
 mod rsdp;
 pub mod sdt;
 use sdt::{
     Rsdt,
+    dsdt::ParsedDsdt,
     fadt::ParsedFadt,
     hpet_table::ParsedHpetTable,
     madt::ParsedMadt,
@@ -28,6 +30,7 @@ pub struct Acpi {
     fadt: ParsedFadt,
     hpet: Option<ParsedHpetTable>,
     mcfg: Option<ParsedMcfg>,
+    dsdt: ParsedDsdt,
 }
 
 impl Acpi {
@@ -59,11 +62,14 @@ impl Acpi {
         let hpet = hpet_paddr.map(|paddr| sdt::hpet_table::HpetTable::load(paddr).parse());
         let mcfg = mcfg_paddr.map(|paddr| mcfg::Mcfg::load(paddr).parse());
 
+        let dsdt = sdt::dsdt::Dsdt::load(fadt.dsdt()).parse();
+
         Self {
             madt,
             fadt,
             hpet,
             mcfg,
+            dsdt,
         }
     }
 

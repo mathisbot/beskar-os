@@ -1,8 +1,5 @@
-use crate::impl_sdt;
-
 use super::{GenericAddress, RawGenericAddress, Sdt, SdtHeader};
-
-impl_sdt!(HpetTable);
+super::impl_sdt!(HpetTable);
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]

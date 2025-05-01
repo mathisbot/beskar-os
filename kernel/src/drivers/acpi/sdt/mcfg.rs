@@ -1,11 +1,9 @@
-use core::ops::RangeInclusive;
-
+use super::{Sdt, SdtHeader};
 use alloc::vec::Vec;
 use beskar_core::arch::commons::PhysAddr;
+use core::ops::RangeInclusive;
 
-use super::{Sdt, SdtHeader};
-
-crate::impl_sdt!(Mcfg);
+super::impl_sdt!(Mcfg);
 
 #[derive(Debug, Clone)]
 pub struct ParsedMcfg {

@@ -1,9 +1,8 @@
+use super::{Sdt, SdtHeader};
 use alloc::vec::Vec;
 use beskar_core::arch::commons::PhysAddr;
 
-use super::{Sdt, SdtHeader};
-
-crate::impl_sdt!(Madt);
+super::impl_sdt!(Madt);
 
 pub struct ParsedMadt {
     // Related to Local APIC
