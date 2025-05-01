@@ -323,7 +323,7 @@ pub fn thread_yield() -> bool {
 #[must_use]
 #[inline]
 pub fn is_scheduling_init() -> bool {
-    locals!().scheduler().get().is_some()
+    locals!().scheduler().is_initialized()
 }
 
 /// A back-off stategy that yields the CPU.

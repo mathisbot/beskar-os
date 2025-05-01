@@ -378,9 +378,9 @@ impl Repr {
                 packet.set_hardware_len(6);
                 packet.set_protocol_len(4);
                 packet.set_operation(operation);
-                packet.set_source_hardware_addr(source_hardware_addr.as_bytes());
+                packet.set_source_hardware_addr(&source_hardware_addr.as_bytes());
                 packet.set_source_protocol_addr(&source_protocol_addr.octets());
-                packet.set_target_hardware_addr(target_hardware_addr.as_bytes());
+                packet.set_target_hardware_addr(&target_hardware_addr.as_bytes());
                 packet.set_target_protocol_addr(&target_protocol_addr.octets());
             }
         }

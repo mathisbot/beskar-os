@@ -62,6 +62,11 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     }
 }
 
+#[must_use]
+#[inline]
+/// Returns true if a core has panicked in a kernel thread.
 fn kernel_has_panicked() -> bool {
+    // We are not using `Once::is_initialized` here because we want
+    // to catch the "still initializing" case as well (`get` is blocking).
     KERNEL_PANIC.get().is_some()
 }

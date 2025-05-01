@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 description = "Utility structures for BeskarOS"
 license = "MIT"
-categories = ["no_std"]
+categories = ["no_std","no_alloc"]
 
 [dependencies]

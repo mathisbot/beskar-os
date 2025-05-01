@@ -64,8 +64,8 @@ impl MacAddress {
     #[must_use]
     #[inline]
     /// Return an Ethernet address as a sequence of octets, in big-endian.
-    pub const fn as_bytes(&self) -> &[u8] {
-        &self.0
+    pub const fn as_bytes(&self) -> [u8; 6] {
+        self.0
     }
 
     #[must_use]
@@ -102,7 +102,7 @@ impl core::fmt::Display for MacAddress {
         let bytes = self.0;
         write!(
             f,
-            "{:02x}-{:02x}-{:02x}-{:02x}-{:02x}-{:02x}",
+            "{:02X}-{:02X}-{:02X}-{:02X}-{:02X}-{:02X}",
             bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]
         )
     }
@@ -208,14 +208,14 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Frame<T> {
     /// Set the destination address field.
     pub fn set_dst_addr(&mut self, value: MacAddress) {
         let data = self.buffer.as_mut();
-        data[DESTINATION].copy_from_slice(value.as_bytes());
+        data[DESTINATION].copy_from_slice(&value.as_bytes());
     }
 
     #[inline]
     /// Set the source address field.
     pub fn set_src_addr(&mut self, value: MacAddress) {
         let data = self.buffer.as_mut();
-        data[SOURCE].copy_from_slice(value.as_bytes());
+        data[SOURCE].copy_from_slice(&value.as_bytes());
     }
 
     #[inline]

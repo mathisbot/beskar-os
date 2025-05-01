@@ -7,6 +7,7 @@
 //!
 //! - `mcs` : Provides an implementation of the MCS lock.
 //! - `rw` : Provides an implementation of the read-write lock.
+//! - `ticket` : Provides an implementation of the ticket lock.
 //!
 //! ## Back-off Strategy
 //!
@@ -19,6 +20,7 @@
 
 pub mod mcs;
 pub mod rw;
+pub mod ticket;
 
 /// A trait that defines a back-off strategy for locks.
 ///

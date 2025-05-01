@@ -182,6 +182,13 @@ impl<T> Once<T> {
         }
     }
 
+    #[must_use]
+    #[inline]
+    /// Returns true if the value has been initialized.
+    pub fn is_initialized(&self) -> bool {
+        self.state.load(Ordering::Acquire) == State::Initialized
+    }
+
     /// Initializes the value if it has not been initialized yet.
     ///
     /// Try to make the `initializer` function as less likely to panic as possible.
@@ -259,8 +266,10 @@ mod test {
     fn test_once() {
         let once = Once::uninit();
         assert!(once.get().is_none());
+        assert!(!once.is_initialized());
 
         once.call_once(|| 42);
+        assert!(once.is_initialized());
 
         let value = once.get().unwrap();
         assert_eq!(*value, 42);
@@ -269,6 +278,7 @@ mod test {
     #[test]
     fn test_init() {
         let once = Once::from_init(42);
+        assert!(once.is_initialized());
         once.call_once(|| panic!("This should not be called"));
         let value = once.get().unwrap();
         assert_eq!(*value, 42);
