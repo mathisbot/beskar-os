@@ -147,6 +147,21 @@ pub fn make_mappings(
 ) -> Mappings {
     let mut level_4_entries = Level4Entries::new(frame_allocator.max_physical_address());
 
+    // Get the recursive index
+    let recursive_index = {
+        let index = level_4_entries.get_free_entries(1);
+
+        let entry = &mut page_tables.kernel.entries_mut()[usize::from(index)];
+        assert!(entry.is_null(), "Recursive mapping entry is already in use");
+
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE;
+
+        entry.set(page_tables.kernel_level_4_frame.start_address(), flags);
+
+        index
+    };
+    debug!("Recursive page table index is {}", recursive_index);
+
     // Map kernel
     let (kernel_entry_point, kernel_info) = {
         let kernel_paddr = PhysAddr::new(kernel.input.as_ptr() as u64);
@@ -163,8 +178,8 @@ pub fn make_mappings(
         ));
 
         info!("Kernel loaded");
+        debug!("Kernel code at {:#x}", kernel_vaddr.as_u64());
         debug!("Kernel entry point at {:#x}", kernel_entry_point.as_u64());
-        debug!("Kernel image offset: {:#x}", kernel_vaddr.as_u64());
 
         (
             kernel_entry_point,
@@ -228,8 +243,8 @@ pub fn make_mappings(
                 .flush();
         }
 
-        info!("Setup stack");
-        debug!("Stack top at {:#x}", stack_end_addr.as_u64());
+        info!("Kernel stack is setup");
+        debug!("Kernel stack top at {:#x}", stack_end_addr.as_u64());
 
         stack_end_addr
     };
@@ -249,7 +264,10 @@ pub fn make_mappings(
         }
 
         info!("Mapped jump code");
-        debug!("chg_ctx function at {:#x}", chg_ctx_function_addr.as_u64());
+        debug!(
+            "Context switch function at {:#x}",
+            chg_ctx_function_addr.as_u64()
+        );
     }
 
     // Handle GDT
@@ -283,8 +301,8 @@ pub fn make_mappings(
             .map(gdt_page, gdt_frame, Flags::PRESENT, frame_allocator)
             .flush();
 
-        info!("Mapped GDT to {:#x}", gdt_page.start_address().as_u64());
-        debug!("GDT at {:#x}", gdt_frame.start_address().as_u64());
+        info!("Mapped GDT");
+        debug!("GDT at {:#x}", gdt_page.start_address().as_u64());
     }
 
     // Map framebuffer
@@ -320,23 +338,6 @@ pub fn make_mappings(
 
         start_page.start_address()
     };
-
-    // Get the recursive index
-    let recursive_index = {
-        let index = level_4_entries.get_free_entries(1);
-
-        let entry = &mut page_tables.kernel.entries_mut()[usize::from(index)];
-        assert!(entry.is_null(), "Recursive mapping entry is already in use");
-
-        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE;
-
-        entry.set(page_tables.kernel_level_4_frame.start_address(), flags);
-
-        index
-    };
-
-    info!("Mapped recursive index");
-    debug!("Recursive page table index is {}", recursive_index);
 
     Mappings {
         stack_top: stack_end_addr,

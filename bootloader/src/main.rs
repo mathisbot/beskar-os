@@ -94,7 +94,8 @@ fn efi_entry() -> Status {
 
     let ramdisk = bootloader::fs::load_file_from_efi_dir(cstr16!("ramdisk.img"));
     if let Some(ramdisk) = ramdisk.as_ref() {
-        info!("Ramdisk of size {}B loaded", ramdisk.len());
+        info!("Ramdisk loaded");
+        debug!("Ramdisk size: {} bytes", ramdisk.len());
     }
 
     let mut memory_map = unsafe { boot::exit_boot_services(boot::MemoryType::LOADER_DATA) };

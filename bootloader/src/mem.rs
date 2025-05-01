@@ -29,7 +29,7 @@ pub fn init(
     ramdisk: Option<&[u8]>,
 ) -> (EarlyFrameAllocator, PageTables, Mappings) {
     let total_mem_size = compute_total_memory_kib(&memory_map);
-    debug!("Usable memory size: {} MiB", total_mem_size / 1024);
+    info!("Usable memory size: {} MiB", total_mem_size / 1024);
 
     let mut frame_allocator = EarlyFrameAllocator::new(memory_map);
 
@@ -119,9 +119,9 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
             table[p4_index] = old_table[p4_index];
         }
 
-        info!("Switching to a new level 4 page table");
-
         unsafe { Cr3::write(frame, 0) };
+        info!("Switched to a new page table");
+
         OffsetPageTable::new(&mut *table, physical_offset)
     };
 
@@ -132,7 +132,7 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
             .expect("Failed to allocate a frame");
 
         debug!(
-            "Kernel level 4 page table is at {:#x}",
+            "Kernel level 4 page table is physically at {:#x}",
             frame.start_address().as_u64()
         );
 
