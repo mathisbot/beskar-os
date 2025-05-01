@@ -10,27 +10,34 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
 ## Features
 
 - Arch
+    - [ ] aarch64
     - [X] x86_64
-        - [x] Interrupts/GDT
-        - [X] CPUID
+        - [x] AP startup
         - [X] APIC
             - [x] LAPIC
             - [X] IOAPIC
-        - [x] AP startup
+        - [X] CPUID
+        - [x] GDT/TSS
+        - [x] Interrupts
         - [x] Randomness
         - [x] Systemcalls
-    - [ ] aarch64
 - Drivers
     - [ ] ACPI
-        - [ ] FADT
+        - [ ] DSDT (partial)
+            - [ ] AML
+        - [ ] FADT (partial)
         - [x] HPET
         - [x] MADT
         - [x] MCFG
-    - [ ] NICs
+        - [x] RSDT/XSDT
+    - NIC
         - [ ] Intel e1000e (partial)
-    - [X] PCI/PCIe
+    - [X] PCI
+        - [X] PCI/PCI-X
+            - [X] MSI
+        - [X] PCIe
+            - [X] MSI-X
         - [x] Devices
-        - [X] MSI/MSI-X
     - [ ] PS/2
         - [X] Keyboard
         - [ ] Mouse
@@ -39,16 +46,16 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [ ] NVMe (partial)
     - [x] Time
         - [x] HPET
-        - [x] x86_64
-            - [x] TSC
+        - x86_64
             - [x] APIC Timer
-    - [ ] USB
+            - [x] TSC
+    - USB
         - [ ] Controllers
-            - [ ] xHCI (partial)
             - [ ] EHCI
-        - USB
-            - [ ] USB 3
+            - [ ] xHCI (partial)
+        - [ ] USB
             - [ ] USB 2
+            - [ ] USB 3
         - Devices
             - [ ] Generic Keyboard
 - Memory
@@ -57,26 +64,39 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
     - [x] Address spaces / VMM
 - Network
     - [ ] Network stack
-        - [ ] ARP
-        - [ ] ICMP
-        - [ ] IPv4
-        - [ ] UDP
-        - [ ] TCP
+        - L2
+            - [X] Ethernet
+        - L3
+            - [X] ARP
+            - [ ] IP
+                - [ ] IPv4
+                - [ ] IPv6
+        - L4
+            - [ ] ICMP
+            - [ ] UDP
+            - [ ] TCP
     - [ ] Services
         - [ ] DHCP
         - [ ] DNS
         - [ ] Sockets
-- Storage
-    - [ ] GPT
-    - [ ] FS
-        - [ ] FAT32
-        - [ ] ext2
-    - [ ] VFS
 - Processes
     - [x] Scheduling
+        - [X] Context save/switch
+        - [X] Priority handling
+        - [ ] Sleeping threads (partial)
+        - [X] TLS
     - [X] User space
     - [X] Binary loading
         - [X] ELF
+- Storage
+    - [ ] Partitions
+        - [ ] MBR
+        - [ ] GPT
+    - [ ] FS
+        - [ ] FAT32
+        - [ ] ext2
+        - [ ] ext4
+    - [ ] VFS
 - Video
     - [x] Character rendering
     - [x] Logging
