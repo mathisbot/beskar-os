@@ -9,10 +9,6 @@ pub mod fs;
 pub mod partition;
 pub mod vfs;
 
-pub fn init() {
-    vfs::init();
-}
-
 #[derive(Debug, Error, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum DeviceError {
     #[error("An I/O error occurred")]

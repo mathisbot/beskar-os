@@ -54,7 +54,7 @@ impl Eq for Thread {}
 
 impl PartialOrd for Thread {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        self.id.partial_cmp(&other.id)
+        Some(self.id.cmp(&other.id))
     }
 }
 impl Ord for Thread {
@@ -188,7 +188,7 @@ impl Thread {
         Self {
             id: ThreadId::new(),
             root_proc,
-            priority: Priority::Null,
+            priority: Priority::Low,
             state: ThreadState::Ready,
             stack: None,
             last_stack_ptr: core::ptr::null_mut(),
@@ -448,10 +448,7 @@ impl ThreadStacks {
 
     pub fn allocate_user(&self, size: u64) {
         let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
-        let page_range = Self::allocate(size, flags);
-
-        // FIXME: Even if the stack is already allocated, the above allocations still happens.
-        self.user_pages.call_once(|| page_range);
+        self.user_pages.call_once(|| Self::allocate(size, flags));
     }
 
     #[must_use]

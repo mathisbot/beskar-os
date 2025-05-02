@@ -282,7 +282,7 @@ fn zero_bss(
     }
 
     for page in Page::range_inclusive(zero_start_page, zero_end_page) {
-        // FIXME: Free these pages on binary unload
+        // FIXME: Free these frames on binary unload
         crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
             let frame = fralloc.allocate_frame().unwrap();
             // We need to zero the frame, so start by setting the page as writable

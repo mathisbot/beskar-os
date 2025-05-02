@@ -105,7 +105,6 @@ pub fn start_up_aps(core_count: usize) {
             ipi::DeliveryMode::Init,
             ipi::Destination::AllExcludingSelf,
         ));
-        // FIXME: Is it useful to wait a bit here?
         // crate::time::tsc::wait_ms(10);
         apic.send_ipi(&Ipi::new(
             ipi::DeliveryMode::Sipi(sipi_payload),

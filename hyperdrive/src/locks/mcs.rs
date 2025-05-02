@@ -124,6 +124,7 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
+#[derive(Default)]
 /// Mellor-Crummey and Scott lock.
 pub struct McsLock<T, B: BackOff = Spin> {
     /// Tail of the queue.

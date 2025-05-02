@@ -430,9 +430,6 @@ impl IoApic {
 
         let apic_flags = Flags::MMIO_SUITABLE;
 
-        // FIXME: I don't quite like that each IOAPIC gets its own page
-        // Apparently, IOAPICs only live in Physical 0xFEC0..00, so one page per 16 IOAPICs?
-        // Or maybe keep track of mapped pages and check if the page is already mapped?
         let page = process::current()
             .address_space()
             .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<M4KiB>(1))
@@ -470,7 +467,6 @@ impl IoApic {
         );
         self.set_id(u8::try_from(cpu_count).unwrap() + id_offset);
 
-        // TODO: Setup redirection entries (See MADT)
         let isos = acpi::ACPI.get().unwrap().madt().io_iso();
         let nmi_sources = acpi::ACPI.get().unwrap().madt().io_nmi_sources();
 

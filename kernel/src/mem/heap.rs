@@ -47,7 +47,6 @@ pub fn init() {
 }
 
 struct Heap {
-    // TODO: Add faster allocator
     linked_list: linked_list_allocator::Heap,
 }
 

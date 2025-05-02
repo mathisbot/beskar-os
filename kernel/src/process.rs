@@ -38,7 +38,6 @@ pub struct Process {
     pid: ProcessId,
     address_space: View<'static, AddressSpace>,
     kind: Kind,
-    // FIXME: Shouldn't be 'static
     binary_data: Option<BinaryData<'static>>,
 }
 

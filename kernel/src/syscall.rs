@@ -107,6 +107,9 @@ fn sc_randomgen(args: &Arguments) -> SyscallExitCode {
 #[must_use]
 fn sc_mmap(args: &Arguments) -> u64 {
     let len = args.one;
+    if len == 0 {
+        return 0;
+    }
 
     let Some(page_range) = process::current()
         .address_space()
@@ -115,10 +118,12 @@ fn sc_mmap(args: &Arguments) -> u64 {
         return 0;
     };
 
-    crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
+    let success = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
         process::current().address_space().with_page_table(|kpt| {
             for page in page_range {
-                let frame = fralloc.alloc().unwrap(); // TODO: Handle allocation failure
+                let Some(frame) = fralloc.alloc() else {
+                    return false;
+                };
                 kpt.map(
                     page,
                     frame,
@@ -127,8 +132,17 @@ fn sc_mmap(args: &Arguments) -> u64 {
                 )
                 .flush();
             }
-        });
+            true
+        })
     });
+    if !success {
+        return 0;
+    }
+
+    debug_assert!(process::current().address_space().is_addr_owned(
+        page_range.start().start_address(),
+        page_range.end().start_address() + (len - 1),
+    ));
 
     // FIXME: Should the area be zeroed?
 

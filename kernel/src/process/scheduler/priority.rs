@@ -39,8 +39,6 @@ impl AtomicPriority {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {
-    /// The thread should not be scheduled.
-    Null = 0,
     Low = 1,
     Normal = 2,
     /// The thread should be scheduled as soon as possible.
@@ -54,7 +52,6 @@ impl TryFrom<u8> for Priority {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(Self::Null),
             1 => Ok(Self::Low),
             2 => Ok(Self::Normal),
             3 => Ok(Self::High),
@@ -83,7 +80,6 @@ pub unsafe trait ThreadQueue {
 pub struct RoundRobinQueues {
     current: AtomicUsize,
     cycle: [Priority; 6],
-    null: MpscQueue<Thread>,
     low: MpscQueue<Thread>,
     normal: MpscQueue<Thread>,
     high: MpscQueue<Thread>,
@@ -101,7 +97,6 @@ impl RoundRobinQueues {
                 Priority::Normal,
             ],
             current: AtomicUsize::default(),
-            null: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
             low: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
             normal: MpscQueue::new(Box::pin(Thread::new_stub(root_proc.clone()))),
             high: MpscQueue::new(Box::pin(Thread::new_stub(root_proc))),
@@ -118,10 +113,6 @@ impl RoundRobinQueues {
 unsafe impl ThreadQueue for RoundRobinQueues {
     fn append(&self, thread: Pin<Box<Thread>>) {
         match thread.priority() {
-            Priority::Null => {
-                // TODO: Make them available for reuse (wake up).
-                self.null.enqueue(thread);
-            }
             Priority::Low => {
                 self.low.enqueue(thread);
             }
@@ -136,7 +127,6 @@ unsafe impl ThreadQueue for RoundRobinQueues {
 
     fn next(&self) -> Option<Pin<Box<Thread>>> {
         match self.cycle_priority() {
-            Priority::Null => unreachable!(),
             Priority::Low => self.low.dequeue(),
             Priority::Normal => self.normal.dequeue(),
             Priority::High => self.high.dequeue(),

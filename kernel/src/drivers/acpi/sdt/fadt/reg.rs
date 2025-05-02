@@ -7,6 +7,7 @@ use crate::drivers::acpi::sdt::{AccessSize, AddressSpace, GenericAddress};
 /// These bits can be split between two registers:
 /// - PM1a Control Register
 /// - PM1b Control Register
+///
 /// The values for these pointers to the register space are found in the FADT.
 /// Accesses to PM1 Control Registers are done through Byte/Word accesses.
 ///
@@ -124,7 +125,6 @@ impl Pm1ControlRegister {
         }
     }
 
-    #[must_use]
     #[inline]
     /// Put the CPU to sleep using the selected sleep type.
     pub fn sleep(&self, sleep_type: SleepType) {

@@ -236,7 +236,6 @@ impl MainCounterValue {
     #[must_use]
     #[inline]
     pub const fn get_value(&self) -> u64 {
-        // FIXME: Handle 32-bit counter ? Does it exist on x86_64 ?
         assert!(self.count_cap, "HPET count size not capable");
         self.read()
     }
@@ -415,7 +414,7 @@ read_write_reg!(TimerCompValue { count_cap: bool });
 impl TimerCompValue {
     #[must_use]
     pub const fn get_value(&self) -> u64 {
-        // FIXME: Handle 32-bit counter ? Does it exist on x86_64 ?
+        // FIXME: Handle 32-bit counter
         assert!(self.count_cap, "HPET count size not capable");
         self.read()
     }

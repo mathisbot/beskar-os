@@ -240,11 +240,11 @@ impl Signature {
     #[inline]
     pub const fn as_bytes(&self) -> &'static [u8; 4] {
         match self {
-            Signature::Madt => b"APIC",
-            Signature::Fadt => b"FACP",
-            Signature::Hpet => b"HPET",
-            Signature::Mcfg => b"MCFG",
-            Signature::Dsdt => b"DSDT",
+            Self::Madt => b"APIC",
+            Self::Fadt => b"FACP",
+            Self::Hpet => b"HPET",
+            Self::Mcfg => b"MCFG",
+            Self::Dsdt => b"DSDT",
         }
     }
 }
@@ -311,7 +311,7 @@ macro_rules! impl_sdt {
         }
     };
 }
-pub(self) use impl_sdt;
+use impl_sdt;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(C, packed)]

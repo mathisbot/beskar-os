@@ -37,7 +37,6 @@ trait Clock {
     fn wait(&self, duration: Duration) {
         let end = self.now() + duration;
         while self.now() < end {
-            // TODO: Yield?
             core::hint::spin_loop();
         }
     }
