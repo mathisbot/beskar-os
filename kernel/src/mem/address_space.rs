@@ -119,11 +119,8 @@ impl AddressSpace {
                 .entries()
                 .iter_entries()
                 .enumerate()
-                .filter(|(i, _)| userspc_idx.map_or(true, |idx| *i != idx))
+                .filter(|(i, pte)| userspc_idx != Some(*i) && !pte.is_null())
             {
-                if pte.is_null() {
-                    continue;
-                }
                 pt[i] = *pte;
             }
         });

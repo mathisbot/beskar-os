@@ -1,6 +1,7 @@
 use alloc::string::String;
 use thiserror::Error;
 
+pub mod dev;
 pub mod ext2;
 pub mod fat;
 
@@ -26,6 +27,15 @@ pub enum FileError {
     CorruptedFS,
     #[error("Unsupported operation")]
     UnsupportedOperation,
+}
+
+impl From<super::DeviceError> for FileError {
+    fn from(error: super::DeviceError) -> Self {
+        match error {
+            super::DeviceError::Io => FileError::Io,
+            super::DeviceError::OutOfBounds => FileError::UnexpectedEof,
+        }
+    }
 }
 
 pub type FileResult<T> = Result<T, FileError>;

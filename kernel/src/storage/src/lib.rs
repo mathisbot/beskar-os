@@ -12,7 +12,7 @@ pub mod vfs;
 #[derive(Debug, Error, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum DeviceError {
     #[error("An I/O error occurred")]
-    IoError,
+    Io,
     #[error("Out of bounds error")]
     OutOfBounds,
 }

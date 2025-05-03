@@ -91,3 +91,40 @@ where
 {
     KEYBOARD_MANAGER.get().map(f)
 }
+
+pub struct KeyboardDevice;
+
+impl ::storage::BlockDevice for KeyboardDevice {
+    const BLOCK_SIZE: usize = size_of::<u64>();
+
+    fn read(
+        &mut self,
+        dst: &mut [u8],
+        _offset: usize,
+        count: usize,
+    ) -> Result<(), ::storage::DeviceError> {
+        if count == 0 {
+            return Ok(());
+        }
+        if dst.len() < Self::BLOCK_SIZE * count {
+            return Err(::storage::DeviceError::Io);
+        }
+
+        for i in 0..count {
+            let key_event = with_keyboard_manager(|manager| manager.poll_event()).flatten();
+            let serialized_event = KeyEvent::pack_option(key_event);
+            dst[i * Self::BLOCK_SIZE..(i + 1) * Self::BLOCK_SIZE]
+                .copy_from_slice(&serialized_event.to_ne_bytes());
+        }
+
+        Ok(())
+    }
+
+    fn write(&mut self, src: &[u8], _offset: usize) -> Result<(), ::storage::DeviceError> {
+        if src.len() == 0 {
+            Ok(())
+        } else {
+            Err(::storage::DeviceError::Io)
+        }
+    }
+}

@@ -3,8 +3,9 @@ use crate::fs::Path;
 use alloc::{boxed::Box, collections::BTreeMap};
 use beskar_core::process::ProcessId;
 use core::{
+    i64,
     marker::PhantomData,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicI64, Ordering},
 };
 use hyperdrive::locks::rw::RwLock;
 
@@ -16,7 +17,7 @@ pub trait VfsHelper {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Handle {
-    id: u64,
+    id: i64,
 }
 
 impl Default for Handle {
@@ -25,13 +26,20 @@ impl Default for Handle {
     }
 }
 
-static HANDLE_COUNTER: AtomicU64 = AtomicU64::new(0);
+static HANDLE_COUNTER: AtomicI64 = AtomicI64::new(0);
 
 impl Handle {
+    pub const INVALID: Self = Self { id: -1 };
+
     #[must_use]
     #[inline]
     pub fn new() -> Self {
         let id = HANDLE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        if id == i64::MAX {
+            let _ =
+                HANDLE_COUNTER.compare_exchange(i64::MAX, 0, Ordering::Relaxed, Ordering::Relaxed);
+        }
+        debug_assert!(id >= 0);
         Self { id }
     }
 
@@ -41,15 +49,18 @@ impl Handle {
     ///
     /// # Safety
     ///
-    /// The created handle should not be used to access filesystems.
-    /// It is only meant for internal/comparative purposes.
-    pub const unsafe fn from_raw(id: u64) -> Self {
+    /// The created handle should not be used to create **new** handles.
+    /// It is only meant for comparison with other handles.
+    ///
+    /// The given ID should be positive.
+    pub const unsafe fn from_raw(id: i64) -> Self {
+        debug_assert!(id >= 0);
         Self { id }
     }
 
     #[must_use]
     #[inline]
-    pub const fn id(&self) -> u64 {
+    pub const fn id(&self) -> i64 {
         self.id
     }
 }
