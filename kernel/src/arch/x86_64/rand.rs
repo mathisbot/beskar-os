@@ -29,14 +29,14 @@ fn rdrand(dst: &mut u64) -> Result<(), RandError> {
 
 /// Generates a random instance of the given type, filling its bytes with RDRAND
 ///
-/// ## Safety
+/// # Safety
 ///
 /// Every random sequence of bits must be a valid instance of the given type
 ///
-/// ## Panics
+/// # Errors
 ///
-/// Panics if RDRAND is not supported or if it fails to generate random data.
-/// See `rand_bytes`.
+/// Returns `RandError::RdrandNotSupported` if RDRAND is not supported
+/// and `RandError::RdrandFailed` if RDRAND fails to generate random data.
 pub unsafe fn rand<T: Sized>() -> Result<T, RandError> {
     let mut res = MaybeUninit::<T>::uninit();
 
@@ -56,9 +56,10 @@ pub unsafe fn rand<T: Sized>() -> Result<T, RandError> {
 
 /// Generates random bytes using RDRAND
 ///
-/// ## Panics
+/// # Errors
 ///
-/// Panics if RDRAND is not supported or if it fails to generate random data
+/// Returns `RandError::RdrandNotSupported` if RDRAND is not supported
+/// and `RandError::RdrandFailed` if RDRAND fails to generate random data.
 pub fn rand_bytes(bytes: &mut [u8]) -> Result<(), RandError> {
     if !rdrand_supported() {
         return Err(RandError::RdrandNotSupported);

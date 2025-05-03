@@ -19,7 +19,7 @@ pub fn init() {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: View::Reference(address_space::get_kernel_address_space()),
+            address_space: View::new_borrow(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
             binary_data: None,
         })
@@ -48,7 +48,7 @@ impl Process {
         Self {
             name: name.to_string(),
             pid: ProcessId::new(),
-            address_space: View::Owned(AddressSpace::new()),
+            address_space: View::new_owned(AddressSpace::new()),
             kind,
             binary_data: binary.map(BinaryData::new),
         }
@@ -158,6 +158,7 @@ impl Pcid {
     #[must_use]
     #[inline]
     pub const fn as_u16(&self) -> u16 {
+        debug_assert!(self.0 <= 4095, "PCID out of bounds");
         self.0
     }
 }

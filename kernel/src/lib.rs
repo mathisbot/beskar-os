@@ -19,7 +19,7 @@ mod mem;
 pub mod process;
 pub mod storage;
 mod syscall;
-pub mod time;
+mod time;
 
 static KERNEL_PANIC: Once<()> = Once::uninit();
 

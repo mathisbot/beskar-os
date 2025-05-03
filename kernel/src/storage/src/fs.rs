@@ -2,22 +2,28 @@ use alloc::string::String;
 use thiserror::Error;
 
 pub mod ext2;
-pub mod fat32;
+pub mod fat;
 
 #[derive(Debug, Error)]
 pub enum FileError {
+    #[error("I/O error")]
+    Io,
     #[error("File not found")]
     NotFound,
-    #[error("File already exists")]
-    AlreadyExists,
     #[error("Invalid path")]
     InvalidPath,
     #[error("Invalid handle")]
     InvalidHandle,
-    #[error("IO error")]
-    IoError,
+    #[error("File already exists")]
+    AlreadyExists,
+    #[error("File system is full")]
+    NotEnoughSpace,
+    #[error("Unexpected end of file")]
+    UnexpectedEof,
     #[error("Permission denied")]
     PermissionDenied,
+    #[error("File system is corrupted")]
+    CorruptedFS,
     #[error("Unsupported operation")]
     UnsupportedOperation,
 }

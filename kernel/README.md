@@ -93,10 +93,10 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [ ] MBR
         - [ ] GPT
     - [ ] FS
-        - [ ] FAT32
+        - [ ] FAT12/16/32 (partial)
         - [ ] ext2
         - [ ] ext4
-    - [ ] VFS
+    - [X] VFS
 - Video
     - [x] Character rendering
     - [x] Logging
