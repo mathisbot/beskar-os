@@ -1,7 +1,10 @@
 #![no_std]
 #![no_main]
 
-use beskar_lib::{io::print, rand::rand};
+use beskar_lib::{
+    io::{keyboard, print},
+    rand::rand,
+};
 
 beskar_lib::entry_point!(main);
 
@@ -17,15 +20,15 @@ fn main() {
 
     let mut text = alloc::string::String::new();
     loop {
-        if let Some(event) = beskar_lib::io::poll_keyboard() {
-            if event.pressed() != beskar_lib::io::KeyState::Pressed {
+        if let Some(event) = keyboard::poll_keyboard() {
+            if event.pressed() != keyboard::KeyState::Pressed {
                 continue;
             }
 
-            if event.key() == beskar_lib::io::KeyCode::Enter {
+            if event.key() == keyboard::KeyCode::Enter {
                 beskar_lib::io::print(text.as_str());
                 text.clear();
-            } else if event.key() == beskar_lib::io::KeyCode::Backspace {
+            } else if event.key() == keyboard::KeyCode::Backspace {
                 text.pop();
             } else {
                 let as_char = event.key().as_char();
