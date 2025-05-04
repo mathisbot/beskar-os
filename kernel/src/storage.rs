@@ -20,8 +20,9 @@ pub fn init() {
     let mut device_fs = DeviceFS::new();
     device_fs.add_device(
         PathBuf::new("/keyboard"),
-        crate::drivers::keyboard::KeyboardDevice,
+        Box::new(crate::drivers::keyboard::KeyboardDevice),
     );
+    device_fs.add_device(PathBuf::new("/stdout"), Box::new(crate::process::Stdout));
     VFS.mount(PathBuf::new("/dev"), Box::new(device_fs));
 
     // TODO: Mount RAM disk (FAT32)

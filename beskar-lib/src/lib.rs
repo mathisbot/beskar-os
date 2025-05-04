@@ -5,11 +5,10 @@
 
 extern crate alloc;
 
-pub use ::beskar_core::syscall::ExitCode;
-use ::beskar_core::syscall::Syscall;
+pub use beskar_core::syscall::ExitCode;
+use beskar_core::syscall::Syscall;
 
 mod arch;
-use arch::syscalls;
 pub mod io;
 pub mod mem;
 pub mod rand;
@@ -22,7 +21,7 @@ fn panic(_info: &::core::panic::PanicInfo) -> ! {
 #[inline]
 /// Exit the program with the given exit code.
 pub fn exit(code: ExitCode) -> ! {
-    let _ = syscalls::syscall_1(Syscall::Exit, code as u64);
+    let _ = arch::syscalls::syscall_1(Syscall::Exit, code as u64);
     unsafe { ::core::hint::unreachable_unchecked() }
 }
 

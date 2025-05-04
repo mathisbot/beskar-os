@@ -94,26 +94,23 @@ where
 
 pub struct KeyboardDevice;
 
-impl ::storage::BlockDevice for KeyboardDevice {
-    const BLOCK_SIZE: usize = size_of::<u64>();
-
-    fn read(
-        &mut self,
-        dst: &mut [u8],
-        _offset: usize,
-        count: usize,
-    ) -> Result<(), ::storage::DeviceError> {
-        if count == 0 {
-            return Ok(());
-        }
-        if dst.len() < Self::BLOCK_SIZE * count {
+impl ::storage::KernelDevice for KeyboardDevice {
+    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), ::storage::DeviceError> {
+        const BLOCK_SIZE: usize = size_of::<u64>();
+        if dst.len() % BLOCK_SIZE != 0 {
             return Err(::storage::DeviceError::Io);
         }
+        let block_count = dst.len() / BLOCK_SIZE;
 
-        for i in 0..count {
-            let key_event = with_keyboard_manager(|manager| manager.poll_event()).flatten();
+        if block_count == 0 {
+            return Ok(());
+        }
+
+        for i in 0..block_count {
+            let key_event: Option<KeyEvent> =
+                with_keyboard_manager(|manager| manager.poll_event()).flatten();
             let serialized_event = KeyEvent::pack_option(key_event);
-            dst[i * Self::BLOCK_SIZE..(i + 1) * Self::BLOCK_SIZE]
+            dst[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE]
                 .copy_from_slice(&serialized_event.to_ne_bytes());
         }
 

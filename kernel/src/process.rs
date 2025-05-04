@@ -162,3 +162,25 @@ impl Pcid {
         self.0
     }
 }
+
+pub struct Stdout;
+
+impl ::storage::KernelDevice for Stdout {
+    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), storage::DeviceError> {
+        if dst.len() == 0 {
+            return Ok(());
+        }
+
+        Err(::storage::DeviceError::Unsupported)
+    }
+
+    fn write(&mut self, src: &[u8], _offset: usize) -> Result<(), storage::DeviceError> {
+        let text = core::str::from_utf8(src).map_err(|_| ::storage::DeviceError::Io)?;
+
+        // TODO: Send somewhere else than the kernel log.
+        let tid = crate::process::scheduler::current_thread_id();
+        video::info!("[Thread {}] {}", tid.as_u64(), text);
+
+        Ok(())
+    }
+}

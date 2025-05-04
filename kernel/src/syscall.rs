@@ -24,7 +24,6 @@ pub struct Arguments {
 #[must_use]
 pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
     match syscall {
-        Syscall::Print => SyscallReturnValue::Code(sc_print(args)),
         Syscall::Exit => sc_exit(args),
         Syscall::RandomGen => SyscallReturnValue::Code(sc_randomgen(args)),
         Syscall::MemoryMap => SyscallReturnValue::ValueU(sc_mmap(args)),
@@ -35,32 +34,6 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
 
         Syscall::Invalid => SyscallReturnValue::Code(SyscallExitCode::Failure),
     }
-}
-
-#[must_use]
-fn sc_print(args: &Arguments) -> SyscallExitCode {
-    let Some(msg_vaddr) = VirtAddr::try_new(args.one) else {
-        return SyscallExitCode::Failure;
-    };
-
-    let msg_addr = msg_vaddr.as_ptr();
-    let msg_len = args.two;
-
-    if !process::current()
-        .address_space()
-        .is_addr_owned(msg_vaddr, msg_vaddr + msg_len)
-    {
-        return SyscallExitCode::Failure;
-    }
-
-    let buf = unsafe { core::slice::from_raw_parts(msg_addr, msg_len.try_into().unwrap()) };
-    let Ok(msg) = core::str::from_utf8(buf) else {
-        return SyscallExitCode::Failure;
-    };
-
-    let tid = crate::process::scheduler::current_thread_id();
-    video::info!("[Thread {}] {}", tid.as_u64(), msg);
-    SyscallExitCode::Success
 }
 
 fn sc_exit(args: &Arguments) -> ! {

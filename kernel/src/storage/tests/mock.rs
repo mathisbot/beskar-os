@@ -232,9 +232,9 @@ fn mock() {
 
     // Check if the files exist.
     assert!(VFS.exists(Path::from("/test.txt")).unwrap());
-    assert!(VFS.exists(Path::from("/test.txt")).unwrap());
+    assert!(VFS.exists(Path::from("/sw.txt")).unwrap());
 
-    // Delete the file.
+    // Delete the files.
     VFS.delete(Path::from("/test.txt")).unwrap();
     VFS.delete(Path::from("/sw.txt")).unwrap();
     assert!(!VFS.exists(Path::from("/test.txt")).unwrap());

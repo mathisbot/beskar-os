@@ -11,15 +11,16 @@ pub mod keyboard;
 /// Panics if the syscall fails (should never happen
 /// for valid input).
 pub fn print(msg: &str) {
-    let res = syscalls::syscall_2(
-        Syscall::Print,
-        msg.as_ptr() as u64,
-        msg.len().try_into().unwrap(),
-    );
-    assert_eq!(
-        SyscallExitCode::try_from(res).unwrap_or(SyscallExitCode::Other),
-        SyscallExitCode::Success
-    );
+    const STDOUT_FILE: &str = "/dev/stdout";
+
+    // FIXME: This is very inefficient and faillible if some other process
+    // is using stdout. This issue should be handled by the VFS as a special file.
+    let handle = open(STDOUT_FILE).unwrap();
+
+    let bytes_read = write(handle, msg.as_bytes(), 0).unwrap();
+    assert!(bytes_read == msg.as_bytes().len());
+
+    close(handle).unwrap();
 }
 
 #[macro_export]

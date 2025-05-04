@@ -1,4 +1,4 @@
-use ::beskar_core::syscall::Syscall;
+use beskar_core::syscall::Syscall;
 
 #[must_use]
 pub fn syscall_1(syscall: Syscall, arg1: u64) -> u64 {

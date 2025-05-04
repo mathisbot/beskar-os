@@ -34,6 +34,7 @@ impl From<super::DeviceError> for FileError {
         match error {
             super::DeviceError::Io => Self::Io,
             super::DeviceError::OutOfBounds => Self::UnexpectedEof,
+            super::DeviceError::Unsupported => Self::UnsupportedOperation,
         }
     }
 }

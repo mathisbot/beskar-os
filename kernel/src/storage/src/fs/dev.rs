@@ -1,20 +1,19 @@
 use super::FileSystem;
-use crate::BlockDevice;
-use alloc::vec::Vec;
+use crate::KernelDevice;
+use alloc::{boxed::Box, vec::Vec};
 
-#[derive(Debug)]
-struct DeviceFile<D: BlockDevice> {
+struct DeviceFile {
     path: super::PathBuf,
-    device: D,
+    device: Box<dyn KernelDevice>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 /// A pass-through file system for device files.
-pub struct DeviceFS<D: BlockDevice> {
-    devices: Vec<DeviceFile<D>>,
+pub struct DeviceFS {
+    devices: Vec<DeviceFile>,
 }
 
-impl<D: BlockDevice> DeviceFS<D> {
+impl DeviceFS {
     #[must_use]
     #[inline]
     /// Creates a new `DeviceFS` instance.
@@ -26,13 +25,13 @@ impl<D: BlockDevice> DeviceFS<D> {
 
     #[inline]
     /// Adds a new device to the file system.
-    pub fn add_device(&mut self, path: super::PathBuf, device: D) {
+    pub fn add_device(&mut self, path: super::PathBuf, device: Box<dyn KernelDevice>) {
         self.devices.push(DeviceFile { path, device });
     }
 
     #[inline]
     /// Adds a new device to the file system.
-    pub fn remove_device(&mut self, path: super::Path) -> Option<D> {
+    pub fn remove_device(&mut self, path: super::Path) -> Option<Box<dyn KernelDevice>> {
         if let Some(pos) = self
             .devices
             .iter()
@@ -46,7 +45,7 @@ impl<D: BlockDevice> DeviceFS<D> {
     }
 }
 
-impl<D: BlockDevice> FileSystem for DeviceFS<D> {
+impl FileSystem for DeviceFS {
     #[inline]
     fn close(&mut self, _path: super::Path) -> super::FileResult<()> {
         // No-op
@@ -87,27 +86,7 @@ impl<D: BlockDevice> FileSystem for DeviceFS<D> {
         // Find the device associated with the given path.
         for device in &mut self.devices {
             if device.path.as_path() == path {
-                let offset_in_blocks = offset / D::BLOCK_SIZE;
-                let offset_in_bytes = offset % D::BLOCK_SIZE;
-
-                let block_count = (buffer.len() + offset_in_bytes).div_ceil(D::BLOCK_SIZE);
-
-                if buffer.len() == block_count * D::BLOCK_SIZE {
-                    // Read the entire buffer in one go.
-                    device.device.read(buffer, offset_in_blocks, block_count)?;
-                } else {
-                    // FIXME: Avoid using the heap, find another solution to cover the non-block-aligned
-                    // bytes (other than calling 2 device reads).
-                    let mut around_buffer = alloc::vec![0; block_count * D::BLOCK_SIZE];
-                    device
-                        .device
-                        .read(&mut around_buffer, offset_in_blocks, block_count)?;
-
-                    buffer.copy_from_slice(
-                        &around_buffer[offset_in_bytes..offset_in_bytes + buffer.len()],
-                    );
-                }
-
+                device.device.read(buffer, offset)?;
                 return Ok(buffer.len());
             }
         }
@@ -123,27 +102,7 @@ impl<D: BlockDevice> FileSystem for DeviceFS<D> {
         // Find the device associated with the given path.
         for device in &mut self.devices {
             if device.path.as_path() == path {
-                let offset_in_blocks = offset / D::BLOCK_SIZE;
-                let offset_in_bytes = offset % D::BLOCK_SIZE;
-
-                let block_count = (buffer.len() + offset_in_bytes).div_ceil(D::BLOCK_SIZE);
-
-                if buffer.len() == block_count * D::BLOCK_SIZE {
-                    // Write the entire buffer in one go.
-                    device.device.write(buffer, offset_in_blocks)?;
-                } else {
-                    // FIXME: Avoid using the heap and 2 devices operations, find another solution to
-                    // cover the non-block-aligned bytes.
-                    let mut around_buffer = alloc::vec![0; block_count * D::BLOCK_SIZE];
-                    // This avoids overwriting the data around the offset.
-                    device
-                        .device
-                        .read(&mut around_buffer, offset_in_blocks, block_count)?;
-                    around_buffer[offset_in_bytes..offset_in_bytes + buffer.len()]
-                        .copy_from_slice(buffer);
-                    device.device.write(&around_buffer, offset_in_blocks)?;
-                }
-
+                device.device.write(buffer, offset)?;
                 return Ok(buffer.len());
             }
         }
