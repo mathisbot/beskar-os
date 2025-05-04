@@ -866,7 +866,7 @@ impl<'t> OffsetPageTable<'t> {
     }
 
     #[must_use]
-    #[allow(clippy::needless_pass_by_ref_mut)]
+    #[expect(clippy::needless_pass_by_ref_mut, reason = "False positive")]
     /// Finds the next table in the page table hierarchy.
     ///
     /// As this function isn't aware of the page size, it doesn't check for huge pages.

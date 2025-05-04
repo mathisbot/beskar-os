@@ -45,7 +45,6 @@ impl<S: MemSize> Frame<S> {
         self.start_address
     }
 
-    #[allow(clippy::unused_self)]
     #[must_use]
     #[inline]
     pub const fn size(self) -> u64 {

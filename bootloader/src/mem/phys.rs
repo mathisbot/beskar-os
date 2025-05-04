@@ -198,7 +198,10 @@ const fn usable_after_bootloader_exit(memory_descriptor: &MemoryDescriptor) -> b
         | MemoryType::LOADER_CODE
         | MemoryType::BOOT_SERVICES_CODE
         | MemoryType::BOOT_SERVICES_DATA => true,
-        #[allow(clippy::match_same_arms)]
+        #[expect(
+            clippy::match_same_arms,
+            reason = "Differentiate reasons for not usable"
+        )]
         MemoryType::RUNTIME_SERVICES_CODE | MemoryType::RUNTIME_SERVICES_DATA => {
             // According to the UEFI specification, these should be left
             // untouched by the operating system

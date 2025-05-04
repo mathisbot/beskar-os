@@ -17,7 +17,7 @@ impl Sealed for M4KiB {}
 impl Sealed for M2MiB {}
 impl Sealed for M1GiB {}
 
-#[allow(private_bounds)] // That's the point
+#[expect(private_bounds, reason = "Forbid impl `MemSize`")]
 pub trait MemSize: Sealed + Copy + Eq + Ord + PartialOrd {
     const SIZE: u64;
 }
@@ -45,7 +45,6 @@ impl MemSize for M1GiB {
 
 pub trait CacheFlush<S: MemSize> {
     fn flush(&self);
-    #[allow(clippy::unused_self)]
     /// Ignore the flush operation on the TLB.
     ///
     /// ## Safety

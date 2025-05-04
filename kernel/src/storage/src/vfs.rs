@@ -32,7 +32,7 @@ impl Handle {
 
     #[must_use]
     #[inline]
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     pub fn new() -> Self {
         let id = HANDLE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
@@ -98,14 +98,12 @@ impl<H: VfsHelper> Vfs<H> {
     }
 
     /// Unmounts the filesystem at the given path.
-    pub fn unmount(&self, path: &str) -> FileResult<()> {
+    pub fn unmount(&self, path: &str) -> FileResult<Box<dyn FileSystem>> {
         self.mounts
             .write()
             .remove(path)
-            .map_or(Err(FileError::NotFound), |mount| {
-                drop(mount);
-                Ok(())
-            })
+            .map(RwLock::into_inner)
+            .ok_or(FileError::NotFound)
     }
 
     /// Checks if a file is opened.

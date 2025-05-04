@@ -69,14 +69,14 @@ impl LapicTimer {
         use crate::arch::cpuid;
 
         let onboard = cpuid::check_feature(cpuid::CpuFeature::APIC_ONBOARD);
-        let hsl = cpuid::get_highest_supported_leaf();
+        let hsl = cpuid::get_highest_supported_leaf().as_u32();
 
         if onboard && hsl >= 0x15 {
-            let core_crystal = cpuid::cpuid(0x15).ecx;
+            let core_crystal = cpuid::cpuid(cpuid::Leaf::new(0x15)).ecx;
             NonZeroU32::new(core_crystal / 1_000_000)
         } else if !onboard && hsl >= 0x16 {
             // Frequency is already given is MHz
-            NonZeroU32::new(cpuid::cpuid(0x16).ecx & 0xFFFF)
+            NonZeroU32::new(cpuid::cpuid(cpuid::Leaf::new(0x16)).ecx & 0xFFFF)
         } else {
             None
         }

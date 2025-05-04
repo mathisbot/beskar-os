@@ -167,7 +167,7 @@ pub struct Stdout;
 
 impl ::storage::KernelDevice for Stdout {
     fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), storage::DeviceError> {
-        if dst.len() == 0 {
+        if dst.is_empty() {
             return Ok(());
         }
 

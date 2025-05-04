@@ -7,6 +7,43 @@ const EXTENDED_MASK: u32 = 0x8000_0000;
 static CPUID_MAX_LEAF: AtomicU32 = AtomicU32::new(0);
 static EXTENDED_MAX_LEAF: AtomicU32 = AtomicU32::new(EXTENDED_MASK);
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Leaf(u32);
+
+impl Leaf {
+    #[must_use]
+    #[inline]
+    pub const fn new(leaf: u32) -> Self {
+        Self(leaf)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_extended(self) -> bool {
+        self.0 & EXTENDED_MASK != 0
+    }
+}
+
+impl From<Leaf> for u32 {
+    #[inline]
+    fn from(leaf: Leaf) -> Self {
+        leaf.as_u32()
+    }
+}
+
+impl From<u32> for Leaf {
+    #[inline]
+    fn from(leaf: u32) -> Self {
+        Self::new(leaf)
+    }
+}
+
 #[must_use]
 #[inline]
 /// Stabilized version of the `__cpuid` intrinsic
@@ -16,26 +53,24 @@ static EXTENDED_MAX_LEAF: AtomicU32 = AtomicU32::new(EXTENDED_MASK);
 /// Panics if the CPUID leaf is not supported.
 /// Check `get_highest_supported_leaf` and `get_highest_supported_xleaf`
 /// to get the highest supported leaves.
-pub fn cpuid(leaf: u32) -> CpuidResult {
-    let extended = leaf & EXTENDED_MASK != 0;
-
+pub fn cpuid(leaf: Leaf) -> CpuidResult {
     // No need to check for CPUID support.
     // It is the first thing getting checked in the kernel.
     assert!(
-        if extended {
-            leaf <= EXTENDED_MAX_LEAF.load(Ordering::Acquire)
+        if leaf.is_extended() {
+            leaf <= get_highest_supported_xleaf()
         } else {
-            leaf <= CPUID_MAX_LEAF.load(Ordering::Acquire)
+            leaf <= get_highest_supported_leaf()
         },
         "CPUID leaf is not supported"
     );
-    unsafe { core::arch::x86_64::__cpuid(leaf) }
+    unsafe { core::arch::x86_64::__cpuid(leaf.as_u32()) }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Every meaningful CPUID register
 pub enum CpuidReg {
-    // Eax,
+    Eax,
     Ebx,
     Ecx,
     Edx,
@@ -45,7 +80,7 @@ impl CpuidReg {
     #[must_use]
     pub const fn extract_from(self, cpuid_res: CpuidResult) -> u32 {
         match self {
-            // Self::Eax => cpuid_res.eax,
+            Self::Eax => cpuid_res.eax,
             Self::Ebx => cpuid_res.ebx,
             Self::Ecx => cpuid_res.ecx,
             Self::Edx => cpuid_res.edx,
@@ -55,9 +90,9 @@ impl CpuidReg {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CpuFeature {
-    leaf: u32,
+    leaf: Leaf,
     reg: CpuidReg,
-    bit: u32,
+    bit: u8,
     name: &'static str,
 }
 
@@ -68,91 +103,90 @@ impl core::fmt::Display for CpuFeature {
 }
 
 // TODO: Add more features!
-#[allow(dead_code)]
 impl CpuFeature {
     // LEAF 1
 
     pub const FPU: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 0,
         name: "FPU",
     };
     pub const PSE: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 3,
         name: "PSE",
     };
     pub const TSC: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 4,
         name: "TSC",
     };
     pub const MSR: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 5,
         name: "MSR",
     };
     pub const APIC_ONBOARD: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 9,
         name: "APIC",
     };
     pub const PAT: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 16,
         name: "PAT",
     };
     pub const FXSR: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 24,
         name: "FXSR",
     };
     pub const SSE: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 25,
         name: "SSE",
     };
     pub const SSE2: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 26,
         name: "SSE2",
     };
 
     pub const SSE3: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Ecx,
         bit: 0,
         name: "SSE3",
     };
     pub const PCID: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Ecx,
         bit: 17,
         name: "PCID",
     };
     pub const X2APIC: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Ecx,
         bit: 21,
         name: "X2APIC",
     };
     pub const XSAVE: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Ecx,
         bit: 26,
         name: "XSAVE",
     };
     pub const RDRAND: Self = Self {
-        leaf: 1,
+        leaf: Leaf::new(1),
         reg: CpuidReg::Ecx,
         bit: 30,
         name: "RDRAND",
@@ -161,13 +195,13 @@ impl CpuFeature {
     // LEAF 7
 
     pub const FSGSBASE: Self = Self {
-        leaf: 7,
+        leaf: Leaf::new(7),
         reg: CpuidReg::Ebx,
         bit: 0,
         name: "FSGSBASE",
     };
     pub const INVPCID: Self = Self {
-        leaf: 7,
+        leaf: Leaf::new(7),
         reg: CpuidReg::Ebx,
         bit: 10,
         name: "INVPCID",
@@ -176,13 +210,13 @@ impl CpuFeature {
     // XLEAF 1
 
     pub const SYSCALL: Self = Self {
-        leaf: 0x8000_0001,
+        leaf: Leaf::new(0x8000_0001),
         reg: CpuidReg::Edx,
         bit: 11,
         name: "SYSCALL",
     };
     pub const TCE: Self = Self {
-        leaf: 0x8000_0001,
+        leaf: Leaf::new(0x8000_0001),
         reg: CpuidReg::Ecx,
         bit: 17,
         name: "TCE",
@@ -209,11 +243,11 @@ const REQUIRED_FEATURES: [CpuFeature; 4] = [
 pub fn check_cpuid() {
     assert!(cpuid_supported(), "CPUID instruction is not supported");
 
-    let mut current_leaf = 0;
+    let mut current_leaf = Leaf::new(0);
     let mut cpuid_res = cpuid(current_leaf);
     CPUID_MAX_LEAF.store(cpuid_res.eax, Ordering::Release);
 
-    current_leaf = EXTENDED_MASK;
+    current_leaf = Leaf::new(EXTENDED_MASK);
     cpuid_res = cpuid(current_leaf);
     EXTENDED_MAX_LEAF.store(cpuid_res.eax, Ordering::Release);
 
@@ -275,7 +309,7 @@ impl From<&[u8; 12]> for CpuVendor {
 
 #[must_use]
 pub fn get_cpu_vendor() -> CpuVendor {
-    let cpuid_res = cpuid(0);
+    let cpuid_res = cpuid(Leaf::new(0));
 
     let mut vendor = [0; 12];
     vendor[..4].copy_from_slice(&cpuid_res.ebx.to_ne_bytes());
@@ -288,12 +322,17 @@ pub fn get_cpu_vendor() -> CpuVendor {
 #[must_use]
 /// Check if a CPU feature is supported
 pub fn check_feature(feature: CpuFeature) -> bool {
-    if feature.leaf > CPUID_MAX_LEAF.load(Ordering::Acquire) {
+    let leaf = feature.leaf;
+    let extended = leaf.is_extended();
+
+    // Make sure CPUID won't panic
+    if (!extended && leaf > get_highest_supported_leaf())
+        || (extended && leaf > get_highest_supported_xleaf())
+    {
         return false;
     }
 
-    let cpuid_res = cpuid(feature.leaf);
-
+    let cpuid_res = cpuid(leaf);
     let reg = feature.reg.extract_from(cpuid_res);
 
     (reg >> feature.bit) & 1 == 1
@@ -302,14 +341,14 @@ pub fn check_feature(feature: CpuFeature) -> bool {
 #[must_use]
 #[inline]
 /// Get the highest supported leaf
-pub fn get_highest_supported_leaf() -> u32 {
-    CPUID_MAX_LEAF.load(Ordering::Acquire)
+pub fn get_highest_supported_leaf() -> Leaf {
+    Leaf::new(CPUID_MAX_LEAF.load(Ordering::Acquire))
 }
 
 #[must_use]
 #[inline]
 /// Get the highest supported extended leaf
 /// (EAX >= `0x8000_0000`)
-pub fn get_highest_supported_xleaf() -> u32 {
-    EXTENDED_MAX_LEAF.load(Ordering::Acquire)
+pub fn get_highest_supported_xleaf() -> Leaf {
+    Leaf::new(EXTENDED_MAX_LEAF.load(Ordering::Acquire))
 }

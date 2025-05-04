@@ -156,11 +156,9 @@ fn sc_read(args: &Arguments) -> i64 {
     let file_offset = usize::try_from(args.four).unwrap();
 
     let res = crate::storage::vfs().read(file_handle, buffer, file_offset);
-
-    match res {
-        Ok(bytes_read) => i64::try_from(bytes_read).unwrap_or(i64::MAX),
-        Err(_) => -1, // TODO: Differentiate between errors.
-    }
+    res.map_or(-1, |bytes_read| {
+        i64::try_from(bytes_read).unwrap_or(i64::MAX)
+    })
 }
 
 #[must_use]
@@ -192,11 +190,9 @@ fn sc_write(args: &Arguments) -> i64 {
     let file_offset = usize::try_from(args.four).unwrap();
 
     let res = crate::storage::vfs().write(file_handle, buffer, file_offset);
-
-    match res {
-        Ok(bytes_written) => i64::try_from(bytes_written).unwrap_or(i64::MAX),
-        Err(_) => -1, // TODO: Differentiate between errors.
-    }
+    res.map_or(-1, |bytes_written| {
+        i64::try_from(bytes_written).unwrap_or(i64::MAX)
+    })
 }
 
 #[must_use]
@@ -221,11 +217,7 @@ fn sc_open(args: &Arguments) -> i64 {
     };
 
     let res = crate::storage::vfs().open(Path::from(path));
-
-    match res {
-        Ok(handle) => handle.id(),
-        Err(_) => -1, // TODO: Differentiate between errors.
-    }
+    res.map_or(-1, |handle| handle.id())
 }
 
 #[must_use]
@@ -242,7 +234,7 @@ fn sc_close(args: &Arguments) -> SyscallExitCode {
     let res = crate::storage::vfs().close(file_handle);
 
     match res {
-        Ok(_) => SyscallExitCode::Success,
+        Ok(()) => SyscallExitCode::Success,
         Err(_) => SyscallExitCode::Failure, // TODO: Differentiate between errors.
     }
 }

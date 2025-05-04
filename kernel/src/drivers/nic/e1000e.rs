@@ -346,7 +346,7 @@ struct BufferSet<'a> {
 
 impl BufferSet<'_> {
     #[must_use]
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines, reason = "Many buffers to allocate")]
     pub fn new(nb_rx: usize, nb_tx: usize) -> (Self, PhysAddr, PhysAddr) {
         assert!(
             nb_rx * size_of::<RxDescriptor>() + nb_tx * size_of::<TxDescriptor>()

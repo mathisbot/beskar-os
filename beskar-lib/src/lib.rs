@@ -45,7 +45,6 @@ macro_rules! entry_point {
 /// ## Safety
 ///
 /// Do not call this function.
-#[allow(clippy::missing_panics_doc)]
 #[doc(hidden)]
 #[inline]
 pub unsafe fn __init() {

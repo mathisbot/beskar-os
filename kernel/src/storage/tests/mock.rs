@@ -20,16 +20,11 @@ impl MockBlockDevice {
 impl BlockDevice for MockBlockDevice {
     const BLOCK_SIZE: usize = 1;
 
-    fn read(
-        &mut self,
-        dst: &mut [u8],
-        offset: usize,
-        count: usize,
-    ) -> Result<(), storage::DeviceError> {
-        if offset + count > self.data.len() {
+    fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), storage::DeviceError> {
+        if offset + dst.len() > self.data.len() {
             return Err(storage::DeviceError::OutOfBounds);
         }
-        dst.copy_from_slice(&self.data[offset..offset + count]);
+        dst.copy_from_slice(&self.data[offset..offset + dst.len()]);
         Ok(())
     }
 
@@ -68,7 +63,7 @@ impl<B: BlockDevice> FileSystem for MockFS<B> {
 
                 // Read the data from the block device.
                 self.device
-                    .read(&mut block_buffer, offset_in_blocks, block_count)
+                    .read(&mut block_buffer, offset_in_blocks)
                     .map_err(|_| FileError::Io)?;
 
                 buffer[..bytes_to_read].copy_from_slice(

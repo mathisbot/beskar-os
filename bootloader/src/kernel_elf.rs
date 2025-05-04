@@ -300,12 +300,13 @@ fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelL
             .allocate_frame()
             .expect("Failed to allocate frame");
 
-        #[allow(clippy::cast_possible_truncation)]
-        let frame_ptr =
-            frame.start_address().as_u64() as *mut [u64; M4KiB::SIZE as usize / size_of::<u64>()];
-        unsafe {
-            #[allow(clippy::cast_possible_truncation)]
-            frame_ptr.write([0_u64; M4KiB::SIZE as usize / size_of::<u64>()]);
+        #[expect(clippy::cast_possible_truncation, reason = "Size is known")]
+        {
+            let frame_ptr = frame.start_address().as_u64()
+                as *mut [u64; M4KiB::SIZE as usize / size_of::<u64>()];
+            unsafe {
+                frame_ptr.write([0_u64; M4KiB::SIZE as usize / size_of::<u64>()]);
+            }
         }
 
         unsafe {

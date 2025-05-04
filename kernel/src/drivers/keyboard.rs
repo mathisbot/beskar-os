@@ -101,14 +101,12 @@ impl ::storage::KernelDevice for KeyboardDevice {
             return Err(::storage::DeviceError::Io);
         }
         let block_count = dst.len() / BLOCK_SIZE;
-
         if block_count == 0 {
             return Ok(());
         }
 
         for i in 0..block_count {
-            let key_event: Option<KeyEvent> =
-                with_keyboard_manager(|manager| manager.poll_event()).flatten();
+            let key_event = with_keyboard_manager(KeyboardManager::poll_event).flatten();
             let serialized_event = KeyEvent::pack_option(key_event);
             dst[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE]
                 .copy_from_slice(&serialized_event.to_ne_bytes());
@@ -118,7 +116,7 @@ impl ::storage::KernelDevice for KeyboardDevice {
     }
 
     fn write(&mut self, src: &[u8], _offset: usize) -> Result<(), ::storage::DeviceError> {
-        if src.len() == 0 {
+        if src.is_empty() {
             Ok(())
         } else {
             Err(::storage::DeviceError::Io)

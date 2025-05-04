@@ -98,7 +98,6 @@ impl From<u8> for Class {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum RegisterOffset {

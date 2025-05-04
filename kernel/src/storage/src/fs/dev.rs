@@ -30,18 +30,12 @@ impl DeviceFS {
     }
 
     #[inline]
-    /// Adds a new device to the file system.
+    /// Removes a device from the file system.
     pub fn remove_device(&mut self, path: super::Path) -> Option<Box<dyn KernelDevice>> {
-        if let Some(pos) = self
-            .devices
+        self.devices
             .iter()
             .position(|device| device.path.as_path() == path)
-        {
-            let device = self.devices.remove(pos);
-            Some(device.device)
-        } else {
-            None
-        }
+            .map(|pos| self.devices.remove(pos).device)
     }
 }
 

@@ -149,7 +149,7 @@ impl Scheduler {
                 // In the case of the thread exiting, we cannot write to the `Thread` struct anymore.
                 // Therefore, we write to a useless static variable because we won't need RSP value.
                 static mut USELESS: *mut u8 = core::ptr::null_mut();
-                #[allow(static_mut_refs)]
+                #[expect(static_mut_refs, reason = "We do not care about data races here.")]
                 // Safety: There will be data races, but we don't care lol
                 unsafe {
                     &mut USELESS
@@ -161,7 +161,7 @@ impl Scheduler {
 
             let cr3 = thread.process().address_space().cr3_raw();
             if let Some(tls) = thread.tls() {
-                crate::arch::locals::store_thread_locals(tls)
+                crate::arch::locals::store_thread_locals(tls);
             }
 
             if let Some(rsp0) = thread.snapshot().kernel_stack_top() {

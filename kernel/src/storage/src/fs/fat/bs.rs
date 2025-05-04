@@ -424,7 +424,7 @@ impl BootParamBlock {
 impl ExtendedBootParamBlock {
     #[must_use]
     #[inline]
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self, reason = "Match the FAT12/16 version")]
     pub const fn is_fat32(&self) -> bool {
         true
     }

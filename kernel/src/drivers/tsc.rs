@@ -69,8 +69,11 @@ fn calibrate_with_pit() -> bool {
 
     let diff = u32::try_from(end - start).unwrap();
     // Round to the nearest 100MHz because of TSC limitations
-    #[allow(clippy::cast_sign_loss)]
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        reason = "f64 to u64"
+    )]
     let rate_mhz = (((f64::from(diff) / elapsed / 100_000_000.0) + 0.5) as u64) * 100;
 
     TSC_MHZ.store(rate_mhz, Ordering::Relaxed);
@@ -82,9 +85,9 @@ fn calibrate_with_pit() -> bool {
 fn calibrate_with_rdtsc() -> bool {
     assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
 
-    let highest_leaf = cpuid::get_highest_supported_leaf();
+    let highest_leaf = cpuid::get_highest_supported_leaf().as_u32();
     if highest_leaf >= 0x15 {
-        let cpuid_res = cpuid::cpuid(0x15);
+        let cpuid_res = cpuid::cpuid(cpuid::Leaf::new(0x15));
         if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
             let thc_hz =
                 u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);

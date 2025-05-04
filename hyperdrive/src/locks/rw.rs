@@ -76,7 +76,10 @@ pub struct RwLock<T, B: BackOff = Spin> {
 
 // Safety:
 // `RwLock` is a synchronization primitive.
-#[allow(clippy::non_send_fields_in_send_ty)]
+#[expect(
+    clippy::non_send_fields_in_send_ty,
+    reason = "Synchronization primitive"
+)]
 unsafe impl<T, B: BackOff> Send for RwLock<T, B> {}
 unsafe impl<T, B: BackOff> Sync for RwLock<T, B> {}
 
@@ -99,6 +102,12 @@ impl<T, B: BackOff> RwLock<T, B> {
     pub fn write(&self) -> WriteGuard<T, B> {
         self.state.write_lock();
         WriteGuard { lock: self }
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
     }
 }
 

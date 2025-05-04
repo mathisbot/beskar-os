@@ -27,7 +27,7 @@ pub struct Level4Entries([bool; 512]);
 
 impl Level4Entries {
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     pub fn new(max_phys_addr: PhysAddr) -> Self {
         let mut usage = [false; 512];
 
@@ -134,7 +134,7 @@ impl Level4Entries {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, reason = "Many mappings to do")]
 #[must_use]
 /// This function initializes the memory mappings.
 ///

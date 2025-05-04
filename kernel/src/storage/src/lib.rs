@@ -25,15 +25,18 @@ pub trait BlockDevice {
     /// Read blocks from the device into the given buffer.
     ///
     /// The `offset` parameter specifies the block offset from the start of the device.
-    /// The `count` parameter specifies the number of blocks to read.
     ///
     /// ## Errors
     ///
-    /// This function returns an error if the read operation failed.
-    fn read(&mut self, dst: &mut [u8], offset: usize, count: usize) -> Result<(), DeviceError>;
+    /// This function returns an error if the read operation failed
+    /// or if `dst.len()` isn't a multiple or `Self::BLOCK_SIZE`.
+    fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), DeviceError>;
     /// Write blocks to the device from the given buffer.
     ///
-    /// `src` must have a size multiple of `Self::BLOCK_SIZE`.
+    /// ## Errors
+    ///
+    /// This function returns an error if the write operation failed
+    /// or if `src.len()` isn't a multiple or `Self::BLOCK_SIZE`.
     fn write(&mut self, src: &[u8], offset: usize) -> Result<(), DeviceError>;
 }
 
@@ -47,14 +50,27 @@ pub trait KernelDevice {
     /// Read blocks from the device into the given buffer.
     ///
     /// The `offset` parameter specifies the block offset from the start of the device.
-    /// The `count` parameter specifies the number of blocks to read.
     ///
     /// ## Errors
     ///
-    /// This function returns an error if the read operation failed.
+    /// This function returns an error if the read operation failed
     fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), DeviceError>;
     /// Write blocks to the device from the given buffer.
     ///
-    /// `src` must have a size multiple of `Self::BLOCK_SIZE`.
+    /// ## Errors
+    ///
+    /// This function returns an error if the write operation failed
     fn write(&mut self, src: &[u8], offset: usize) -> Result<(), DeviceError>;
+}
+
+impl<T: KernelDevice> BlockDevice for T {
+    const BLOCK_SIZE: usize = 1;
+
+    fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), DeviceError> {
+        self.read(dst, offset)
+    }
+
+    fn write(&mut self, src: &[u8], offset: usize) -> Result<(), DeviceError> {
+        self.write(src, offset)
+    }
 }

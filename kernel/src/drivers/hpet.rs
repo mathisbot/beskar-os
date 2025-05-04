@@ -193,7 +193,7 @@ impl GeneralConfiguration {
         }
     }
 
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self, reason = "Match other functions signature")]
     const fn validate(&self) {}
 }
 
@@ -240,7 +240,7 @@ impl MainCounterValue {
         self.read()
     }
 
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self, reason = "Match other functions signature")]
     const fn validate(&self) {}
 }
 
@@ -424,7 +424,7 @@ impl TimerCompValue {
         *self.as_mut() = value;
     }
 
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self, reason = "Match other functions signature")]
     const fn validate(&self) {}
 }
 

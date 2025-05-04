@@ -18,7 +18,7 @@ pub fn print(msg: &str) {
     let handle = open(STDOUT_FILE).unwrap();
 
     let bytes_read = write(handle, msg.as_bytes(), 0).unwrap();
-    assert!(bytes_read == msg.as_bytes().len());
+    assert!(bytes_read == msg.len());
 
     close(handle).unwrap();
 }
@@ -38,7 +38,7 @@ pub struct FileError {
 }
 
 #[inline]
-#[allow(clippy::missing_panics_doc)] // Never panics
+#[expect(clippy::missing_panics_doc, reason = "Never panics")]
 /// Open a file and return its handle
 ///
 /// # Errors
@@ -59,7 +59,6 @@ pub fn open(path: &str) -> Result<Handle, FileError> {
 }
 
 #[inline]
-#[allow(clippy::missing_panics_doc)] // Never panics
 /// Close a file handle
 ///
 /// # Errors
@@ -76,7 +75,7 @@ pub fn close(handle: Handle) -> Result<(), FileError> {
 }
 
 #[inline]
-#[allow(clippy::missing_panics_doc)] // Never panics
+#[expect(clippy::missing_panics_doc, reason = "Never panics")]
 /// Write a buffer to a file at a given offset
 ///
 /// # Errors
@@ -99,7 +98,7 @@ pub fn write(handle: Handle, buffer: &[u8], offset: usize) -> Result<usize, File
 }
 
 #[inline]
-#[allow(clippy::missing_panics_doc)] // Never panics
+#[expect(clippy::missing_panics_doc, reason = "Never panics")]
 /// Read a buffer from a file at a given offset
 ///
 /// # Errors

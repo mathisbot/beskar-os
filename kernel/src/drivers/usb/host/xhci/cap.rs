@@ -99,7 +99,7 @@ impl core::fmt::Display for HciVersion {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(clippy::struct_field_names)]
+#[expect(clippy::struct_field_names, reason = "All fields have the same prefix")]
 pub struct HcsParams1 {
     /// Maximum number of Device Context Structures and
     /// Doorbell Array entries this host controller can support.

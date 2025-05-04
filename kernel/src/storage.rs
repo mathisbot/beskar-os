@@ -29,6 +29,9 @@ pub fn init() {
     // VFS.mount(PathBuf::new("/ramdisk"), todo!());
 }
 
+#[must_use]
+#[inline]
+/// Returns a reference to the global VFS instance.
 pub fn vfs() -> &'static Vfs<impl VfsHelper> {
     &VFS
 }

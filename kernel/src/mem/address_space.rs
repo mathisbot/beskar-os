@@ -205,6 +205,7 @@ impl AddressSpace {
 
     #[must_use]
     #[inline]
+    #[expect(clippy::unused_self, reason = "CR3 flags are constant")]
     pub const fn cr3_flags(&self) -> u16 {
         // The only two valid CR3 flags are CACHE_WRITETHROUGH and CACHE_DISABLE
         // These two are better set at the page table entry level
