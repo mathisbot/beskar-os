@@ -27,7 +27,7 @@ impl DosDate {
 
     #[must_use]
     #[inline]
-    pub const fn dos_date(&self) -> u16 {
+    pub const fn dos_date(self) -> u16 {
         self.dos_date
     }
 }
@@ -92,7 +92,6 @@ impl Date {
 
 /// A DOS time.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-#[non_exhaustive]
 pub struct Time {
     /// Hours.
     /// Valid range is [0, 23]
@@ -126,13 +125,13 @@ impl DosTime {
 
     #[must_use]
     #[inline]
-    pub const fn dos_time(&self) -> u16 {
+    pub const fn dos_time(self) -> u16 {
         self.dos_time
     }
 
     #[must_use]
     #[inline]
-    pub const fn dos_time_hi_res(&self) -> u8 {
+    pub const fn dos_time_hi_res(self) -> u8 {
         self.dos_time_hi_res
     }
 }
@@ -176,6 +175,7 @@ pub struct DateTime {
     time: Time,
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub(crate) struct DosDateTime {
     dos_date: DosDate,
     dos_time: DosTime,
@@ -190,13 +190,13 @@ impl DosDateTime {
 
     #[must_use]
     #[inline]
-    pub const fn dos_date(&self) -> DosDate {
+    pub const fn dos_date(self) -> DosDate {
         self.dos_date
     }
 
     #[must_use]
     #[inline]
-    pub const fn dos_time(&self) -> DosTime {
+    pub const fn dos_time(self) -> DosTime {
         self.dos_time
     }
 }
@@ -204,7 +204,7 @@ impl DosDateTime {
 impl DateTime {
     #[must_use]
     #[inline]
-    pub fn new(date: Date, time: Time) -> Self {
+    pub const fn new(date: Date, time: Time) -> Self {
         Self { date, time }
     }
 

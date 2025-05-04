@@ -20,11 +20,9 @@ fn main() {
 
     let mut text = alloc::string::String::new();
     loop {
-        if let Some(event) = keyboard::poll_keyboard() {
-            if event.pressed() != keyboard::KeyState::Pressed {
-                continue;
-            }
-
+        if let Some(event) = keyboard::poll_keyboard()
+            && event.pressed() == keyboard::KeyState::Pressed
+        {
             if event.key() == keyboard::KeyCode::Enter {
                 beskar_lib::io::print(text.as_str());
                 text.clear();

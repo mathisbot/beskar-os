@@ -424,6 +424,7 @@ impl BootParamBlock {
 impl ExtendedBootParamBlock {
     #[must_use]
     #[inline]
+    #[allow(clippy::unused_self)]
     pub const fn is_fat32(&self) -> bool {
         true
     }
@@ -500,7 +501,7 @@ impl ExtendedBootParamBlock {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-pub(crate) struct BootSector {
+pub struct BootSector {
     /// Jump instruction.
     boot_jump: [u8; 3],
     /// OEM name.
@@ -518,7 +519,7 @@ static_assert!(
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-pub(crate) struct ExtendedBootSector {
+pub struct ExtendedBootSector {
     /// Jump instruction.
     boot_jump: [u8; 3],
     /// OEM name.

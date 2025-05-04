@@ -32,8 +32,8 @@ pub enum FileError {
 impl From<super::DeviceError> for FileError {
     fn from(error: super::DeviceError) -> Self {
         match error {
-            super::DeviceError::Io => FileError::Io,
-            super::DeviceError::OutOfBounds => FileError::UnexpectedEof,
+            super::DeviceError::Io => Self::Io,
+            super::DeviceError::OutOfBounds => Self::UnexpectedEof,
         }
     }
 }
@@ -106,6 +106,13 @@ impl PathBuf {
     }
 }
 
+impl core::borrow::Borrow<str> for PathBuf {
+    #[inline]
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 impl Path<'_> {
     #[must_use]
     #[inline]
@@ -116,7 +123,7 @@ impl Path<'_> {
 
     #[must_use]
     #[inline]
-    pub fn as_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         self.0
     }
 }

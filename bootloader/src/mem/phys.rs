@@ -173,10 +173,10 @@ impl EarlyFrameAllocator {
 impl FrameAllocator<M4KiB> for EarlyFrameAllocator {
     fn allocate_frame(&mut self) -> Option<Frame<M4KiB>> {
         while let Some(&descriptor) = self.memory_map.get(self.current_entry_index) {
-            if descriptor.ty == MemoryType::CONVENTIONAL {
-                if let Some(frame) = self.allocate_frame_from_descriptor(&descriptor) {
-                    return Some(frame);
-                }
+            if descriptor.ty == MemoryType::CONVENTIONAL
+                && let Some(frame) = self.allocate_frame_from_descriptor(&descriptor)
+            {
+                return Some(frame);
             }
             self.current_entry_index += 1;
         }

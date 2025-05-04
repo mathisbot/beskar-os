@@ -2,11 +2,13 @@ use super::FileSystem;
 use crate::BlockDevice;
 use alloc::vec::Vec;
 
+#[derive(Debug)]
 struct DeviceFile<D: BlockDevice> {
     path: super::PathBuf,
     device: D,
 }
 
+#[derive(Debug, Default)]
 /// A pass-through file system for device files.
 pub struct DeviceFS<D: BlockDevice> {
     devices: Vec<DeviceFile<D>>,
@@ -16,7 +18,7 @@ impl<D: BlockDevice> DeviceFS<D> {
     #[must_use]
     #[inline]
     /// Creates a new `DeviceFS` instance.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             devices: Vec::new(),
         }
@@ -139,7 +141,7 @@ impl<D: BlockDevice> FileSystem for DeviceFS<D> {
                         .read(&mut around_buffer, offset_in_blocks, block_count)?;
                     around_buffer[offset_in_bytes..offset_in_bytes + buffer.len()]
                         .copy_from_slice(buffer);
-                    device.device.write(&mut around_buffer, offset_in_blocks)?;
+                    device.device.write(&around_buffer, offset_in_blocks)?;
                 }
 
                 return Ok(buffer.len());

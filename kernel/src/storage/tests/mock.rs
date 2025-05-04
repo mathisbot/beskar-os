@@ -92,6 +92,7 @@ impl<B: BlockDevice> FileSystem for MockFS<B> {
 
                 let block_count = (offset_in_block + bytes_to_write).div_ceil(B::BLOCK_SIZE);
                 let mut block_buffer = vec![0; block_count * B::BLOCK_SIZE];
+
                 block_buffer[offset_in_block..offset_in_block + bytes_to_write]
                     .copy_from_slice(&buffer[..bytes_to_write]);
 
@@ -100,9 +101,6 @@ impl<B: BlockDevice> FileSystem for MockFS<B> {
                 self.device
                     .write(&block_buffer, offset_in_blocks)
                     .map_err(|_| FileError::Io)?;
-
-                // Update the file length if necessary.
-                file.length = core::cmp::max(file.length, offset + bytes_to_write);
 
                 return Ok(bytes_to_write);
             }
@@ -206,6 +204,7 @@ fn mock() {
 
     // Open the files.
     let handle1 = VFS.open(Path::from("/test.txt")).unwrap();
+    assert!(VFS.open(Path::from("/test.txt")).is_err());
     let handle2 = VFS.open(Path::from("/sw.txt")).unwrap();
 
     // Write to the files.
@@ -228,6 +227,7 @@ fn mock() {
 
     // Close the files.
     VFS.close(handle1).unwrap();
+    assert!(VFS.close(handle1).is_err());
     VFS.close(handle2).unwrap();
 
     // Check if the files exist.
