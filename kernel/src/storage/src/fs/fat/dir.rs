@@ -1,5 +1,5 @@
 use super::{
-    Cluster, FatError, FatResult, FatType,
+    BoxedDataReader, Cluster, FatError, FatResult, FatType, RefDataReader, RefDataWriter,
     date::{Date, DateTime, Time},
     dirent::{Attributes, DirEntry, LongNameEntry, calc_short_name_checksum},
     fat::{FatEntries, FatEntry},
@@ -25,10 +25,6 @@ pub struct Directory<'a, T: FatEntries> {
     /// Offset within current cluster in bytes
     cluster_offset: u32,
 }
-
-pub(crate) type BoxedDataReader<'a> = Box<dyn FnMut(Cluster, u32, &mut [u8]) -> FatResult<()> + 'a>;
-pub(crate) type RefDataReader<'a> = &'a mut dyn FnMut(Cluster, u32, &mut [u8]) -> FatResult<()>;
-pub(crate) type RefDataWriter<'a> = &'a mut dyn FnMut(Cluster, u32, &[u8]) -> FatResult<()>;
 
 /// Directory entry iterator
 pub struct DirEntryIterator<'a, 'b, T: FatEntries> {

@@ -150,6 +150,11 @@ pub enum FatError {
 
 pub type FatResult<T> = Result<T, FatError>;
 
+type BoxedDataReader<'a> =
+    alloc::boxed::Box<dyn FnMut(Cluster, u32, &mut [u8]) -> FatResult<()> + 'a>;
+type RefDataReader<'a> = &'a mut dyn FnMut(Cluster, u32, &mut [u8]) -> FatResult<()>;
+type RefDataWriter<'a> = &'a mut dyn FnMut(Cluster, u32, &[u8]) -> FatResult<()>;
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,5 @@
 use super::{
-    Cluster, FatError, FatResult,
-    dir::{RefDataReader, RefDataWriter},
+    Cluster, FatError, FatResult, RefDataReader, RefDataWriter,
     fat::{FatEntries, FatEntry},
 };
 
