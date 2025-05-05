@@ -20,17 +20,17 @@ impl MockBlockDevice {
 impl BlockDevice for MockBlockDevice {
     const BLOCK_SIZE: usize = 1;
 
-    fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), storage::DeviceError> {
+    fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), storage::BlockDeviceError> {
         if offset + dst.len() > self.data.len() {
-            return Err(storage::DeviceError::OutOfBounds);
+            return Err(storage::BlockDeviceError::OutOfBounds);
         }
         dst.copy_from_slice(&self.data[offset..offset + dst.len()]);
         Ok(())
     }
 
-    fn write(&mut self, src: &[u8], offset: usize) -> Result<(), storage::DeviceError> {
+    fn write(&mut self, src: &[u8], offset: usize) -> Result<(), storage::BlockDeviceError> {
         if offset + src.len() > self.data.len() {
-            return Err(storage::DeviceError::OutOfBounds);
+            return Err(storage::BlockDeviceError::OutOfBounds);
         }
         self.data[offset..offset + src.len()].copy_from_slice(src);
         Ok(())

@@ -95,10 +95,10 @@ where
 pub struct KeyboardDevice;
 
 impl ::storage::KernelDevice for KeyboardDevice {
-    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), ::storage::DeviceError> {
+    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), ::storage::BlockDeviceError> {
         const BLOCK_SIZE: usize = size_of::<u64>();
         if dst.len() % BLOCK_SIZE != 0 {
-            return Err(::storage::DeviceError::Io);
+            return Err(::storage::BlockDeviceError::Io);
         }
         let block_count = dst.len() / BLOCK_SIZE;
         if block_count == 0 {
@@ -115,11 +115,11 @@ impl ::storage::KernelDevice for KeyboardDevice {
         Ok(())
     }
 
-    fn write(&mut self, src: &[u8], _offset: usize) -> Result<(), ::storage::DeviceError> {
+    fn write(&mut self, src: &[u8], _offset: usize) -> Result<(), ::storage::BlockDeviceError> {
         if src.is_empty() {
             Ok(())
         } else {
-            Err(::storage::DeviceError::Io)
+            Err(::storage::BlockDeviceError::Io)
         }
     }
 }

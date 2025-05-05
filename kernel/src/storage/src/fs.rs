@@ -29,12 +29,12 @@ pub enum FileError {
     UnsupportedOperation,
 }
 
-impl From<super::DeviceError> for FileError {
-    fn from(error: super::DeviceError) -> Self {
+impl From<super::BlockDeviceError> for FileError {
+    fn from(error: super::BlockDeviceError) -> Self {
         match error {
-            super::DeviceError::Io => Self::Io,
-            super::DeviceError::OutOfBounds => Self::UnexpectedEof,
-            super::DeviceError::Unsupported => Self::UnsupportedOperation,
+            super::BlockDeviceError::Io | super::BlockDeviceError::UnalignedAccess => Self::Io,
+            super::BlockDeviceError::OutOfBounds => Self::UnexpectedEof,
+            super::BlockDeviceError::Unsupported => Self::UnsupportedOperation,
         }
     }
 }
