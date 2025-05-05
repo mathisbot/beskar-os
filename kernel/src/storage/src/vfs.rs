@@ -200,7 +200,7 @@ impl<H: VfsHelper> Vfs<H> {
     ///
     /// # Safety
     ///
-    /// This function should only be called with a ProcessId of a process that has completed its execution.
+    /// This function should only be called with a `ProcessId` of a process that has completed its execution.
     pub unsafe fn close_all_from_process(&self, pid: ProcessId) {
         let mut open_handles = self.open_handles.write();
         open_handles.retain(|_handle, open_file| open_file.process_id != pid);

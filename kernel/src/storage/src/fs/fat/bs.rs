@@ -397,16 +397,17 @@ impl BootParamBlock {
         }
 
         // Check root entries
-        if self.root_entries() != 0
-            || (usize::from(self.root_entries()) * super::dirent::DIR_ENTRY_SIZE
-                % usize::from(self.bytes_per_sector())
-                != 0)
+        if usize::from(self.root_entries()) * super::dirent::DIR_ENTRY_SIZE
+            % usize::from(self.bytes_per_sector())
+            != 0
         {
             return false;
         }
 
         // Check total sectors
-        if self.bpb_start.total_sectors == 0 {
+        if (self.bpb_start.total_sectors != 0 && self.bpb_start.total_sectors_large != 0)
+            || (self.bpb_start.total_sectors == 0 && self.bpb_start.total_sectors_large == 0)
+        {
             return false;
         }
 
@@ -424,7 +425,6 @@ impl BootParamBlock {
 impl ExtendedBootParamBlock {
     #[must_use]
     #[inline]
-    #[expect(clippy::unused_self, reason = "Match the FAT12/16 version")]
     pub const fn is_fat32(&self) -> bool {
         true
     }
@@ -536,3 +536,185 @@ static_assert!(
 );
 
 pub type BootSectorUnion = super::FatUnion<BootSector, BootSector, ExtendedBootSector>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_boot_param_block() {
+        let mut bpb = BootParamBlock {
+            bpb_start: BootParamBlockStart {
+                bytes_per_sector: 512,
+                sectors_per_cluster: 1,
+                reserved_sectors: 1,
+                fat_count: 2,
+                root_entries: 16,
+                total_sectors: 2048,
+                media_descriptor: 0xF8,
+                sectors_per_fat: 9,
+                sectors_per_track: 18,
+                heads: 2,
+                hidden_sectors: 0,
+                total_sectors_large: 0,
+            },
+            bpb_end: BootParamBlockEnd {
+                drive_number: 0x80,
+                _reserved: 0,
+                boot_flag: 0x29,
+                volume_id: 0x12345678,
+                volume_label: *b"NO NAME    ",
+                fs_type: *b"FAT16   ",
+            },
+        };
+
+        // Test accessors
+        assert_eq!(bpb.bytes_per_sector(), 512);
+        assert_eq!(bpb.sectors_per_cluster(), 1);
+        assert_eq!(bpb.reserved_sectors(), 1);
+        assert_eq!(bpb.fat_count(), 2);
+        assert_eq!(bpb.root_entries(), 16);
+        assert_eq!(bpb.total_sectors(), 2048);
+        assert_eq!(bpb.media_descriptor(), 0xF8);
+        assert_eq!(bpb.sectors_per_fat(), 9);
+        assert_eq!(bpb.sectors_per_track(), 18);
+        assert_eq!(bpb.heads(), 2);
+        assert_eq!(bpb.hidden_sectors(), 0);
+
+        // Test bytes per cluster
+        assert_eq!(bpb.bytes_per_cluster(), 512);
+
+        // Test is_fat32
+        assert!(!bpb.is_fat32());
+
+        // Test validation
+        assert!(bpb.validate());
+
+        // Test invalid values
+        bpb.bpb_start.bytes_per_sector = 513; // Not a power of 2
+        assert!(!bpb.validate());
+
+        bpb.bpb_start.bytes_per_sector = 512;
+        bpb.bpb_start.sectors_per_cluster = 0;
+        assert!(!bpb.validate());
+
+        bpb.bpb_start.sectors_per_cluster = 1;
+        bpb.bpb_start.reserved_sectors = 0;
+        assert!(!bpb.validate());
+
+        bpb.bpb_start.reserved_sectors = 1;
+        bpb.bpb_start.fat_count = 0;
+        assert!(!bpb.validate());
+
+        bpb.bpb_start.fat_count = 3; // More than maximum supported
+        assert!(!bpb.validate());
+
+        bpb.bpb_start.fat_count = 2;
+        bpb.bpb_start.total_sectors = 0;
+        assert!(!bpb.validate());
+    }
+
+    #[test]
+    fn test_extended_boot_param_block() {
+        let mut ebpb = ExtendedBootParamBlock {
+            bpb_start: BootParamBlockStart {
+                bytes_per_sector: 512,
+                sectors_per_cluster: 8,
+                reserved_sectors: 32,
+                fat_count: 2,
+                root_entries: 0,  // Must be 0 for FAT32
+                total_sectors: 0, // Must use total_sectors_large for FAT32
+                media_descriptor: 0xF8,
+                sectors_per_fat: 0, // Must be 0 for FAT32
+                sectors_per_track: 63,
+                heads: 255,
+                hidden_sectors: 0,
+                total_sectors_large: 0x00100000, // 1 million sectors = ~500 MB
+            },
+            sectors_per_fat_large: 1000,
+            flags: 0,
+            version_major: 0,
+            version_minor: 0,
+            root_cluster: 2,
+            fs_info_sector: 1,
+            backup_boot_sector: 6,
+            _reserved: [0; 12],
+            bpb_end: BootParamBlockEnd {
+                drive_number: 0x80,
+                _reserved: 0,
+                boot_flag: 0x29,
+                volume_id: 0x12345678,
+                volume_label: *b"NO NAME    ",
+                fs_type: *b"FAT32   ",
+            },
+        };
+
+        // Test accessors
+        assert_eq!(ebpb.bytes_per_sector(), 512);
+        assert_eq!(ebpb.sectors_per_cluster(), 8);
+        assert_eq!(ebpb.reserved_sectors(), 32);
+        assert_eq!(ebpb.fat_count(), 2);
+        assert_eq!(ebpb.root_entries(), 0);
+        assert_eq!(ebpb.total_sectors(), 0x00100000);
+        assert_eq!(ebpb.media_descriptor(), 0xF8);
+        assert_eq!(ebpb.sectors_per_fat(), 1000);
+        assert_eq!(ebpb.sectors_per_track(), 63);
+        assert_eq!(ebpb.heads(), 255);
+        assert_eq!(ebpb.hidden_sectors(), 0);
+        assert_eq!(ebpb.flags(), 0);
+        assert_eq!(ebpb.version_major(), 0);
+        assert_eq!(ebpb.version_minor(), 0);
+        assert_eq!(ebpb.root_cluster(), 2);
+        assert_eq!(ebpb.fs_info_sector(), 1);
+        assert_eq!(ebpb.backup_boot_sector(), 6);
+        assert_eq!(ebpb.drive_number(), 0x80);
+        assert_eq!(ebpb.boot_flag(), 0x29);
+        assert_eq!(ebpb.volume_id(), 0x12345678);
+        assert_eq!(ebpb.volume_label(), *b"NO NAME    ");
+        assert_eq!(ebpb.fs_type(), b"FAT32   ");
+
+        // Test bytes per cluster
+        assert_eq!(ebpb.bytes_per_cluster(), 4096); // 512 * 8
+
+        // Test is_fat32
+        assert!(ebpb.is_fat32());
+
+        // Test validation
+        assert!(ebpb.validate());
+
+        // Test invalid values
+        ebpb.bpb_start.bytes_per_sector = 513; // Not a power of 2
+        assert!(!ebpb.validate());
+
+        ebpb.bpb_start.bytes_per_sector = 512;
+        ebpb.bpb_start.sectors_per_cluster = 0;
+        assert!(!ebpb.validate());
+
+        ebpb.bpb_start.sectors_per_cluster = 8;
+        ebpb.bpb_start.reserved_sectors = 0;
+        assert!(!ebpb.validate());
+
+        ebpb.bpb_start.reserved_sectors = 32;
+        ebpb.backup_boot_sector = 33; // Beyond reserved sectors
+        assert!(!ebpb.validate());
+
+        ebpb.backup_boot_sector = 6;
+        ebpb.bpb_start.fat_count = 0;
+        assert!(!ebpb.validate());
+
+        ebpb.bpb_start.fat_count = 3; // More than maximum supported
+        assert!(!ebpb.validate());
+
+        ebpb.bpb_start.fat_count = 2;
+        ebpb.bpb_start.root_entries = 512; // Must be 0 for FAT32
+        assert!(!ebpb.validate());
+
+        ebpb.bpb_start.root_entries = 0;
+        ebpb.bpb_start.total_sectors = 1000; // Must be 0 for FAT32
+        assert!(!ebpb.validate());
+
+        ebpb.bpb_start.total_sectors = 0;
+        ebpb.sectors_per_fat_large = 0; // Must be non-zero
+        assert!(!ebpb.validate());
+    }
+}

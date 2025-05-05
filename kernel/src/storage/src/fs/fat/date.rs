@@ -14,11 +14,22 @@ pub struct Date {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(transparent)]
 pub(crate) struct DosDate {
     dos_date: u16,
 }
 
+impl Default for DosDate {
+    fn default() -> Self {
+        Self::BASE
+    }
+}
+
 impl DosDate {
+    /// The base DOS date value.
+    /// This is the date 1980-01-01.
+    pub const BASE: Self = Self { dos_date: 33 };
+
     #[must_use]
     #[inline]
     pub const fn new(dos_date: u16) -> Self {
@@ -107,19 +118,57 @@ pub struct Time {
     ms: u16,
 }
 
+impl Time {
+    #[must_use]
+    #[inline]
+    pub const fn hour(&self) -> u8 {
+        self.hour
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn min(&self) -> u8 {
+        self.min
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn sec(&self) -> u8 {
+        self.sec
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn ms(&self) -> u16 {
+        self.ms
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(C, packed)]
 pub(crate) struct DosTime {
-    dos_time: u16,
     dos_time_hi_res: u8,
+    dos_time: u16,
+}
+
+impl Default for DosTime {
+    fn default() -> Self {
+        Self::BASE
+    }
 }
 
 impl DosTime {
+    pub const BASE: Self = Self {
+        dos_time_hi_res: 0,
+        dos_time: 0,
+    };
+
     #[must_use]
     #[inline]
     pub const fn new(dos_time: u16, dos_time_hi_res: u8) -> Self {
         Self {
-            dos_time,
             dos_time_hi_res,
+            dos_time,
         }
     }
 
@@ -214,6 +263,25 @@ impl DateTime {
         let dos_time = dos_datetime.dos_time();
         Self::new(Date::decode(dos_date), Time::decode(dos_time))
     }
+
+    #[must_use]
+    pub(crate) fn encode(self) -> DosDateTime {
+        let dos_date = self.date.encode();
+        let dos_time = self.time.encode();
+        DosDateTime::new(dos_date, dos_time)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn date(&self) -> Date {
+        self.date
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn time(&self) -> Time {
+        self.time
+    }
 }
 
 /// A current time and date provider.
@@ -250,7 +318,7 @@ impl TimeProvider for DosMinTimeProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::{Date, DateTime, DosDate, DosDateTime, DosTime, Time};
+    use super::{Date, DateTime, DosMinTimeProvider, Time, TimeProvider};
 
     #[test]
     fn date() {
@@ -293,5 +361,80 @@ mod tests {
         assert_eq!(t1, Time::decode(dt1));
         assert_eq!(t2, Time::decode(dt2));
         assert_eq!(t3, Time::decode(dt3));
+    }
+
+    #[test]
+    fn datetime_encode_decode() {
+        let date = Date::new(1999, 12, 31);
+        let time = Time::new(23, 59, 59, 990);
+        let datetime = DateTime::new(date, time);
+
+        let encoded = datetime.encode();
+        let decoded = DateTime::decode(encoded);
+
+        assert_eq!(datetime, decoded);
+        assert_eq!(decoded.date.year(), 1999);
+        assert_eq!(decoded.date.month(), 12);
+        assert_eq!(decoded.date.day(), 31);
+        assert_eq!(
+            (
+                decoded.time.hour,
+                decoded.time.min,
+                decoded.time.sec,
+                decoded.time.ms
+            ),
+            (23, 59, 59, 990)
+        );
+    }
+
+    #[test]
+    fn dos_min_time_provider() {
+        let provider = DosMinTimeProvider::new();
+
+        let date = provider.get_current_date();
+        assert_eq!(date.year(), 1980);
+        assert_eq!(date.month(), 1);
+        assert_eq!(date.day(), 1);
+
+        let time = provider.get_current_time();
+        assert_eq!((time.hour, time.min, time.sec, time.ms), (0, 0, 0, 0));
+
+        let datetime = provider.get_current_date_time();
+        assert_eq!(datetime.date, date);
+        assert_eq!(datetime.time, time);
+    }
+
+    #[test]
+    fn dos_date_edge_cases() {
+        // Test minimum date
+        let min_date = Date::new(1980, 1, 1);
+        let encoded_min = min_date.encode();
+        assert_eq!(encoded_min.dos_date(), 33);
+
+        // Test maximum date
+        let max_date = Date::new(2107, 12, 31);
+        let encoded_max = max_date.encode();
+        let decoded_max = Date::decode(encoded_max);
+        assert_eq!(decoded_max, max_date);
+    }
+
+    #[test]
+    fn dos_time_edge_cases() {
+        // Test midnight
+        let midnight = Time::new(0, 0, 0, 0);
+        let encoded_midnight = midnight.encode();
+        assert_eq!(
+            (
+                encoded_midnight.dos_time(),
+                encoded_midnight.dos_time_hi_res()
+            ),
+            (0, 0)
+        );
+
+        // Test 23:59:59.990
+        let end_of_day = Time::new(23, 59, 59, 990);
+        let encoded_eod = end_of_day.encode();
+        let decoded_eod = Time::decode(encoded_eod);
+        assert_eq!(decoded_eod, end_of_day);
     }
 }
