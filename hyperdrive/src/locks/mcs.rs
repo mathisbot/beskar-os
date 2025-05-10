@@ -531,7 +531,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     /// Consume the lock and returns the inner data if it is initialized.
     pub fn into_inner(mut self) -> Option<T> {
         if self.is_initialized() {
-            self.is_init.store(false, Ordering::Release);
+            self.is_init.store(false, Ordering::Relaxed);
             // Safety: The lock is initialized.
             // We cannot use `assume_init` as `inner_lock` is part of `self`.
             // Therefore, we need to `assume_init_read` the value, and "uninitialize"

@@ -141,8 +141,8 @@ impl<S: MemSize> IntoIterator for FrameRangeInclusive<S> {
 
 #[derive(Clone)]
 pub struct FrameIterator<S: MemSize = M4KiB> {
-    pub start: Frame<S>,
-    pub end: Frame<S>,
+    start: Frame<S>,
+    end: Frame<S>,
 }
 
 impl<S: MemSize> Iterator for FrameIterator<S> {

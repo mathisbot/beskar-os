@@ -23,6 +23,56 @@ pub struct BootInfo {
     pub cpu_count: usize,
 }
 
+impl BootInfo {
+    #[must_use]
+    #[inline]
+    pub const fn memory_regions(&'static mut self) -> &'static mut [MemoryRange] {
+        self.memory_regions
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the framebuffer for screen output.
+    pub const fn framebuffer(&self) -> &FrameBuffer {
+        &self.framebuffer
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the page index of the recursive level 4 table.
+    pub const fn recursive_index(&self) -> u16 {
+        self.recursive_index
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the address of the `RSDP`, used to find the ACPI tables (if reported).
+    pub const fn rsdp_paddr(&self) -> Option<PhysAddr> {
+        self.rsdp_paddr
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the information about the kernel ELF.
+    pub const fn kernel_info(&self) -> &KernelInfo {
+        &self.kernel_info
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the information about the ramdisk.
+    pub const fn ramdisk_info(&self) -> Option<&RamdiskInfo> {
+        self.ramdisk_info.as_ref()
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the number of enabled and healthy CPU cores in the system.
+    pub const fn cpu_count(&self) -> usize {
+        self.cpu_count
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct KernelInfo {
     /// Physical address of the kernel ELF in memory.
@@ -63,6 +113,7 @@ impl KernelInfo {
         self.size
     }
 }
+
 #[derive(Debug, Clone, Copy)]
 pub struct RamdiskInfo {
     /// Virtual address of the ramdisk.

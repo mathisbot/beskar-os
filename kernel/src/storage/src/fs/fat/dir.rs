@@ -157,13 +157,12 @@ impl<'a, T: FatEntries> Directory<'a, T> {
         }
 
         // Parse the directory entry
-        let entry = unsafe { entry_data.as_ptr().cast::<DirEntry>().read_unaligned() };
+        let entry = unsafe { entry_data.as_ptr().cast::<DirEntry>().read() };
 
         // Check if this is a long filename entry
         if entry.is_long_name() {
             // Handle long filename entry
-            let long_entry =
-                unsafe { entry_data.as_ptr().cast::<LongNameEntry>().read_unaligned() };
+            let long_entry = unsafe { entry_data.as_ptr().cast::<LongNameEntry>().read() };
 
             // Read all LFN entries until we get to the short name entry
             let mut lfn_entries = Vec::new();
@@ -174,11 +173,10 @@ impl<'a, T: FatEntries> Directory<'a, T> {
                 let mut next_entry_data = [0u8; size_of::<DirEntry>()];
                 self.read_entry_data(&mut next_entry_data, read_data)?;
 
-                let next_entry = unsafe { entry_data.as_ptr().cast::<DirEntry>().read_unaligned() };
+                let next_entry = unsafe { entry_data.as_ptr().cast::<DirEntry>().read() };
 
                 if next_entry.is_long_name() {
-                    let next_lfn =
-                        unsafe { entry_data.as_ptr().cast::<LongNameEntry>().read_unaligned() };
+                    let next_lfn = unsafe { entry_data.as_ptr().cast::<LongNameEntry>().read() };
                     lfn_entries.push(next_lfn);
                 } else {
                     // Extract the long filename

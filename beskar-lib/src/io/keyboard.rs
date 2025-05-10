@@ -15,7 +15,7 @@ pub fn poll_keyboard() -> Option<KeyEvent> {
     // is using the keyboard file.
     let handle = open(KEYBOARD_FILE).unwrap();
 
-    let mut buffer = [0_u8; 8];
+    let mut buffer = [0_u8; size_of::<u64>()];
     let bytes_read = read(handle, &mut buffer, 0).unwrap();
 
     close(handle).unwrap();

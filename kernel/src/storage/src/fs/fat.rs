@@ -1,4 +1,6 @@
 //! File Allocation Table (FAT) file system implementation.
+use super::FileSystem;
+use beskar_core::storage::BlockDevice;
 use thiserror::Error;
 
 pub mod bs;
@@ -154,6 +156,57 @@ type BoxedDataReader<'a> =
     alloc::boxed::Box<dyn FnMut(Cluster, u32, &mut [u8]) -> FatResult<()> + 'a>;
 type RefDataReader<'a> = &'a mut dyn FnMut(Cluster, u32, &mut [u8]) -> FatResult<()>;
 type RefDataWriter<'a> = &'a mut dyn FnMut(Cluster, u32, &[u8]) -> FatResult<()>;
+
+pub struct FatFs<D: BlockDevice> {
+    device: D,
+    fat_type: FatType,
+    fat_size: u32,
+    data_size: u32,
+    data_start: u32,
+    data_end: u32,
+}
+
+impl<D: BlockDevice> FileSystem for FatFs<D> {
+    fn close(&mut self, path: super::Path) -> super::FileResult<()> {
+        // No-op for FAT
+        Ok(())
+    }
+
+    fn open(&mut self, path: super::Path) -> super::FileResult<()> {
+        // No-op for FAT
+        Ok(())
+    }
+
+    fn create(&mut self, path: super::Path) -> super::FileResult<()> {
+        todo!("Create file in FAT filesystem");
+    }
+
+    fn delete(&mut self, path: super::Path) -> super::FileResult<()> {
+        todo!("Delete file in FAT filesystem");
+    }
+
+    fn exists(&mut self, path: super::Path) -> super::FileResult<bool> {
+        todo!("Check if file exists in FAT filesystem");
+    }
+
+    fn read(
+        &mut self,
+        path: super::Path,
+        buffer: &mut [u8],
+        offset: usize,
+    ) -> super::FileResult<usize> {
+        todo!("Read file from FAT filesystem");
+    }
+
+    fn write(
+        &mut self,
+        path: super::Path,
+        buffer: &[u8],
+        offset: usize,
+    ) -> super::FileResult<usize> {
+        todo!("Write file to FAT filesystem");
+    }
+}
 
 #[cfg(test)]
 mod tests {

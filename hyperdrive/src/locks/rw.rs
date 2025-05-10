@@ -223,7 +223,8 @@ impl<B: BackOff> AtomicState<B> {
 
     #[inline]
     pub fn write_unlock(&self) {
-        debug_assert!(self.writer.load(Ordering::Relaxed));
+        debug_assert!(self.readers.load(Ordering::Acquire) == 0);
+        debug_assert!(self.writer.load(Ordering::Acquire));
         self.writer.store(false, Ordering::Release);
     }
 }
