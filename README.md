@@ -33,6 +33,7 @@ I have many milestones ideas for the OS:
 - Kernel: Modern 64-bit kernel with SMP support
 - Hyperdrive: Bare metal utility module for the OS
 - Beskar Core: Structs and traits common to all modules
+- Beskar HAL: Hardware Abstraction Layer
 - Beskar Lib: Attempt at writing a standard library
 
 You will find more information in their respective READMEs, especially in `kernel/README.md`, where its features are listed.

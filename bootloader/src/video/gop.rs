@@ -1,6 +1,6 @@
 //! Handles the Graphical Output Protocol (GOP) provided by the UEFI firmware.
 
-use beskar_core::arch::commons::PhysAddr;
+use beskar_core::arch::PhysAddr;
 use beskar_core::video::{Info, PixelBitmask, PixelFormat};
 use uefi::{
     boot,

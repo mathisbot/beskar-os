@@ -1,15 +1,13 @@
 use crate::mem::{address_space, frame_alloc};
 use beskar_core::arch::{
-    commons::{
-        VirtAddr,
-        paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _},
-    },
-    x86_64::{
-        instructions::load_tss,
-        paging::page_table::Flags,
-        registers::CS,
-        structures::{GdtDescriptor, GlobalDescriptorTable, TaskStateSegment},
-    },
+    VirtAddr,
+    paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _},
+};
+use beskar_hal::{
+    instructions::load_tss,
+    paging::page_table::Flags,
+    registers::CS,
+    structures::{GdtDescriptor, GlobalDescriptorTable, TaskStateSegment},
 };
 use core::mem::MaybeUninit;
 

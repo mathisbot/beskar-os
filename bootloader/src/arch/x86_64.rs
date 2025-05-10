@@ -1,4 +1,4 @@
-use beskar_core::arch::commons::{VirtAddr, paging::Frame};
+use beskar_core::arch::{VirtAddr, paging::Frame};
 
 pub mod acpi;
 

@@ -46,7 +46,10 @@ pub struct TicketLock<T, B: BackOff = super::Spin> {
 
 // Safety:
 // Mellor-Crummey and Scott lock is a synchronization primitive.
-#[allow(clippy::non_send_fields_in_send_ty)]
+#[expect(
+    clippy::non_send_fields_in_send_ty,
+    reason = "Synchronization primitive"
+)]
 unsafe impl<T, B: BackOff> Send for TicketLock<T, B> {}
 unsafe impl<T, B: BackOff> Sync for TicketLock<T, B> {}
 
@@ -80,7 +83,7 @@ impl<T, B: BackOff> TicketLock<T, B> {
 
     #[must_use]
     #[inline]
-    #[allow(clippy::mut_from_ref)]
+    #[expect(clippy::mut_from_ref, reason = "Force lock")]
     /// Forces the lock to be unlocked.
     ///
     /// # Safety
@@ -98,6 +101,13 @@ impl<T, B: BackOff> TicketLock<T, B> {
     /// The caller must be the owner of the lock.
     unsafe fn unlock(&self) {
         self.now_serving.fetch_add(1, Ordering::Release);
+    }
+
+    #[must_use]
+    #[inline]
+    /// Consumes the lock and returns the inner data.
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
     }
 }
 

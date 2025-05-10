@@ -1,6 +1,5 @@
-use beskar_core::arch::x86_64::port::serial::com::{ComNumber, SerialCom};
-use beskar_core::video::writer::FramebufferWriter;
-use beskar_core::video::{Info, PixelComponents};
+use beskar_core::video::{Info, PixelComponents, writer::FramebufferWriter};
+use beskar_hal::port::serial::com::{ComNumber, SerialCom};
 use core::fmt::Write;
 use hyperdrive::locks::mcs::MUMcsLock;
 

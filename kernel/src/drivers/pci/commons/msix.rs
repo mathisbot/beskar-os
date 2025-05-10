@@ -1,16 +1,13 @@
 //! Mesage Signaled Interrupts eXtended (MSI-X) support.
 
-use core::ptr::NonNull;
-
-use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
-
+use super::super::{PciHandler, commons::CapabilityHeader, iter_capabilities};
+use super::PciAddress;
 use crate::locals::get_specific_core_locals;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
-use beskar_core::arch::commons::paging::{Flags, M4KiB};
-
-use super::super::{PciHandler, commons::CapabilityHeader, iter_capabilities};
-
-use super::PciAddress;
+use beskar_core::arch::paging::M4KiB;
+use beskar_hal::paging::page_table::Flags;
+use core::ptr::NonNull;
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
 pub struct MsiX {
     capability: MsiXCapability,

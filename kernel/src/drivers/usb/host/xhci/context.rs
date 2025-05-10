@@ -1,4 +1,4 @@
-use beskar_core::arch::commons::PhysAddr;
+use beskar_core::arch::PhysAddr;
 
 /// Device Context Base Address Array (DCBAA)
 ///

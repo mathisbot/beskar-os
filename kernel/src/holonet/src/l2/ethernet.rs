@@ -184,7 +184,7 @@ impl<T: AsRef<[u8]>> Frame<T> {
 
     #[must_use]
     #[inline]
-    #[allow(clippy::missing_panics_doc)] // Never panics!
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the `EtherType` field, without checking for 802.1Q.
     pub fn ethertype(&self) -> EtherType {
         let data = self.buffer.as_ref();

@@ -110,7 +110,6 @@ impl Ipi {
     ) {
         // Assert Interrupts are ready to be received
         while unsafe { icr_low.read() >> 12 } & 1 == 1 {
-            // FIXME: Fail with a timeout?
             core::hint::spin_loop();
         }
 

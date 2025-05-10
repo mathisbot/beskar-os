@@ -1,18 +1,14 @@
+use crate::mem::{frame_alloc, page_alloc::pmap::PhysicalMapping};
+use beskar_core::{
+    arch::{PhysAddr, paging::M4KiB},
+    drivers::{DriverError, DriverResult},
+};
+use beskar_hal::paging::page_table::Flags;
 use core::{
     ptr::NonNull,
     sync::atomic::{AtomicU16, Ordering},
 };
-
-use beskar_core::{
-    arch::commons::{
-        PhysAddr,
-        paging::{Flags, M4KiB},
-    },
-    drivers::{DriverError, DriverResult},
-};
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
-
-use crate::mem::{frame_alloc, page_alloc::pmap::PhysicalMapping};
 
 pub mod admin;
 pub mod io;

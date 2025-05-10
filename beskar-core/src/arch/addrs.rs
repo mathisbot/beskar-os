@@ -1,12 +1,12 @@
 //! Abstraction of physical and virtual addresses.
 use core::ops::{Add, Sub};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 /// A virtual address.
 pub struct VirtAddr(u64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 /// A physical address.
 pub struct PhysAddr(u64);
@@ -32,7 +32,11 @@ impl VirtAddr {
     #[inline]
     /// Create a new valid virtual address by sign extending the address.
     pub const fn new_extend(addr: u64) -> Self {
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        #[expect(
+            clippy::cast_sign_loss,
+            clippy::cast_possible_wrap,
+            reason = "Sign extension"
+        )]
         // Perform sign extension
         let extended = ((addr << 16) as i64 >> 16) as u64;
         // Safety: We made sure the address is canonical
@@ -52,7 +56,11 @@ impl VirtAddr {
     ///
     /// The given address must be a canonical virtual address.
     pub const unsafe fn new_unchecked(addr: u64) -> Self {
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        #[expect(
+            clippy::cast_sign_loss,
+            clippy::cast_possible_wrap,
+            reason = "Sign extension"
+        )]
         {
             debug_assert!(((addr << 16) as i64 >> 16) as u64 == addr);
         }

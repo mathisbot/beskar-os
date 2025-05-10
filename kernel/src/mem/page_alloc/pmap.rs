@@ -4,12 +4,10 @@
 
 use crate::{mem::frame_alloc, process};
 use beskar_core::arch::{
-    commons::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, Page},
-    },
-    x86_64::paging::page_table::{Flags, PageTable},
+    PhysAddr, VirtAddr,
+    paging::{CacheFlush as _, Flags as FlagsTrait, Frame, M4KiB, Mapper, MemSize, Page},
 };
+use beskar_hal::paging::page_table::{Flags, PageTable};
 
 #[derive(Debug)]
 /// Physical Mapping structure
@@ -18,7 +16,7 @@ use beskar_core::arch::{
 /// could result in undefined behavior if the memory is used by another mapping.
 pub struct PhysicalMapping<S: MemSize = M4KiB>
 where
-    for<'a> PageTable<'a>: Mapper<S>,
+    for<'a> PageTable<'a>: Mapper<S, Flags>,
 {
     start_frame: Frame<S>,
     start_page: Page<S>,
@@ -27,7 +25,7 @@ where
 
 impl<S: MemSize> PhysicalMapping<S>
 where
-    for<'a> PageTable<'a>: Mapper<S>,
+    for<'a> PageTable<'a>: Mapper<S, Flags>,
 {
     /// Creates a new physical mapping.
     ///
@@ -108,7 +106,7 @@ where
 
 impl<S: MemSize> Drop for PhysicalMapping<S>
 where
-    for<'a> PageTable<'a>: Mapper<S>,
+    for<'a> PageTable<'a>: Mapper<S, Flags>,
 {
     fn drop(&mut self) {
         let page_range =

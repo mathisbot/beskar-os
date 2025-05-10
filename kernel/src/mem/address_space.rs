@@ -1,16 +1,14 @@
 use crate::{arch::cpuid, process::scheduler};
 use beskar_core::{
     arch::{
-        commons::{
-            PhysAddr, VirtAddr,
-            paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _, Page},
-        },
-        x86_64::{
-            paging::page_table::{Entries, Flags, PageTable},
-            registers::{Cr3, Efer},
-        },
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _, Page},
     },
     boot::KernelInfo,
+};
+use beskar_hal::{
+    paging::page_table::{Entries, Flags, PageTable},
+    registers::{Cr3, Efer},
 };
 
 use super::{frame_alloc, page_alloc};
@@ -52,7 +50,7 @@ pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
             pt: McsLock::new(kernel_pt),
             lvl4_paddr: frame.start_address(),
             pgalloc,
-            pgalloc_pml4_idx: 0, // Kernel process never uses this
+            pgalloc_pml4_idx: None,
         }
     });
 }
@@ -74,7 +72,7 @@ pub struct AddressSpace {
     ///
     /// Currently, this is only used to check if the address space owns any address
     /// in the syscall handler.
-    pgalloc_pml4_idx: u16,
+    pgalloc_pml4_idx: Option<u16>,
 }
 
 impl Default for AddressSpace {
@@ -112,25 +110,15 @@ impl AddressSpace {
 
         let mut pt = Entries::new();
 
-        // Copy the kernel's page table entries to the new address space
-        // FIXME: Requires being in the kernel's address space
-        with_kernel_pt(|kpt| {
-            // FIXME: Is it safe to copy the whole PML4?
-            // In fact we should only need kernel code, heap, fb, and stack.
-            // maybe more?
+        curr_addr_space.with_page_table(|cpt| {
+            let userspc_idx = curr_addr_space.pgalloc_pml4_idx.map(usize::from);
 
-            // let kcode_info = KERNEL_CODE_INFO.get().unwrap();
-            // let kernel_start_page = Page::<M4KiB>::containing_address(kcode_info.vaddr());
-            // let kernel_end_page =
-            //     Page::<M4KiB>::containing_address(kcode_info.vaddr() + kcode_info.size());
-
-            for (i, pte) in kpt.entries().iter_entries().enumerate()
-            // .take(kernel_end_page.p4_index().into())
-            // .skip(kernel_start_page.p4_index().into())
+            for (i, pte) in cpt
+                .entries()
+                .iter_entries()
+                .enumerate()
+                .filter(|(i, pte)| userspc_idx != Some(*i) && !pte.is_null())
             {
-                if pte.is_null() {
-                    continue;
-                }
                 pt[i] = *pte;
             }
         });
@@ -184,7 +172,7 @@ impl AddressSpace {
             pt: McsLock::new(PageTable::new(unsafe { &mut *lvl4_vaddr.as_mut_ptr() })),
             lvl4_paddr: frame.start_address(),
             pgalloc: McsLock::new(pgalloc),
-            pgalloc_pml4_idx: free_idx,
+            pgalloc_pml4_idx: Some(free_idx),
         }
     }
 
@@ -192,7 +180,10 @@ impl AddressSpace {
     #[inline]
     /// Returns whether a certain memory range is owned by the address space.
     pub fn is_addr_owned(&self, start: VirtAddr, end: VirtAddr) -> bool {
-        let idx = self.pgalloc_pml4_idx;
+        let Some(idx) = self.pgalloc_pml4_idx else {
+            video::warn!("`AddressSpace::is_addr_owned` called on a non-user address space");
+            return false;
+        };
 
         let start_page = Page::from_p4p3p2p1(idx, 0, 0, 0);
         let end_page = Page::from_p4p3p2p1(idx, 511, 511, 511);
@@ -212,6 +203,7 @@ impl AddressSpace {
 
     #[must_use]
     #[inline]
+    #[expect(clippy::unused_self, reason = "CR3 flags are constant")]
     pub const fn cr3_flags(&self) -> u16 {
         // The only two valid CR3 flags are CACHE_WRITETHROUGH and CACHE_DISABLE
         // These two are better set at the page table entry level
@@ -230,8 +222,6 @@ impl AddressSpace {
     ///
     /// Panics if the address space is not active.
     pub fn with_page_table<R>(&self, f: impl FnOnce(&mut PageTable<'static>) -> R) -> R {
-        // FIXME: It is possible to map the page table in the current address space
-        // and then operate on it without the need to panic.
         assert!(self.is_active(), "Address space must be active");
         self.pt.with_locked(f)
     }

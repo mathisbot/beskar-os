@@ -285,11 +285,7 @@ mod tests {
         assert!(res.is_ok());
 
         let res = ring.try_push(3);
-        assert!(res.is_err());
-        let Err(RingFullError(x)) = res else {
-            unreachable!()
-        };
-        assert_eq!(x, 3);
+        assert!(res == Err(RingFullError(3)));
     }
 
     #[test]

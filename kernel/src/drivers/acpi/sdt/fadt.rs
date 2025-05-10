@@ -1,6 +1,6 @@
 use super::{GenericAddress, RawGenericAddress, SdtHeader};
 use crate::drivers::acpi::{AcpiRevision, sdt::Sdt as _};
-use beskar_core::arch::commons::PhysAddr;
+use beskar_core::arch::PhysAddr;
 
 pub mod reg;
 

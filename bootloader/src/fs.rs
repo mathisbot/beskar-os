@@ -1,4 +1,4 @@
-use beskar_core::arch::commons::paging::{M4KiB, MemSize as _};
+use beskar_core::arch::paging::{M4KiB, MemSize as _};
 use boot::MemoryType;
 use uefi::{
     CStr16,

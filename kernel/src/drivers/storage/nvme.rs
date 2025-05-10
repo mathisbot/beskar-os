@@ -11,14 +11,12 @@ use crate::{
 };
 use beskar_core::{
     arch::{
-        commons::{
-            PhysAddr, VirtAddr,
-            paging::{Flags, M4KiB, MemSize},
-        },
-        x86_64::structures::InterruptStackFrame,
+        PhysAddr, VirtAddr,
+        paging::{M4KiB, MemSize},
     },
     drivers::{DriverError, DriverResult},
 };
+use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
 use core::ptr::NonNull;
 use hyperdrive::{
     locks::mcs::MUMcsLock,

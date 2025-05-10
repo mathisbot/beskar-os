@@ -12,6 +12,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "beskar-hal"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+ "thiserror",
+]
+
+[[package]]
 name = "beskar-lib"
 version = "0.1.0"
 dependencies = [
@@ -46,6 +54,7 @@ name = "bootloader"
 version = "1.0.1"
 dependencies = [
  "beskar-core",
+ "beskar-hal",
  "hyperdrive",
  "uefi",
  "xmas-elf",
@@ -80,6 +89,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "beskar-core",
+ "beskar-hal",
  "bootloader",
  "holonet",
  "hyperdrive",
@@ -269,6 +279,7 @@ name = "video"
 version = "0.1.0"
 dependencies = [
  "beskar-core",
+ "beskar-hal",
  "hyperdrive",
 ]
 

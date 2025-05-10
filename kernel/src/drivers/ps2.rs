@@ -1,11 +1,9 @@
 use crate::drivers::acpi::ACPI;
-use beskar_core::{
-    arch::x86_64::port::{Port, ReadWrite},
-    drivers::{
-        DriverResult,
-        keyboard::{KeyCode, KeyEvent, KeyState},
-    },
+use beskar_core::drivers::{
+    DriverResult,
+    keyboard::{KeyCode, KeyEvent, KeyState},
 };
+use beskar_hal::port::{Port, ReadWrite};
 use core::sync::atomic::{AtomicBool, Ordering};
 use hyperdrive::{locks::mcs::McsLock, once::Once};
 use thiserror::Error;

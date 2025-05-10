@@ -2,10 +2,8 @@ use crate::{
     locals,
     syscall::{Arguments, syscall},
 };
-use beskar_core::{
-    arch::x86_64::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors},
-    syscall::Syscall,
-};
+use beskar_core::syscall::Syscall;
+use beskar_hal::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(8))]

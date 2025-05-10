@@ -1,4 +1,4 @@
-use beskar_core::arch::commons::PhysAddr;
+use beskar_core::arch::PhysAddr;
 use core::sync::atomic::AtomicU8;
 use hyperdrive::once::Once;
 

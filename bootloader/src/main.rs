@@ -49,7 +49,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         uefi::runtime::reset(uefi::runtime::ResetType::COLD, uefi::Status::ABORTED, None);
     } else {
         loop {
-            beskar_core::arch::x86_64::instructions::halt();
+            beskar_hal::instructions::halt();
         }
     }
 }

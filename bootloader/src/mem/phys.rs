@@ -1,5 +1,5 @@
 use beskar_core::{
-    arch::commons::{
+    arch::{
         PhysAddr, VirtAddr,
         paging::{Frame, FrameAllocator, M4KiB, MemSize as _},
     },
@@ -173,10 +173,10 @@ impl EarlyFrameAllocator {
 impl FrameAllocator<M4KiB> for EarlyFrameAllocator {
     fn allocate_frame(&mut self) -> Option<Frame<M4KiB>> {
         while let Some(&descriptor) = self.memory_map.get(self.current_entry_index) {
-            if descriptor.ty == MemoryType::CONVENTIONAL {
-                if let Some(frame) = self.allocate_frame_from_descriptor(&descriptor) {
-                    return Some(frame);
-                }
+            if descriptor.ty == MemoryType::CONVENTIONAL
+                && let Some(frame) = self.allocate_frame_from_descriptor(&descriptor)
+            {
+                return Some(frame);
             }
             self.current_entry_index += 1;
         }
@@ -193,13 +193,15 @@ impl FrameAllocator<M4KiB> for EarlyFrameAllocator {
 #[must_use]
 /// Returns whether the memory region is usable after the bootloader exits.
 const fn usable_after_bootloader_exit(memory_descriptor: &MemoryDescriptor) -> bool {
-    // TODO: Find a way to send ACPI_RECLAIM regions to the kernel?
     match memory_descriptor.ty {
         MemoryType::CONVENTIONAL
         | MemoryType::LOADER_CODE
         | MemoryType::BOOT_SERVICES_CODE
         | MemoryType::BOOT_SERVICES_DATA => true,
-        #[allow(clippy::match_same_arms)]
+        #[expect(
+            clippy::match_same_arms,
+            reason = "Differentiate reasons for not usable"
+        )]
         MemoryType::RUNTIME_SERVICES_CODE | MemoryType::RUNTIME_SERVICES_DATA => {
             // According to the UEFI specification, these should be left
             // untouched by the operating system

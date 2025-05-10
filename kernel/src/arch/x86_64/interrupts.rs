@@ -1,6 +1,6 @@
 use super::gdt::{DOUBLE_FAULT_IST, PAGE_FAULT_IST};
 use crate::locals;
-use beskar_core::arch::x86_64::{
+use beskar_hal::{
     registers::{CS, Cr0, Cr2},
     structures::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
 };

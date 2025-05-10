@@ -1,9 +1,7 @@
 use core::mem::offset_of;
 
-use beskar_core::arch::{
-    commons::{PhysAddr, VirtAddr, paging::M4KiB},
-    x86_64::paging::page_table::Flags,
-};
+use beskar_core::arch::{PhysAddr, VirtAddr, paging::M4KiB};
+use beskar_hal::paging::page_table::Flags;
 
 use super::AcpiRevision;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
@@ -240,11 +238,11 @@ impl Signature {
     #[inline]
     pub const fn as_bytes(&self) -> &'static [u8; 4] {
         match self {
-            Signature::Madt => b"APIC",
-            Signature::Fadt => b"FACP",
-            Signature::Hpet => b"HPET",
-            Signature::Mcfg => b"MCFG",
-            Signature::Dsdt => b"DSDT",
+            Self::Madt => b"APIC",
+            Self::Fadt => b"FACP",
+            Self::Hpet => b"HPET",
+            Self::Mcfg => b"MCFG",
+            Self::Dsdt => b"DSDT",
         }
     }
 }
@@ -281,7 +279,7 @@ macro_rules! impl_sdt {
     ($name:ident) => {
         #[derive(Debug)]
         pub struct $name {
-            start_vaddr: ::beskar_core::arch::commons::VirtAddr,
+            start_vaddr: ::beskar_core::arch::VirtAddr,
             _physical_mapping: $crate::mem::page_alloc::pmap::PhysicalMapping,
         }
 
@@ -293,7 +291,7 @@ macro_rules! impl_sdt {
 
         impl $name {
             #[must_use]
-            pub fn load(paddr: ::beskar_core::arch::commons::PhysAddr) -> Self {
+            pub fn load(paddr: ::beskar_core::arch::PhysAddr) -> Self {
                 use $crate::drivers::acpi::sdt::Sdt;
 
                 let mapping = unsafe { $crate::drivers::acpi::sdt::map(paddr) };
@@ -311,7 +309,7 @@ macro_rules! impl_sdt {
         }
     };
 }
-pub(self) use impl_sdt;
+use impl_sdt;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(C, packed)]

@@ -2,7 +2,8 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
-use beskar_core::process::{Kind, ProcessId};
+use beskar_core::process::ProcessId;
+use beskar_hal::process::Kind;
 use binary::LoadedBinary;
 use core::sync::atomic::{AtomicU16, Ordering};
 use hyperdrive::{once::Once, ptrs::view::View};
@@ -19,7 +20,7 @@ pub fn init() {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: View::Reference(address_space::get_kernel_address_space()),
+            address_space: View::new_borrow(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
             binary_data: None,
         })
@@ -38,7 +39,6 @@ pub struct Process {
     pid: ProcessId,
     address_space: View<'static, AddressSpace>,
     kind: Kind,
-    // FIXME: Shouldn't be 'static
     binary_data: Option<BinaryData<'static>>,
 }
 
@@ -49,7 +49,7 @@ impl Process {
         Self {
             name: name.to_string(),
             pid: ProcessId::new(),
-            address_space: View::Owned(AddressSpace::new()),
+            address_space: View::new_owned(AddressSpace::new()),
             kind,
             binary_data: binary.map(BinaryData::new),
         }
@@ -159,6 +159,29 @@ impl Pcid {
     #[must_use]
     #[inline]
     pub const fn as_u16(&self) -> u16 {
+        debug_assert!(self.0 <= 4095, "PCID out of bounds");
         self.0
+    }
+}
+
+pub struct Stdout;
+
+impl ::storage::KernelDevice for Stdout {
+    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        if dst.is_empty() {
+            return Ok(());
+        }
+
+        Err(::storage::BlockDeviceError::Unsupported)
+    }
+
+    fn write(&mut self, src: &[u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        let text = core::str::from_utf8(src).map_err(|_| ::storage::BlockDeviceError::Io)?;
+
+        // TODO: Send somewhere else than the kernel log.
+        let tid = crate::process::scheduler::current_thread_id();
+        video::info!("[Thread {}] {}", tid.as_u64(), text);
+
+        Ok(())
     }
 }

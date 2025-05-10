@@ -4,14 +4,12 @@ use crate::{
     mem::{address_space, frame_alloc},
 };
 use beskar_core::arch::{
-    commons::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
-    },
-    x86_64::{
-        paging::page_table::Flags,
-        registers::{Cr0, Cr3, Cr4, Efer},
-    },
+    PhysAddr, VirtAddr,
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
+};
+use beskar_hal::{
+    paging::page_table::Flags,
+    registers::{Cr0, Cr3, Cr4, Efer},
 };
 
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -105,7 +103,6 @@ pub fn start_up_aps(core_count: usize) {
             ipi::DeliveryMode::Init,
             ipi::Destination::AllExcludingSelf,
         ));
-        // FIXME: Is it useful to wait a bit here?
         // crate::time::tsc::wait_ms(10);
         apic.send_ipi(&Ipi::new(
             ipi::DeliveryMode::Sipi(sipi_payload),

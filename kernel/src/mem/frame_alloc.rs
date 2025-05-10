@@ -5,7 +5,7 @@
 //!
 //! Allocated frames do not need to be contiguous.
 
-use beskar_core::arch::commons::{
+use beskar_core::arch::{
     PhysAddr,
     paging::{Frame, M4KiB, MemSize},
 };
@@ -82,7 +82,7 @@ impl FrameAllocator {
     }
 }
 
-impl<S: MemSize> beskar_core::arch::commons::paging::FrameAllocator<S> for FrameAllocator {
+impl<S: MemSize> beskar_core::arch::paging::FrameAllocator<S> for FrameAllocator {
     fn allocate_frame(&mut self) -> Option<Frame<S>> {
         self.alloc::<S>()
     }

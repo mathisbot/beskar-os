@@ -1,7 +1,7 @@
 //! Legacy PCI handling module.
 
 use alloc::vec::Vec;
-use beskar_core::arch::x86_64::port::{Port, ReadWrite, WriteOnly};
+use beskar_hal::port::{Port, ReadWrite, WriteOnly};
 use hyperdrive::locks::mcs::McsLock;
 
 use beskar_core::drivers::{DriverError, DriverResult};

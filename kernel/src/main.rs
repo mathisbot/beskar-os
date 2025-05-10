@@ -33,7 +33,7 @@ fn kmain() -> ! {
 
         let driver_proc = Arc::new(Process::new(
             "Drivers",
-            beskar_core::process::Kind::Driver,
+            beskar_hal::process::Kind::Driver,
             None,
         ));
         scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
@@ -48,7 +48,7 @@ fn kmain() -> ! {
             // File loading should be done in the process itself.
             let user_proc = Arc::new(Process::new(
                 "User",
-                beskar_core::process::Kind::User,
+                beskar_hal::process::Kind::User,
                 Some(kernel::process::binary::Binary::new(
                     ramdisk,
                     kernel::process::binary::BinaryType::Elf,

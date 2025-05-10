@@ -1,6 +1,6 @@
 //! PCI common definitions
 
-use beskar_core::arch::commons::PhysAddr;
+use beskar_core::arch::PhysAddr;
 
 pub mod msi;
 pub mod msix;
@@ -98,7 +98,6 @@ impl From<u8> for Class {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum RegisterOffset {

@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicUsize;
 
 use crate::{
     arch::{self, apic, interrupts},
-    drivers, locals, mem, process, syscall, time,
+    drivers, locals, mem, process, storage, syscall, time,
 };
 use beskar_core::boot::{BootInfo, RamdiskInfo};
 use hyperdrive::once::Once;

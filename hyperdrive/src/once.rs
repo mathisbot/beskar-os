@@ -157,7 +157,10 @@ pub struct Once<T> {
 // Safety:
 // `Once` only provides an immutable reference to the value when initialized.
 // On initialization, we manually make sure there are no data races.
-#[allow(clippy::non_send_fields_in_send_ty)]
+#[expect(
+    clippy::non_send_fields_in_send_ty,
+    reason = "Synchronization primitive"
+)]
 unsafe impl<T> Send for Once<T> {}
 unsafe impl<T> Sync for Once<T> {}
 

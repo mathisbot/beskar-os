@@ -1,12 +1,10 @@
 use beskar_core::arch::{
-    commons::{
-        VirtAddr,
-        paging::{Frame, FrameAllocator as _, M4KiB, MemSize as _},
-    },
-    x86_64::{
-        paging::page_table::{Entries, OffsetPageTable},
-        registers::Cr3,
-    },
+    VirtAddr,
+    paging::{Frame, FrameAllocator as _, M4KiB, MemSize as _},
+};
+use beskar_hal::{
+    paging::page_table::{Entries, OffsetPageTable},
+    registers::Cr3,
 };
 use uefi::{
     boot::MemoryType,

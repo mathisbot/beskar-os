@@ -1,7 +1,7 @@
 //! Responsible for initializiing graphical output
 
 use beskar_core::{
-    arch::commons::{PhysAddr, VirtAddr},
+    arch::{PhysAddr, VirtAddr},
     video::{FrameBuffer, Info, Pixel},
 };
 use hyperdrive::locks::mcs::MUMcsLock;
