@@ -1,5 +1,5 @@
 use crate::{
-    arch::commons::{PhysAddr, VirtAddr},
+    arch::{PhysAddr, VirtAddr},
     mem::ranges::MemoryRange,
     video::FrameBuffer,
 };

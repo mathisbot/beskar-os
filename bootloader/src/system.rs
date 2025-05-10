@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{debug, info, warn};
-use beskar_core::arch::x86_64::registers::{Cr0, Efer};
+use beskar_hal::registers::{Cr0, Efer};
 use uefi::{proto::pi::mp::MpServices, system};
 
 static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);

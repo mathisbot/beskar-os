@@ -1,6 +1,6 @@
 use crate::locals;
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc};
-use beskar_core::arch::commons::VirtAddr;
+use beskar_core::arch::VirtAddr;
 use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},

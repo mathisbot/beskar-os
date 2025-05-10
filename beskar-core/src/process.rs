@@ -1,4 +1,3 @@
-use crate::arch::x86_64::userspace::Ring;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 pub mod binary;
@@ -47,31 +46,5 @@ impl ProcessId {
     /// Returns the raw ID of the process.
     pub const fn as_u64(&self) -> u64 {
         self.0
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-#[repr(u8)]
-pub enum Kind {
-    /// Vital process kind.
-    /// On panic, the system will be halted.
-    Kernel,
-    /// Driver process kind.
-    /// These are Ring 0 processes that are not vital for the system.
-    Driver,
-    /// User process kind.
-    /// These are Ring 3 processes.
-    User,
-}
-
-impl Kind {
-    #[must_use]
-    #[inline]
-    pub const fn ring(&self) -> Ring {
-        match self {
-            Self::Kernel | Self::Driver => Ring::Kernel,
-            Self::User => Ring::User,
-        }
     }
 }

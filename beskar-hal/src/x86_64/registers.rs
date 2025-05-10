@@ -1,4 +1,4 @@
-use crate::arch::commons::{PhysAddr, VirtAddr, paging::Frame};
+use beskar_core::arch::{PhysAddr, VirtAddr, paging::Frame};
 
 pub struct Cr0;
 

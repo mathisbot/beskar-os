@@ -1,11 +1,11 @@
 use crate::{arch::context::ThreadRegisters, mem::frame_alloc};
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
-    commons::{
-        VirtAddr,
-        paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
-    },
-    x86_64::{instructions::STACK_DEBUG_INSTR, registers::Rflags, userspace::Ring},
+    VirtAddr,
+    paging::{CacheFlush, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
+};
+use beskar_hal::{
+    instructions::STACK_DEBUG_INSTR, paging::page_table::Flags, registers::Rflags, userspace::Ring,
 };
 use core::{
     mem::offset_of,

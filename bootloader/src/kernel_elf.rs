@@ -1,12 +1,9 @@
 use beskar_core::arch::{
-    commons::{
-        PhysAddr, VirtAddr,
-        paging::{
-            CacheFlush, Flags, Frame, FrameAllocator, M4KiB, Mapper as _, MemSize, Page, Translator,
-        },
-    },
-    x86_64::paging::page_table::OffsetPageTable,
+    PhysAddr, VirtAddr,
+    paging::{CacheFlush, Frame, FrameAllocator, M4KiB, Mapper as _, MemSize, Page, Translator},
 };
+
+use beskar_hal::paging::page_table::{Flags, OffsetPageTable};
 use xmas_elf::{
     ElfFile,
     dynamic::Tag,

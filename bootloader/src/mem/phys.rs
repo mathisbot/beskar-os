@@ -1,5 +1,5 @@
 use beskar_core::{
-    arch::commons::{
+    arch::{
         PhysAddr, VirtAddr,
         paging::{Frame, FrameAllocator, M4KiB, MemSize as _},
     },

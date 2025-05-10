@@ -1,18 +1,16 @@
 use beskar_core::{
     arch::{
-        commons::{
-            PhysAddr, VirtAddr,
-            paging::{
-                CacheFlush as _, Flags, Frame, FrameAllocator as _, M1GiB, M4KiB, Mapper,
-                MemSize as _, Page,
-            },
-        },
-        x86_64::{
-            registers::{CS, SS},
-            structures::{GdtDescriptor, GlobalDescriptorTable},
+        PhysAddr, VirtAddr,
+        paging::{
+            CacheFlush as _, Frame, FrameAllocator as _, M1GiB, M4KiB, Mapper, MemSize as _, Page,
         },
     },
     boot::{KernelInfo, RamdiskInfo},
+};
+use beskar_hal::{
+    paging::page_table::Flags,
+    registers::{CS, SS},
+    structures::{GdtDescriptor, GlobalDescriptorTable},
 };
 use xmas_elf::{ElfFile, program::ProgramHeader};
 

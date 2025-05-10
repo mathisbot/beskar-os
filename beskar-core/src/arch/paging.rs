@@ -7,9 +7,6 @@ pub use frame::{Frame, FrameAllocator, FrameRangeInclusive};
 mod page;
 pub use page::{Page, PageRangeInclusive};
 
-// TODO: Architecture agnostic flags
-pub use crate::arch::x86_64::paging::page_table::Flags;
-
 use super::{PhysAddr, VirtAddr};
 
 trait Sealed {}
@@ -43,6 +40,8 @@ impl MemSize for M1GiB {
     const SIZE: u64 = M2MiB::SIZE * 512;
 }
 
+pub trait Flags {}
+
 pub trait CacheFlush<S: MemSize> {
     fn flush(&self);
     /// Ignore the flush operation on the TLB.
@@ -55,19 +54,19 @@ pub trait CacheFlush<S: MemSize> {
     fn page(&self) -> Page<S>;
 }
 
-pub trait Mapper<S: MemSize> {
+pub trait Mapper<S: MemSize, F: Flags> {
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<S>,
         frame: Frame<S>,
-        flags: Flags,
+        flags: F,
         fralloc: &mut A,
     ) -> impl CacheFlush<S>;
     fn unmap(&mut self, page: Page<S>) -> Option<(Frame<S>, impl CacheFlush<S>)>;
-    fn update_flags(&mut self, page: Page<S>, flags: Flags) -> Option<impl CacheFlush<S>>;
-    fn translate(&self, page: Page<S>) -> Option<(Frame<S>, Flags)>;
+    fn update_flags(&mut self, page: Page<S>, flags: F) -> Option<impl CacheFlush<S>>;
+    fn translate(&self, page: Page<S>) -> Option<(Frame<S>, F)>;
 }
 
-pub trait Translator {
-    fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, Flags)>;
+pub trait Translator<F: Flags> {
+    fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, F)>;
 }

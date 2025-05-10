@@ -5,7 +5,7 @@
 
 use core::ops::{Index, IndexMut};
 
-use crate::arch::commons::{
+use beskar_core::arch::{
     PhysAddr, VirtAddr,
     paging::{Frame, FrameAllocator, M1GiB, M2MiB, M4KiB, Mapper, MemSize, Page, Translator},
 };
@@ -86,6 +86,8 @@ impl core::ops::BitAnd for Flags {
         Self(self.0 & rhs.0)
     }
 }
+
+impl beskar_core::arch::paging::Flags for Flags {}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -325,14 +327,14 @@ fn get_p1(page: Page<M4KiB>, recursive_index: u16) -> Page {
     Page::containing_address(vaddr)
 }
 
-impl Mapper<M4KiB> for PageTable<'_> {
+impl Mapper<M4KiB, Flags> for PageTable<'_> {
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<M4KiB>,
         frame: Frame<M4KiB>,
         flags: Flags,
         fralloc: &mut A,
-    ) -> impl crate::arch::commons::paging::CacheFlush<M4KiB> {
+    ) -> impl beskar_core::arch::paging::CacheFlush<M4KiB> {
         let ri = self.recursive_index;
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
@@ -386,7 +388,7 @@ impl Mapper<M4KiB> for PageTable<'_> {
         page: Page<M4KiB>,
     ) -> Option<(
         Frame<M4KiB>,
-        impl crate::arch::commons::paging::CacheFlush<M4KiB>,
+        impl beskar_core::arch::paging::CacheFlush<M4KiB>,
     )> {
         let p4_entry = &self[usize::from(page.p4_index())];
         p4_entry.frame_start()?;
@@ -424,7 +426,7 @@ impl Mapper<M4KiB> for PageTable<'_> {
         &mut self,
         page: Page<M4KiB>,
         flags: Flags,
-    ) -> Option<impl crate::arch::commons::paging::CacheFlush<M4KiB>> {
+    ) -> Option<impl beskar_core::arch::paging::CacheFlush<M4KiB>> {
         let p4_entry = &self[usize::from(page.p4_index())];
         if p4_entry.is_null() {
             return None;
@@ -506,14 +508,14 @@ impl Mapper<M4KiB> for PageTable<'_> {
     }
 }
 
-impl Mapper<M2MiB> for PageTable<'_> {
+impl Mapper<M2MiB, Flags> for PageTable<'_> {
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<M2MiB>,
         frame: Frame<M2MiB>,
         flags: Flags,
         fralloc: &mut A,
-    ) -> impl crate::arch::commons::paging::CacheFlush<M2MiB> {
+    ) -> impl beskar_core::arch::paging::CacheFlush<M2MiB> {
         let ri = self.recursive_index;
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
@@ -557,7 +559,7 @@ impl Mapper<M2MiB> for PageTable<'_> {
         page: Page<M2MiB>,
     ) -> Option<(
         Frame<M2MiB>,
-        impl crate::arch::commons::paging::CacheFlush<M2MiB>,
+        impl beskar_core::arch::paging::CacheFlush<M2MiB>,
     )> {
         let p4_entry = &self[usize::from(page.p4_index())];
         p4_entry.frame_start()?;
@@ -594,7 +596,7 @@ impl Mapper<M2MiB> for PageTable<'_> {
         &mut self,
         page: Page<M2MiB>,
         flags: Flags,
-    ) -> Option<impl crate::arch::commons::paging::CacheFlush<M2MiB>> {
+    ) -> Option<impl beskar_core::arch::paging::CacheFlush<M2MiB>> {
         let p4_entry = &self[usize::from(page.p4_index())];
         if p4_entry.is_null() {
             return None;
@@ -657,14 +659,14 @@ impl Mapper<M2MiB> for PageTable<'_> {
     }
 }
 
-impl Mapper<M1GiB> for PageTable<'_> {
+impl Mapper<M1GiB, Flags> for PageTable<'_> {
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<M1GiB>,
         frame: Frame<M1GiB>,
         flags: Flags,
         fralloc: &mut A,
-    ) -> impl crate::arch::commons::paging::CacheFlush<M1GiB> {
+    ) -> impl beskar_core::arch::paging::CacheFlush<M1GiB> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
@@ -695,7 +697,7 @@ impl Mapper<M1GiB> for PageTable<'_> {
         page: Page<M1GiB>,
     ) -> Option<(
         Frame<M1GiB>,
-        impl crate::arch::commons::paging::CacheFlush<M1GiB>,
+        impl beskar_core::arch::paging::CacheFlush<M1GiB>,
     )> {
         let p4_entry = &self[usize::from(page.p4_index())];
         p4_entry.frame_start()?;
@@ -724,7 +726,7 @@ impl Mapper<M1GiB> for PageTable<'_> {
         &mut self,
         page: Page<M1GiB>,
         flags: Flags,
-    ) -> Option<impl crate::arch::commons::paging::CacheFlush<M1GiB>> {
+    ) -> Option<impl beskar_core::arch::paging::CacheFlush<M1GiB>> {
         let p4_entry = &self[usize::from(page.p4_index())];
         if p4_entry.is_null() {
             return None;
@@ -768,7 +770,7 @@ impl Mapper<M1GiB> for PageTable<'_> {
     }
 }
 
-impl Translator for PageTable<'_> {
+impl Translator<Flags> for PageTable<'_> {
     fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, Flags)> {
         // Here, we need to be careful, as the address can be in any size
         // of page. We need to check for it in every level of the page table.
@@ -910,14 +912,14 @@ impl<'t> OffsetPageTable<'t> {
     }
 }
 
-impl Mapper<M4KiB> for OffsetPageTable<'_> {
+impl Mapper<M4KiB, Flags> for OffsetPageTable<'_> {
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<M4KiB>,
         frame: Frame<M4KiB>,
         flags: Flags,
         allocator: &mut A,
-    ) -> impl crate::arch::commons::paging::CacheFlush<M4KiB> {
+    ) -> impl beskar_core::arch::paging::CacheFlush<M4KiB> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
@@ -1004,7 +1006,7 @@ impl Mapper<M4KiB> for OffsetPageTable<'_> {
         page: Page<M4KiB>,
     ) -> Option<(
         Frame<M4KiB>,
-        impl crate::arch::commons::paging::CacheFlush<M4KiB>,
+        impl beskar_core::arch::paging::CacheFlush<M4KiB>,
     )> {
         if self.entries[usize::from(page.p4_index())]
             .flags()
@@ -1045,7 +1047,7 @@ impl Mapper<M4KiB> for OffsetPageTable<'_> {
         &mut self,
         page: Page<M4KiB>,
         flags: Flags,
-    ) -> Option<impl crate::arch::commons::paging::CacheFlush<M4KiB>> {
+    ) -> Option<impl beskar_core::arch::paging::CacheFlush<M4KiB>> {
         if self.entries[usize::from(page.p4_index())]
             .flags()
             .contains(Flags::HUGE_PAGE)
@@ -1082,7 +1084,7 @@ impl Mapper<M4KiB> for OffsetPageTable<'_> {
     }
 }
 
-impl Translator for OffsetPageTable<'_> {
+impl Translator<Flags> for OffsetPageTable<'_> {
     fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, Flags)> {
         let p4 = &self.entries;
         assert!(
@@ -1132,8 +1134,8 @@ impl Translator for OffsetPageTable<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arch::commons::PhysAddr;
-    use crate::arch::commons::paging::Flags;
+    use beskar_core::arch::PhysAddr;
+    use beskar_core::arch::paging::Flags;
 
     #[test]
     fn test_flags_operations() {

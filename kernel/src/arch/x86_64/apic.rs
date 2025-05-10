@@ -1,12 +1,5 @@
 //! Advanced Programmable Interrupt Controller (APIC) driver.
 
-use core::{
-    ptr::NonNull,
-    sync::atomic::{AtomicU8, Ordering},
-};
-use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
-use timer::LapicTimer;
-
 use super::cpuid;
 use crate::{
     drivers::acpi::{self, sdt::madt::Lint},
@@ -14,16 +7,22 @@ use crate::{
     mem::{address_space, frame_alloc},
     process,
 };
-use beskar_core::arch::x86_64::{
-    paging::page_table::Flags, registers::Msr, structures::InterruptStackFrame,
-};
 use beskar_core::arch::{
-    commons::{
-        PhysAddr,
-        paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _},
-    },
-    x86_64::port::{self, Port},
+    PhysAddr,
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _},
 };
+use beskar_hal::{
+    paging::page_table::Flags,
+    port::{self, Port},
+    registers::Msr,
+    structures::InterruptStackFrame,
+};
+use core::{
+    ptr::NonNull,
+    sync::atomic::{AtomicU8, Ordering},
+};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
+use timer::LapicTimer;
 
 pub mod ipi;
 pub mod timer;

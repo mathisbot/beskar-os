@@ -62,7 +62,7 @@ impl Pm1ControlRegister {
     fn read_pm1a(&self) -> u16 {
         match self.pm1a.address_space() {
             AddressSpace::SystemIO => {
-                use beskar_core::arch::x86_64::port;
+                use beskar_hal::port;
                 let port = port::Port::<u16, port::ReadOnly>::new(
                     u16::try_from(self.pm1a.address()).unwrap(),
                 );
@@ -80,7 +80,7 @@ impl Pm1ControlRegister {
 
         match pm1b.address_space() {
             AddressSpace::SystemIO => {
-                use beskar_core::arch::x86_64::port;
+                use beskar_hal::port;
                 let port =
                     port::Port::<u16, port::ReadOnly>::new(u16::try_from(pm1b.address()).unwrap());
                 unsafe { port.read() }
@@ -95,7 +95,7 @@ impl Pm1ControlRegister {
     fn write_pm1a(&self, value: u16) {
         match self.pm1a.address_space() {
             AddressSpace::SystemIO => {
-                use beskar_core::arch::x86_64::port;
+                use beskar_hal::port;
                 let port = port::Port::<u16, port::WriteOnly>::new(
                     u16::try_from(self.pm1a.address()).unwrap(),
                 );
@@ -113,7 +113,7 @@ impl Pm1ControlRegister {
 
         match pm1b.address_space() {
             AddressSpace::SystemIO => {
-                use beskar_core::arch::x86_64::port;
+                use beskar_hal::port;
                 let port =
                     port::Port::<u16, port::WriteOnly>::new(u16::try_from(pm1b.address()).unwrap());
                 unsafe { port.write(value) }

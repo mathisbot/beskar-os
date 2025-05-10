@@ -1,8 +1,6 @@
 use crate::arch::cpuid;
-use beskar_core::{
-    arch::x86_64::port::{Port, ReadWrite, WriteOnly},
-    drivers::{DriverError, DriverResult},
-};
+use beskar_core::drivers::{DriverError, DriverResult};
+use beskar_hal::port::{Port, ReadWrite, WriteOnly};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// The TSC value at startup, when the TSC has been calibrated.

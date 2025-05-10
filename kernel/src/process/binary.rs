@@ -1,6 +1,6 @@
 mod elf;
 
-use beskar_core::{arch::commons::VirtAddr, process::binary::BinaryResult};
+use beskar_core::{arch::VirtAddr, process::binary::BinaryResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]

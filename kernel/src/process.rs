@@ -2,7 +2,8 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
-use beskar_core::process::{Kind, ProcessId};
+use beskar_core::process::ProcessId;
+use beskar_hal::process::Kind;
 use binary::LoadedBinary;
 use core::sync::atomic::{AtomicU16, Ordering};
 use hyperdrive::{once::Once, ptrs::view::View};

@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use beskar_core::arch::commons::VirtAddr;
+use beskar_core::arch::VirtAddr;
 use hyperdrive::ptrs::volatile::{ReadOnly, Volatile};
 
 #[derive(Clone, Copy)]

@@ -1,4 +1,4 @@
-use beskar_core::arch::x86_64::registers::Rflags;
+use beskar_hal::registers::Rflags;
 pub use core::arch::x86_64::CpuidResult;
 use core::sync::atomic::{AtomicU32, Ordering};
 

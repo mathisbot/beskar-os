@@ -1,8 +1,6 @@
 use crate::mem::{address_space, frame_alloc};
-use beskar_core::arch::{
-    commons::paging::{CacheFlush as _, M2MiB, Mapper as _, MemSize, PageRangeInclusive},
-    x86_64::paging::page_table::Flags,
-};
+use beskar_core::arch::paging::{CacheFlush as _, M2MiB, Mapper as _, MemSize, PageRangeInclusive};
+use beskar_hal::paging::page_table::Flags;
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::NonNull,

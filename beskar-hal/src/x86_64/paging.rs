@@ -1,4 +1,4 @@
-use crate::arch::commons::paging::{CacheFlush, MemSize, Page};
+use beskar_core::arch::paging::{CacheFlush, MemSize, Page};
 
 pub mod page_table;
 

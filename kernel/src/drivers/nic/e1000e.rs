@@ -14,14 +14,12 @@ use crate::{
 use alloc::vec::Vec;
 use beskar_core::{
     arch::{
-        commons::{
-            PhysAddr, VirtAddr,
-            paging::{CacheFlush as _, Flags, M4KiB, Mapper, MemSize as _, Page},
-        },
-        x86_64::structures::InterruptStackFrame,
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
     },
     drivers::{DriverError, DriverResult},
 };
+use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
 use core::ptr::NonNull;
 use holonet::l2::ethernet::MacAddress;
 use hyperdrive::{

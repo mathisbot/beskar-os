@@ -2,8 +2,8 @@ use core::mem::offset_of;
 
 use super::AcpiRevision;
 use crate::mem::page_alloc::pmap::PhysicalMapping;
-use beskar_core::arch::commons::{PhysAddr, VirtAddr};
-use beskar_core::arch::x86_64::paging::page_table::Flags;
+use beskar_core::arch::{PhysAddr, VirtAddr};
+use beskar_hal::paging::page_table::Flags;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]

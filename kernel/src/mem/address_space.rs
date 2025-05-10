@@ -1,16 +1,14 @@
 use crate::{arch::cpuid, process::scheduler};
 use beskar_core::{
     arch::{
-        commons::{
-            PhysAddr, VirtAddr,
-            paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _, Page},
-        },
-        x86_64::{
-            paging::page_table::{Entries, Flags, PageTable},
-            registers::{Cr3, Efer},
-        },
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _, Page},
     },
     boot::KernelInfo,
+};
+use beskar_hal::{
+    paging::page_table::{Entries, Flags, PageTable},
+    registers::{Cr3, Efer},
 };
 
 use super::{frame_alloc, page_alloc};

@@ -1,4 +1,4 @@
-use beskar_core::arch::commons::PhysAddr;
+use beskar_core::arch::PhysAddr;
 use hyperdrive::once::Once;
 
 use crate::{info, warn};

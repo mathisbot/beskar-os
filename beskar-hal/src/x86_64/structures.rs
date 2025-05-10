@@ -1,5 +1,5 @@
 use super::userspace::Ring;
-use crate::{arch::commons::VirtAddr, static_assert};
+use beskar_core::{arch::VirtAddr, static_assert};
 use core::marker::PhantomData;
 
 #[derive(Clone, Copy, Debug)]

@@ -4,13 +4,14 @@
 #![allow(clippy::missing_panics_doc, clippy::similar_names)]
 
 use beskar_core::{
-    arch::commons::{
+    arch::{
         VirtAddr,
-        paging::{CacheFlush as _, Flags, FrameAllocator as _, Mapper, Page},
+        paging::{CacheFlush as _, FrameAllocator as _, Mapper, Page},
     },
     boot::BootInfo,
     mem::ranges::MemoryRange,
 };
+use beskar_hal::paging::page_table::Flags;
 use core::alloc::Layout;
 use mem::{EarlyFrameAllocator, Mappings, PageTables};
 

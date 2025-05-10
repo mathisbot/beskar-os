@@ -16,5 +16,5 @@ pub fn init() {
 
 #[inline]
 pub fn halt() {
-    beskar_core::arch::x86_64::instructions::halt();
+    beskar_hal::instructions::halt();
 }

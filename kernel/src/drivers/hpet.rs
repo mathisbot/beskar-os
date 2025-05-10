@@ -5,12 +5,10 @@ use crate::{
     mem::page_alloc::pmap::PhysicalMapping,
 };
 use beskar_core::{
-    arch::{
-        commons::{PhysAddr, VirtAddr, paging::M4KiB},
-        x86_64::paging::page_table::Flags,
-    },
+    arch::{PhysAddr, VirtAddr, paging::M4KiB},
     drivers::{DriverError, DriverResult},
 };
+use beskar_hal::paging::page_table::Flags;
 use core::num::NonZeroU32;
 use hyperdrive::{locks::mcs::MUMcsLock, once::Once};
 
@@ -79,7 +77,7 @@ macro_rules! read_write_reg {
             ///
             /// Does NOT validate the content of the register.
             fn new(paddr: PhysAddr, $($field_name: $field_type),*) -> Self {
-                let flags = ::beskar_core::arch::x86_64::paging::page_table::Flags::MMIO_SUITABLE;
+                let flags = ::beskar_hal::paging::page_table::Flags::MMIO_SUITABLE;
 
                 let physical_mapping = PhysicalMapping::new(paddr, size_of::<u64>(), flags);
                 let vaddr = physical_mapping.translate(paddr).unwrap();

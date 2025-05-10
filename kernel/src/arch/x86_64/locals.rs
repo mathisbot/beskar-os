@@ -1,8 +1,6 @@
 use crate::process::scheduler::thread::Tls;
-use beskar_core::arch::{
-    commons::VirtAddr,
-    x86_64::registers::{FS, GS},
-};
+use beskar_core::arch::VirtAddr;
+use beskar_hal::registers::{FS, GS};
 
 #[cold]
 pub fn store_locals(locals: &'static crate::locals::CoreLocalsInfo) {

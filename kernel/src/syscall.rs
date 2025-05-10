@@ -1,11 +1,12 @@
 use crate::process;
 use beskar_core::{
-    arch::commons::{
+    arch::{
         VirtAddr,
-        paging::{CacheFlush as _, Flags, M4KiB, Mapper as _, MemSize},
+        paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize},
     },
     syscall::{Syscall, SyscallExitCode, SyscallReturnValue},
 };
+use beskar_hal::paging::page_table::Flags;
 
 pub fn init() {
     crate::arch::syscall::init_syscalls();

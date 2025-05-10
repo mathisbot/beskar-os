@@ -1,4 +1,4 @@
-use beskar_core::arch::x86_64::registers::Cr0;
+use beskar_hal::registers::Cr0;
 
 #[unsafe(naked)]
 /// Switches the current stack and CR3 to the ones provided.

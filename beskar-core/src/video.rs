@@ -1,6 +1,6 @@
 //! Video related types and functions.
 
-use crate::arch::commons::VirtAddr;
+use crate::arch::VirtAddr;
 
 pub mod writer;
 

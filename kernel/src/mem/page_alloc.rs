@@ -1,14 +1,12 @@
 use super::address_space;
 use beskar_core::{
     arch::{
-        commons::{
-            VirtAddr,
-            paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
-        },
-        x86_64::paging::page_table::{Entries, Flags, PageTable},
+        VirtAddr,
+        paging::{M1GiB, M2MiB, M4KiB, MemSize, Page, PageRangeInclusive},
     },
     mem::ranges::{MemoryRange, MemoryRanges},
 };
+use beskar_hal::paging::page_table::{Entries, Flags, PageTable};
 
 pub mod pmap;
 

@@ -1,6 +1,6 @@
 use super::{Sdt, SdtHeader};
 use alloc::vec::Vec;
-use beskar_core::arch::commons::PhysAddr;
+use beskar_core::arch::PhysAddr;
 
 super::impl_sdt!(Madt);
 
