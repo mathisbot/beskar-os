@@ -23,6 +23,7 @@ pub fn init() {
         Box::new(crate::drivers::keyboard::KeyboardDevice),
     );
     device_fs.add_device(PathBuf::new("/stdout"), Box::new(crate::process::Stdout));
+    device_fs.add_device(PathBuf::new("/rand"), Box::new(crate::process::RandFile));
     VFS.mount(PathBuf::new("/dev"), Box::new(device_fs));
 
     // TODO: Mount RAM disk (FAT32)

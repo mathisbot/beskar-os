@@ -44,13 +44,6 @@ pub enum Syscall {
     ///
     /// The first argument is the size of the memory to allocate.
     MemoryMap = 5,
-    /// RandomGen syscall.
-    ///
-    /// Fills a given buffer with random data.
-    ///
-    /// The first argument is a pointer to the buffer.
-    /// The second argument is the length of the buffer.
-    RandomGen = 6,
     /// Invalid syscall.
     ///
     /// Any syscall that is not recognized.

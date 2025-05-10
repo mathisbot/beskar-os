@@ -714,7 +714,7 @@ impl TaskStateSegment {
             _reserved3: [0; 10],
             #[expect(
                 clippy::cast_possible_truncation,
-                reason = "The truncation is const and impossible"
+                reason = "The conversion is const and impossible"
             )]
             iomap_base: size_of::<Self>() as u16,
         }

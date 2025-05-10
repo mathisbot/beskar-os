@@ -185,3 +185,21 @@ impl ::storage::KernelDevice for Stdout {
         Ok(())
     }
 }
+
+pub struct RandFile;
+
+impl ::storage::KernelDevice for RandFile {
+    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        if dst.is_empty() {
+            Ok(())
+        } else {
+            crate::arch::rand::rand_bytes(dst)
+                .map_err(|_| ::storage::BlockDeviceError::Io)
+                .map(|_| ())
+        }
+    }
+
+    fn write(&mut self, _src: &[u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        Err(::storage::BlockDeviceError::Unsupported)
+    }
+}

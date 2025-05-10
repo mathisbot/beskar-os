@@ -26,7 +26,6 @@ pub struct Arguments {
 pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
     match syscall {
         Syscall::Exit => sc_exit(args),
-        Syscall::RandomGen => SyscallReturnValue::Code(sc_randomgen(args)),
         Syscall::MemoryMap => SyscallReturnValue::ValueU(sc_mmap(args)),
         Syscall::Read => SyscallReturnValue::ValueI(sc_read(args)),
         Syscall::Write => SyscallReturnValue::ValueI(sc_write(args)),
@@ -54,32 +53,6 @@ fn sc_exit(args: &Arguments) -> ! {
     }
 
     unsafe { crate::process::scheduler::exit_current_thread() }
-}
-
-#[must_use]
-fn sc_randomgen(args: &Arguments) -> SyscallExitCode {
-    let Some(start_vaddr) = VirtAddr::try_new(args.one) else {
-        return SyscallExitCode::Failure;
-    };
-
-    let start_addr = start_vaddr.as_mut_ptr();
-    let len = args.two;
-
-    if !process::current()
-        .address_space()
-        .is_addr_owned(start_vaddr, start_vaddr + len)
-    {
-        return SyscallExitCode::Failure;
-    }
-
-    let buffer = unsafe { core::slice::from_raw_parts_mut(start_addr, len.try_into().unwrap()) };
-
-    let rand_res = crate::arch::rand::rand_bytes(buffer);
-
-    match rand_res {
-        Ok(()) => SyscallExitCode::Success,
-        Err(_) => SyscallExitCode::Failure,
-    }
 }
 
 #[must_use]

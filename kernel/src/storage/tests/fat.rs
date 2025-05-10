@@ -80,10 +80,7 @@ impl MockVolume {
 
         // Write boot sector
         let boot_sector_bytes = unsafe {
-            core::slice::from_raw_parts(
-                &boot_sector as *const _ as *const u8,
-                size_of::<BootSector>(),
-            )
+            core::slice::from_raw_parts((&raw const boot_sector).cast(), size_of::<BootSector>())
         };
         self.data[..boot_sector_bytes.len()].copy_from_slice(boot_sector_bytes);
 
@@ -109,10 +106,7 @@ impl MockVolume {
 
         // Write boot sector
         let boot_sector_bytes = unsafe {
-            core::slice::from_raw_parts(
-                &boot_sector as *const _ as *const u8,
-                size_of::<BootSector>(),
-            )
+            core::slice::from_raw_parts((&raw const boot_sector).cast(), size_of::<BootSector>())
         };
         self.data[..boot_sector_bytes.len()].copy_from_slice(boot_sector_bytes);
 
@@ -140,7 +134,7 @@ impl MockVolume {
         // Write boot sector
         let boot_sector_bytes = unsafe {
             core::slice::from_raw_parts(
-                &boot_sector as *const _ as *const u8,
+                (&raw const boot_sector).cast(),
                 size_of::<ExtendedBootSector>(),
             )
         };
