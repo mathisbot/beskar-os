@@ -98,7 +98,7 @@ fn efi_entry() -> Status {
         debug!("Ramdisk size: {} bytes", ramdisk.len());
     }
 
-    let mut memory_map = unsafe { boot::exit_boot_services(boot::MemoryType::LOADER_DATA) };
+    let mut memory_map = unsafe { boot::exit_boot_services(None) };
     debug!("Boot services exited");
     memory_map.sort();
 

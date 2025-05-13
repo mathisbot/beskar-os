@@ -91,7 +91,7 @@ pub fn write(handle: Handle, buffer: &[u8], offset: usize) -> Result<usize, File
     );
     let res = raw_res.cast_signed();
     if res >= 0 {
-        Ok(usize::try_from(res).unwrap_or(0))
+        Ok(usize::try_from(res).unwrap())
     } else {
         Err(FileError { code: res })
     }
@@ -114,7 +114,7 @@ pub fn read(handle: Handle, buffer: &mut [u8], offset: usize) -> Result<usize, F
     );
     let res = raw_res.cast_signed();
     if res >= 0 {
-        Ok(usize::try_from(res).unwrap_or(0))
+        Ok(usize::try_from(res).unwrap())
     } else {
         Err(FileError { code: res })
     }

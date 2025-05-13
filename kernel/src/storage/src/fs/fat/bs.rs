@@ -399,7 +399,7 @@ impl BootParamBlock {
         let fat_size_bytes = (clusters * 3).div_ceil(2);
         let sectors_per_fat = fat_size_bytes.div_ceil(bytes_per_sector);
 
-        u16::try_from(sectors_per_fat).unwrap_or(0)
+        u16::try_from(sectors_per_fat).unwrap()
     }
 
     #[must_use]
@@ -417,7 +417,7 @@ impl BootParamBlock {
         let fat_size_bytes = (clusters + 2) * 2;
         let sectors_per_fat = fat_size_bytes.div_ceil(bytes_per_sector);
 
-        u16::try_from(sectors_per_fat).unwrap_or(0)
+        u16::try_from(sectors_per_fat).unwrap()
     }
 
     #[must_use]

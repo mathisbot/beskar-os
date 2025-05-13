@@ -410,12 +410,11 @@ impl DirectoryEntry {
         // Initialize with current date/time
         let today = Date::new(2025, 1, 1); // TODO: Replace with actual current date
         let now = Time::new(0, 0, 0, 0); // TODO: Replace with actual current time
+        let today_now = DateTime::new(today, now);
 
-        entry
-            .short_entry
-            .set_creation_datetime(DateTime::new(today, now));
+        entry.short_entry.set_creation_datetime(today_now);
         entry.short_entry.set_last_access_date(today);
-        entry.short_entry.set_last_write_datetime(today, now);
+        entry.short_entry.set_last_write_datetime(today_now);
 
         Ok(entry)
     }

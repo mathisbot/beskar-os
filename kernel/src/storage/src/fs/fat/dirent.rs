@@ -1,6 +1,6 @@
 use super::{
     Cluster, FatError, FatResult, FatType,
-    date::{Date, DateTime, DosDate, DosDateTime, DosTime, Time},
+    date::{Date, DateTime, DosDate, DosDateTime, DosTime},
 };
 
 /// Size of a directory entry in bytes (always 32 bytes)
@@ -219,11 +219,23 @@ impl DirEntry {
         self.name
     }
 
+    #[inline]
+    /// Sets the name of the file (without extension)
+    pub const fn set_name(&mut self, name: [u8; 8]) {
+        self.name = name;
+    }
+
     #[must_use]
     #[inline]
     /// Returns the extension of the file
     pub const fn extension(&self) -> [u8; 3] {
         self.ext
+    }
+
+    #[inline]
+    /// Sets the file extension
+    pub const fn set_extension(&mut self, ext: [u8; 3]) {
+        self.ext = ext;
     }
 
     #[must_use]
@@ -307,9 +319,9 @@ impl DirEntry {
 
     #[inline]
     /// Sets the last write date and time
-    pub fn set_last_write_datetime(&mut self, date: Date, time: Time) {
-        self.write_date = date.encode();
-        self.write_time = time.encode().dos_time();
+    pub fn set_last_write_datetime(&mut self, datetime: DateTime) {
+        self.write_date = datetime.date().encode();
+        self.write_time = datetime.time().encode().dos_time();
     }
 }
 
@@ -505,7 +517,7 @@ mod tests {
         entry.set_last_access_date(date);
         assert_eq!(entry.last_access_date(), date);
 
-        entry.set_last_write_datetime(date, time);
+        entry.set_last_write_datetime(datetime);
         assert_eq!(entry.last_write_datetime().date(), date);
         assert_eq!(entry.last_write_datetime().time().hour(), time.hour());
         assert_eq!(entry.last_write_datetime().time().min(), time.min());

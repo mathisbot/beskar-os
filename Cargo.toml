@@ -26,6 +26,7 @@ kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
 
 [profile.release]
 panic = "abort"
+lto = true
 
 [profile.dev]
 panic = "abort"

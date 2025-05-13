@@ -1135,7 +1135,6 @@ impl Translator<Flags> for OffsetPageTable<'_> {
 mod tests {
     use super::*;
     use beskar_core::arch::PhysAddr;
-    use beskar_core::arch::paging::Flags;
 
     #[test]
     fn test_flags_operations() {

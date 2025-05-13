@@ -2,10 +2,9 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
-use beskar_core::process::ProcessId;
 use beskar_hal::process::Kind;
 use binary::LoadedBinary;
-use core::sync::atomic::{AtomicU16, Ordering};
+use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use hyperdrive::{once::Once, ptrs::view::View};
 
 use crate::mem::address_space::{self, AddressSpace};
@@ -32,6 +31,52 @@ pub fn init() {
     let current_thread = scheduler::thread::Thread::new_kernel(kernel_process);
 
     unsafe { scheduler::init(current_thread) };
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ProcessId(u64);
+
+impl core::ops::Deref for ProcessId {
+    type Target = u64;
+
+    fn deref(&self) -> &u64 {
+        &self.0
+    }
+}
+
+impl Default for ProcessId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProcessId {
+    #[must_use]
+    #[inline]
+    /// Creates a new process ID.
+    pub fn new() -> Self {
+        static PID_COUNTER: AtomicU64 = AtomicU64::new(0);
+        Self(PID_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+
+    #[must_use]
+    #[inline]
+    /// Creates a new process ID from a raw ID.
+    ///
+    /// # Safety
+    ///
+    /// The created process ID should not be used to create a process.
+    /// It is only meant for internal/comparative purposes.
+    pub const unsafe fn from_raw(id: u64) -> Self {
+        Self(id)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the raw ID of the process.
+    pub const fn as_u64(&self) -> u64 {
+        self.0
+    }
 }
 
 pub struct Process {
@@ -193,9 +238,7 @@ impl ::storage::KernelDevice for RandFile {
         if dst.is_empty() {
             Ok(())
         } else {
-            crate::arch::rand::rand_bytes(dst)
-                .map_err(|_| ::storage::BlockDeviceError::Io)
-                .map(|_| ())
+            crate::arch::rand::rand_bytes(dst).map_err(|_| ::storage::BlockDeviceError::Io)
         }
     }
 

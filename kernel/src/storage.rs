@@ -3,14 +3,13 @@ use ::storage::{
     vfs::{Vfs, VfsHelper},
 };
 use alloc::boxed::Box;
-use beskar_core::process::ProcessId;
 
 struct VfsHelperStruct;
 
 impl VfsHelper for VfsHelperStruct {
     #[inline]
-    fn get_current_process_id() -> ProcessId {
-        crate::process::current().pid()
+    fn get_current_process_id() -> u64 {
+        crate::process::current().pid().as_u64()
     }
 }
 

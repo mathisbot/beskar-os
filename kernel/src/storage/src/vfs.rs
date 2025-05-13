@@ -1,7 +1,6 @@
 use super::fs::{FileError, FileResult, FileSystem, PathBuf};
 use crate::fs::Path;
 use alloc::{boxed::Box, collections::BTreeMap};
-use beskar_core::process::ProcessId;
 use core::{
     marker::PhantomData,
     sync::atomic::{AtomicI64, Ordering},
@@ -11,7 +10,7 @@ use hyperdrive::locks::rw::RwLock;
 pub trait VfsHelper {
     #[must_use]
     /// Returns the current process ID.
-    fn get_current_process_id() -> ProcessId;
+    fn get_current_process_id() -> u64;
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -76,7 +75,7 @@ pub struct Vfs<H: VfsHelper> {
 }
 
 struct OpenFileInfo {
-    process_id: ProcessId,
+    process_id: u64,
     path: PathBuf,
 }
 
@@ -200,8 +199,8 @@ impl<H: VfsHelper> Vfs<H> {
     ///
     /// # Safety
     ///
-    /// This function should only be called with a `ProcessId` of a process that has completed its execution.
-    pub unsafe fn close_all_from_process(&self, pid: ProcessId) {
+    /// This function should only be called with a `u64` of a process that has completed its execution.
+    pub unsafe fn close_all_from_process(&self, pid: u64) {
         let mut open_handles = self.open_handles.write();
         open_handles.retain(|_handle, open_file| open_file.process_id != pid);
     }

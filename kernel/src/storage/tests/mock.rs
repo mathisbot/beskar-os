@@ -1,4 +1,3 @@
-use beskar_core::process::ProcessId;
 use storage::{
     BlockDevice,
     fs::{FileError, FileResult, FileSystem, Path, PathBuf},
@@ -173,9 +172,9 @@ impl<B: BlockDevice> MockFS<B> {
 struct MockVFSHelper;
 
 impl VfsHelper for MockVFSHelper {
-    fn get_current_process_id() -> ProcessId {
+    fn get_current_process_id() -> u64 {
         // Mock implementation, returning a dummy process ID.
-        unsafe { ProcessId::from_raw(0) }
+        0
     }
 }
 
