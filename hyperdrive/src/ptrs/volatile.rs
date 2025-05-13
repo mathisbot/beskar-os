@@ -54,7 +54,7 @@
 use core::{marker::PhantomData, ptr::NonNull};
 
 trait Sealed {}
-#[allow(private_bounds)] // That's the whole point :)
+#[expect(private_bounds, reason = "Forbid impl `Access`")]
 pub trait Access: Sealed {}
 
 pub trait ReadAccess: Access {}

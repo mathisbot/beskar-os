@@ -2,9 +2,9 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
-use beskar_core::process::{Kind, ProcessId};
+use beskar_hal::process::Kind;
 use binary::LoadedBinary;
-use core::sync::atomic::{AtomicU16, Ordering};
+use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use hyperdrive::{once::Once, ptrs::view::View};
 
 use crate::mem::address_space::{self, AddressSpace};
@@ -19,7 +19,7 @@ pub fn init() {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: View::Reference(address_space::get_kernel_address_space()),
+            address_space: View::new_borrow(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
             binary_data: None,
         })
@@ -33,12 +33,57 @@ pub fn init() {
     unsafe { scheduler::init(current_thread) };
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ProcessId(u64);
+
+impl core::ops::Deref for ProcessId {
+    type Target = u64;
+
+    fn deref(&self) -> &u64 {
+        &self.0
+    }
+}
+
+impl Default for ProcessId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProcessId {
+    #[must_use]
+    #[inline]
+    /// Creates a new process ID.
+    pub fn new() -> Self {
+        static PID_COUNTER: AtomicU64 = AtomicU64::new(0);
+        Self(PID_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+
+    #[must_use]
+    #[inline]
+    /// Creates a new process ID from a raw ID.
+    ///
+    /// # Safety
+    ///
+    /// The created process ID should not be used to create a process.
+    /// It is only meant for internal/comparative purposes.
+    pub const unsafe fn from_raw(id: u64) -> Self {
+        Self(id)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns the raw ID of the process.
+    pub const fn as_u64(&self) -> u64 {
+        self.0
+    }
+}
+
 pub struct Process {
     name: String,
     pid: ProcessId,
     address_space: View<'static, AddressSpace>,
     kind: Kind,
-    // FIXME: Shouldn't be 'static
     binary_data: Option<BinaryData<'static>>,
 }
 
@@ -49,7 +94,7 @@ impl Process {
         Self {
             name: name.to_string(),
             pid: ProcessId::new(),
-            address_space: View::Owned(AddressSpace::new()),
+            address_space: View::new_owned(AddressSpace::new()),
             kind,
             binary_data: binary.map(BinaryData::new),
         }
@@ -159,6 +204,45 @@ impl Pcid {
     #[must_use]
     #[inline]
     pub const fn as_u16(&self) -> u16 {
+        debug_assert!(self.0 <= 4095, "PCID out of bounds");
         self.0
+    }
+}
+
+pub struct Stdout;
+
+impl ::storage::KernelDevice for Stdout {
+    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        if dst.is_empty() {
+            return Ok(());
+        }
+
+        Err(::storage::BlockDeviceError::Unsupported)
+    }
+
+    fn write(&mut self, src: &[u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        let text = core::str::from_utf8(src).map_err(|_| ::storage::BlockDeviceError::Io)?;
+
+        // TODO: Send somewhere else than the kernel log.
+        let tid = crate::process::scheduler::current_thread_id();
+        video::info!("[Thread {}] {}", tid.as_u64(), text);
+
+        Ok(())
+    }
+}
+
+pub struct RandFile;
+
+impl ::storage::KernelDevice for RandFile {
+    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        if dst.is_empty() {
+            Ok(())
+        } else {
+            crate::arch::rand::rand_bytes(dst).map_err(|_| ::storage::BlockDeviceError::Io)
+        }
+    }
+
+    fn write(&mut self, _src: &[u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        Err(::storage::BlockDeviceError::Unsupported)
     }
 }

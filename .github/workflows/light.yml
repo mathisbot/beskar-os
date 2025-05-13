@@ -31,6 +31,8 @@ jobs:
           cargo test --package hyperdrive
           cargo test --package beskar-core
           cargo test --package holonet
+          cargo test --package storage
+          cargo test --package video
 
       - name: Run Clippy
         run: cargo clippy

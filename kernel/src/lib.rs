@@ -17,8 +17,9 @@ pub mod drivers;
 pub mod locals;
 mod mem;
 pub mod process;
+pub mod storage;
 mod syscall;
-pub mod time;
+mod time;
 
 static KERNEL_PANIC: Once<()> = Once::uninit();
 
@@ -39,7 +40,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     if crate::locals::get_ready_core_count() > 1 {
         use crate::arch::apic::ipi;
 
-        if process::scheduler::current_process().kind() == beskar_core::process::Kind::Kernel {
+        if process::scheduler::current_process().kind() == beskar_hal::process::Kind::Kernel {
             // If a kernel (vital) process panics, crash the whole system.
             KERNEL_PANIC.call_once(|| {
                 video::error!("Kernel process panicked. Sending NMI to all cores.");

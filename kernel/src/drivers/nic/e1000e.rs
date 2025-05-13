@@ -14,14 +14,12 @@ use crate::{
 use alloc::vec::Vec;
 use beskar_core::{
     arch::{
-        commons::{
-            PhysAddr, VirtAddr,
-            paging::{CacheFlush as _, Flags, M4KiB, Mapper, MemSize as _, Page},
-        },
-        x86_64::structures::InterruptStackFrame,
+        PhysAddr, VirtAddr,
+        paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
     },
     drivers::{DriverError, DriverResult},
 };
+use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
 use core::ptr::NonNull;
 use holonet::l2::ethernet::MacAddress;
 use hyperdrive::{
@@ -186,7 +184,6 @@ impl E1000e<'_> {
     }
 
     fn enable_int(&self) {
-        // FIXME: Only one pass over the capabilities is needed
         let msix = pci::with_pci_handler(|handler| pci::msix::MsiX::new(handler, &self.pci_device));
         let msi = if msix.is_none() {
             pci::with_pci_handler(|handler| pci::msi::Msi::new(handler, &self.pci_device))
@@ -347,7 +344,7 @@ struct BufferSet<'a> {
 
 impl BufferSet<'_> {
     #[must_use]
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines, reason = "Many buffers to allocate")]
     pub fn new(nb_rx: usize, nb_tx: usize) -> (Self, PhysAddr, PhysAddr) {
         assert!(
             nb_rx * size_of::<RxDescriptor>() + nb_tx * size_of::<TxDescriptor>()

@@ -1,13 +1,14 @@
 use super::{BinaryResult, LoadedBinary, TlsTemplate};
 use crate::{mem::frame_alloc, process};
 use beskar_core::arch::{
-    commons::{
-        VirtAddr,
-        paging::{CacheFlush, Flags, FrameAllocator, M4KiB, Mapper, MemSize as _, Page},
-    },
-    x86_64::{paging::page_table::PageTable, userspace::Ring},
+    VirtAddr,
+    paging::{CacheFlush, FrameAllocator, M4KiB, Mapper, MemSize as _, Page},
 };
 use beskar_core::process::binary::LoadError;
+use beskar_hal::{
+    paging::page_table::{Flags, PageTable},
+    userspace::Ring,
+};
 use xmas_elf::{
     ElfFile, P64,
     dynamic::Tag,
@@ -78,7 +79,7 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
     #[cfg(debug_assertions)]
     unsafe {
         working_offset.as_mut_ptr::<u8>().write_bytes(
-            beskar_core::arch::x86_64::instructions::STACK_DEBUG_INSTR,
+            beskar_hal::instructions::STACK_DEBUG_INSTR,
             usize::try_from(working_page_range.size()).unwrap(),
         );
     }
@@ -282,7 +283,7 @@ fn zero_bss(
     }
 
     for page in Page::range_inclusive(zero_start_page, zero_end_page) {
-        // FIXME: Free these pages on binary unload
+        // FIXME: Free these frames on binary unload
         crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
             let frame = fralloc.allocate_frame().unwrap();
             // We need to zero the frame, so start by setting the page as writable

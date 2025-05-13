@@ -5,12 +5,10 @@ use crate::{
     mem::page_alloc::pmap::PhysicalMapping,
 };
 use beskar_core::{
-    arch::{
-        commons::{PhysAddr, VirtAddr, paging::M4KiB},
-        x86_64::paging::page_table::Flags,
-    },
+    arch::{PhysAddr, VirtAddr, paging::M4KiB},
     drivers::{DriverError, DriverResult},
 };
+use beskar_hal::paging::page_table::Flags;
 use core::num::NonZeroU32;
 use hyperdrive::{locks::mcs::MUMcsLock, once::Once};
 
@@ -79,7 +77,7 @@ macro_rules! read_write_reg {
             ///
             /// Does NOT validate the content of the register.
             fn new(paddr: PhysAddr, $($field_name: $field_type),*) -> Self {
-                let flags = ::beskar_core::arch::x86_64::paging::page_table::Flags::MMIO_SUITABLE;
+                let flags = ::beskar_hal::paging::page_table::Flags::MMIO_SUITABLE;
 
                 let physical_mapping = PhysicalMapping::new(paddr, size_of::<u64>(), flags);
                 let vaddr = physical_mapping.translate(paddr).unwrap();
@@ -193,7 +191,7 @@ impl GeneralConfiguration {
         }
     }
 
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self, reason = "Match other functions signature")]
     const fn validate(&self) {}
 }
 
@@ -236,12 +234,11 @@ impl MainCounterValue {
     #[must_use]
     #[inline]
     pub const fn get_value(&self) -> u64 {
-        // FIXME: Handle 32-bit counter ? Does it exist on x86_64 ?
         assert!(self.count_cap, "HPET count size not capable");
         self.read()
     }
 
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self, reason = "Match other functions signature")]
     const fn validate(&self) {}
 }
 
@@ -415,7 +412,7 @@ read_write_reg!(TimerCompValue { count_cap: bool });
 impl TimerCompValue {
     #[must_use]
     pub const fn get_value(&self) -> u64 {
-        // FIXME: Handle 32-bit counter ? Does it exist on x86_64 ?
+        // FIXME: Handle 32-bit counter
         assert!(self.count_cap, "HPET count size not capable");
         self.read()
     }
@@ -425,7 +422,7 @@ impl TimerCompValue {
         *self.as_mut() = value;
     }
 
-    #[allow(clippy::unused_self)]
+    #[expect(clippy::unused_self, reason = "Match other functions signature")]
     const fn validate(&self) {}
 }
 

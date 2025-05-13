@@ -8,13 +8,13 @@
     clippy::missing_safety_doc,
     clippy::doc_markdown
 )]
-#![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 
 pub mod arch;
 pub mod boot;
 pub mod drivers;
 pub mod mem;
 pub mod process;
+pub mod storage;
 pub mod syscall;
 pub mod time;
 pub mod video;

@@ -1,18 +1,15 @@
 //! PCI Express (`PCIe`) support.
 
-use alloc::vec::Vec;
-use hyperdrive::locks::mcs::MUMcsLock;
-
 use crate::{
     drivers::acpi::sdt::mcfg::ParsedConfigurationSpace, mem::page_alloc::pmap::PhysicalMapping,
 };
+use alloc::vec::Vec;
 use beskar_core::{
-    arch::commons::{
-        PhysAddr,
-        paging::{Flags, M2MiB},
-    },
+    arch::{PhysAddr, paging::M2MiB},
     drivers::{DriverError, DriverResult},
 };
+use beskar_hal::paging::page_table::Flags;
+use hyperdrive::locks::mcs::MUMcsLock;
 
 use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 

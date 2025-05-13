@@ -1,7 +1,7 @@
 use crate::arch::syscalls;
-use ::beskar_core::syscall::Syscall;
-use ::core::ptr::NonNull;
-use ::hyperdrive::locks::mcs::MUMcsLock;
+use beskar_core::syscall::Syscall;
+use core::ptr::NonNull;
+use hyperdrive::locks::mcs::MUMcsLock;
 
 static ALLOCATOR: MUMcsLock<linked_list_allocator::Heap> = MUMcsLock::uninit();
 

@@ -20,8 +20,7 @@ const FIXED_HEADER_LEN: usize = 8;
 
 #[must_use]
 #[inline]
-#[allow(non_snake_case)] // Matching the fixed fields names
-#[allow(clippy::cast_possible_truncation)] // `hardware_len` is a `u8`
+#[expect(non_snake_case, reason = "Match the other fields names")]
 const fn SOURCE_HARDWARE_ADDR_RANGE(hardware_len: u8) -> core::ops::Range<usize> {
     let start = FIXED_HEADER_LEN;
     start..(start + hardware_len as usize)
@@ -29,8 +28,7 @@ const fn SOURCE_HARDWARE_ADDR_RANGE(hardware_len: u8) -> core::ops::Range<usize>
 
 #[must_use]
 #[inline]
-#[allow(non_snake_case)] // Matching the fixed field names
-#[allow(clippy::cast_possible_truncation)] // lens are `u8`s
+#[expect(non_snake_case, reason = "Match the other fields names")]
 const fn SOURCE_PROTOCOL_ADDR_RANGE(hardware_len: u8, protocol_len: u8) -> core::ops::Range<usize> {
     // End of SHA
     let start = FIXED_HEADER_LEN + hardware_len as usize;
@@ -39,8 +37,7 @@ const fn SOURCE_PROTOCOL_ADDR_RANGE(hardware_len: u8, protocol_len: u8) -> core:
 
 #[must_use]
 #[inline]
-#[allow(non_snake_case)] // Matching the fixed field names
-#[allow(clippy::cast_possible_truncation)] // lens are `u8`s
+#[expect(non_snake_case, reason = "Match the other fields names")]
 const fn TARGET_HARDWARE_ADDR_RANGE(hardware_len: u8, protocol_len: u8) -> core::ops::Range<usize> {
     // End of SPA
     let start = FIXED_HEADER_LEN + hardware_len as usize + protocol_len as usize;
@@ -49,8 +46,7 @@ const fn TARGET_HARDWARE_ADDR_RANGE(hardware_len: u8, protocol_len: u8) -> core:
 
 #[must_use]
 #[inline]
-#[allow(non_snake_case)] // Matching the fixed field names
-#[allow(clippy::cast_possible_truncation)] // lens are `u8`s
+#[expect(non_snake_case, reason = "Match the other fields names")]
 const fn TARGET_PROTOCOL_ADDR_RANGE(hardware_len: u8, protocol_len: u8) -> core::ops::Range<usize> {
     // End of THA
     let start = FIXED_HEADER_LEN + 2 * hardware_len as usize + protocol_len as usize;
@@ -150,7 +146,7 @@ impl<T: AsRef<[u8]>> Packet<T> {
 
     #[must_use]
     #[inline]
-    #[allow(clippy::missing_panics_doc)] // This function is not expected to panic
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the hardware type field.
     pub fn hardware_type(&self) -> Hardware {
         let data = self.buffer.as_ref();
@@ -160,7 +156,7 @@ impl<T: AsRef<[u8]>> Packet<T> {
 
     #[must_use]
     #[inline]
-    #[allow(clippy::missing_panics_doc)] // This function is not expected to panic
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the protocol type field.
     pub fn protocol_type(&self) -> EtherType {
         let data = self.buffer.as_ref();
@@ -184,7 +180,7 @@ impl<T: AsRef<[u8]>> Packet<T> {
 
     #[must_use]
     #[inline]
-    #[allow(clippy::missing_panics_doc)] // This function is not expected to panic
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the operation field.
     pub fn operation(&self) -> Operation {
         let data = self.buffer.as_ref();
@@ -321,7 +317,7 @@ pub enum Repr {
 }
 
 impl Repr {
-    #[allow(clippy::missing_panics_doc)] // This function is not expected to panic
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Parse an Address Resolution `EtherType` packet and return a high-level representation,
     /// or return `Err(Error)` if the packet is not recognized.
     ///

@@ -45,7 +45,6 @@ impl<S: MemSize> Frame<S> {
         self.start_address
     }
 
-    #[allow(clippy::unused_self)]
     #[must_use]
     #[inline]
     pub const fn size(self) -> u64 {
@@ -142,8 +141,8 @@ impl<S: MemSize> IntoIterator for FrameRangeInclusive<S> {
 
 #[derive(Clone)]
 pub struct FrameIterator<S: MemSize = M4KiB> {
-    pub start: Frame<S>,
-    pub end: Frame<S>,
+    start: Frame<S>,
+    end: Frame<S>,
 }
 
 impl<S: MemSize> Iterator for FrameIterator<S> {

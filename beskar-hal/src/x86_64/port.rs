@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 pub mod serial;
 
 trait Sealed {}
-#[allow(private_bounds)] // That's the whole point :)
+#[expect(private_bounds, reason = "Forbid impl `Access`")]
 pub trait Access: Sealed {}
 
 pub trait ReadAccess: Access {}
@@ -26,7 +26,7 @@ impl Access for ReadWrite {}
 impl ReadAccess for ReadWrite {}
 impl WriteAccess for ReadWrite {}
 
-#[allow(private_bounds)] // That's the whole point :)
+#[expect(private_bounds, reason = "Forbid impl `PortAccessible`")]
 /// A marker trait for types which can be accessed through a port.
 pub trait PortAccessible: Sealed {
     #[must_use]

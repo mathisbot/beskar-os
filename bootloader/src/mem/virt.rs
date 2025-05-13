@@ -1,18 +1,16 @@
 use beskar_core::{
     arch::{
-        commons::{
-            PhysAddr, VirtAddr,
-            paging::{
-                CacheFlush as _, Flags, Frame, FrameAllocator as _, M1GiB, M4KiB, Mapper,
-                MemSize as _, Page,
-            },
-        },
-        x86_64::{
-            registers::{CS, SS},
-            structures::{GdtDescriptor, GlobalDescriptorTable},
+        PhysAddr, VirtAddr,
+        paging::{
+            CacheFlush as _, Frame, FrameAllocator as _, M1GiB, M4KiB, Mapper, MemSize as _, Page,
         },
     },
     boot::{KernelInfo, RamdiskInfo},
+};
+use beskar_hal::{
+    paging::page_table::Flags,
+    registers::{CS, SS},
+    structures::{GdtDescriptor, GlobalDescriptorTable},
 };
 use xmas_elf::{ElfFile, program::ProgramHeader};
 
@@ -27,7 +25,7 @@ pub struct Level4Entries([bool; 512]);
 
 impl Level4Entries {
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     pub fn new(max_phys_addr: PhysAddr) -> Self {
         let mut usage = [false; 512];
 
@@ -134,7 +132,7 @@ impl Level4Entries {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, reason = "Many mappings to do")]
 #[must_use]
 /// This function initializes the memory mappings.
 ///

@@ -3,33 +3,47 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u64)]
 pub enum Syscall {
-    /// Print syscall.
-    ///
-    /// The first argument is a pointer to the string to print.
-    /// The second argument is the length of the string.
-    Print = 0,
     /// Exit syscall.
     ///
     /// The first argument is the exit code.
-    Exit = 1,
-    /// RandomGen syscall.
+    Exit = 0,
+    /// Open syscall.
     ///
-    /// Fills a given buffer with random data.
+    /// Opens a file from the filesystem and returns a handle to it.
     ///
-    /// The first argument is a pointer to the buffer.
-    /// The second argument is the length of the buffer.
-    RandomGen = 2,
+    /// The first argument is a pointer to the file path.
+    /// The second argument is the length of the path.
+    Open = 1,
+    /// Close syscall.
+    ///
+    /// Closes a file handle.
+    ///
+    /// The first argument is the handle to the file.
+    Close = 2,
+    /// Read syscall.
+    ///
+    /// Reads a file from the filesystem.
+    ///
+    /// The first argument is a handle to the file.
+    /// The second argument is a pointer to the buffer to read into.
+    /// The third argument is the length of the buffer.
+    /// The fourth argument is the offset to read from.
+    Read = 3,
+    /// Write syscall.
+    ///
+    /// Writes to a file from the filesystem.
+    ///
+    /// The first argument is a handle to the file.
+    /// The second argument is a pointer to the buffer to write from.
+    /// The third argument is the length of the buffer.
+    /// The fourth argument is the offset to write to.
+    Write = 4,
     /// MemoryMap syscall.
     ///
     /// Allocates memory and gives the user a pointer to it.
     ///
     /// The first argument is the size of the memory to allocate.
-    MemoryMap = 3,
-    // FIXME: When VFS is working, this syscall should be fused with a file read syscall.
-    /// KeybooardPoll syscall.
-    ///
-    /// Polls the keyboard for input.
-    KeyboardPoll = 4,
+    MemoryMap = 5,
     /// Invalid syscall.
     ///
     /// Any syscall that is not recognized.
@@ -63,7 +77,8 @@ impl SyscallExitCode {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SyscallReturnValue {
     Code(SyscallExitCode),
-    Value(u64),
+    ValueU(u64),
+    ValueI(i64),
 }
 
 impl SyscallReturnValue {
@@ -72,7 +87,8 @@ impl SyscallReturnValue {
     pub const fn as_u64(self) -> u64 {
         match self {
             Self::Code(code) => code as u64,
-            Self::Value(value) => value,
+            Self::ValueU(value) => value,
+            Self::ValueI(value) => value.cast_unsigned(),
         }
     }
 }

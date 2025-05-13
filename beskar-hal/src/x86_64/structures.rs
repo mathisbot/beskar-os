@@ -1,5 +1,5 @@
 use super::userspace::Ring;
-use crate::{arch::commons::VirtAddr, static_assert};
+use beskar_core::{arch::VirtAddr, static_assert};
 use core::marker::PhantomData;
 
 #[derive(Clone, Copy, Debug)]
@@ -17,7 +17,7 @@ pub struct InterruptStackFrame {
 }
 
 trait Sealed {}
-#[allow(private_bounds)]
+#[expect(private_bounds, reason = "Forbid impl `IdtFnPtr`")]
 pub trait IdtFnPtr: Sealed {
     fn addr(&self) -> VirtAddr;
 }
@@ -70,7 +70,10 @@ impl<T: IdtFnPtr> IdtEntry<T> {
         }
     }
 
-    #[allow(clippy::needless_pass_by_value)] // Value is 8 bytes
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "In practice, the value is 8 bytes long"
+    )]
     pub fn set_handler_fn(&mut self, handler: T, cs: u16) {
         let addr = handler.addr().as_u64();
         self.ptr_low = u16::try_from(addr & 0xFFFF).unwrap();
@@ -709,7 +712,10 @@ impl TaskStateSegment {
             _reserved2: 0,
             interrupt_stack_table: [NULL_VADDR; 7],
             _reserved3: [0; 10],
-            #[allow(clippy::cast_possible_truncation)] // Impossible truncation
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "The conversion is const and impossible"
+            )]
             iomap_base: size_of::<Self>() as u16,
         }
     }

@@ -49,7 +49,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         uefi::runtime::reset(uefi::runtime::ResetType::COLD, uefi::Status::ABORTED, None);
     } else {
         loop {
-            beskar_core::arch::x86_64::instructions::halt();
+            beskar_hal::instructions::halt();
         }
     }
 }
@@ -98,7 +98,7 @@ fn efi_entry() -> Status {
         debug!("Ramdisk size: {} bytes", ramdisk.len());
     }
 
-    let mut memory_map = unsafe { boot::exit_boot_services(boot::MemoryType::LOADER_DATA) };
+    let mut memory_map = unsafe { boot::exit_boot_services(None) };
     debug!("Boot services exited");
     memory_map.sort();
 

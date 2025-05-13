@@ -164,9 +164,6 @@ pub struct MpscQueue<T: Queueable> {
     stub: NonNull<T>,
 }
 
-// Safety:
-// The queue is thread-safe.
-#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl<T: Queueable> Send for MpscQueue<T> {}
 unsafe impl<T: Queueable> Sync for MpscQueue<T> {}
 

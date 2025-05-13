@@ -1,5 +1,4 @@
-use crate::arch::syscalls;
-use beskar_core::syscall::{Syscall, SyscallExitCode};
+use crate::io::{close, open, read};
 use core::mem::MaybeUninit;
 
 #[inline]
@@ -10,15 +9,18 @@ use core::mem::MaybeUninit;
 /// Panics if the syscall fails.
 /// This will happen if the input data is invalid or if randomness fails to be generated.
 pub fn rand_fill(buf: &mut [u8]) {
-    let res = syscalls::syscall_2(
-        Syscall::RandomGen,
-        buf.as_mut_ptr() as u64,
-        buf.len().try_into().unwrap(),
-    );
-    assert_eq!(
-        SyscallExitCode::try_from(res).unwrap_or(SyscallExitCode::Other),
-        SyscallExitCode::Success
-    );
+    const KEYBOARD_FILE: &str = "/dev/rand";
+
+    // FIXME: This is very inefficient and faillible if some other process
+    // is using the rand file.
+    let handle = open(KEYBOARD_FILE).unwrap();
+
+    let read_res = read(handle, buf, 0);
+
+    close(handle).unwrap();
+
+    let bytes_read = read_res.unwrap();
+    assert!(bytes_read == buf.len(), "Failed to read random bytes");
 }
 
 #[must_use]

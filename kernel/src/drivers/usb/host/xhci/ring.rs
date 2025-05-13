@@ -1,10 +1,11 @@
 use super::trb::{LinkTrb, Trb};
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 use alloc::vec::Vec;
-use beskar_core::arch::commons::{
+use beskar_core::arch::{
     PhysAddr, VirtAddr,
-    paging::{Flags, M4KiB, MemSize as _},
+    paging::{M4KiB, MemSize as _},
 };
+use beskar_hal::paging::page_table::Flags;
 
 pub(super) trait RingElement {
     /// Set the cycle bit

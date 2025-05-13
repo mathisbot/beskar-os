@@ -4,12 +4,10 @@ use crate::{
     mem::page_alloc::pmap::PhysicalMapping,
 };
 use beskar_core::{
-    arch::commons::{
-        VirtAddr,
-        paging::{Flags, M4KiB},
-    },
+    arch::{VirtAddr, paging::M4KiB},
     drivers::{DriverError, DriverResult},
 };
+use beskar_hal::paging::page_table::Flags;
 
 pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
     // TODO: Support for multiple AHCI controllers?

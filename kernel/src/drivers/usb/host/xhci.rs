@@ -5,14 +5,12 @@ use crate::{
 };
 use beskar_core::{
     arch::{
-        commons::{
-            PhysAddr,
-            paging::{Flags, M4KiB, MemSize as _},
-        },
-        x86_64::structures::InterruptStackFrame,
+        PhysAddr,
+        paging::{M4KiB, MemSize as _},
     },
     drivers::{DriverError, DriverResult},
 };
+use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 mod cap;

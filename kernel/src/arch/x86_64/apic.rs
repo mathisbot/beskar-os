@@ -1,12 +1,5 @@
 //! Advanced Programmable Interrupt Controller (APIC) driver.
 
-use core::{
-    ptr::NonNull,
-    sync::atomic::{AtomicU8, Ordering},
-};
-use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
-use timer::LapicTimer;
-
 use super::cpuid;
 use crate::{
     drivers::acpi::{self, sdt::madt::Lint},
@@ -14,23 +7,29 @@ use crate::{
     mem::{address_space, frame_alloc},
     process,
 };
-use beskar_core::arch::x86_64::{
-    paging::page_table::Flags, registers::Msr, structures::InterruptStackFrame,
-};
 use beskar_core::arch::{
-    commons::{
-        PhysAddr,
-        paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _},
-    },
-    x86_64::port::{self, Port},
+    PhysAddr,
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _},
 };
+use beskar_hal::{
+    paging::page_table::Flags,
+    port::{self, Port},
+    registers::Msr,
+    structures::InterruptStackFrame,
+};
+use core::{
+    ptr::NonNull,
+    sync::atomic::{AtomicU8, Ordering},
+};
+use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
+use timer::LapicTimer;
 
 pub mod ipi;
 pub mod timer;
 
 #[must_use]
 pub fn apic_id() -> u8 {
-    let cpuid_res = cpuid::cpuid(1);
+    let cpuid_res = cpuid::cpuid(cpuid::Leaf::new(1));
     u8::try_from((cpuid_res.ebx >> 24) & 0xFF).unwrap()
 }
 
@@ -325,7 +324,6 @@ pub struct IoApic {
     gsi_base: u32,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IoApicReg {
     Id,
@@ -355,7 +353,6 @@ impl IoApicReg {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Destination {
     /// Physical destination
@@ -372,21 +369,18 @@ pub enum Destination {
     Logical(u8),
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerMode {
     Edge = 0,
     Level = 1,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PinPolarity {
     High = 0,
     Low = 1,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeliveryMode {
     Fixed = 0b000,
@@ -430,9 +424,6 @@ impl IoApic {
 
         let apic_flags = Flags::MMIO_SUITABLE;
 
-        // FIXME: I don't quite like that each IOAPIC gets its own page
-        // Apparently, IOAPICs only live in Physical 0xFEC0..00, so one page per 16 IOAPICs?
-        // Or maybe keep track of mapped pages and check if the page is already mapped?
         let page = process::current()
             .address_space()
             .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<M4KiB>(1))
@@ -470,7 +461,6 @@ impl IoApic {
         );
         self.set_id(u8::try_from(cpu_count).unwrap() + id_offset);
 
-        // TODO: Setup redirection entries (See MADT)
         let isos = acpi::ACPI.get().unwrap().madt().io_iso();
         let nmi_sources = acpi::ACPI.get().unwrap().madt().io_nmi_sources();
 

@@ -124,6 +124,7 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
+#[derive(Default)]
 /// Mellor-Crummey and Scott lock.
 pub struct McsLock<T, B: BackOff = Spin> {
     /// Tail of the queue.
@@ -136,7 +137,10 @@ pub struct McsLock<T, B: BackOff = Spin> {
 
 // Safety:
 // Mellor-Crummey and Scott lock is a synchronization primitive.
-#[allow(clippy::non_send_fields_in_send_ty)]
+#[expect(
+    clippy::non_send_fields_in_send_ty,
+    reason = "Synchronization primitive"
+)]
 unsafe impl<T, B: BackOff> Send for McsLock<T, B> {}
 unsafe impl<T, B: BackOff> Sync for McsLock<T, B> {}
 
@@ -260,7 +264,7 @@ impl<T, B: BackOff> McsLock<T, B> {
 
     #[must_use]
     #[inline]
-    #[allow(clippy::mut_from_ref)]
+    #[expect(clippy::mut_from_ref, reason = "Force lock")]
     /// Force access to the data.
     ///
     /// ## Safety
@@ -268,6 +272,13 @@ impl<T, B: BackOff> McsLock<T, B> {
     /// Caller is responsible for ensuring there are no data races.
     pub unsafe fn force_lock(&self) -> &mut T {
         unsafe { &mut *self.data.get() }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Consume the lock and returns the inner data.
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
     }
 }
 
@@ -504,7 +515,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
 
     #[must_use]
     #[inline]
-    #[allow(clippy::mut_from_ref)]
+    #[expect(clippy::mut_from_ref, reason = "Force lock")]
     /// Force access to the data.
     ///
     /// ## Safety
@@ -513,6 +524,22 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     /// Caller is responsible for ensuring there are no data races.
     pub unsafe fn force_lock(&self) -> &mut T {
         unsafe { self.inner_lock.force_lock().assume_init_mut() }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Consume the lock and returns the inner data if it is initialized.
+    pub fn into_inner(mut self) -> Option<T> {
+        if self.is_initialized() {
+            self.is_init.store(false, Ordering::Relaxed);
+            // Safety: The lock is initialized.
+            // We cannot use `assume_init` as `inner_lock` is part of `self`.
+            // Therefore, we need to `assume_init_read` the value, and "uninitialize"
+            // the lock to avoid dropping the returned value.
+            Some(unsafe { self.inner_lock.data.get_mut().assume_init_read() })
+        } else {
+            None
+        }
     }
 }
 
@@ -717,12 +744,20 @@ mod tests {
         assert!(res.is_none());
     }
 
-    #[cfg(miri)]
     #[test]
+    #[cfg(miri)]
     fn test_mumcs_drop() {
         let lock = TestMUMcsLock::uninit();
         lock.init(Box::new(42));
         let _uninit = MUMcsLock::<Box<[u64]>>::uninit();
+    }
+
+    #[test]
+    #[cfg(miri)]
+    fn test_mumcs_into_inner() {
+        let lock = TestMUMcsLock::uninit();
+        lock.init(Box::new(42));
+        let _boxed = lock.into_inner().unwrap();
     }
 
     #[test]

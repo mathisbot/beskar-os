@@ -92,8 +92,6 @@ impl<const N: usize> Default for MemoryRanges<N> {
 }
 
 impl<const N: usize> MemoryRanges<N> {
-    const _N_VALID: () = assert!(N > 0 && N <= 0xFFFF);
-
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
@@ -152,8 +150,11 @@ impl<const N: usize> MemoryRanges<N> {
             break;
         }
 
-        self.ranges[self.len()] = range;
-        self.used += 1;
+        if range.end != range.start {
+            assert!(self.used < N, "MemoryRanges is full");
+            self.ranges[self.used] = range;
+            self.used += 1;
+        }
     }
 
     /// Only removes the specified range if it is present in the set or if it is a subset of an existing range.

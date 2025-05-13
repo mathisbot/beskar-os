@@ -1,7 +1,7 @@
 use core::num::NonZeroU8;
 
 use beskar_core::{
-    arch::commons::{PhysAddr, paging::Frame},
+    arch::{PhysAddr, paging::Frame},
     drivers::DriverResult,
 };
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};

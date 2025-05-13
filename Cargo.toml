@@ -8,10 +8,11 @@ license = "MIT"
 repository = "https://github.com/mathisbot/beskar-os/"
 
 [workspace]
-members = ["beskar-core", "beskar-lib", "bootloader", "hyperdrive", "kernel", "userspace/helloworld"]
+members = ["beskar-core", "beskar-hal", "beskar-lib", "bootloader", "hyperdrive", "kernel", "userspace/helloworld"]
 
 [workspace.dependencies]
 beskar-core = { path = "beskar-core" }
+beskar-hal = { path = "beskar-hal" }
 beskar-lib = { path = "beskar-lib" }
 bootloader = { path = "bootloader" }
 hyperdrive = { path = "hyperdrive" }
@@ -25,6 +26,7 @@ kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
 
 [profile.release]
 panic = "abort"
+lto = true
 
 [profile.dev]
 panic = "abort"
