@@ -142,6 +142,8 @@ impl<T, B: BackOff> DerefMut for TicketGuard<'_, T, B> {
 mod tests {
     use super::super::Spin;
     use super::*;
+    use std::sync::{Arc, Barrier};
+    use std::thread::spawn;
 
     type TestTicketLock<T> = TicketLock<T, Spin>;
 
@@ -152,5 +154,31 @@ mod tests {
         let mut guard = lock.lock();
         *guard = 42;
         assert_eq!(*guard, 42);
+    }
+
+    #[test]
+    fn test_ticket_lock_concurrent() {
+        let nb_threads = 10;
+        let barrier = Arc::new(Barrier::new(nb_threads));
+        let lock = Arc::new(TestTicketLock::new(0));
+
+        let mut handles = Vec::new();
+
+        for _ in 0..nb_threads {
+            let lock = lock.clone();
+            let barrier = barrier.clone();
+            handles.push(spawn(move || {
+                barrier.wait();
+                let mut guard = lock.lock();
+                *guard += 1;
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let guard = lock.lock();
+        assert_eq!(*guard, nb_threads);
     }
 }

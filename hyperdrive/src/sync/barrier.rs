@@ -190,6 +190,13 @@ mod tests {
 
     #[test]
     fn test_barrier() {
+        let barrier = Barrier::new(1);
+
+        barrier.wait();
+    }
+
+    #[test]
+    fn test_rbarrier() {
         let barrier = ReusableBarrier::new(1);
 
         barrier.wait();
@@ -198,11 +205,60 @@ mod tests {
     #[test]
     #[should_panic = "Barrier must have a count greater than 0."]
     fn test_barrier_0() {
+        let _ = Barrier::new(0);
+    }
+
+    #[test]
+    #[should_panic = "Barrier must have a count greater than 0."]
+    fn test_rbarrier_0() {
         let _ = ReusableBarrier::new(0);
     }
 
     #[test]
+    #[should_panic = "Barrier has already been released."]
+    fn test_barrier_reuse() {
+        let barrier = Barrier::new(1);
+
+        barrier.wait();
+        barrier.wait();
+    }
+
+    #[test]
+    fn test_rbarrier_reuse() {
+        let barrier = ReusableBarrier::new(1);
+
+        barrier.wait();
+        barrier.wait();
+    }
+
+    #[test]
     fn test_barrier_concurrent() {
+        let num_threads = 10;
+
+        let data = Arc::new(AtomicU32::new(0));
+
+        let barrier = Arc::new(Barrier::new(num_threads));
+        let handles = (0..num_threads)
+            .map(|_| {
+                spawn({
+                    let barrier = barrier.clone();
+                    let data = data.clone();
+                    move || {
+                        assert_eq!(data.load(Ordering::Relaxed), 0);
+                        barrier.wait();
+                        data.fetch_add(1, Ordering::Relaxed);
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_rbarrier_concurrent() {
         let num_threads = 10;
 
         let data = Arc::new(AtomicU32::new(0));
@@ -228,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn test_barrier_reuse_concurrent() {
+    fn test_rbarrier_reuse_concurrent() {
         let num_threads = 2 * 10;
 
         let barrier = Arc::new(ReusableBarrier::new(2));
@@ -251,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn test_barrier_concurrent_many_uses() {
+    fn test_rbarrier_concurrent_many_uses() {
         let num_threads = 5;
 
         let data = Arc::new(AtomicU32::new(0));
