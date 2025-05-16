@@ -7,6 +7,7 @@ use beskar_core::{
 use hyperdrive::locks::mcs::MUMcsLock;
 
 pub mod gop;
+pub mod log;
 
 static PHYSICAL_FB: MUMcsLock<PhysicalFrameBuffer> = MUMcsLock::uninit();
 

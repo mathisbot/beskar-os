@@ -89,6 +89,12 @@ impl PixelComponents {
         blue: 0x00,
     };
 
+    pub const ORANGE: Self = Self {
+        red: 0xFF,
+        green: 0xA5,
+        blue: 0x00,
+    };
+
     #[must_use]
     #[inline]
     pub const fn new(red: u8, green: u8, blue: u8) -> Self {

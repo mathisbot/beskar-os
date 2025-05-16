@@ -26,30 +26,28 @@ pub struct Screen<'a> {
     info: Info,
 }
 
-impl Screen<'_> {
+impl<'a> Screen<'a> {
     #[must_use]
     #[inline]
-    pub fn new(raw_buffer: &mut [u8], info: Info) -> Self {
-        assert!(
-            raw_buffer.len() % info.bytes_per_pixel() == 0,
-            "Buffer size must be a multiple of the pixel size"
-        );
+    pub fn new(raw_buffer: &'a mut [u8], info: Info) -> Self {
         assert_eq!(size_of::<Pixel>(), info.bytes_per_pixel());
-        assert!(raw_buffer.as_ptr().cast::<Pixel>().is_aligned());
 
-        // Convert the buffer to a slice of Pixels
-        // Safety: Pointer and length are valid as they are derived from the original buffer
-        // and the alignment is correct (above check).
-        let raw_buffer = unsafe {
-            core::slice::from_raw_parts_mut(
-                raw_buffer.as_mut_ptr().cast(),
-                raw_buffer.len() / info.bytes_per_pixel(),
-            )
-        };
+        // Safety: A `Pixel` is a `u32` and it is valid to pack 4 `u8`s into a `u32`.
+        let (start_u8, pixel_buffer, end_u8) = unsafe { raw_buffer.align_to_mut::<Pixel>() };
 
-        Self { raw_buffer, info }
+        assert!(
+            start_u8.is_empty() && end_u8.is_empty(),
+            "Buffer is not aligned to Pixel"
+        );
+
+        Self {
+            raw_buffer: pixel_buffer,
+            info,
+        }
     }
+}
 
+impl Screen<'_> {
     #[must_use]
     #[inline]
     pub const fn info(&self) -> Info {

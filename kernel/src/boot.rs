@@ -100,10 +100,6 @@ pub extern "C" fn kap_entry() -> ! {
         arch::ap::load_ap_regs();
     }
 
-    // Tell the BSP we are out of the trampoline spin lock,
-    // allowing others to get their stack
-    locals::core_jumped();
-
     ap_init();
 
     video::debug!("AP {} started", locals!().core_id());

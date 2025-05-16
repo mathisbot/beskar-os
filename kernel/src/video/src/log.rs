@@ -1,7 +1,10 @@
 use crate::screen::with_screen;
 use beskar_core::video::{PixelComponents, writer::FramebufferWriter};
 use beskar_hal::port::serial::com::{ComNumber, SerialCom};
-use core::{fmt::Write, sync::atomic::AtomicBool};
+use core::{
+    fmt::Write,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 #[cfg(debug_assertions)]
@@ -33,7 +36,7 @@ pub fn init_screen() {
 
 #[inline]
 pub fn set_screen_logging(enable: bool) {
-    LOG_ON_SCREEN.store(enable, core::sync::atomic::Ordering::Release);
+    LOG_ON_SCREEN.store(enable, Ordering::Release);
 }
 
 pub fn log(severity: Severity, args: core::fmt::Arguments) {
@@ -46,7 +49,7 @@ pub fn log(severity: Severity, args: core::fmt::Arguments) {
         serial.write_fmt(args).unwrap();
         serial.write_char('\n').unwrap();
     });
-    if LOG_ON_SCREEN.load(core::sync::atomic::Ordering::Acquire) {
+    if LOG_ON_SCREEN.load(Ordering::Acquire) {
         SCREEN_LOGGER.with_locked_if_init(|writer| {
             writer.write_char('[').unwrap();
             writer.set_color(severity.color());
@@ -84,7 +87,7 @@ impl Severity {
         match self {
             Self::Debug => PixelComponents::BLUE,
             Self::Info => PixelComponents::GREEN,
-            Self::Warn => PixelComponents::new(255, 120, 0),
+            Self::Warn => PixelComponents::ORANGE,
             Self::Error => PixelComponents::RED,
         }
     }

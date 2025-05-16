@@ -11,7 +11,6 @@ use beskar_hal::{
     paging::page_table::Flags,
     registers::{Cr0, Cr3, Cr4, Efer},
 };
-
 use core::sync::atomic::{AtomicU64, Ordering};
 
 // The amount of pages should be kept in sync with the bootloader
@@ -81,19 +80,15 @@ pub fn start_up_aps(core_count: usize) {
 
     // Update section .data of the AP trampoline code
 
-    // Page table address
-    let cr3_raw = Cr3::read_raw();
-    write_sipi(payload_vaddr, 3, cr3_raw);
-
     // Entry Point address
-    write_sipi(payload_vaddr, 1, crate::boot::kap_entry as u64);
-
-    // Base virtual address
-    write_sipi(payload_vaddr, 0, payload_vaddr.as_u64());
+    write_sipi(payload_vaddr, 0, crate::boot::kap_entry as u64);
 
     // Pointer to the address of the top of the stack
     // Note that using `as_ptr` is safe as the trampoline code uses atomic instructions
-    write_sipi(payload_vaddr, 2, AP_STACK_TOP_ADDR.as_ptr() as u64);
+    write_sipi(payload_vaddr, 1, AP_STACK_TOP_ADDR.as_ptr() as u64);
+
+    // Page table address
+    write_sipi(payload_vaddr, 2, Cr3::read_raw());
 
     let sipi_payload = u8::try_from(payload_paddr.as_u64() >> 12).unwrap();
 
@@ -112,12 +107,22 @@ pub fn start_up_aps(core_count: usize) {
 
     // Now, each AP will be waiting for a stack,
     // so we should give them one!
-    for i in 1..core_count {
-        allocate_stack();
-        while locals::get_jumped_core_count() == i {
-            // Wait for APs to jump (release stack spinlock)
+    for _ in 1..core_count {
+        let stack_top = allocate_stack(KERNEL_STACK_NB_PAGES);
+        AP_STACK_TOP_ADDR.store(stack_top.as_u64(), Ordering::Relaxed);
+
+        // Wait until one AP has gotten the stack
+        while AP_STACK_TOP_ADDR.load(Ordering::Acquire) != 0 {
+            // Even if the amount of time spent here is extremely small,
+            // it it still better to yield the CPU both to reduce contention
+            // and to allow the CPU to switch hyperthreads.
             core::hint::spin_loop();
         }
+    }
+
+    // Wait for all APs to be ready
+    while locals::get_ready_core_count() != core_count {
+        core::hint::spin_loop();
     }
 
     // Free trampoline code
@@ -133,11 +138,6 @@ pub fn start_up_aps(core_count: usize) {
         page_allocator.free_pages(Page::range_inclusive(page, page));
     });
 
-    // Wait for APs to start
-    while locals::get_ready_core_count() != core_count {
-        core::hint::spin_loop();
-    }
-
     video::info!("All APs have been awakened!");
 }
 
@@ -150,11 +150,10 @@ fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
     }
 }
 
-fn allocate_stack() {
+#[must_use]
+fn allocate_stack(nb_pages: u64) -> VirtAddr {
     let stack_pages = address_space::with_kernel_pgalloc(|page_allocator| {
-        page_allocator
-            .allocate_pages::<M4KiB>(KERNEL_STACK_NB_PAGES)
-            .unwrap()
+        page_allocator.allocate_pages::<M4KiB>(nb_pages).unwrap()
     });
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
@@ -173,10 +172,7 @@ fn allocate_stack() {
         });
     });
 
-    let stack_top = (stack_pages.end().start_address() + (M4KiB::SIZE - 1)).align_down(16_u64);
-
-    let previous_ap_stack = AP_STACK_TOP_ADDR.swap(stack_top.as_u64(), Ordering::SeqCst);
-    assert_eq!(previous_ap_stack, 0, "AP stack allocated twice");
+    (stack_pages.end().start_address() + (M4KiB::SIZE - 1)).align_down(16_u64)
 }
 
 pub unsafe fn load_ap_regs() {
