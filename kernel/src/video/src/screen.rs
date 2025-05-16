@@ -21,23 +21,25 @@ pub fn init(frame_buffer: &'static mut FrameBuffer) {
     );
 }
 
-pub struct Screen {
-    raw_buffer: &'static mut [Pixel],
+pub struct Screen<'a> {
+    raw_buffer: &'a mut [Pixel],
     info: Info,
 }
 
-impl Screen {
+impl Screen<'_> {
     #[must_use]
     #[inline]
-    pub fn new(raw_buffer: &'static mut [u8], info: Info) -> Self {
+    pub fn new(raw_buffer: &mut [u8], info: Info) -> Self {
         assert!(
             raw_buffer.len() % info.bytes_per_pixel() == 0,
             "Buffer size must be a multiple of the pixel size"
         );
+        assert_eq!(size_of::<Pixel>(), info.bytes_per_pixel());
+        assert!(raw_buffer.as_ptr().cast::<Pixel>().is_aligned());
 
         // Convert the buffer to a slice of Pixels
-        // Safety: Framebuffer is page aligned, the pointer is therefore aligned
-        assert_eq!(size_of::<Pixel>(), info.bytes_per_pixel());
+        // Safety: Pointer and length are valid as they are derived from the original buffer
+        // and the alignment is correct (above check).
         let raw_buffer = unsafe {
             core::slice::from_raw_parts_mut(
                 raw_buffer.as_mut_ptr().cast(),
@@ -67,6 +69,7 @@ impl Screen {
     }
 }
 
+#[inline]
 pub fn with_screen<R, F: FnOnce(&mut Screen) -> R>(f: F) -> R {
     SCREEN.with_locked(f)
 }

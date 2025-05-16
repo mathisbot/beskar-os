@@ -53,6 +53,7 @@ enum State {
     Uninitialized,
     Initializing,
     Initialized,
+    Poisoned,
 }
 
 impl State {
@@ -64,6 +65,7 @@ impl State {
             Self::Uninitialized => 0,
             Self::Initializing => 1,
             Self::Initialized => 2,
+            Self::Poisoned => 3,
         }
     }
 
@@ -76,6 +78,7 @@ impl State {
             0 => Some(Self::Uninitialized),
             1 => Some(Self::Initializing),
             2 => Some(Self::Initialized),
+            3 => Some(Self::Poisoned),
             _ => None,
         }
     }
@@ -212,8 +215,7 @@ impl<T> Once<T> {
             )
             .is_ok()
         {
-            // It is our job to initialize it
-            let initialized_value = initializer();
+            let initialized_value = PoisonGuard::guard_poison(self, initializer);
 
             // Safety:
             // Thanks to `self.state`, we are the only one accessing the value right now.
@@ -240,10 +242,16 @@ impl<T> Once<T> {
                 while self.state.load(Ordering::Acquire) == State::Initializing {
                     core::hint::spin_loop();
                 }
-                debug_assert_eq!(self.state.load(Ordering::Acquire), State::Initialized);
+
+                let state = self.state.load(Ordering::Acquire);
+                if state == State::Poisoned {
+                    return None;
+                }
+
+                debug_assert_eq!(state, State::Initialized);
                 Some(unsafe { (*self.value.get()).assume_init_ref() })
             }
-            State::Uninitialized => None,
+            State::Uninitialized | State::Poisoned => None,
         }
     }
 }
@@ -256,6 +264,75 @@ impl<T> Drop for Once<T> {
             // AND the value is initialized (if-statement).
             unsafe { self.value.get_mut().assume_init_drop() };
         }
+    }
+}
+
+/// A guard structure that marks the inner `Once` as poisoned when dropped.
+///
+/// # Usage
+///
+/// This structure should be created when the `Once` is being initialized.
+/// It will mark the `Once` as poisoned on drop, so if initialization succeeds,
+/// `PoisonGuard::init_success` should be called.
+struct PoisonGuard<'a, T>(&'a Once<T>);
+
+impl<'a, T> PoisonGuard<'a, T> {
+    #[must_use]
+    #[inline]
+    /// Creates a new `PoisonGuard`.
+    pub const fn new(once: &'a Once<T>) -> Self {
+        Self(once)
+    }
+}
+
+impl<T> PoisonGuard<'_, T> {
+    #[must_use]
+    #[inline]
+    /// Returns a reference to the inner `Once`.
+    pub const fn inner_once(&self) -> &Once<T> {
+        self.0
+    }
+
+    #[inline]
+    /// Mark the inner `Once` as poisoned.
+    fn poison_once(&self) {
+        self.inner_once()
+            .state
+            .store(State::Poisoned, Ordering::Release);
+    }
+
+    #[inline]
+    /// Call this function when initialization is successful.
+    pub const fn init_success(self) {
+        // Note: No memory is leaked here.
+        core::mem::forget(self);
+    }
+
+    #[must_use]
+    #[inline]
+    /// Safely call the given initializer function and return the initialized value.
+    ///
+    /// On success, the behavior is transparent.
+    /// On failure, the given `Once` is marked as poisoned.
+    pub fn guard_poison<F>(once: &Once<T>, initializer: F) -> T
+    where
+        F: FnOnce() -> T,
+    {
+        let poison_guard = PoisonGuard::new(once);
+
+        // It is our job to initialize it
+        let initialized_value = initializer();
+
+        poison_guard.init_success();
+
+        initialized_value
+    }
+}
+
+impl<T> Drop for PoisonGuard<'_, T> {
+    #[inline]
+    fn drop(&mut self) {
+        self.poison_once();
     }
 }
 
@@ -332,5 +409,25 @@ mod test {
         for handle in handles {
             handle.join().unwrap();
         }
+    }
+
+    #[test]
+    fn test_poison() {
+        let once = Arc::new(Once::uninit());
+
+        let handle_that_panics = {
+            let once = once.clone();
+            spawn(move || {
+                once.call_once(|| {
+                    panic!("Initialization failed!");
+                });
+            })
+        };
+        handle_that_panics.join().unwrap_err();
+
+        // Poisoning the `Once` should not leave the value in an `Initializing` state.
+        // This call should finish immediately (instead of infinite loop).
+        assert!(once.get().is_none());
+        assert!(once.state.load(Ordering::Acquire) == State::Poisoned);
     }
 }
