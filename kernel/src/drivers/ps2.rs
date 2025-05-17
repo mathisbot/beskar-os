@@ -485,14 +485,14 @@ pub fn handle_keyboard_interrupt() {
     };
 
     if scan_code == 0xE0 {
-        assert!(!EXTENDED.load(Ordering::Acquire));
-        EXTENDED.store(true, Ordering::Relaxed);
+        let previous = EXTENDED.swap(true, Ordering::Release);
+        assert!(!previous);
         // Do nothing, wait for the next byte
     } else if scan_code == 0xE1 {
         // TODO: Handle pause/break key
-        EXTENDED.store(true, Ordering::Relaxed);
+        EXTENDED.store(true, Ordering::Release);
     } else {
-        let extended = EXTENDED.swap(false, Ordering::Relaxed);
+        let extended = EXTENDED.swap(false, Ordering::Release);
         if scan_code != 0 && scan_code != 0xFA {
             handle_real_key(extended, scan_code);
         }

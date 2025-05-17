@@ -87,6 +87,7 @@ jobs:
           cargo clippy --package beskar-hal --all-targets -- -D warnings
           cargo clippy --package beskar-lib -- -D warnings
           cargo clippy --package bootloader -- -D warnings
+          cargo clippy --package bootloader-api -- -D warnings
           cargo clippy --package holonet -- -D warnings
           cargo clippy --package video -- -D warnings
           cargo clippy --package sh -- -D warnings

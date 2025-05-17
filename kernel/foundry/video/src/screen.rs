@@ -114,8 +114,6 @@ impl KernelDevice for ScreenDevice {
     }
 
     fn write(&mut self, src: &[u8], offset: usize) -> Result<(), BlockDeviceError> {
-        super::log::set_screen_logging(false);
-
         let (prefix, src, suffix) = unsafe { src.align_to::<PixelCompArr>() };
 
         if !prefix.is_empty() || !suffix.is_empty() {
@@ -137,5 +135,25 @@ impl KernelDevice for ScreenDevice {
 
             Ok(())
         })
+    }
+
+    fn on_close(&mut self) {
+        super::log::set_screen_logging(false);
+        with_screen(|screen| {
+            screen.clear(Pixel::from_format(
+                screen.info().pixel_format(),
+                PixelComponents::BLACK,
+            ));
+        });
+    }
+
+    fn on_open(&mut self) {
+        with_screen(|screen| {
+            screen.clear(Pixel::from_format(
+                screen.info().pixel_format(),
+                PixelComponents::BLACK,
+            ));
+        });
+        super::log::set_screen_logging(true);
     }
 }

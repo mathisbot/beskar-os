@@ -1,8 +1,25 @@
-use crate::{
+#![no_std]
+#![forbid(unsafe_op_in_unsafe_fn)]
+#![warn(clippy::pedantic, clippy::nursery)]
+
+use beskar_core::{
     arch::{PhysAddr, VirtAddr},
     mem::ranges::MemoryRange,
     video::FrameBuffer,
 };
+
+#[macro_export]
+/// This macro defines the entry point of the kernel.
+///
+/// This will be called by the bootloader.
+macro_rules! entry_point {
+    ($path:path) => {
+        #[unsafe(export_name = "_start")]
+        pub extern "C" fn __kernel_entry(boot_info: &'static mut $crate::BootInfo) -> ! {
+            ($path)(boot_info)
+        }
+    };
+}
 
 /// This structure represents the information that the bootloader passes to the kernel.
 #[derive(Debug)]

@@ -55,9 +55,18 @@ version = "1.0.1"
 dependencies = [
  "beskar-core",
  "beskar-hal",
+ "bootloader-api",
  "hyperdrive",
  "uefi",
  "xmas-elf",
+]
+
+[[package]]
+name = "bootloader-api"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+ "beskar-hal",
 ]
 
 [[package]]
@@ -83,7 +92,7 @@ version = "0.1.0"
 dependencies = [
  "beskar-core",
  "beskar-hal",
- "bootloader",
+ "bootloader-api",
  "holonet",
  "hyperdrive",
  "linked_list_allocator",

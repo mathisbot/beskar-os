@@ -56,8 +56,6 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
 
 #[entry]
 fn efi_entry() -> Status {
-    uefi::helpers::init().unwrap();
-
     // In debug mode, disable the watchdog timer
     #[cfg(debug_assertions)]
     let _ = boot::set_watchdog_timer(0, 0, None);

@@ -8,10 +8,10 @@ use beskar_core::{
         VirtAddr,
         paging::{CacheFlush as _, FrameAllocator as _, Mapper, Page},
     },
-    boot::BootInfo,
     mem::ranges::MemoryRange,
 };
 use beskar_hal::paging::page_table::Flags;
+use bootloader_api::BootInfo;
 use core::alloc::Layout;
 use mem::{EarlyFrameAllocator, Mappings, PageTables};
 
@@ -25,25 +25,13 @@ mod kernel_elf;
 
 const KERNEL_STACK_NB_PAGES: u64 = 64; // 256 KiB
 
-#[macro_export]
-macro_rules! entry_point {
-    ($path:path) => {
-        #[unsafe(export_name = "_start")]
-        pub extern "C" fn __kernel_entry(
-            boot_info: &'static mut ::beskar_core::boot::BootInfo,
-        ) -> ! {
-            ($path)(boot_info)
-        }
-    };
-}
-
 #[must_use]
 pub fn create_boot_info(
     mut frame_allocator: EarlyFrameAllocator,
     page_tables: &mut PageTables,
     mappings: &mut Mappings,
 ) -> VirtAddr {
-    let max_region_count = frame_allocator.memory_map_max_region_count();
+    let max_region_count = frame_allocator.mem_map_max_region_count();
 
     let (layout, memory_regions_offset) = Layout::new::<BootInfo>()
         .extend(Layout::array::<MemoryRange>(max_region_count).unwrap())
@@ -71,8 +59,9 @@ pub fn create_boot_info(
         }
     }
 
+    // Safety: We just allocated enough memory for a slice of enough `MemoryRange` structs.
     let memory_regions =
-        frame_allocator.construct_memory_map(memory_map_regions_addr, max_region_count);
+        unsafe { frame_allocator.construct_memory_map(memory_map_regions_addr, max_region_count) };
 
     // ## Safety
     // We are writing to a valid memory region, and converting its pointer to a mutable reference.

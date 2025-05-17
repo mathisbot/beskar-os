@@ -1,17 +1,12 @@
-use beskar_core::{
-    arch::{
-        PhysAddr, VirtAddr,
-        paging::{
-            CacheFlush as _, Frame, FrameAllocator as _, M1GiB, M4KiB, Mapper, MemSize as _, Page,
-        },
-    },
-    boot::{KernelInfo, RamdiskInfo},
+use beskar_core::arch::{
+    PhysAddr, VirtAddr,
+    paging::{CacheFlush as _, Frame, FrameAllocator as _, M4KiB, Mapper, MemSize as _, Page},
 };
 use beskar_hal::{
     paging::page_table::Flags,
-    registers::{CS, SS},
     structures::{GdtDescriptor, GlobalDescriptorTable},
 };
+use bootloader_api::{KernelInfo, RamdiskInfo};
 use xmas_elf::{ElfFile, program::ProgramHeader};
 
 use crate::{KERNEL_STACK_NB_PAGES, arch::chg_ctx, debug, info, kernel_elf};
@@ -21,50 +16,53 @@ use super::{EarlyFrameAllocator, PageTables};
 const KERNEL_STACK_SIZE: u64 = KERNEL_STACK_NB_PAGES * M4KiB::SIZE;
 
 /// Keeps track of used entries in the level 4 page table.
+///
+/// As the kernel page table is a recursive mapping and we are not using it right now,
+/// the easiest and fastest way to allocate virtual memory is to allocate a whole level 4 entry
+/// for each page we need to map.
+/// This works because we only have a few pages to map.
 pub struct Level4Entries([bool; 512]);
 
 impl Level4Entries {
     #[must_use]
     pub fn new(max_phys_addr: PhysAddr) -> Self {
-        let mut usage = [false; 512];
+        let mut entries = [false; 512];
 
         // Mark identity-mapped memory as used
-        let start_page = Page::<M4KiB>::containing_address(VirtAddr::new(0));
-        let end_page = Page::<M4KiB>::containing_address(VirtAddr::new(max_phys_addr.as_u64()));
-
-        for used_page in usage
-            .iter_mut()
-            .take(usize::from(end_page.p4_index()) + 1)
-            .skip(usize::from(start_page.p4_index()))
         {
-            *used_page = true;
+            let start_page = Page::<M4KiB>::containing_address(VirtAddr::new(0));
+            let end_page = Page::<M4KiB>::containing_address(VirtAddr::new(max_phys_addr.as_u64()));
+
+            for used_page in entries
+                .iter_mut()
+                .take(usize::from(end_page.p4_index()) + 1)
+                .skip(usize::from(start_page.p4_index()))
+            {
+                *used_page = true;
+            }
         }
 
         // Mark framebuffer as used
-        let (start, end) = crate::video::with_physical_framebuffer(|fb| {
-            let start = VirtAddr::new(fb.start_addr().as_u64());
-            let end = start + u64::from(fb.info().size()) - 1;
-            (start, end)
-        });
-
-        let start_page = Page::<M4KiB>::containing_address(start);
-        let end_page = Page::<M4KiB>::containing_address(end);
-
-        for used_page in usage
-            .iter_mut()
-            .take(usize::from(end_page.p4_index()) + 1)
-            .skip(usize::from(start_page.p4_index()))
         {
-            *used_page = true;
+            let (start, end) = crate::video::with_physical_framebuffer(|fb| {
+                let start = fb.start_addr_as_virtual();
+                let end = start + u64::from(fb.info().size()) - 1;
+                (start, end)
+            });
+
+            let start_page = Page::<M4KiB>::containing_address(start);
+            let end_page = Page::<M4KiB>::containing_address(end);
+
+            for used_page in entries
+                .iter_mut()
+                .take(usize::from(end_page.p4_index()) + 1)
+                .skip(usize::from(start_page.p4_index()))
+            {
+                *used_page = true;
+            }
         }
 
-        Self(usage)
-    }
-
-    #[must_use]
-    #[inline]
-    const fn internal_entries(&self) -> &[bool; 512] {
-        &self.0
+        Self(entries)
     }
 
     /// Marks the virtual address range of all segments as used.
@@ -98,14 +96,12 @@ impl Level4Entries {
     pub fn get_free_entries(&mut self, num: usize) -> u16 {
         // TODO: ASLR
         let index = self
-            .internal_entries()
+            .0
             .windows(num)
             .position(|entries| entries.iter().all(|used| !used))
             .expect("No suitable level 4 entries found");
 
-        for i in 0..num {
-            self.0[index + i] = true;
-        }
+        self.0[index..index + num].fill(true);
 
         u16::try_from(index).unwrap()
     }
@@ -120,7 +116,9 @@ impl Level4Entries {
     ///
     /// Panics if no contiguous free memory is found.
     pub fn get_free_address(&mut self, size: u64) -> VirtAddr {
-        let needed_lvl4_entries = size.div_ceil(512 * M1GiB::SIZE);
+        const LVL4_SIZE: u64 = 512 * M4KiB::SIZE;
+
+        let needed_lvl4_entries = size.div_ceil(LVL4_SIZE);
 
         // TODO: ASLR (add random offset, need to manage alignment)
         Page::from_p4p3(
@@ -147,12 +145,9 @@ pub fn make_mappings(
     // Get the recursive index
     let recursive_index = {
         let index = level_4_entries.get_free_entries(1);
-
         let entry = &mut page_tables.kernel.entries_mut()[usize::from(index)];
-        assert!(entry.is_null(), "Recursive mapping entry is already in use");
 
         let flags = Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE;
-
         entry.set(page_tables.kernel_level_4_frame.start_address(), flags);
 
         index
@@ -214,20 +209,20 @@ pub fn make_mappings(
     });
 
     let stack_end_addr = {
-        let stack_start_page = {
+        let stack_range = {
             let guard_page = Page::<M4KiB>::from_start_address(
                 // Allocate a guard page
-                level_4_entries.get_free_address(M4KiB::SIZE + KERNEL_STACK_SIZE),
+                level_4_entries.get_free_address(2 * M4KiB::SIZE + KERNEL_STACK_SIZE),
             )
             .unwrap();
 
-            guard_page + 1
-        };
-        let stack_end_addr =
-            (stack_start_page.start_address() + KERNEL_STACK_SIZE).align_down(16_u64);
-        let stack_end_page = Page::containing_address(stack_end_addr - 1);
+            let start_page = guard_page + 1;
+            let end_page = start_page + KERNEL_STACK_NB_PAGES - 1;
 
-        for page in Page::range_inclusive(stack_start_page, stack_end_page) {
+            Page::range_inclusive(start_page, end_page)
+        };
+
+        for page in stack_range {
             let frame = frame_allocator
                 .allocate_frame()
                 .expect("Failed to allocate a frame");
@@ -239,6 +234,8 @@ pub fn make_mappings(
                 .map(page, frame, flags, frame_allocator)
                 .flush();
         }
+
+        let stack_end_addr = stack_range.end().start_address() + M4KiB::SIZE;
 
         info!("Kernel stack is setup");
         debug!("Kernel stack top at {:#x}", stack_end_addr.as_u64());
@@ -267,7 +264,8 @@ pub fn make_mappings(
         );
     }
 
-    // Handle GDT
+    #[cfg(target_arch = "x86_64")]
+    // Handle minimal GDT, kernel should create its own
     {
         let gdt_frame = frame_allocator
             .allocate_frame()
@@ -288,6 +286,8 @@ pub fn make_mappings(
         gdt.load();
 
         unsafe {
+            use beskar_hal::registers::{CS, SS};
+
             CS::set(code_selector);
             SS::set(data_selector);
         }

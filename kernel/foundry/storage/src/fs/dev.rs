@@ -40,9 +40,12 @@ impl DeviceFS {
 }
 
 impl FileSystem for DeviceFS {
-    #[inline]
-    fn close(&mut self, _path: super::Path) -> super::FileResult<()> {
-        // No-op
+    fn close(&mut self, path: super::Path) -> super::FileResult<()> {
+        for device in &mut self.devices {
+            if device.path.as_path() == path {
+                device.device.on_close();
+            }
+        }
         Ok(())
     }
 
@@ -65,9 +68,12 @@ impl FileSystem for DeviceFS {
             .any(|device| device.path.as_path() == path))
     }
 
-    #[inline]
-    fn open(&mut self, _path: super::Path) -> super::FileResult<()> {
-        // No-op
+    fn open(&mut self, path: super::Path) -> super::FileResult<()> {
+        for device in &mut self.devices {
+            if device.path.as_path() == path {
+                device.device.on_open();
+            }
+        }
         Ok(())
     }
 
