@@ -25,7 +25,6 @@ pub struct Level4Entries([bool; 512]);
 
 impl Level4Entries {
     #[must_use]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     pub fn new(max_phys_addr: PhysAddr) -> Self {
         let mut usage = [false; 512];
 
@@ -44,7 +43,7 @@ impl Level4Entries {
         // Mark framebuffer as used
         let (start, end) = crate::video::with_physical_framebuffer(|fb| {
             let start = VirtAddr::new(fb.start_addr().as_u64());
-            let end = start + u64::try_from(fb.info().size()).unwrap() - 1;
+            let end = start + u64::from(fb.info().size()) - 1;
             (start, end)
         });
 
@@ -308,11 +307,11 @@ pub fn make_mappings(
         let (start_frame, end_frame, start_page) = crate::video::with_physical_framebuffer(|fb| {
             let start_frame = Frame::<M4KiB>::containing_address(fb.start_addr());
             let end_frame = Frame::<M4KiB>::containing_address(
-                fb.start_addr() + (u64::try_from(fb.info().size()).unwrap() - 1),
+                fb.start_addr() + (u64::from(fb.info().size()) - 1),
             );
 
             let start_page = Page::<M4KiB>::from_start_address(
-                level_4_entries.get_free_address(u64::try_from(fb.info().size()).unwrap()),
+                level_4_entries.get_free_address(u64::from(fb.info().size())),
             )
             .unwrap();
 

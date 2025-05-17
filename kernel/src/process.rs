@@ -5,7 +5,7 @@ use alloc::{
 use beskar_hal::process::Kind;
 use binary::LoadedBinary;
 use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
-use hyperdrive::{once::Once, ptrs::view::View};
+use hyperdrive::{once::Once, ptrs::view::ViewRef};
 
 use crate::mem::address_space::{self, AddressSpace};
 
@@ -19,7 +19,7 @@ pub fn init() {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: View::new_borrow(address_space::get_kernel_address_space()),
+            address_space: ViewRef::new_borrow(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
             binary_data: None,
         })
@@ -82,7 +82,7 @@ impl ProcessId {
 pub struct Process {
     name: String,
     pid: ProcessId,
-    address_space: View<'static, AddressSpace>,
+    address_space: ViewRef<'static, AddressSpace>,
     kind: Kind,
     binary_data: Option<BinaryData<'static>>,
 }
@@ -94,7 +94,7 @@ impl Process {
         Self {
             name: name.to_string(),
             pid: ProcessId::new(),
-            address_space: View::new_owned(AddressSpace::new()),
+            address_space: ViewRef::new_owned(AddressSpace::new()),
             kind,
             binary_data: binary.map(BinaryData::new),
         }

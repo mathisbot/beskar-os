@@ -59,7 +59,7 @@
 //!     handle.join().unwrap();
 //! }
 //! ```
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU16, Ordering};
 
 /// A barrier that allows a fixed number of threads to synchronize.
 ///
@@ -70,9 +70,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 /// If you need reusability, use `ReusableBarrier` instead.
 pub struct Barrier {
     /// Amount of threads that need to reach the barrier.
-    count: AtomicU32,
+    count: AtomicU16,
     /// Current amount of threads that are waiting.
-    current: AtomicU32,
+    current: AtomicU16,
 }
 
 impl Barrier {
@@ -83,11 +83,11 @@ impl Barrier {
     /// # Panics
     ///
     /// Panics if `count` is 0.
-    pub const fn new(count: u32) -> Self {
+    pub const fn new(count: u16) -> Self {
         assert!(count > 0, "Barrier must have a count greater than 0.");
         Self {
-            count: AtomicU32::new(count),
-            current: AtomicU32::new(0),
+            count: AtomicU16::new(count),
+            current: AtomicU16::new(0),
         }
     }
 
@@ -122,15 +122,15 @@ impl Barrier {
 /// If you do not need reusability, consider using `Barrier` (half the size) instead.
 pub struct ReusableBarrier {
     /// Amount of threads that need to reach the barrier.
-    count: AtomicU32,
+    count: AtomicU16,
     /// Rank counter.
     ///
     /// Used by threads to get their rank in the barrier.
-    rank: AtomicU32,
+    rank: AtomicU16,
     /// Current amount of threads that are waiting.
-    current: AtomicU32,
+    current: AtomicU16,
     /// Amount of threads that have exited the barrier.
-    out: AtomicU32,
+    out: AtomicU16,
 }
 
 impl ReusableBarrier {
@@ -141,13 +141,13 @@ impl ReusableBarrier {
     /// # Panics
     ///
     /// Panics if `count` is 0.
-    pub const fn new(count: u32) -> Self {
+    pub const fn new(count: u16) -> Self {
         assert!(count > 0, "Barrier must have a count greater than 0.");
         Self {
-            count: AtomicU32::new(count),
-            rank: AtomicU32::new(0),
-            current: AtomicU32::new(0),
-            out: AtomicU32::new(0),
+            count: AtomicU16::new(count),
+            rank: AtomicU16::new(0),
+            current: AtomicU16::new(0),
+            out: AtomicU16::new(0),
         }
     }
 
@@ -190,6 +190,13 @@ mod tests {
 
     #[test]
     fn test_barrier() {
+        let barrier = Barrier::new(1);
+
+        barrier.wait();
+    }
+
+    #[test]
+    fn test_rbarrier() {
         let barrier = ReusableBarrier::new(1);
 
         barrier.wait();
@@ -198,14 +205,63 @@ mod tests {
     #[test]
     #[should_panic = "Barrier must have a count greater than 0."]
     fn test_barrier_0() {
+        let _ = Barrier::new(0);
+    }
+
+    #[test]
+    #[should_panic = "Barrier must have a count greater than 0."]
+    fn test_rbarrier_0() {
         let _ = ReusableBarrier::new(0);
+    }
+
+    #[test]
+    #[should_panic = "Barrier has already been released."]
+    fn test_barrier_reuse() {
+        let barrier = Barrier::new(1);
+
+        barrier.wait();
+        barrier.wait();
+    }
+
+    #[test]
+    fn test_rbarrier_reuse() {
+        let barrier = ReusableBarrier::new(1);
+
+        barrier.wait();
+        barrier.wait();
     }
 
     #[test]
     fn test_barrier_concurrent() {
         let num_threads = 10;
 
-        let data = Arc::new(AtomicU32::new(0));
+        let data = Arc::new(AtomicU16::new(0));
+
+        let barrier = Arc::new(Barrier::new(num_threads));
+        let handles = (0..num_threads)
+            .map(|_| {
+                spawn({
+                    let barrier = barrier.clone();
+                    let data = data.clone();
+                    move || {
+                        assert_eq!(data.load(Ordering::Relaxed), 0);
+                        barrier.wait();
+                        data.fetch_add(1, Ordering::Relaxed);
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_rbarrier_concurrent() {
+        let num_threads = 10;
+
+        let data = Arc::new(AtomicU16::new(0));
 
         let barrier = Arc::new(ReusableBarrier::new(num_threads));
         let handles = (0..num_threads)
@@ -228,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn test_barrier_reuse_concurrent() {
+    fn test_rbarrier_reuse_concurrent() {
         let num_threads = 2 * 10;
 
         let barrier = Arc::new(ReusableBarrier::new(2));
@@ -251,10 +307,10 @@ mod tests {
     }
 
     #[test]
-    fn test_barrier_concurrent_many_uses() {
+    fn test_rbarrier_concurrent_many_uses() {
         let num_threads = 5;
 
-        let data = Arc::new(AtomicU32::new(0));
+        let data = Arc::new(AtomicU16::new(0));
 
         let barrier = Arc::new(ReusableBarrier::new(num_threads));
         let handles = (0..num_threads)

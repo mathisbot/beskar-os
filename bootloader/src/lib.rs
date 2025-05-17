@@ -17,7 +17,6 @@ use mem::{EarlyFrameAllocator, Mappings, PageTables};
 
 pub mod arch;
 pub mod fs;
-pub mod log;
 pub mod mem;
 pub mod system;
 pub mod video;

@@ -1,6 +1,6 @@
 use crate::arch::syscalls;
 use beskar_core::syscall::Syscall;
-use core::ptr::NonNull;
+use core::{num::NonZeroU64, ptr::NonNull};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 static ALLOCATOR: MUMcsLock<linked_list_allocator::Heap> = MUMcsLock::uninit();
@@ -41,7 +41,11 @@ pub(crate) unsafe fn init_heap(start: *mut u8, size: usize) {
 /// ## Panics
 ///
 /// Panics if the syscall fails.
-pub fn mmap(size: u64) -> NonNull<u8> {
-    let res = syscalls::syscall_1(Syscall::MemoryMap, size);
+pub fn mmap(size: u64, alignment: Option<NonZeroU64>) -> NonNull<u8> {
+    let res = syscalls::syscall_2(
+        Syscall::MemoryMap,
+        size,
+        alignment.map_or(1, NonZeroU64::get),
+    );
     NonNull::new(res as *mut u8).expect("Memory mapping failed")
 }

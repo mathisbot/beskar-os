@@ -43,7 +43,12 @@ pub enum Syscall {
     /// Allocates memory and gives the user a pointer to it.
     ///
     /// The first argument is the size of the memory to allocate.
+    /// The second argument is the alignment of the memory.
     MemoryMap = 5,
+    /// Put the thread to sleep for a given amount of time.
+    ///
+    /// The first argument is the time to sleep in milliseconds.
+    Sleep = 6,
     /// Invalid syscall.
     ///
     /// Any syscall that is not recognized.

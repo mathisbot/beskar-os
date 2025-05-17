@@ -108,4 +108,3 @@ trampoline:
     .page_table: dq 0xFFFFFFFFFFFFFFFF
     .stack_end_ptr: dq 0xFFFFFFFFFFFFFFFF
     .ap_entry: dq 0xFFFFFFFFFFFFFFFF
-    .base: dq 0xFFFFFFFFFFFFFFFF

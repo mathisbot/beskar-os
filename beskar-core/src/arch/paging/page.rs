@@ -20,9 +20,9 @@ pub enum PageError {
 
 impl<S: MemSize> Page<S> {
     #[inline]
-    pub fn from_start_address(address: VirtAddr) -> Result<Self, PageError> {
+    pub const fn from_start_address(address: VirtAddr) -> Result<Self, PageError> {
         // Check that the address is correctly aligned.
-        if address != address.align_down(S::SIZE) {
+        if address.as_u64() != address.align_down(S::SIZE).as_u64() {
             return Err(PageError::UnalignedAddress);
         }
         Ok(Self {

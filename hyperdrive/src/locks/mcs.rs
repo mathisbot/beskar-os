@@ -25,19 +25,18 @@
 //!
 //! ```rust,compile_fail
 //! # use hyperdrive::locks::mcs::{MUMcsLock, McsNode};
-//! let lock = McsLock::new(0);
+//! let lock = McsLock::new(0_u32);
 //! ```
+//!
+//! ### `McsLock`
 //!
 //! To access the content of the lock, use the `with_locked` method.
 //! This method is a convenient wrapper around the `lock` method.
 //!
-//! ### `McsLock`
-//!
 //! ```rust
 //! # use hyperdrive::locks::mcs::McsLock;
-//! # use hyperdrive::locks::Spin;
 //! #
-//! let lock = McsLock::<_, Spin>::new(0);
+//! let lock = McsLock::<u8>::new(0);
 //!
 //! let res = lock.with_locked(|value| {
 //!     *value = 42;
@@ -50,9 +49,8 @@
 //!
 //! ```rust
 //! # use hyperdrive::locks::mcs::McsLock;
-//! # use hyperdrive::locks::Spin;
 //! #
-//! let lock = McsLock::<_, Spin>::new(0);
+//! let lock = McsLock::<u8>::new(0);
 //!
 //! let res = lock.try_with_locked(|value| {
 //!     *value = 42;
@@ -71,9 +69,8 @@
 //!
 //! ```rust
 //! # use hyperdrive::locks::mcs::{McsLock, McsNode};
-//! # use hyperdrive::locks::Spin;
 //! #
-//! let lock = McsLock::<_, Spin>::new(0);
+//! let lock = McsLock::<u8>::new(0);
 //! let mut node = McsNode::new();
 //!
 //! let mut guard = lock.lock(&mut node);

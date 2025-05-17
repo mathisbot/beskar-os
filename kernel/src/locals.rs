@@ -8,10 +8,6 @@ use hyperdrive::{
     once::Once,
 };
 
-/// Count APs that got around of their trampoline code
-///
-/// It is initialized at 1 because the BSP is already in the Rust code ;)
-static CORE_JUMPED: AtomicUsize = AtomicUsize::new(1);
 /// Count APs that are ready, right before entering `enter_kmain`
 static CORE_READY: AtomicUsize = AtomicUsize::new(0);
 /// Distributes core IDs
@@ -44,18 +40,6 @@ pub fn init() {
 /// Returns the number of currently active cores
 pub fn get_ready_core_count() -> usize {
     CORE_READY.load(core::sync::atomic::Ordering::Acquire)
-}
-
-#[must_use]
-#[inline]
-pub(crate) fn get_jumped_core_count() -> usize {
-    CORE_JUMPED.load(core::sync::atomic::Ordering::Acquire)
-}
-
-#[inline]
-/// Increment the count of cores that jumped to Rust code
-pub(crate) fn core_jumped() {
-    CORE_JUMPED.fetch_add(1, core::sync::atomic::Ordering::Acquire);
 }
 
 pub struct CoreLocalsInfo {

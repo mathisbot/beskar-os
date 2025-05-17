@@ -65,7 +65,7 @@ impl Severity {
         match self {
             Self::Debug => PixelComponents::BLUE,
             Self::Info => PixelComponents::GREEN,
-            Self::Warn => PixelComponents::new(255, 120, 0),
+            Self::Warn => PixelComponents::ORANGE,
             Self::Error => PixelComponents::RED,
         }
     }
@@ -75,28 +75,28 @@ impl Severity {
 macro_rules! debug {
     ($($arg:tt)*) => {
         #[cfg(debug_assertions)]
-        $crate::log::log($crate::log::Severity::Debug, format_args!($($arg)*));
+        $crate::video::log::log($crate::video::log::Severity::Debug, format_args!($($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        $crate::log::log($crate::log::Severity::Info, format_args!($($arg)*));
+        $crate::video::log::log($crate::video::log::Severity::Info, format_args!($($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        $crate::log::log($crate::log::Severity::Warn, format_args!($($arg)*));
+        $crate::video::log::log($crate::video::log::Severity::Warn, format_args!($($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {
-        $crate::log::log($crate::log::Severity::Error, format_args!($($arg)*));
+        $crate::video::log::log($crate::video::log::Severity::Error, format_args!($($arg)*));
     };
 }
 

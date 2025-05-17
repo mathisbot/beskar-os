@@ -110,7 +110,7 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
         // Copy indexes for framebuffer (which is not necessarily identity mapped)
         let (start_vaddr, end_vaddr) = crate::video::with_physical_framebuffer(|fb| {
             let start_vaddr = fb.start_addr_as_virtual();
-            let end_vaddr = start_vaddr + u64::try_from(fb.info().size()).unwrap();
+            let end_vaddr = start_vaddr + u64::from(fb.info().size());
             (start_vaddr, end_vaddr)
         });
         for p4_index in usize::from(start_vaddr.p4_index())..=usize::from(end_vaddr.p4_index()) {

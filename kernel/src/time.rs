@@ -1,4 +1,4 @@
-use beskar_core::time::{Duration, Instant};
+pub use beskar_core::time::{Duration, Instant};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::drivers::{hpet, tsc};

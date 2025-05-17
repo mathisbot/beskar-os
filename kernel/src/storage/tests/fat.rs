@@ -3,8 +3,6 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::mem::size_of;
-
 use storage::fs::fat::{
     Cluster, FatError, FatResult, FatType,
     bs::{BootSector, ExtendedBootSector},

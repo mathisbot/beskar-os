@@ -62,7 +62,7 @@ fn efi_entry() -> Status {
     #[cfg(debug_assertions)]
     let _ = boot::set_watchdog_timer(0, 0, None);
 
-    bootloader::log::init_serial();
+    bootloader::video::log::init_serial();
 
     debug!("BeskarOS bootloader is starting...");
 
@@ -72,7 +72,7 @@ fn efi_entry() -> Status {
     bootloader::video::init();
     debug!("Video initialized");
 
-    bootloader::log::init_screen();
+    bootloader::video::log::init_screen();
 
     info!("BeskarOS bootloader started");
 

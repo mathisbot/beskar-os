@@ -1,6 +1,8 @@
 use crate::arch::syscalls;
 use beskar_core::syscall::{Syscall, SyscallExitCode};
 
+mod file;
+pub use file::File;
 pub mod keyboard;
 
 #[inline]
@@ -15,12 +17,13 @@ pub fn print(msg: &str) {
 
     // FIXME: This is very inefficient and faillible if some other process
     // is using stdout. This issue should be handled by the VFS as a special file.
-    let handle = open(STDOUT_FILE).unwrap();
+    let file = File::open(STDOUT_FILE).unwrap();
 
-    let bytes_read = write(handle, msg.as_bytes(), 0).unwrap();
+    let bytes_read = file.write(msg.as_bytes(), 0).unwrap();
+
+    file.close().unwrap();
+
     assert!(bytes_read == msg.len());
-
-    close(handle).unwrap();
 }
 
 #[macro_export]

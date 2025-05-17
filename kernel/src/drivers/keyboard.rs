@@ -96,20 +96,15 @@ pub struct KeyboardDevice;
 
 impl ::storage::KernelDevice for KeyboardDevice {
     fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), ::storage::BlockDeviceError> {
-        const BLOCK_SIZE: usize = size_of::<u64>();
-        if dst.len() % BLOCK_SIZE != 0 {
-            return Err(::storage::BlockDeviceError::Io);
-        }
-        let block_count = dst.len() / BLOCK_SIZE;
-        if block_count == 0 {
-            return Ok(());
+        let (prefix, dst, suffix) = unsafe { dst.align_to_mut::<u64>() };
+
+        if !prefix.is_empty() || !suffix.is_empty() {
+            return Err(::storage::BlockDeviceError::UnalignedAccess);
         }
 
-        for i in 0..block_count {
+        for block in dst.iter_mut() {
             let key_event = with_keyboard_manager(KeyboardManager::poll_event).flatten();
-            let serialized_event = KeyEvent::pack_option(key_event);
-            dst[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE]
-                .copy_from_slice(&serialized_event.to_ne_bytes());
+            *block = KeyEvent::pack_option(key_event);
         }
 
         Ok(())
@@ -119,7 +114,7 @@ impl ::storage::KernelDevice for KeyboardDevice {
         if src.is_empty() {
             Ok(())
         } else {
-            Err(::storage::BlockDeviceError::Io)
+            Err(::storage::BlockDeviceError::Unsupported)
         }
     }
 }

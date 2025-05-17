@@ -39,6 +39,7 @@ pub enum PixelFormat {
 pub struct Pixel(u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
 pub struct PixelComponents {
     pub red: u8,
     pub green: u8,
@@ -86,6 +87,12 @@ impl PixelComponents {
     pub const YELLOW: Self = Self {
         red: 0xFF,
         green: 0xFF,
+        blue: 0x00,
+    };
+
+    pub const ORANGE: Self = Self {
+        red: 0xFF,
+        green: 0xA5,
         blue: 0x00,
     };
 
@@ -184,51 +191,52 @@ impl Pixel {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
 pub struct Info {
     /// The total size in bytes.
-    size: usize,
+    size: u32,
     /// The width in pixels.
-    width: usize,
+    width: u16,
     /// The height in pixels.
-    height: usize,
+    height: u16,
     /// The color format of each pixel.
     pixel_format: PixelFormat,
-    /// The number of bytes per pixel.
-    ///
-    /// Should be 4.
-    bytes_per_pixel: usize,
     /// Number of "virtual" pixels between the start of a line and the start of the next.
     ///
     /// The stride must be used to compute the start address of a next line as some framebuffers
     /// use additional padding at the end of a line.
-    stride: usize,
+    stride: u16,
+    /// The number of bytes per pixel.
+    ///
+    /// Should be 4.
+    bytes_per_pixel: u8,
 }
 
 impl Info {
     #[must_use]
     #[inline]
     pub const fn new(
-        size: usize,
-        width: usize,
-        height: usize,
+        size: u32,
+        width: u16,
+        height: u16,
         pixel_format: PixelFormat,
-        bytes_per_pixel: usize,
-        stride: usize,
+        stride: u16,
+        bytes_per_pixel: u8,
     ) -> Self {
         Self {
             size,
             width,
             height,
             pixel_format,
-            bytes_per_pixel,
             stride,
+            bytes_per_pixel,
         }
     }
 
     #[must_use]
     #[inline]
     /// The total size in bytes.
-    pub const fn size(&self) -> usize {
+    pub const fn size(&self) -> u32 {
         self.size
     }
 
@@ -237,14 +245,14 @@ impl Info {
     /// The width in pixels.
     ///
     /// For computations of line offset, use `stride` instead
-    pub const fn width(&self) -> usize {
+    pub const fn width(&self) -> u16 {
         self.width
     }
 
     #[must_use]
     #[inline]
     /// The height in pixels.
-    pub const fn height(&self) -> usize {
+    pub const fn height(&self) -> u16 {
         self.height
     }
 
@@ -258,7 +266,7 @@ impl Info {
     #[must_use]
     #[inline]
     /// The number of bytes per pixel.
-    pub const fn bytes_per_pixel(&self) -> usize {
+    pub const fn bytes_per_pixel(&self) -> u8 {
         self.bytes_per_pixel
     }
 
@@ -268,7 +276,7 @@ impl Info {
     ///
     /// The stride must be used to compute the start address of a next line as some framebuffers
     /// use additional padding at the end of a line.
-    pub const fn stride(&self) -> usize {
+    pub const fn stride(&self) -> u16 {
         self.stride
     }
 }
@@ -307,11 +315,11 @@ impl FrameBuffer {
     #[must_use]
     #[inline]
     /// Access the raw bytes of the framebuffer as a mutable slice.
-    pub const fn buffer_mut(&mut self) -> &mut [u8] {
+    pub fn buffer_mut(&mut self) -> &mut [u8] {
         unsafe {
             core::slice::from_raw_parts_mut(
                 self.buffer_start.as_mut_ptr::<u8>(),
-                self.info().size(),
+                usize::try_from(self.info().size()).unwrap(),
             )
         }
     }

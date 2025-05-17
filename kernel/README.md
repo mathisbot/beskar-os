@@ -88,6 +88,9 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
     - [X] User space
     - [X] Binary loading
         - [X] ELF
+    - [ ] IPC
+        - [ ] Message Passing
+        - [ ] Shared Memory
 - Storage
     - [ ] Partitions
         - [ ] MBR
