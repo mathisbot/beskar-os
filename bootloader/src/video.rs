@@ -43,11 +43,12 @@ impl PhysicalFrameBuffer {
 
     #[must_use]
     /// Access the raw bytes of the framebuffer as a mutable slice.
-    pub const fn buffer_mut(&mut self) -> &mut [Pixel] {
+    pub fn buffer_mut(&mut self) -> &mut [Pixel] {
         unsafe {
             core::slice::from_raw_parts_mut(
                 self.start_addr_as_virtual().as_mut_ptr::<Pixel>(),
-                self.info().size() / self.info().bytes_per_pixel(),
+                usize::try_from(self.info().size() / u32::from(self.info().bytes_per_pixel()))
+                    .unwrap(),
             )
         }
     }

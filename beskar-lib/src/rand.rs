@@ -1,4 +1,4 @@
-use crate::io::{close, open, read};
+use crate::io::File;
 use core::mem::MaybeUninit;
 
 #[inline]
@@ -13,11 +13,11 @@ pub fn rand_fill(buf: &mut [u8]) {
 
     // FIXME: This is very inefficient and faillible if some other process
     // is using the rand file.
-    let handle = open(KEYBOARD_FILE).unwrap();
+    let file = File::open(KEYBOARD_FILE).unwrap();
 
-    let read_res = read(handle, buf, 0);
+    let read_res = file.read(buf, 0);
 
-    close(handle).unwrap();
+    file.close().unwrap();
 
     let bytes_read = read_res.unwrap();
     assert!(bytes_read == buf.len(), "Failed to read random bytes");

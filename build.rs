@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 use std::{env::var, fs, str::FromStr};
 
-const USERSPACE_APPS: [&str; 1] = ["hello_world"];
+const USERSPACE_APPS: [&str; 1] = ["sh"];
 
 fn crate_name_to_cargo_venv(crate_name: &str) -> String {
     let mut cargo_venv = String::from_str("CARGO_BIN_FILE_").unwrap();
@@ -36,7 +36,7 @@ fn main() {
     fs::copy(&kernel_path, "efi_disk/efi/kernelx64.elf").expect("Failed to copy kernel");
 
     // TODO:: Build a disk image for the ramdisk
-    let hello_world = var("CARGO_BIN_FILE_HELLO_WORLD").unwrap();
+    let hello_world = var("CARGO_BIN_FILE_SH").unwrap();
     fs::copy(&hello_world, "efi_disk/efi/ramdisk.img").expect("Failed to copy userspace");
     for crate_name in USERSPACE_APPS {
         let cargo_venv = crate_name_to_cargo_venv(crate_name);

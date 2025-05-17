@@ -1,4 +1,7 @@
-use beskar_core::video::{FrameBuffer, Info, Pixel};
+use beskar_core::{
+    storage::{BlockDeviceError, KernelDevice},
+    video::{FrameBuffer, Info, Pixel, PixelComponents},
+};
 use hyperdrive::locks::mcs::MUMcsLock;
 
 static SCREEN: MUMcsLock<Screen> = MUMcsLock::uninit();
@@ -30,7 +33,7 @@ impl<'a> Screen<'a> {
     #[must_use]
     #[inline]
     pub fn new(raw_buffer: &'a mut [u8], info: Info) -> Self {
-        assert_eq!(size_of::<Pixel>(), info.bytes_per_pixel());
+        assert_eq!(size_of::<Pixel>(), usize::from(info.bytes_per_pixel()));
 
         // Safety: A `Pixel` is a `u32` and it is valid to pack 4 `u8`s into a `u32`.
         let (start_u8, pixel_buffer, end_u8) = unsafe { raw_buffer.align_to_mut::<Pixel>() };
@@ -70,4 +73,69 @@ impl Screen<'_> {
 #[inline]
 pub fn with_screen<R, F: FnOnce(&mut Screen) -> R>(f: F) -> R {
     SCREEN.with_locked(f)
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ScreenDevice;
+
+impl ScreenDevice {
+    #[must_use]
+    #[inline]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(align(4))]
+struct PixelCompArr(PixelComponents);
+
+impl KernelDevice for ScreenDevice {
+    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), BlockDeviceError> {
+        if dst.is_empty() {
+            return Ok(());
+        }
+
+        if dst.len() == size_of::<Info>() {
+            // FIXME: If https://github.com/rust-lang/libs-team/issues/588 is implemented, use it.
+            #[expect(clippy::cast_ptr_alignment, reason = "Alignment is checked manually")]
+            let pixel_ptr = dst.as_mut_ptr().cast::<Info>();
+            if !pixel_ptr.is_aligned() {
+                return Err(BlockDeviceError::UnalignedAccess);
+            }
+            unsafe {
+                pixel_ptr.write(with_screen(|screen| screen.info()));
+            }
+
+            return Ok(());
+        }
+
+        Err(BlockDeviceError::Unsupported)
+    }
+
+    fn write(&mut self, src: &[u8], offset: usize) -> Result<(), BlockDeviceError> {
+        super::log::set_screen_logging(false);
+
+        let (prefix, src, suffix) = unsafe { src.align_to::<PixelCompArr>() };
+
+        if !prefix.is_empty() || !suffix.is_empty() {
+            return Err(BlockDeviceError::UnalignedAccess);
+        }
+
+        with_screen(|screen| {
+            if src.len() + offset > screen.info().size().try_into().unwrap() {
+                return Err(BlockDeviceError::OutOfBounds);
+            }
+
+            let pixel_format = screen.info().pixel_format();
+            let screen_buffer = screen.buffer_mut();
+
+            for (&pc, d) in src.iter().zip(screen_buffer[offset..].iter_mut()) {
+                let pixel = Pixel::from_format(pixel_format, pc.0);
+                *d = pixel;
+            }
+
+            Ok(())
+        })
+    }
 }
