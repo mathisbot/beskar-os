@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "acpi"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+ "beskar-hal",
+ "driver-api",
+]
+
+[[package]]
 name = "bashkar"
 version = "0.1.0"
 dependencies = [
@@ -86,6 +95,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "driver-api"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+ "beskar-hal",
+]
+
+[[package]]
 name = "holonet"
 version = "0.1.0"
 dependencies = [
@@ -100,12 +117,15 @@ version = "0.1.0"
 name = "kernel"
 version = "0.1.0"
 dependencies = [
+ "acpi",
  "beskar-core",
  "beskar-hal",
  "bootloader-api",
+ "driver-api",
  "holonet",
  "hyperdrive",
  "linked_list_allocator",
+ "pci",
  "storage",
  "thiserror",
  "video",
@@ -148,6 +168,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "pci"
+version = "0.1.0"
+dependencies = [
+ "acpi",
+ "beskar-core",
+ "beskar-hal",
+ "driver-api",
+ "hyperdrive",
 ]
 
 [[package]]

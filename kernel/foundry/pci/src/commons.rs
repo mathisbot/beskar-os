@@ -100,6 +100,7 @@ impl From<u8> for Class {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[allow(unused, reason = "FFI definition")]
 pub enum RegisterOffset {
     VendorId = 0x00,
     DeviceId = 0x02,
@@ -417,4 +418,9 @@ impl CapabilityHeader {
     pub const fn next(&self) -> u8 {
         self.next
     }
+}
+
+pub trait MsiHelper {
+    /// Returns the physical address and ID of the LAPIC
+    fn get_lapic_info(core_id: usize) -> Option<(PhysAddr, u8)>;
 }

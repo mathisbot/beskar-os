@@ -5,12 +5,8 @@
 //!
 //! NB: All registers use host-endianess (LE), except for `ETherType` fiels, which use network-endianess (BE).
 use super::Nic;
-use crate::{
-    drivers::pci::{self, Bar, with_pci_handler},
-    locals,
-    mem::page_alloc::pmap::PhysicalMapping,
-    process,
-};
+use crate::{drivers::pci::MsiHelper, locals, mem::page_alloc::pmap::PhysicalMapping, process};
+use ::pci::Bar;
 use alloc::vec::Vec;
 use beskar_core::{
     arch::{
@@ -34,7 +30,7 @@ static E1000E: MUMcsLock<E1000e<'static>> = MUMcsLock::uninit();
 
 pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     let Some(Bar::Memory(bar_reg)) =
-        with_pci_handler(|handler| handler.read_bar(&network_controller, 0))
+        crate::drivers::pci::with_pci_handler(|handler| handler.read_bar(&network_controller, 0))
     else {
         // FIXME: Apparently, some network controllers use IO BARs
         video::warn!("Network controller does not have a memory BAR");
@@ -184,9 +180,13 @@ impl E1000e<'_> {
     }
 
     fn enable_int(&self) {
-        let msix = pci::with_pci_handler(|handler| pci::msix::MsiX::new(handler, &self.pci_device));
+        let msix = crate::drivers::pci::with_pci_handler(|handler| {
+            pci::msix::MsiX::<PhysicalMapping<M4KiB>, MsiHelper>::new(handler, &self.pci_device)
+        });
         let msi = if msix.is_none() {
-            pci::with_pci_handler(|handler| pci::msi::Msi::new(handler, &self.pci_device))
+            crate::drivers::pci::with_pci_handler(|handler| {
+                pci::msi::Msi::<MsiHelper>::new(handler, &self.pci_device)
+            })
         } else {
             None
         };
@@ -195,9 +195,9 @@ impl E1000e<'_> {
 
         if let Some(msix) = msix {
             msix.setup_int(irq, 0, core_id);
-            pci::with_pci_handler(|handler| msix.enable(handler));
+            crate::drivers::pci::with_pci_handler(|handler| msix.enable(handler));
         } else if let Some(msi) = msi {
-            pci::with_pci_handler(|handler| {
+            crate::drivers::pci::with_pci_handler(|handler| {
                 msi.setup_int(irq, handler, core_id);
                 msi.enable(handler);
             });

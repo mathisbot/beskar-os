@@ -25,12 +25,6 @@ struct FullHpet {
 impl FullHpet {
     #[must_use]
     #[inline]
-    pub fn pci_vendor_id(&self) -> [u8; 2] {
-        u16::try_from(self.etb_id >> 16).unwrap().to_le_bytes()
-    }
-
-    #[must_use]
-    #[inline]
     pub const fn irq_routing_capable(&self) -> bool {
         (self.etb_id >> 15) & 1 == 1
     }
@@ -45,12 +39,6 @@ impl FullHpet {
     #[inline]
     pub fn comparator_count(&self) -> u8 {
         u8::try_from((self.etb_id >> 8) & 0b0001_1111).unwrap() + 1
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn hardware_rev_id(&self) -> u8 {
-        u8::try_from(self.etb_id & 0b0111_1111).unwrap()
     }
 
     #[must_use]
@@ -82,7 +70,7 @@ impl From<u8> for PageProtection {
     }
 }
 
-impl HpetTable {
+impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>> HpetTable<M> {
     #[must_use]
     pub fn parse(&self) -> ParsedHpetTable {
         assert_eq!(

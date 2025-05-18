@@ -1,5 +1,5 @@
 use super::{GenericAddress, RawGenericAddress, SdtHeader};
-use crate::drivers::acpi::{AcpiRevision, sdt::Sdt as _};
+use crate::{AcpiRevision, sdt::Sdt as _};
 use beskar_core::arch::PhysAddr;
 
 pub mod reg;
@@ -118,7 +118,7 @@ struct FullFadt {
     hypervisor_vendor_id: u64,
 }
 
-impl Fadt {
+impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>> Fadt<M> {
     #[must_use]
     pub fn parse(&self) -> ParsedFadt {
         assert!(usize::try_from(self.length()).unwrap() >= size_of::<MinimalFadt>());

@@ -91,6 +91,8 @@ jobs:
           cargo clippy --package holonet -- -D warnings
           cargo clippy --package video -- -D warnings
           cargo clippy --package bashkar -- -D warnings
+          cargo clippy --package acpi
+          cargo clippy --package pci
           cargo clippy --package storage
           cargo clippy --package kernel
 

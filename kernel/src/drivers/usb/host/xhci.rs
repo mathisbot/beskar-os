@@ -1,8 +1,5 @@
-use crate::{
-    drivers::pci::{self, Device},
-    locals,
-    mem::page_alloc::pmap::PhysicalMapping,
-};
+use crate::{drivers::pci, locals, mem::page_alloc::pmap::PhysicalMapping};
+use ::pci::Device;
 use beskar_core::{
     arch::{
         PhysAddr,
@@ -211,9 +208,12 @@ impl Xhci {
         irs.write(irs_snapshot);
 
         // Set up MSI-X interrupts
-        let Some(msix) =
-            pci::with_pci_handler(|handler| pci::msix::MsiX::new(handler, &self.pci_device))
-        else {
+        let Some(msix) = pci::with_pci_handler(|handler| {
+            ::pci::msix::MsiX::<PhysicalMapping<M4KiB>, crate::drivers::pci::MsiHelper>::new(
+                handler,
+                &self.pci_device,
+            )
+        }) else {
             return Err(DriverError::Invalid);
         };
 

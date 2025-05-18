@@ -1,10 +1,9 @@
 use core::mem::offset_of;
 
+use super::AcpiRevision;
 use beskar_core::arch::{PhysAddr, VirtAddr, paging::M4KiB};
 use beskar_hal::paging::page_table::Flags;
-
-use super::AcpiRevision;
-use crate::mem::page_alloc::pmap::PhysicalMapping;
+use driver_api::PhysicalMappingTrait;
 
 pub mod dsdt;
 pub mod fadt;
@@ -116,25 +115,25 @@ pub unsafe trait Sdt {
 }
 
 #[derive(Debug)]
-pub struct Rsdt {
+pub struct Rsdt<M: PhysicalMappingTrait<M4KiB>> {
     start_vaddr: VirtAddr,
     acpi_revision: AcpiRevision,
-    _physical_mapping: PhysicalMapping,
+    _physical_mapping: M,
 }
 
 // Safety:
 // RSDT is a valid SDT.
-unsafe impl Sdt for Rsdt {
+unsafe impl<M: PhysicalMappingTrait<M4KiB>> Sdt for Rsdt<M> {
     fn start(&self) -> *const u8 {
         self.start_vaddr.as_ptr()
     }
 }
 
-impl Rsdt {
+impl<M: PhysicalMappingTrait<M4KiB>> Rsdt<M> {
     pub fn load(rsdt_paddr: PhysAddr) -> Self {
         let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
-        let physical_mapping = PhysicalMapping::new(rsdt_paddr, size_of::<SdtHeader>(), flags);
+        let physical_mapping = M::new(rsdt_paddr, size_of::<SdtHeader>(), flags);
         let rsdt_vaddr = physical_mapping.translate(rsdt_paddr).unwrap();
 
         let rsdt = Self {
@@ -157,7 +156,7 @@ impl Rsdt {
 
         drop(rsdt);
 
-        let table_mapping = PhysicalMapping::new(rsdt_paddr, rsdt_length, flags);
+        let table_mapping = M::new(rsdt_paddr, rsdt_length, flags);
         let rsdt_vaddr = table_mapping.translate(rsdt_paddr).unwrap();
 
         let rsdt = Self {
@@ -202,8 +201,7 @@ impl Rsdt {
 
             let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
-            let physical_mapping =
-                PhysicalMapping::<M4KiB>::new(paddr, size_of::<SdtHeader>(), flags);
+            let physical_mapping = M::new(paddr, size_of::<SdtHeader>(), flags);
             let table_vaddr = physical_mapping.translate(paddr).unwrap();
             let header = unsafe { &*table_vaddr.as_ptr::<SdtHeader>() };
 
@@ -252,11 +250,10 @@ impl Signature {
 /// ## Safety
 ///
 /// The provided physical address must point to a potentially valid SDT.
-unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
+unsafe fn map<M: PhysicalMappingTrait<M4KiB>>(phys_addr: PhysAddr) -> M {
     let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
-    let header_mapping =
-        PhysicalMapping::<M4KiB>::new(phys_addr, core::mem::size_of::<SdtHeader>(), flags);
+    let header_mapping = M::new(phys_addr, core::mem::size_of::<SdtHeader>(), flags);
     let header_vaddr = header_mapping.translate(phys_addr).unwrap();
 
     let table_length = unsafe {
@@ -268,7 +265,7 @@ unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
 
     drop(header_mapping);
 
-    PhysicalMapping::new(phys_addr, usize::try_from(table_length).unwrap(), flags)
+    M::new(phys_addr, usize::try_from(table_length).unwrap(), flags)
 }
 
 /// A macro for implementing the basics of a SDT.
@@ -278,23 +275,26 @@ unsafe fn map(phys_addr: PhysAddr) -> PhysicalMapping {
 macro_rules! impl_sdt {
     ($name:ident) => {
         #[derive(Debug)]
-        pub struct $name {
+        pub struct $name<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>>
+        {
             start_vaddr: ::beskar_core::arch::VirtAddr,
-            _physical_mapping: $crate::mem::page_alloc::pmap::PhysicalMapping,
+            _physical_mapping: M,
         }
 
-        unsafe impl $crate::drivers::acpi::sdt::Sdt for $name {
+        unsafe impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>>
+            $crate::sdt::Sdt for $name<M>
+        {
             fn start(&self) -> *const u8 {
                 self.start_vaddr.as_ptr()
             }
         }
 
-        impl $name {
+        impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>> $name<M> {
             #[must_use]
             pub fn load(paddr: ::beskar_core::arch::PhysAddr) -> Self {
-                use $crate::drivers::acpi::sdt::Sdt;
+                use $crate::sdt::Sdt;
 
-                let mapping = unsafe { $crate::drivers::acpi::sdt::map(paddr) };
+                let mapping = unsafe { $crate::sdt::map::<M>(paddr) };
                 let vaddr = mapping.translate(paddr).unwrap();
 
                 let table = Self {

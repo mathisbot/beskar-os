@@ -1,48 +1,20 @@
 //! PCI Express (`PCIe`) support.
 
-use crate::{
-    drivers::acpi::sdt::mcfg::ParsedConfigurationSpace, mem::page_alloc::pmap::PhysicalMapping,
-};
+use acpi::sdt::mcfg::ParsedConfigurationSpace;
 use alloc::vec::Vec;
-use beskar_core::{
-    arch::{PhysAddr, paging::M2MiB},
-    drivers::{DriverError, DriverResult},
-};
+use beskar_core::arch::{PhysAddr, paging::M2MiB};
 use beskar_hal::paging::page_table::Flags;
-use hyperdrive::locks::mcs::MUMcsLock;
+use driver_api::PhysicalMappingTrait;
 
 use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 
-static PCIE_HANDLER: MUMcsLock<PciExpressHandler> = MUMcsLock::uninit();
-
-pub struct PciExpressHandler {
+pub struct PciExpressHandler<M: PhysicalMappingTrait<M2MiB>> {
     configuration_spaces: &'static [ParsedConfigurationSpace],
-    physical_mappings: Vec<PhysicalMapping<M2MiB>>,
+    physical_mappings: Vec<M>,
     devices: Vec<Device>,
 }
 
-pub fn init() -> DriverResult<usize> {
-    let Some(mcfg) = crate::drivers::acpi::ACPI.get().unwrap().mcfg() else {
-        return Err(DriverError::Absent);
-    };
-
-    let pcie_handler = PciExpressHandler::new(mcfg.configuration_spaces());
-    PCIE_HANDLER.init(pcie_handler);
-
-    let device_count = with_pcie_handler(|handler| {
-        handler.update_devices();
-        handler.devices.len()
-    })
-    .unwrap();
-
-    if device_count == 0 {
-        Err(DriverError::Invalid)
-    } else {
-        Ok(device_count)
-    }
-}
-
-impl PciExpressHandler {
+impl<M: PhysicalMappingTrait<M2MiB>> PciExpressHandler<M> {
     #[must_use]
     #[inline]
     pub fn new(configuration_spaces: &'static [ParsedConfigurationSpace]) -> Self {
@@ -55,7 +27,7 @@ impl PciExpressHandler {
                 .unwrap();
 
                 let flags = Flags::MMIO_SUITABLE;
-                PhysicalMapping::<M2MiB>::new(*cs.address_range().start(), length, flags)
+                M::new(*cs.address_range().start(), length, flags)
             })
             .collect::<Vec<_>>();
 
@@ -66,7 +38,7 @@ impl PciExpressHandler {
         }
     }
 
-    fn update_devices(&mut self) {
+    pub fn update_devices(&mut self) {
         self.devices.clear();
 
         // Brute-force scan
@@ -95,11 +67,7 @@ impl PciExpressHandler {
         }
     }
 
-    fn scan_device(
-        pmap: &PhysicalMapping<M2MiB>,
-        cs: &ParsedConfigurationSpace,
-        address: PciAddress,
-    ) -> Option<Device> {
+    fn scan_device(pmap: &M, cs: &ParsedConfigurationSpace, address: PciAddress) -> Option<Device> {
         let (device, vendor) = {
             let reg = PciAddress {
                 register_offset: RegisterOffset::VendorId as u8,
@@ -148,7 +116,7 @@ impl PciExpressHandler {
         })
     }
 
-    fn find_function_count(pmap: &PhysicalMapping<M2MiB>, offset: u64, address: PciAddress) -> u8 {
+    fn find_function_count(pmap: &M, offset: u64, address: PciAddress) -> u8 {
         let multifonction = {
             let reg = PciAddress {
                 register_offset: RegisterOffset::HeaderType as u8,
@@ -201,7 +169,7 @@ impl PciExpressHandler {
     }
 }
 
-impl super::PciHandler for PciExpressHandler {
+impl<M: PhysicalMappingTrait<M2MiB>> super::PciHandler for PciExpressHandler<M> {
     fn devices(&self) -> &[super::commons::Device] {
         &self.devices
     }
@@ -243,13 +211,4 @@ impl super::PciHandler for PciExpressHandler {
 
         unsafe { vaddr.as_mut_ptr::<u32>().write(value) };
     }
-}
-
-#[inline]
-pub fn with_pcie_handler<T, F: FnOnce(&mut PciExpressHandler) -> T>(f: F) -> Option<T> {
-    PCIE_HANDLER.with_locked_if_init(f)
-}
-
-pub fn pcie_available() -> bool {
-    PCIE_HANDLER.is_initialized()
 }

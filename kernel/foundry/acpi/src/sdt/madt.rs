@@ -229,7 +229,7 @@ struct X2ApicNmi {
 }
 
 // See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt>
-impl Madt {
+impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>> Madt<M> {
     #[must_use]
     #[expect(clippy::too_many_lines, reason = "Many fields to parse")]
     pub fn parse(&self) -> ParsedMadt {
@@ -276,7 +276,6 @@ impl Madt {
                         unreachable!("Bootloader should have enabled this LAPIC.");
                     } else {
                         // LAPIC is disabled
-                        video::warn!("LAPIC {} is disabled", parsed_lapic.id);
                     }
                 }
                 1 => {
@@ -367,8 +366,7 @@ impl Madt {
                     );
                     // Local x2APIC
                     // Same as Local APIC
-                    let local_x2apic = unsafe { entry_start.cast::<X2Apic>().read_unaligned() };
-                    video::debug!("Unused Local x2APIC: {:?}", local_x2apic);
+                    let _local_x2apic = unsafe { entry_start.cast::<X2Apic>().read_unaligned() };
                 }
                 10 => {
                     assert_eq!(
@@ -377,12 +375,8 @@ impl Madt {
                         "Invalid MADT entry length for Local x2APIC NMI Structure."
                     );
 
-                    let x2apic_nmi = unsafe { entry_start.cast::<X2ApicNmi>().read_unaligned() };
+                    let _x2apic_nmi = unsafe { entry_start.cast::<X2ApicNmi>().read_unaligned() };
                     // TODO: Handle Local x2APIC NMI Structure.
-                    video::warn!(
-                        "Unhandled Local x2APIC NMI Structure entry: {:?}",
-                        x2apic_nmi
-                    );
                 }
                 // GIC related entries
                 x if (11..=15).contains(&x) => {
@@ -390,10 +384,6 @@ impl Madt {
                 }
                 _ => {
                     // We shouldn't panic here
-                    video::warn!(
-                        "Unknown MADT entry type: {}, skipping.",
-                        entry_header.entry_type
-                    );
                 }
             }
 

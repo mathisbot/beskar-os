@@ -1,36 +1,17 @@
 //! Legacy PCI handling module.
 
+use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 use alloc::vec::Vec;
 use beskar_hal::port::{Port, ReadWrite, WriteOnly};
-use hyperdrive::locks::mcs::McsLock;
-
-use beskar_core::drivers::{DriverError, DriverResult};
-
-use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 
 const CONFIG_ADDRESS: u16 = 0xCF8;
 const CONFIG_DATA: u16 = 0xCFC;
-
-static LEGACY_PCI_HANDLER: McsLock<LegacyPciHandler> = McsLock::new(LegacyPciHandler::new());
 
 #[derive(Debug, Default, Clone)]
 pub struct LegacyPciHandler {
     config_port: ConfigAddress,
     data_port: ConfigData,
     devices: Vec<super::commons::Device>,
-}
-
-pub fn init() -> DriverResult<usize> {
-    let device_count = with_legacy_pci_handler(|handler| {
-        handler.update_devices();
-        handler.devices.len()
-    });
-
-    if device_count == 0 {
-        Err(DriverError::Invalid)
-    } else {
-        Ok(device_count)
-    }
 }
 
 impl LegacyPciHandler {
@@ -291,8 +272,4 @@ impl core::ops::DerefMut for ConfigData {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
-}
-
-pub fn with_legacy_pci_handler<T, F: FnOnce(&mut LegacyPciHandler) -> T>(f: F) -> T {
-    LEGACY_PCI_HANDLER.with_locked(f)
 }

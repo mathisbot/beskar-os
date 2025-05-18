@@ -1,8 +1,6 @@
 // FIXME: <https://wiki.osdev.org/AHCI#Determining_what_mode_the_controller_is_in>
-use crate::{
-    drivers::pci::{self, Bar, Device},
-    mem::page_alloc::pmap::PhysicalMapping,
-};
+use crate::mem::page_alloc::pmap::PhysicalMapping;
+use ::pci::{Bar, Device};
 use beskar_core::{
     arch::{VirtAddr, paging::M4KiB},
     drivers::{DriverError, DriverResult},
@@ -15,7 +13,8 @@ pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
         return Err(DriverError::Absent);
     };
 
-    let Some(Bar::Memory(bar)) = pci::with_pci_handler(|handler| handler.read_bar(controller, 5))
+    let Some(Bar::Memory(bar)) =
+        crate::drivers::pci::with_pci_handler(|handler| handler.read_bar(controller, 5))
     else {
         unreachable!();
     };

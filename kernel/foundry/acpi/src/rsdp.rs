@@ -1,9 +1,9 @@
 use core::mem::offset_of;
 
 use super::AcpiRevision;
-use crate::mem::page_alloc::pmap::PhysicalMapping;
-use beskar_core::arch::{PhysAddr, VirtAddr};
+use beskar_core::arch::{PhysAddr, VirtAddr, paging::M4KiB};
 use beskar_hal::paging::page_table::Flags;
+use driver_api::PhysicalMappingTrait;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
@@ -34,13 +34,13 @@ struct Xsdp2 {
 }
 
 #[derive(Debug)]
-pub struct Rsdp {
+pub struct Rsdp<M: PhysicalMappingTrait<M4KiB>> {
     start_vaddr: VirtAddr,
     revision: AcpiRevision,
-    _physical_mapping: PhysicalMapping,
+    _physical_mapping: M,
 }
 
-impl Rsdp {
+impl<M: PhysicalMappingTrait<M4KiB>> Rsdp<M> {
     /// Map, validate, read and unmap the RSDP.
     ///
     /// Returns the RSDT address.
@@ -49,7 +49,7 @@ impl Rsdp {
 
         // First, we need to map the RSDP address to read the data.
         // Otherwise, a nice page fault will occur.
-        let physical_mapping = PhysicalMapping::new(rsdp_paddr, size_of::<Xsdp2>(), flags);
+        let physical_mapping = M::new(rsdp_paddr, size_of::<Xsdp2>(), flags);
 
         let rsdp_vaddr = physical_mapping.translate(rsdp_paddr).unwrap();
 
@@ -66,9 +66,6 @@ impl Rsdp {
         // for a bit to read the data and validate the checksum.
         let rsdp = match rsdp_revision {
             0 => {
-                video::warn!(
-                    "ACPI 2.0 not supported, falling back to ACPI 1.0. Some features may not be available"
-                );
                 super::ACPI_REVISION.store(AcpiRevision::V1);
                 Self {
                     start_vaddr: rsdp_vaddr,

@@ -5,7 +5,7 @@
 use crate::{mem::frame_alloc, process};
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, Flags as FlagsTrait, Frame, M4KiB, Mapper, MemSize, Page},
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, Page},
 };
 use beskar_hal::paging::page_table::{Flags, PageTable};
 
@@ -31,10 +31,7 @@ where
     ///
     /// `flags` will be `OR`ed with `PageTableFlags::PRESENT` to ensure the page is present.
     #[must_use]
-    pub fn new(start_paddr: PhysAddr, required_length: usize, flags: Flags) -> Self
-    where
-        S: core::fmt::Debug,
-    {
+    pub fn new(start_paddr: PhysAddr, required_length: usize, flags: Flags) -> Self {
         let end_paddr = start_paddr + u64::try_from(required_length).unwrap();
 
         let start_frame = Frame::<S>::containing_address(start_paddr);
@@ -126,5 +123,20 @@ where
             .with_pgalloc(|page_allocator| {
                 page_allocator.free_pages(page_range);
             });
+    }
+}
+
+impl<S: MemSize> driver_api::PhysicalMappingTrait<S> for PhysicalMapping<S>
+where
+    for<'a> PageTable<'a>: Mapper<S, Flags>,
+{
+    #[inline]
+    fn new(start_paddr: PhysAddr, required_length: usize, flags: Flags) -> Self {
+        Self::new(start_paddr, required_length, flags)
+    }
+
+    #[inline]
+    fn translate(&self, paddr: PhysAddr) -> Option<VirtAddr> {
+        self.translate(paddr)
     }
 }

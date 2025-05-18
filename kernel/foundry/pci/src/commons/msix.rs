@@ -1,20 +1,21 @@
 //! Mesage Signaled Interrupts eXtended (MSI-X) support.
 
 use super::super::{PciHandler, commons::CapabilityHeader, iter_capabilities};
-use super::PciAddress;
-use crate::locals::get_specific_core_locals;
-use crate::mem::page_alloc::pmap::PhysicalMapping;
+use super::{MsiHelper, PciAddress};
 use beskar_core::arch::paging::M4KiB;
 use beskar_hal::paging::page_table::Flags;
+use core::marker::PhantomData;
 use core::ptr::NonNull;
+use driver_api::PhysicalMappingTrait;
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
-pub struct MsiX {
+pub struct MsiX<M: PhysicalMappingTrait<M4KiB>, H: MsiHelper> {
     capability: MsiXCapability,
     table: Volatile<ReadWrite, TableEntry>,
     pba: Volatile<ReadWrite, u64>,
-    _pmap_table: PhysicalMapping,
-    _pmap_pba: PhysicalMapping,
+    _pmap_table: M,
+    _pmap_pba: M,
+    _helper: PhantomData<H>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -47,7 +48,7 @@ struct MsiX070 {
     pba: u32,
 }
 
-impl MsiX {
+impl<M: PhysicalMappingTrait<M4KiB>, H: MsiHelper> MsiX<M, H> {
     pub fn new(handler: &mut dyn PciHandler, device: &super::Device) -> Option<Self> {
         let msix_cap = MsiXCapability::find(handler, device)?;
 
@@ -64,7 +65,7 @@ impl MsiX {
         let flags = Flags::MMIO_SUITABLE;
 
         let table_size = usize::from(msix_cap.table_size) * size_of::<TableEntry>();
-        let pmap_table = PhysicalMapping::<M4KiB>::new(
+        let pmap_table = M::new(
             table_bar.base_address() + u64::from(msix_cap.table_offset),
             table_size,
             flags,
@@ -74,7 +75,7 @@ impl MsiX {
             .unwrap();
 
         let pba_size = usize::from(msix_cap.table_size) * size_of::<u64>();
-        let pmap_pba = PhysicalMapping::<M4KiB>::new(
+        let pmap_pba = M::new(
             pba_bar.base_address() + u64::from(msix_cap.pba_offset),
             pba_size,
             flags,
@@ -89,6 +90,7 @@ impl MsiX {
             pba: Volatile::new(NonNull::new(pba_vaddr.as_mut_ptr()).unwrap()),
             _pmap_table: pmap_table,
             _pmap_pba: pmap_pba,
+            _helper: PhantomData,
         })
     }
 
@@ -96,9 +98,7 @@ impl MsiX {
         assert!(table_idx < self.capability.table_size);
         let endry_ptr = unsafe { self.table.byte_add(usize::from(table_idx) * 16) };
 
-        let core_locals = get_specific_core_locals(core_id).unwrap();
-        let lapic_paddr = unsafe { core_locals.lapic().force_lock() }.paddr();
-        let lapic_id = core_locals.apic_id();
+        let (lapic_paddr, lapic_id) = H::get_lapic_info(core_id).unwrap();
 
         let msg_addr = lapic_paddr.as_u64() | (u64::from(lapic_id) << 12);
 

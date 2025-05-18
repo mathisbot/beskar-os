@@ -1,25 +1,28 @@
 //! Mesage Signaled Interrupts (MSI) support.
-use super::super::{PciHandler, commons::CapabilityHeader, iter_capabilities};
-use super::PciAddress;
-use crate::locals::get_specific_core_locals;
+use core::marker::PhantomData;
 
-pub struct Msi {
+use super::super::{PciHandler, commons::CapabilityHeader, iter_capabilities};
+use super::{MsiHelper, PciAddress};
+
+pub struct Msi<H: MsiHelper> {
     capability: MsiCapability,
+    _helper: PhantomData<H>,
 }
 
-impl Msi {
+impl<H: MsiHelper> Msi<H> {
     #[must_use]
     pub fn new(handler: &mut dyn PciHandler, device: &super::Device) -> Option<Self> {
         let capability = MsiCapability::find(handler, device)?;
 
-        Some(Self { capability })
+        Some(Self {
+            capability,
+            _helper: PhantomData,
+        })
     }
 
     // TODO: Use Multiple Message
     pub fn setup_int(&self, vector: u8, handler: &mut dyn PciHandler, core_id: usize) {
-        let core_locals = get_specific_core_locals(core_id).unwrap();
-        let lapic_paddr = unsafe { core_locals.lapic().force_lock() }.paddr();
-        let lapic_id = core_locals.apic_id();
+        let (lapic_paddr, lapic_id) = H::get_lapic_info(core_id).unwrap();
 
         let msg_addr = lapic_paddr.as_u64() | (u64::from(lapic_id) << 12);
         let low_dword = u32::try_from(msg_addr & 0xFFFF_FFFC).unwrap();

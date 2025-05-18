@@ -2,7 +2,7 @@ pub mod acpi;
 pub mod hpet;
 pub mod keyboard;
 pub mod nic;
-pub mod pci;
+mod pci;
 pub mod ps2;
 pub mod storage;
 pub mod tsc;
@@ -10,7 +10,9 @@ pub mod usb;
 
 pub extern "C" fn init() -> ! {
     let pci_init_result = pci::init();
-    assert!(pci_init_result.is_ok(), "No PCI devices found");
+    if pci_init_result.is_err() {
+        video::warn!("PCI initialization failed");
+    }
 
     // TODO: Start each driver's process when needed
 

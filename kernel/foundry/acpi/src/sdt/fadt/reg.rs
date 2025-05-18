@@ -1,6 +1,5 @@
+use crate::sdt::{AccessSize, AddressSpace, GenericAddress};
 use beskar_core::static_assert;
-
-use crate::drivers::acpi::sdt::{AccessSize, AddressSpace, GenericAddress};
 
 #[derive(Debug, Clone, Copy)]
 /// The PM1 Control Register contain the fixed hardware feature control bits.

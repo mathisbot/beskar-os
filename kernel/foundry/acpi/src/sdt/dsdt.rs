@@ -3,6 +3,7 @@
 //! This module heaviliy relies on AML parsing and validation.
 //! See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#aml-encoding>
 //! for more information.
+#![allow(dead_code, reason = "WIP")]
 
 use super::super::aml::parse_aml;
 use super::{Sdt, SdtHeader};
@@ -20,7 +21,7 @@ struct RawDsdt {
     def_block: DefinitionBlock,
 }
 
-impl Dsdt {
+impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>> Dsdt<M> {
     #[must_use]
     pub fn parse(&self) -> ParsedDsdt {
         assert_eq!(
