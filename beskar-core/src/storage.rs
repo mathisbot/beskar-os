@@ -59,6 +59,10 @@ pub trait KernelDevice {
     ///
     /// This function returns an error if the write operation failed
     fn write(&mut self, src: &[u8], offset: usize) -> Result<(), BlockDeviceError>;
+
+    fn on_open(&mut self) {}
+
+    fn on_close(&mut self) {}
 }
 
 impl<T: KernelDevice> BlockDevice for T {

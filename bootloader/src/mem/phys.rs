@@ -57,7 +57,7 @@ impl EarlyFrameAllocator {
     }
 
     #[must_use]
-    fn allocate_frame_from_descriptor(&mut self, descriptor: &MemoryDescriptor) -> Option<Frame> {
+    fn allocate_from_desc(&mut self, descriptor: &MemoryDescriptor) -> Option<Frame> {
         let start_paddr = PhysAddr::new(descriptor.phys_start);
         let end_paddr = start_paddr + descriptor.page_count * M4KiB::SIZE;
 
@@ -87,7 +87,7 @@ impl EarlyFrameAllocator {
 
     #[must_use]
     #[inline]
-    pub fn memory_map_max_region_count(&self) -> usize {
+    pub fn mem_map_max_region_count(&self) -> usize {
         // Bootloader memory allocator can end up creating 2
         // more memory regions when splitting the memory map.
         self.memory_map.len() + 2
@@ -95,11 +95,16 @@ impl EarlyFrameAllocator {
 
     #[must_use]
     /// Convert the allocator into a memory map understandable by the kernel.
-    pub fn construct_memory_map(
+    ///
+    /// # Safety
+    ///
+    /// `start_vaddr` and `max_regions` must be valid for creating a slice.
+    pub unsafe fn construct_memory_map(
         self,
         start_vaddr: VirtAddr,
         max_regions: usize,
     ) -> &'static mut [MemoryRange] {
+        // Safety: Function safety guards.
         let regions =
             unsafe { core::slice::from_raw_parts_mut(start_vaddr.as_mut_ptr(), max_regions) };
 
@@ -174,7 +179,7 @@ impl FrameAllocator<M4KiB> for EarlyFrameAllocator {
     fn allocate_frame(&mut self) -> Option<Frame<M4KiB>> {
         while let Some(&descriptor) = self.memory_map.get(self.current_entry_index) {
             if descriptor.ty == MemoryType::CONVENTIONAL
-                && let Some(frame) = self.allocate_frame_from_descriptor(&descriptor)
+                && let Some(frame) = self.allocate_from_desc(&descriptor)
             {
                 return Some(frame);
             }

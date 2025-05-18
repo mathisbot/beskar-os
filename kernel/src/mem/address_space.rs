@@ -1,17 +1,14 @@
+use super::{frame_alloc, page_alloc};
 use crate::{arch::cpuid, process::scheduler};
-use beskar_core::{
-    arch::{
-        PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _, Page},
-    },
-    boot::KernelInfo,
+use beskar_core::arch::{
+    PhysAddr, VirtAddr,
+    paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _, Page},
 };
 use beskar_hal::{
     paging::page_table::{Entries, Flags, PageTable},
     registers::{Cr3, Efer},
 };
-
-use super::{frame_alloc, page_alloc};
+use bootloader_api::KernelInfo;
 use hyperdrive::{locks::mcs::McsLock, once::Once};
 
 static KERNEL_ADDRESS_SPACE: Once<AddressSpace> = Once::uninit();

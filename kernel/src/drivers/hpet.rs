@@ -1,9 +1,7 @@
 // FIXME: Support for multiple HPET blocks?
 
-use crate::{
-    drivers::acpi::{self, sdt::hpet_table::ParsedHpetTable},
-    mem::page_alloc::pmap::PhysicalMapping,
-};
+use crate::{drivers::acpi::ACPI, mem::page_alloc::pmap::PhysicalMapping};
+use acpi::sdt::hpet_table::ParsedHpetTable;
 use beskar_core::{
     arch::{PhysAddr, VirtAddr, paging::M4KiB},
     drivers::{DriverError, DriverResult},
@@ -427,13 +425,13 @@ impl TimerCompValue {
 }
 
 pub fn init() -> DriverResult<()> {
-    let Some(hpet_info) = acpi::ACPI.get().and_then(acpi::Acpi::hpet) else {
+    let Some(hpet_info) = ACPI.get().and_then(acpi::Acpi::hpet) else {
         return Err(DriverError::Absent);
     };
 
     assert_eq!(
         hpet_info.base_address().address_space(),
-        crate::drivers::acpi::sdt::AddressSpace::SystemMemory
+        ::acpi::sdt::AddressSpace::SystemMemory
     );
 
     // TODO: Only one mapping for the whole HPET block

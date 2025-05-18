@@ -2,11 +2,12 @@
 
 use super::cpuid;
 use crate::{
-    drivers::acpi::{self, sdt::madt::Lint},
+    drivers::acpi::ACPI,
     locals,
     mem::{address_space, frame_alloc},
     process,
 };
+use acpi::sdt::madt::Lint;
 use beskar_core::arch::{
     PhysAddr,
     paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _},
@@ -42,7 +43,7 @@ pub fn init_lapic() {
         video::warn!("x2APIC not supported");
     }
 
-    let lapic_paddr = acpi::ACPI
+    let lapic_paddr = ACPI
         .get()
         .map_or_else(LocalApic::get_paddr_from_msr, |acpi| {
             acpi.madt().lapic_paddr()
@@ -69,7 +70,7 @@ pub fn init_lapic() {
 ///
 /// This function must only be called once by the BSP.
 pub fn init_ioapic() {
-    if let Some(acpi) = acpi::ACPI.get() {
+    if let Some(acpi) = ACPI.get() {
         for io_apic in acpi.madt().io_apics() {
             let io_apic = IoApic::new(io_apic.addr(), io_apic.gsi_base());
             io_apic.init();
@@ -136,7 +137,7 @@ impl LocalApic {
             });
         });
 
-        let acpi_id = acpi::ACPI
+        let acpi_id = ACPI
             .get()
             .map(|acpi| {
                 let apic_id = locals!().apic_id();
@@ -152,7 +153,7 @@ impl LocalApic {
         // Handle NMI sources
         let apic_lint0 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x350) };
         let apic_lint1 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x360) };
-        if let Some(acpi) = acpi::ACPI.get() {
+        if let Some(acpi) = ACPI.get() {
             acpi.madt().local_nmis().iter().for_each(|nmi| {
                 if nmi.acpi_id() != 0xFF || nmi.acpi_id() != acpi_id {
                     return;
@@ -461,8 +462,8 @@ impl IoApic {
         );
         self.set_id(u8::try_from(cpu_count).unwrap() + id_offset);
 
-        let isos = acpi::ACPI.get().unwrap().madt().io_iso();
-        let nmi_sources = acpi::ACPI.get().unwrap().madt().io_nmi_sources();
+        let isos = ACPI.get().unwrap().madt().io_iso();
+        let nmi_sources = ACPI.get().unwrap().madt().io_nmi_sources();
 
         for iso in isos {
             if iso.gsi() < self.gsi_base {

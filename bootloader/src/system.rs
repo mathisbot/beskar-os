@@ -1,7 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{debug, info, warn};
-use beskar_hal::registers::{Cr0, Efer};
 use uefi::{proto::pi::mp::MpServices, system};
 
 static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -63,6 +62,10 @@ pub fn core_count() -> usize {
 }
 
 fn enable_cpu_features() {
-    unsafe { Efer::insert_flags(Efer::NO_EXECUTE_ENABLE) };
-    unsafe { Cr0::insert_flags(Cr0::WRITE_PROTECT) };
+    #[cfg(target_arch = "x86_64")]
+    {
+        use beskar_hal::registers::{Cr0, Efer};
+        unsafe { Efer::insert_flags(Efer::NO_EXECUTE_ENABLE) };
+        unsafe { Cr0::insert_flags(Cr0::WRITE_PROTECT) };
+    }
 }

@@ -1,129 +1,91 @@
-//! General PCI handling module.
+use crate::mem::page_alloc::pmap::PhysicalMapping;
+use ::pci::{LegacyPciHandler, PciExpressHandler, PciHandler};
+use beskar_core::{arch::paging::M2MiB, drivers::DriverResult};
+use driver_api::DriverError;
+use hyperdrive::locks::mcs::{MUMcsLock, McsLock};
 
-mod commons;
-pub use commons::{Bar, Class, Device, msi, msix};
-use commons::{CapabilityHeader, MemoryBarType, PciAddress, RegisterOffset};
-
-use beskar_core::drivers::{DriverError, DriverResult};
-
-mod express;
-mod legacy;
+static PCIE_HANDLER: MUMcsLock<PciExpressHandler<PhysicalMapping<M2MiB>>> = MUMcsLock::uninit();
+static LEGACY_PCI_HANDLER: McsLock<LegacyPciHandler> = McsLock::new(LegacyPciHandler::new());
 
 pub fn init() -> DriverResult<()> {
-    if let Ok(device_count) = express::init() {
-        video::info!("PCIe initialized with {} devices", device_count);
-        Ok(())
-    } else if let Ok(device_count) = legacy::init() {
-        video::info!("Legacy PCI initialized with {} devices", device_count);
-        Ok(())
+    if let Ok(device_count) = init_express() {
+        video::info!("PCIe devices found: {}", device_count);
+        DriverResult::Ok(())
+    } else if let Ok(device_count) = init_legacy() {
+        video::info!("Legacy PCI devices found: {}", device_count);
+        DriverResult::Ok(())
     } else {
-        video::warn!("No PCI devices found");
-        Err(DriverError::Invalid)
+        video::error!("PCI failed to initialize or no PCI devices were found");
+        DriverResult::Err(DriverError::Invalid)
     }
 }
 
-pub trait PciHandler {
-    #[must_use]
-    /// Returns the list of devices found by the PCI handler.
-    fn devices(&self) -> &[commons::Device];
+fn init_express() -> DriverResult<usize> {
+    let Some(mcfg) = crate::drivers::acpi::ACPI.get().unwrap().mcfg() else {
+        return Err(DriverError::Absent);
+    };
 
-    #[must_use]
-    fn read_raw(&mut self, address: PciAddress) -> u32;
+    let pcie_handler = PciExpressHandler::new(mcfg.configuration_spaces());
+    PCIE_HANDLER.init(pcie_handler);
 
-    fn write_raw(&mut self, address: PciAddress, value: u32);
-
-    #[must_use]
-    /// Read the raw value from the PCI configuration space
-    ///
-    /// Bar number must be 0 to 5 (inclusive).
-    fn read_bar(&mut self, device: &commons::Device, bar: u8) -> Option<commons::Bar> {
-        let bar_reg_offset = match bar {
-            0 => RegisterOffset::Bar0,
-            1 => RegisterOffset::Bar1,
-            2 => RegisterOffset::Bar2,
-            3 => RegisterOffset::Bar3,
-            4 => RegisterOffset::Bar4,
-            5 => RegisterOffset::Bar5,
-            _ => return None,
-        } as u8;
-        let reg = PciAddress::new(
-            device.sbdf().segment(),
-            device.sbdf().bus(),
-            device.sbdf().device(),
-            device.sbdf().function(),
-            bar_reg_offset,
-        );
-
-        let raw_bar = self.read_raw(reg);
-
-        let upper_value = if raw_bar & 1 == 0 // Memory BAR
-            && MemoryBarType::try_from((raw_bar >> 1) & 0b11).unwrap() == MemoryBarType::Qword
-        {
-            let bar_reg_offset = match bar + 1 {
-                0 => RegisterOffset::Bar0,
-                1 => RegisterOffset::Bar1,
-                2 => RegisterOffset::Bar2,
-                3 => RegisterOffset::Bar3,
-                4 => RegisterOffset::Bar4,
-                5 => RegisterOffset::Bar5,
-                _ => panic!("PCI: Invalid BAR number"),
-            } as u8;
-            let bar_reg = PciAddress::new(
-                device.sbdf().segment(),
-                device.sbdf().bus(),
-                device.sbdf().device(),
-                device.sbdf().function(),
-                bar_reg_offset,
-            );
-
-            self.read_raw(bar_reg)
-        } else {
-            0
-        };
-
-        Some(Bar::from_raw(
-            u64::from(raw_bar) | (u64::from(upper_value) << 32),
-        ))
-    }
-}
-
-pub fn iter_capabilities(
-    handler: &mut dyn PciHandler,
-    device: &commons::Device,
-) -> impl Iterator<Item = CapabilityHeader> {
-    let cap_ptr_reg = PciAddress::new(
-        device.sbdf().segment(),
-        device.sbdf().bus(),
-        device.sbdf().device(),
-        device.sbdf().function(),
-        RegisterOffset::CapabilitiesPointer as u8,
-    );
-    let mut offset = u8::try_from(handler.read_raw(cap_ptr_reg) & 0xFF).unwrap();
-    core::iter::from_fn(move || {
-        if offset != 0 {
-            let cap_reg = PciAddress::new(
-                device.sbdf().segment(),
-                device.sbdf().bus(),
-                device.sbdf().device(),
-                device.sbdf().function(),
-                offset,
-            );
-            let cap = handler.read_raw(cap_reg);
-            let capability = CapabilityHeader::new(cap_reg, u16::try_from(cap & 0xFFFF).unwrap());
-
-            offset = capability.next();
-            Some(capability)
-        } else {
-            None
-        }
+    let device_count = with_pcie_handler(|handler| {
+        handler.update_devices();
+        handler.devices().len()
     })
+    .unwrap();
+
+    if device_count == 0 {
+        Err(DriverError::Invalid)
+    } else {
+        Ok(device_count)
+    }
+}
+
+fn init_legacy() -> DriverResult<usize> {
+    let device_count = with_legacy_pci_handler(|handler| {
+        handler.update_devices();
+        handler.devices().len()
+    });
+
+    if device_count == 0 {
+        Err(DriverError::Invalid)
+    } else {
+        Ok(device_count)
+    }
+}
+
+#[inline]
+fn with_pcie_handler<T, F: FnOnce(&mut PciExpressHandler<PhysicalMapping<M2MiB>>) -> T>(
+    f: F,
+) -> Option<T> {
+    PCIE_HANDLER.with_locked_if_init(f)
+}
+
+fn pcie_available() -> bool {
+    PCIE_HANDLER.is_initialized()
+}
+
+fn with_legacy_pci_handler<T, F: FnOnce(&mut LegacyPciHandler) -> T>(f: F) -> T {
+    LEGACY_PCI_HANDLER.with_locked(f)
 }
 
 pub fn with_pci_handler<T, F: FnOnce(&mut dyn PciHandler) -> T>(f: F) -> T {
-    if express::pcie_available() {
+    if pcie_available() {
         // Safety: PCIe is available, thus the handler is initialized.
-        unsafe { express::with_pcie_handler(|h| f(h)).unwrap_unchecked() }
+        unsafe { with_pcie_handler(|h| f(h)).unwrap_unchecked() }
     } else {
-        legacy::with_legacy_pci_handler(|h| f(h))
+        with_legacy_pci_handler(|h| f(h))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MsiHelper;
+
+impl ::pci::MsiHelper for MsiHelper {
+    fn get_lapic_info(core_id: usize) -> Option<(beskar_core::arch::PhysAddr, u8)> {
+        let core_locals = crate::locals::get_specific_core_locals(core_id)?;
+        let lapic_paddr = unsafe { core_locals.lapic().force_lock() }.paddr();
+        let lapic_id = core_locals.apic_id();
+        Some((lapic_paddr, lapic_id))
     }
 }

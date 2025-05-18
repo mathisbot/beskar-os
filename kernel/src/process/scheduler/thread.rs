@@ -167,11 +167,7 @@ impl Thread {
         stack_bottom -= size_of::<usize>();
 
         // Push the thread registers
-        let thread_regs = ThreadRegisters::new(
-            Rflags::IOPL_LOW | Rflags::IF,
-            entry_point as u64,
-            stack_ptr as u64,
-        );
+        let thread_regs = ThreadRegisters::new(Rflags::IF, entry_point as u64, stack_ptr as u64);
         let thread_regs_bytes = unsafe {
             core::mem::transmute::<ThreadRegisters, [u8; size_of::<ThreadRegisters>()]>(thread_regs)
         };
@@ -186,7 +182,7 @@ impl Thread {
     #[must_use]
     pub(super) fn new_stub(root_proc: Arc<Process>) -> Self {
         Self {
-            id: ThreadId::new(),
+            id: ThreadId(0),
             root_proc,
             priority: Priority::Low,
             state: ThreadState::Ready,

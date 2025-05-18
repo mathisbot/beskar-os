@@ -3,6 +3,25 @@
 version = 4
 
 [[package]]
+name = "acpi"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+ "beskar-hal",
+ "driver-api",
+]
+
+[[package]]
+name = "bashkar"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+ "beskar-lib",
+ "hyperdrive",
+ "noto-sans-mono-bitmap",
+]
+
+[[package]]
 name = "beskar-core"
 version = "0.1.0"
 dependencies = [
@@ -32,8 +51,8 @@ dependencies = [
 name = "beskar-os"
 version = "0.1.0"
 dependencies = [
+ "bashkar",
  "bootloader",
- "hello_world",
  "kernel",
 ]
 
@@ -45,9 +64,9 @@ checksum = "dc827186963e592360843fb5ba4b973e145841266c1357f7180c43526f2e5b61"
 
 [[package]]
 name = "bitflags"
-version = "2.9.0"
+version = "2.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c8214115b7bf84099f1309324e63141d4c5d7cc26862f97a0a857dbefe165bd"
+checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
 name = "bootloader"
@@ -55,9 +74,18 @@ version = "1.0.1"
 dependencies = [
  "beskar-core",
  "beskar-hal",
+ "bootloader-api",
  "hyperdrive",
  "uefi",
  "xmas-elf",
+]
+
+[[package]]
+name = "bootloader-api"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+ "beskar-hal",
 ]
 
 [[package]]
@@ -67,10 +95,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "hello_world"
+name = "driver-api"
 version = "0.1.0"
 dependencies = [
- "beskar-lib",
+ "beskar-core",
+ "beskar-hal",
 ]
 
 [[package]]
@@ -88,12 +117,15 @@ version = "0.1.0"
 name = "kernel"
 version = "0.1.0"
 dependencies = [
+ "acpi",
  "beskar-core",
  "beskar-hal",
- "bootloader",
+ "bootloader-api",
+ "driver-api",
  "holonet",
  "hyperdrive",
  "linked_list_allocator",
+ "pci",
  "storage",
  "thiserror",
  "video",
@@ -136,6 +168,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "pci"
+version = "0.1.0"
+dependencies = [
+ "acpi",
+ "beskar-core",
+ "beskar-hal",
+ "driver-api",
+ "hyperdrive",
 ]
 
 [[package]]

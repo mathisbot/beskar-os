@@ -120,13 +120,17 @@ After video is enabled, the bootloader sets up a comfortable environment for the
 On startup, the kernel initializes itself with the help of information provided by the bootloader.
 After initialization, it starts a process to initialize drivers as well as a user-space process for each binary in the ramdisk.
 
-For now, the only user-space program is simple: it calls every available syscall and then enters an infinite loop waiting for keyboard inputs.
-
 ![Kernel Initialization](docs/images/kernel_boot.webp)
 
 When something goes unfortunately wrong, the faulty process gets killed. On unrecoverable kernel errors, the faulty core sends an NMI to other cores to stop further processing.
 
 ![Kernel Panic](docs/images/kernel_panic.webp)
+
+### Userspace
+
+For now, the only userspace program is a wanna-be shell. It shows the terrific BeskarOS banner.
+
+![Bashkar](docs/images/bashkar.webp)
 
 ## Sources and inspirations
 

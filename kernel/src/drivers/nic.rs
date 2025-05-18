@@ -9,7 +9,7 @@ pub fn init() -> DriverResult<()> {
         let mut iter = handler
             .devices()
             .iter()
-            .filter(|device| device.csp().class() == pci::Class::Network)
+            .filter(|device| device.csp().class() == ::pci::Class::Network)
             .copied();
         let device = iter.next();
         if iter.next().is_some() {

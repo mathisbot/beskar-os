@@ -5,8 +5,8 @@
 
 extern crate alloc;
 
-pub use beskar_core::syscall::ExitCode;
-use beskar_core::syscall::Syscall;
+use beskar_core::syscall::{Syscall, SyscallExitCode};
+pub use beskar_core::{syscall::ExitCode, time::Duration};
 
 mod arch;
 pub mod io;
@@ -23,6 +23,20 @@ fn panic(_info: &::core::panic::PanicInfo) -> ! {
 pub fn exit(code: ExitCode) -> ! {
     let _ = arch::syscalls::syscall_1(Syscall::Exit, code as u64);
     unsafe { ::core::hint::unreachable_unchecked() }
+}
+
+#[inline]
+/// Sleep for **at least** the given duration.
+///
+/// # Panics
+///
+/// Panics if the syscall fails (should never happen).
+pub fn sleep(duration: Duration) {
+    let res = arch::syscalls::syscall_1(Syscall::Sleep, duration.total_millis());
+    assert_eq!(
+        SyscallExitCode::try_from(res).unwrap_or(SyscallExitCode::Failure),
+        SyscallExitCode::Success
+    );
 }
 
 #[macro_export]
@@ -46,8 +60,7 @@ macro_rules! entry_point {
 ///
 /// Do not call this function.
 #[doc(hidden)]
-#[inline]
 pub unsafe fn __init() {
-    let res = mem::mmap(mem::HEAP_SIZE);
+    let res = mem::mmap(mem::HEAP_SIZE, None);
     unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };
 }

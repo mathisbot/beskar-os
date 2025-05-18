@@ -5,10 +5,11 @@
 //! (NVMe over PCIe Transport Specification Revision 1.1).
 
 use crate::{
-    drivers::pci::{self, Bar, Device, msix::MsiX},
+    drivers::pci::MsiHelper,
     locals,
     mem::{frame_alloc, page_alloc::pmap::PhysicalMapping},
 };
+use ::pci::{Bar, Device, msix::MsiX};
 use beskar_core::{
     arch::{
         PhysAddr, VirtAddr,
@@ -53,7 +54,7 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
 
 pub struct NvmeControllers {
     registers_base: VirtAddr,
-    msix: MsiX,
+    msix: MsiX<PhysicalMapping<M4KiB>, MsiHelper>,
     acq: AdminCompletionQueue,
     asq: AdminSubmissionQueue,
     /// Maximum data transfer size in bytes
@@ -64,7 +65,9 @@ pub struct NvmeControllers {
 impl NvmeControllers {
     pub fn new(dev: &Device) -> DriverResult<Self> {
         let (Some(Bar::Memory(bar)), Some(msix)) =
-            pci::with_pci_handler(|handler| (handler.read_bar(dev, 0), MsiX::new(handler, dev)))
+            crate::drivers::pci::with_pci_handler(|handler| {
+                (handler.read_bar(dev, 0), MsiX::new(handler, dev))
+            })
         else {
             panic!("NVMe controller either have no memory BAR or no MSI-X capability");
         };
@@ -128,7 +131,7 @@ impl NvmeControllers {
         let (irq, core_id) = crate::arch::interrupts::new_irq(nvme_interrupt_handler, None);
 
         self.msix.setup_int(irq, 0, core_id);
-        pci::with_pci_handler(|handler| self.msix.enable(handler));
+        crate::drivers::pci::with_pci_handler(|handler| self.msix.enable(handler));
 
         if self.capabilities().mpsmin() > u32::try_from(M4KiB::SIZE).unwrap() {
             return Err(DriverError::Invalid);

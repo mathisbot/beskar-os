@@ -19,9 +19,9 @@ pub enum FrameError {
 
 impl<S: MemSize> Frame<S> {
     #[inline]
-    pub fn from_start_address(address: PhysAddr) -> Result<Self, FrameError> {
+    pub const fn from_start_address(address: PhysAddr) -> Result<Self, FrameError> {
         // Check that the address is correctly aligned.
-        if address != address.align_down(S::SIZE) {
+        if address.as_u64() != address.align_down(S::SIZE).as_u64() {
             return Err(FrameError::UnalignedAddress);
         }
         Ok(Self {

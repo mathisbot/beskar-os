@@ -14,7 +14,7 @@ pub fn init() -> DriverResult<()> {
         handler
             .devices()
             .iter()
-            .filter(|device| device.csp().class() == pci::Class::MassStorage)
+            .filter(|device| device.csp().class() == ::pci::Class::MassStorage)
             .copied()
             .for_each(|d| {
                 if d.csp().subclass() == 0x06 && d.csp().prog_if() == 0x01 {

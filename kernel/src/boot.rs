@@ -1,10 +1,9 @@
-use core::sync::atomic::AtomicUsize;
-
 use crate::{
     arch::{self, apic, interrupts},
     drivers, locals, mem, process, storage, syscall, time,
 };
-use beskar_core::boot::{BootInfo, RamdiskInfo};
+use bootloader_api::{BootInfo, RamdiskInfo};
+use core::sync::atomic::AtomicUsize;
 use hyperdrive::once::Once;
 
 /// Static reference to the kernel main function
@@ -100,10 +99,6 @@ pub extern "C" fn kap_entry() -> ! {
         arch::ap::load_ap_regs();
     }
 
-    // Tell the BSP we are out of the trampoline spin lock,
-    // allowing others to get their stack
-    locals::core_jumped();
-
     ap_init();
 
     video::debug!("AP {} started", locals!().core_id());
@@ -166,9 +161,9 @@ macro_rules! kernel_main {
         /// Entry of the kernel called by the bootloader.
         ///
         /// This should only be the entry point for the BSP.
-        fn __bootloader_entry_point(boot_info: &'static mut ::beskar_core::boot::BootInfo) -> ! {
+        fn __bootloader_entry_point(boot_info: &'static mut ::bootloader_api::BootInfo) -> ! {
             $crate::boot::kbsp_entry(boot_info, $path);
         }
-        ::bootloader::entry_point!(__bootloader_entry_point);
+        ::bootloader_api::entry_point!(__bootloader_entry_point);
     };
 }

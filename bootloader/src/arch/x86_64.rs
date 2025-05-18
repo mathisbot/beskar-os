@@ -30,7 +30,7 @@ pub unsafe fn chg_ctx(
             in(reg) stack_top.as_u64(),
             in(reg) entry_point_addr.as_u64(),
             in("rdi") boot_info_addr.as_u64(),
-            options(noreturn)
+            options(noreturn, nomem, preserves_flags)
         )
     }
 }

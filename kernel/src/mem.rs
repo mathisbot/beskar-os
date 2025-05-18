@@ -1,4 +1,5 @@
-use beskar_core::{boot::KernelInfo, mem::ranges::MemoryRange};
+use beskar_core::mem::ranges::MemoryRange;
+use bootloader_api::KernelInfo;
 
 pub mod address_space;
 pub mod frame_alloc;

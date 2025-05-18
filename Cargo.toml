@@ -8,21 +8,25 @@ license = "MIT"
 repository = "https://github.com/mathisbot/beskar-os/"
 
 [workspace]
-members = ["beskar-core", "beskar-hal", "beskar-lib", "bootloader", "hyperdrive", "kernel", "userspace/helloworld"]
+members = [
+    "bootloader",
+    "kernel",
+    "userspace/bashkar"
+]
 
 [workspace.dependencies]
 beskar-core = { path = "beskar-core" }
 beskar-hal = { path = "beskar-hal" }
 beskar-lib = { path = "beskar-lib" }
-bootloader = { path = "bootloader" }
+bootloader-api = { path = "bootloader/bootloader-api" }
 hyperdrive = { path = "hyperdrive" }
 thiserror = { version = "2.0.12", default-features = false }
 xmas-elf = "0.10.0"
 
 [build-dependencies]
 bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }
-hello_world = { path = "userspace/helloworld", artifact = "bin", target = "x86_64-unknown-none" }
 kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
+bashkar = { path = "userspace/bashkar", artifact = "bin", target = "x86_64-unknown-none" }
 
 [profile.release]
 panic = "abort"
