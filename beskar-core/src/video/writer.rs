@@ -55,10 +55,19 @@ impl FramebufferWriter {
     }
 
     #[inline]
-    fn clear_screen(&mut self, buffer: &mut [Pixel]) {
+    /// Resets the x and y position of the writer to the top left corner of the framebuffer
+    /// **without clearing the framebuffer**.
+    pub const fn soft_clear(&mut self) {
         self.x = BORDER_PADDING;
         self.y = BORDER_PADDING;
-        buffer.fill(Pixel::BLACK);
+    }
+
+    #[inline]
+    /// Resets the x and y position of the writer to the top left corner of the framebuffer
+    /// and clears the framebuffer.
+    pub fn clear_screen(&mut self, buffer: &mut [Pixel], pixel: Pixel) {
+        self.soft_clear();
+        buffer.fill(pixel);
     }
 
     #[inline]
@@ -86,7 +95,7 @@ impl FramebufferWriter {
                     self.newline();
                 }
                 if self.y + CHAR_HEIGHT + LINE_SPACING + BORDER_PADDING >= self.info.height() {
-                    self.clear_screen(buffer);
+                    self.clear_screen(buffer, Pixel::BLACK);
                 }
 
                 let rasterized_char = get_raster_backed(c);

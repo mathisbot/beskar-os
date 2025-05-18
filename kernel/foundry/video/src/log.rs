@@ -153,3 +153,7 @@ impl core::fmt::Write for ScreenWriter {
         Ok(())
     }
 }
+
+pub(crate) fn with_fb_writer<R, F: FnOnce(&mut FramebufferWriter) -> R>(f: F) -> Option<R> {
+    SCREEN_LOGGER.with_locked_if_init(|writer| f(&mut writer.0))
+}

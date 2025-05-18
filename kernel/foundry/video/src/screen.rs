@@ -137,7 +137,7 @@ impl KernelDevice for ScreenDevice {
         })
     }
 
-    fn on_close(&mut self) {
+    fn on_open(&mut self) {
         super::log::set_screen_logging(false);
         with_screen(|screen| {
             screen.clear(Pixel::from_format(
@@ -147,13 +147,14 @@ impl KernelDevice for ScreenDevice {
         });
     }
 
-    fn on_open(&mut self) {
+    fn on_close(&mut self) {
         with_screen(|screen| {
             screen.clear(Pixel::from_format(
                 screen.info().pixel_format(),
                 PixelComponents::BLACK,
             ));
         });
+        super::log::with_fb_writer(beskar_core::video::writer::FramebufferWriter::soft_clear);
         super::log::set_screen_logging(true);
     }
 }

@@ -128,9 +128,9 @@ When something goes unfortunately wrong, the faulty process gets killed. On unre
 
 ### Userspace
 
-For now, the only userspace program is a wanna-be shell. It shows the terrific BeskarOS banner and prints read keys in a loop.
+For now, the only userspace program is a wanna-be shell. It shows the terrific BeskarOS banner.
 
-![Small Shell](docs/images/sh.webp)
+![Bashkar](docs/images/bashkar.webp)
 
 ## Sources and inspirations
 

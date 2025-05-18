@@ -16,6 +16,12 @@ impl File {
         }
     }
 
+    #[must_use]
+    #[inline]
+    pub const fn handle(&self) -> Handle {
+        self.handle
+    }
+
     #[inline]
     /// Open a file
     ///

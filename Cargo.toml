@@ -9,14 +9,9 @@ repository = "https://github.com/mathisbot/beskar-os/"
 
 [workspace]
 members = [
-    "beskar-core",
-    "beskar-hal",
-    "beskar-lib",
     "bootloader",
-    "bootloader/bootloader-api",
-    "hyperdrive",
     "kernel",
-    "userspace/sh"
+    "userspace/bashkar"
 ]
 
 [workspace.dependencies]
@@ -31,7 +26,7 @@ xmas-elf = "0.10.0"
 [build-dependencies]
 bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }
 kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
-sh = { path = "userspace/sh", artifact = "bin", target = "x86_64-unknown-none" }
+bashkar = { path = "userspace/bashkar", artifact = "bin", target = "x86_64-unknown-none" }
 
 [profile.release]
 panic = "abort"

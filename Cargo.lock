@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "bashkar"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+ "beskar-lib",
+ "hyperdrive",
+ "noto-sans-mono-bitmap",
+]
+
+[[package]]
 name = "beskar-core"
 version = "0.1.0"
 dependencies = [
@@ -32,9 +42,9 @@ dependencies = [
 name = "beskar-os"
 version = "0.1.0"
 dependencies = [
+ "bashkar",
  "bootloader",
  "kernel",
- "sh",
 ]
 
 [[package]]
@@ -176,16 +186,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1885c039570dc00dcb4ff087a89e185fd56bae234ddc7f056a945bf36467248d"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "sh"
-version = "0.1.0"
-dependencies = [
- "beskar-core",
- "beskar-lib",
- "hyperdrive",
- "noto-sans-mono-bitmap",
 ]
 
 [[package]]

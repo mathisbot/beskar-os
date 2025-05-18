@@ -81,16 +81,23 @@ impl Screen {
     #[expect(clippy::needless_pass_by_value, reason = "This is ugly otherwise")]
     pub fn flush(&self, rows: Option<Range<u16>>) {
         let stride = usize::from(self.info.stride());
+        let max_row = usize::from(self.info.height());
         let bpp = usize::from(self.info.bytes_per_pixel());
 
-        let offset_in_screen = rows.as_ref().map_or(0, |r| usize::from(r.start) * stride);
+        let offset_in_screen = rows
+            .as_ref()
+            .map_or(0, |r| usize::from(r.start) * stride)
+            .min(max_row * stride);
 
         let offset = offset_in_screen * bpp;
 
-        let end = rows.as_ref().map_or_else(
-            || usize::try_from(self.info.size()).unwrap(),
-            |r| usize::from(r.end) * stride * bpp,
-        );
+        let end = rows
+            .as_ref()
+            .map_or_else(
+                || usize::try_from(self.info.size()).unwrap(),
+                |r| usize::from(r.end) * stride * bpp,
+            )
+            .min(max_row * stride * bpp);
 
         self.fb_file
             .write(&self.internal_fb[offset..end], offset_in_screen)
@@ -101,6 +108,14 @@ impl Screen {
     #[inline]
     pub const fn buffer_mut(&mut self) -> &mut [u8] {
         self.internal_fb
+    }
+
+    #[inline]
+    /// # Safety
+    ///
+    /// The screen will be invalid for use after this function is called.
+    pub(crate) unsafe fn close_file(&mut self) {
+        beskar_lib::io::close(self.fb_file.handle()).unwrap();
     }
 }
 
