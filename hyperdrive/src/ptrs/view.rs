@@ -70,7 +70,7 @@ impl<T, B: Borrow<T>> View<T, B> {
     /// Take ownership of the object, if it is owned.
     pub fn take(self) -> Option<T> {
         match self {
-            Self::Borrow { .. } => None,
+            Self::Borrow(_) => None,
             Self::Owned(owned) => Some(owned),
         }
     }
@@ -165,7 +165,7 @@ impl<T, B: BorrowMut<T>> ViewMut<T, B> {
     /// Take ownership of the object, if it is owned.
     pub fn take(self) -> Option<T> {
         match self {
-            Self::BorrowMut { .. } => None,
+            Self::BorrowMut(_) => None,
             Self::Owned(owned) => Some(owned),
         }
     }

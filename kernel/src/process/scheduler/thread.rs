@@ -452,9 +452,7 @@ impl ThreadStacks {
         self.user_pages
             .get()
             .map(|r| r.start().start_address() + r.size())
-            .map(|p| unsafe {
-                NonNull::new_unchecked(p.align_down(Self::STACK_ALIGNMENT).as_mut_ptr())
-            })
+            .and_then(|p| NonNull::new(p.align_down(Self::STACK_ALIGNMENT).as_mut_ptr()))
     }
 
     #[must_use]

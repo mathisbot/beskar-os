@@ -21,7 +21,7 @@ struct RawDsdt {
     def_block: DefinitionBlock,
 }
 
-impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>> Dsdt<M> {
+impl<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> Dsdt<M> {
     #[must_use]
     pub fn parse(&self) -> ParsedDsdt {
         assert_eq!(

@@ -7,6 +7,7 @@ extern crate alloc;
 
 use beskar_core::syscall::{Syscall, SyscallExitCode};
 pub use beskar_core::{syscall::ExitCode, time::Duration};
+use hyperdrive::once::Once;
 
 mod arch;
 pub mod io;
@@ -46,7 +47,10 @@ macro_rules! entry_point {
         extern crate alloc;
 
         #[unsafe(export_name = "_start")]
-        pub extern "C" fn __program_entry() {
+        /// # Safety
+        ///
+        /// Do not call this function.
+        unsafe extern "C" fn __program_entry() {
             unsafe { $crate::__init() };
             ($path)();
             $crate::exit($crate::ExitCode::Success);
@@ -55,12 +59,12 @@ macro_rules! entry_point {
 }
 
 /// Initialize the standard library.
-///
-/// ## Safety
-///
-/// Do not call this function.
 #[doc(hidden)]
-pub unsafe fn __init() {
-    let res = mem::mmap(mem::HEAP_SIZE, None);
-    unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };
+pub fn __init() {
+    static CALL_ONCE: Once<()> = Once::uninit();
+
+    CALL_ONCE.call_once(|| {
+        let res = mem::mmap(mem::HEAP_SIZE, None);
+        unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };
+    });
 }

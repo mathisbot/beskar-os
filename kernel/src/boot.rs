@@ -14,9 +14,7 @@ use hyperdrive::once::Once;
 /// This function should never be called directly, but only by the `enter_kmain` function.
 static KERNEL_MAIN: Once<fn() -> !> = Once::uninit();
 
-/// Static fence to ensure all cores enter `kmain` when they're all ready
-static KERNEL_MAIN_FENCE: AtomicUsize = AtomicUsize::new(0);
-
+/// Static reference to the ramdisk information
 static RAMDISK: Once<Option<RamdiskInfo>> = Once::uninit();
 
 /// This function is the proper entry point called by the bootloader.
@@ -141,6 +139,9 @@ pub fn ramdisk() -> Option<&'static [u8]> {
 /// It will wait for all cores to be ready before starting the kernel,
 /// i.e. entering `KERNEL_MAIN`.
 pub(crate) fn enter_kmain() -> ! {
+    /// Static fence to ensure all cores enter `kmain` when they're all ready
+    static KERNEL_MAIN_FENCE: AtomicUsize = AtomicUsize::new(0);
+
     KERNEL_MAIN_FENCE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 
     while KERNEL_MAIN_FENCE.load(core::sync::atomic::Ordering::Acquire)
@@ -158,12 +159,6 @@ pub(crate) fn enter_kmain() -> ! {
 /// It should only be used once.
 macro_rules! kernel_main {
     ($path:path) => {
-        /// Entry of the kernel called by the bootloader.
-        ///
-        /// This should only be the entry point for the BSP.
-        fn __bootloader_entry_point(boot_info: &'static mut ::bootloader_api::BootInfo) -> ! {
-            $crate::boot::kbsp_entry(boot_info, $path);
-        }
-        ::bootloader_api::entry_point!(__bootloader_entry_point);
+        ::bootloader_api::entry_point!($crate::boot::kbsp_entry, $path);
     };
 }

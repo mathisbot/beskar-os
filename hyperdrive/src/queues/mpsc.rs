@@ -44,9 +44,7 @@
 //!     }
 //!
 //!     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-//!         let base = ptr.as_ptr().cast::<Link<Self>>();
-//!         let ptr = unsafe { base.byte_add(offset_of!(Element, next)) };
-//!         unsafe { NonNull::new_unchecked(ptr) }
+//!         unsafe { ptr.byte_add(offset_of!(Self, next)) }.cast()
 //!     }
 //! }
 //! ```
@@ -56,9 +54,12 @@
 //! `Link` is the API that the queue uses to link the elements together.
 //!
 //! While it is a bit more complex on the inside, it behaves like a simple pointer to the next element.
-//! This is why it is possible to write `get_link` the way it is in the above example.
 //!
-//! ## Usage
+//! ## `MpcsQueue`
+//!
+//! An intrusive, multiple-producer single-consumer queue.
+//!
+//! ### Example
 //!
 //! ```rust
 //! # use hyperdrive::queues::mpsc::{Link, MpscQueue, Queueable};
@@ -89,9 +90,7 @@
 //! #     }
 //! #
 //! #     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-//! #         let base = ptr.as_ptr().cast::<Link<Self>>();
-//! #         let ptr = unsafe { base.byte_add(offset_of!(Element, next)) };
-//! #         unsafe { NonNull::new_unchecked(ptr) }
+//! #         unsafe { ptr.byte_add(offset_of!(Self, next)) }.cast()
 //! #     }
 //! # }
 //! #
@@ -364,7 +363,7 @@ mod tests {
     }
     struct OtherElement {
         value: u8,
-        next: Option<NonNull<Element>>,
+        _next: Option<NonNull<Element>>,
     }
 
     impl Unpin for Element {}
@@ -383,9 +382,7 @@ mod tests {
         }
 
         unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-            let base = ptr.as_ptr().cast::<Link<Self>>();
-            let ptr = unsafe { base.byte_add(offset_of!(Self, next)) };
-            unsafe { NonNull::new_unchecked(ptr) }
+            unsafe { ptr.byte_add(offset_of!(Self, next)) }.cast()
         }
     }
 
@@ -402,9 +399,7 @@ mod tests {
         }
 
         unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-            let base = ptr.as_ptr().cast::<Link<Self>>();
-            let ptr = unsafe { base.byte_add(offset_of!(Self, next)) };
-            unsafe { NonNull::new_unchecked(ptr) }
+            unsafe { ptr.byte_add(offset_of!(Self, _next)) }.cast()
         }
     }
 
@@ -435,15 +430,15 @@ mod tests {
     fn test_mpsc_non_link_field() {
         let queue: MpscQueue<OtherElement> = MpscQueue::new(Box::pin(OtherElement {
             value: 0,
-            next: None,
+            _next: None,
         }));
         queue.enqueue(Box::pin(OtherElement {
             value: 1,
-            next: None,
+            _next: None,
         }));
         queue.enqueue(Box::pin(OtherElement {
             value: 2,
-            next: None,
+            _next: None,
         }));
 
         let element1 = queue.dequeue().unwrap();

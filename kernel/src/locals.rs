@@ -28,7 +28,7 @@ pub fn init() {
         ..CoreLocalsInfo::empty()
     });
 
-    ALL_CORE_LOCALS[core_id].call_once(|| unsafe { NonNull::new_unchecked(core_locals.as_mut()) });
+    ALL_CORE_LOCALS[core_id].call_once(|| NonNull::from_mut(core_locals.as_mut()));
 
     crate::arch::locals::store_locals(Box::leak(core_locals));
 

@@ -6,12 +6,29 @@
 //! It is not suitable for high contention scenarios, but it is a good
 //! alternative to spin locks in low contention scenarios.
 //!
+//! Note that rustc currently requires that you at least specify either the back-off strategy
+//! (and will infer the type of `T`) or the type of `T` (and will use the default `Spin`
+//! back-off strategy).
+//!
+//! ```rust
+//! # use hyperdrive::locks::ticket::TicketLock;
+//! # use hyperdrive::locks::Spin;
+//! #
+//! let lock = TicketLock::<u32>::new(0); // `Spin` is used
+//! let lock = TicketLock::<_, Spin>::new(0); // `T` is inferred
+//! ```
+//!
+//! ```rust,compile_fail
+//! # use hyperdrive::locks::rw::RwLock;
+//! let lock = TicketLock::new(0);
+//! ```
+//!
 //! # Example
 //!
 //! ```rust
 //! # use hyperdrive::locks::ticket::TicketLock;
 //! # use hyperdrive::locks::Spin;
-//! let lock = TicketLock::<_, Spin>::new(0);
+//! let lock = TicketLock::<u8>::new(0);
 //!
 //! let mut guard = lock.lock();
 //! *guard = 42;
