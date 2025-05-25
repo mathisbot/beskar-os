@@ -92,25 +92,21 @@ struct PixelCompArr(PixelComponents);
 
 impl KernelDevice for ScreenDevice {
     fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), BlockDeviceError> {
-        if dst.is_empty() {
-            return Ok(());
-        }
+        const INFO_SIZE: usize = size_of::<Info>();
 
-        if dst.len() == size_of::<Info>() {
-            // FIXME: If https://github.com/rust-lang/libs-team/issues/588 is implemented, use it.
-            #[expect(clippy::cast_ptr_alignment, reason = "Alignment is checked manually")]
-            let pixel_ptr = dst.as_mut_ptr().cast::<Info>();
-            if !pixel_ptr.is_aligned() {
-                return Err(BlockDeviceError::UnalignedAccess);
+        match dst.len() {
+            0 => Ok(()),
+            INFO_SIZE => {
+                dst.as_mut_ptr()
+                    .try_cast_aligned::<Info>()
+                    .map(|info_ptr| unsafe {
+                        // Safety: The pointer is aligned and the size is correct.
+                        info_ptr.write(with_screen(|screen| screen.info()));
+                    })
+                    .ok_or(BlockDeviceError::UnalignedAccess)
             }
-            unsafe {
-                pixel_ptr.write(with_screen(|screen| screen.info()));
-            }
-
-            return Ok(());
+            _ => Err(BlockDeviceError::Unsupported),
         }
-
-        Err(BlockDeviceError::Unsupported)
     }
 
     fn write(&mut self, src: &[u8], offset: usize) -> Result<(), BlockDeviceError> {

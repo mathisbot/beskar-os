@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use beskar_core::drivers::keyboard::KeyEvent;
+use beskar_core::drivers::keyboard::{KeyCode, KeyEvent, KeyState};
 use core::mem::offset_of;
 use hyperdrive::{
     once::Once,
@@ -37,10 +37,10 @@ impl Queueable for QueuedKeyEvent {
 impl QueuedKeyEvent {
     #[must_use]
     #[inline]
-    pub fn new(event: KeyEvent) -> Self {
+    pub const fn new(event: KeyEvent) -> Self {
         Self {
             event,
-            _link: Link::default(),
+            _link: Link::new(),
         }
     }
 
@@ -65,8 +65,9 @@ impl KeyboardManager {
     #[must_use]
     #[inline]
     pub fn new() -> Self {
+        let stub = KeyEvent::new(KeyCode::Unknown, KeyState::Pressed);
         Self {
-            event_queue: MpscQueue::new(Box::new(QueuedKeyEvent::new(KeyEvent::stub()))),
+            event_queue: MpscQueue::new(Box::new(QueuedKeyEvent::new(stub))),
         }
     }
     #[inline]

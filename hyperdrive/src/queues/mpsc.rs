@@ -144,6 +144,15 @@ pub struct Link<T> {
 
 impl<T> Default for Link<T> {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Link<T> {
+    #[must_use]
+    #[inline]
+    /// Creates a new link.
+    pub const fn new() -> Self {
         Self {
             next: AtomicPtr::new(ptr::null_mut()),
             _pin: core::marker::PhantomPinned,
@@ -178,6 +187,7 @@ pub enum DequeueResult<T: Queueable> {
 
 impl<T: Queueable> DequeueResult<T> {
     #[must_use]
+    #[inline]
     /// Unwraps the result.
     ///
     /// ## Panics
@@ -192,6 +202,7 @@ impl<T: Queueable> DequeueResult<T> {
     }
 
     #[must_use]
+    #[inline]
     /// Unwraps the result without checking its value.
     ///
     /// ## Safety
@@ -213,6 +224,7 @@ impl<T: Queueable> Default for MpscQueue<T>
 where
     T::Handle: Default,
 {
+    #[inline]
     fn default() -> Self {
         Self::new(T::Handle::default())
     }
@@ -220,6 +232,7 @@ where
 
 impl<T: Queueable> MpscQueue<T> {
     #[must_use]
+    #[inline]
     pub fn new(stub: T::Handle) -> Self {
         let stub_ptr = <T as Queueable>::release(stub);
         Self {
@@ -363,7 +376,7 @@ mod tests {
     }
     struct OtherElement {
         value: u8,
-        _next: Option<NonNull<Element>>,
+        next: Option<NonNull<Element>>,
     }
 
     impl Unpin for Element {}
@@ -399,7 +412,7 @@ mod tests {
         }
 
         unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-            unsafe { ptr.byte_add(offset_of!(Self, _next)) }.cast()
+            unsafe { ptr.byte_add(offset_of!(Self, next)) }.cast()
         }
     }
 
@@ -430,15 +443,15 @@ mod tests {
     fn test_mpsc_non_link_field() {
         let queue: MpscQueue<OtherElement> = MpscQueue::new(Box::pin(OtherElement {
             value: 0,
-            _next: None,
+            next: None,
         }));
         queue.enqueue(Box::pin(OtherElement {
             value: 1,
-            _next: None,
+            next: None,
         }));
         queue.enqueue(Box::pin(OtherElement {
             value: 2,
-            _next: None,
+            next: None,
         }));
 
         let element1 = queue.dequeue().unwrap();

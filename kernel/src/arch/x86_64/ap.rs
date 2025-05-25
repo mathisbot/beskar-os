@@ -120,8 +120,8 @@ pub fn start_up_aps(core_count: usize) {
         }
     }
 
-    // Wait for all APs to be ready
-    while locals::get_ready_core_count() != core_count {
+    // Wait for all APs to register themselves
+    while locals::core_count() != core_count {
         core::hint::spin_loop();
     }
 

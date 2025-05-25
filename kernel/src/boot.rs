@@ -3,7 +3,7 @@ use crate::{
     drivers, locals, mem, process, storage, syscall, time,
 };
 use bootloader_api::{BootInfo, RamdiskInfo};
-use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use hyperdrive::once::Once;
 
 /// Static reference to the kernel main function
@@ -142,11 +142,9 @@ pub(crate) fn enter_kmain() -> ! {
     /// Static fence to ensure all cores enter `kmain` when they're all ready
     static KERNEL_MAIN_FENCE: AtomicUsize = AtomicUsize::new(0);
 
-    KERNEL_MAIN_FENCE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    KERNEL_MAIN_FENCE.fetch_add(1, Ordering::Relaxed);
 
-    while KERNEL_MAIN_FENCE.load(core::sync::atomic::Ordering::Acquire)
-        != locals::get_ready_core_count()
-    {
+    while KERNEL_MAIN_FENCE.load(Ordering::Acquire) != locals::core_count() {
         core::hint::spin_loop();
     }
 

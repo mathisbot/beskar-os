@@ -32,15 +32,6 @@ impl KeyEvent {
 
     #[must_use]
     #[inline]
-    pub const fn stub() -> Self {
-        Self {
-            key: KeyCode::Unknown,
-            pressed: KeyState::Released,
-        }
-    }
-
-    #[must_use]
-    #[inline]
     pub fn pack_option(key_event: Option<Self>) -> u64 {
         key_event.map_or(Self::NONE, |event| {
             let key = u64::from(<KeyCode as Into<u8>>::into(event.key()));

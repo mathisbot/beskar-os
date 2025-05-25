@@ -92,7 +92,7 @@ impl Thread {
             stack: None,
             // Will be overwritten before being used.
             last_stack_ptr: core::ptr::null_mut(),
-            link: Link::default(),
+            link: Link::new(),
             tls: Once::uninit(),
         }
     }
@@ -117,7 +117,7 @@ impl Thread {
             state: ThreadState::Ready,
             stack: Some(ThreadStacks::new(stack)),
             last_stack_ptr: stack_ptr,
-            link: Link::default(),
+            link: Link::new(),
             tls: Once::uninit(),
         }
     }
@@ -180,7 +180,7 @@ impl Thread {
     }
 
     #[must_use]
-    pub(super) fn new_stub(root_proc: Arc<Process>) -> Self {
+    pub(super) const fn new_stub(root_proc: Arc<Process>) -> Self {
         Self {
             id: ThreadId(0),
             root_proc,
@@ -188,7 +188,7 @@ impl Thread {
             state: ThreadState::Ready,
             stack: None,
             last_stack_ptr: core::ptr::null_mut(),
-            link: Link::default(),
+            link: Link::new(),
             tls: Once::uninit(),
         }
     }

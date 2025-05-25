@@ -11,7 +11,7 @@ fn crate_name_to_cargo_venv(crate_name: &str) -> String {
         } else if c == '-' || c == '_' {
             cargo_venv.push('_');
         } else {
-            panic!("Invalid character in crate name: {}", c);
+            panic!("Invalid character in crate name: {c}");
         }
     }
     cargo_venv
@@ -19,6 +19,7 @@ fn crate_name_to_cargo_venv(crate_name: &str) -> String {
 
 fn main() {
     println!("cargo:rerun-if-changed=./beskar-core");
+    println!("cargo:rerun-if-changed=./beskar-hal");
     println!("cargo:rerun-if-changed=./beskar-lib");
     println!("cargo:rerun-if-changed=./bootloader");
     println!("cargo:rerun-if-changed=./hyperdrive");
