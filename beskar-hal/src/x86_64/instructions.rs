@@ -34,5 +34,19 @@ pub fn halt() {
     }
 }
 
+#[inline]
+pub fn int_disable() {
+    unsafe {
+        core::arch::asm!("cli", options(nomem, preserves_flags, nostack));
+    }
+}
+
+#[inline]
+pub fn int_enable() {
+    unsafe {
+        core::arch::asm!("sti", options(nomem, preserves_flags, nostack));
+    }
+}
+
 /// This value can be used to fill the stack when debugging stack overflows.
 pub const STACK_DEBUG_INSTR: u8 = 0xCC;

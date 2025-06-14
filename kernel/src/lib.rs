@@ -25,7 +25,7 @@ static KERNEL_PANIC: Once<()> = Once::uninit();
 
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
-    arch::interrupts::int_disable();
+    beskar_hal::instructions::int_disable();
 
     #[cfg(debug_assertions)]
     video::error!("[PANIC]: Core {} - {}", locals!().core_id(), panic_info);
