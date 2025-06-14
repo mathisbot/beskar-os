@@ -5,7 +5,7 @@ use beskar_core::drivers::{
 };
 use beskar_hal::port::{Port, ReadWrite};
 use core::sync::atomic::{AtomicBool, Ordering};
-use hyperdrive::{locks::mcs::McsLock, once::Once};
+use hyperdrive::{locks::ticket::TicketLock, once::Once};
 use thiserror::Error;
 
 static PS2_AVAILABLE: AtomicBool = AtomicBool::new(false);
@@ -43,8 +43,8 @@ enum Ps2Error {
 type Ps2Result<T> = Result<T, Ps2Error>;
 
 pub struct Ps2Controller {
-    data_port: McsLock<Port<u8, ReadWrite>>,
-    cmd_sts_port: McsLock<Port<u8, ReadWrite>>,
+    data_port: TicketLock<Port<u8, ReadWrite>>,
+    cmd_sts_port: TicketLock<Port<u8, ReadWrite>>,
     has_two_ports: AtomicBool,
 }
 
@@ -77,8 +77,8 @@ impl Ps2Controller {
     #[inline]
     pub const fn new() -> Self {
         Self {
-            data_port: McsLock::new(Port::new(Self::DATA_PORT)),
-            cmd_sts_port: McsLock::new(Port::new(Self::CMD_STS_PORT)),
+            data_port: TicketLock::new(Port::new(Self::DATA_PORT)),
+            cmd_sts_port: TicketLock::new(Port::new(Self::CMD_STS_PORT)),
             has_two_ports: AtomicBool::new(false),
         }
     }
@@ -99,7 +99,7 @@ impl Ps2Controller {
     #[must_use]
     #[inline]
     fn status_register(&self) -> u8 {
-        self.cmd_sts_port.with_locked(|p| unsafe { p.read() })
+        unsafe { self.cmd_sts_port.lock().read() }
     }
 
     #[inline]
@@ -171,25 +171,24 @@ impl Ps2Controller {
 
     #[inline]
     fn write_command(&self, command: Ps2Command) {
-        self.cmd_sts_port
-            .with_locked(|p| unsafe { p.write(command as u8) });
+        unsafe { self.cmd_sts_port.lock().write(command as u8) };
     }
 
     #[must_use]
     #[inline]
     fn read_status(&self) -> u8 {
-        self.cmd_sts_port.with_locked(|p| unsafe { p.read() })
+        unsafe { self.cmd_sts_port.lock().read() }
     }
 
     #[inline]
     fn write_data(&self, data: u8) {
-        self.data_port.with_locked(|p| unsafe { p.write(data) });
+        unsafe { self.data_port.lock().write(data) };
     }
 
     #[must_use]
     #[inline]
     fn read_data(&self) -> u8 {
-        self.data_port.with_locked(|p| unsafe { p.read() })
+        unsafe { self.data_port.lock().read() }
     }
 
     /// Send a Host to Device command to the PS/2 controller.

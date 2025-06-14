@@ -1,4 +1,4 @@
-use crate::locals;
+use crate::{arch::interrupts::without_interrupts, locals};
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc};
 use beskar_core::arch::VirtAddr;
 use core::{
@@ -119,14 +119,14 @@ impl Scheduler {
     /// if scheduling was successful.
     fn reschedule(&self) -> Option<ContextSwitch> {
         self.current_thread.try_with_locked(|thread| {
-            crate::arch::interrupts::int_disable();
+            beskar_hal::instructions::int_disable();
 
             // Swap the current thread with the next one.
             let mut new_thread =
                 Pin::into_inner(if let Some(new_thread) = QUEUE.get().unwrap().next() {
                     new_thread
                 } else {
-                    crate::arch::interrupts::int_enable();
+                    beskar_hal::instructions::int_enable();
                     return None;
                 });
 
@@ -229,32 +229,39 @@ pub(crate) fn reschedule() -> Option<ContextSwitch> {
 #[inline]
 /// Returns the current thread ID.
 pub fn current_thread_id() -> ThreadId {
-    // Safety:
-    // If the scheduler changes the values mid read,
-    // it means the current thread is no longer executed.
-    // Upon return, the thread will be the same as before!
-    unsafe { get_scheduler().current_thread.force_lock() }.id()
+    without_interrupts(|| {
+        // Safety:
+        // If the scheduler changes the values mid read,
+        // it means the current thread is no longer executed.
+        // Upon return, the thread will be the same as before!
+        unsafe { get_scheduler().current_thread.force_lock() }.id()
+    })
 }
 
 #[must_use]
 #[inline]
 /// Returns the current thread's state.
 pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
-    // Safety:
-    // If the scheduler changes the values mid read,
-    // it means the current thread is no longer executed.
-    // Upon return, the thread will be the same as before!
-    unsafe { get_scheduler().current_thread.force_lock() }.snapshot()
+    without_interrupts(|| {
+        // Safety:
+        // If the scheduler changes the values mid read,
+        // it means the current thread is no longer executed.
+        // Upon return, the thread will be the same as before!
+        unsafe { get_scheduler().current_thread.force_lock() }.snapshot()
+    })
 }
 
 #[must_use]
 #[inline]
 /// Returns the current process.
 pub fn current_process() -> Arc<super::Process> {
-    // Safety:
-    // Swapping current thread is done using a memory swap of a `Box` (pointer), so it is impossible
-    // that the current thread is "partly" read before swap and "partly" after swap.
-    unsafe { get_scheduler().current_thread.force_lock() }.process()
+    without_interrupts(|| {
+        // Safety:
+        // If the scheduler changes the values mid read,
+        // it means the current thread is no longer executed.
+        // Upon return, the thread will be the same as before!
+        unsafe { get_scheduler().current_thread.force_lock() }.process()
+    })
 }
 
 #[inline]
@@ -304,7 +311,7 @@ pub unsafe fn exit_current_thread() -> ! {
     thread_yield();
 
     // If no thread is waiting, loop.
-    crate::arch::interrupts::int_enable();
+    beskar_hal::instructions::int_enable();
     loop {
         crate::arch::halt();
     }

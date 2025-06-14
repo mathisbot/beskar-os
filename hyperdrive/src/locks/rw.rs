@@ -93,13 +93,13 @@ impl<T, B: BackOff> RwLock<T, B> {
     }
 
     #[must_use]
-    pub fn read(&self) -> ReadGuard<T, B> {
+    pub fn read(&self) -> ReadGuard<'_, T, B> {
         self.state.read_lock();
         ReadGuard { lock: self }
     }
 
     #[must_use]
-    pub fn write(&self) -> WriteGuard<T, B> {
+    pub fn write(&self) -> WriteGuard<'_, T, B> {
         self.state.write_lock();
         WriteGuard { lock: self }
     }
