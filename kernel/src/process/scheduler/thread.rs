@@ -266,14 +266,6 @@ impl Thread {
     }
 }
 
-// impl Drop for Thread {
-//     #[inline]
-//     fn drop(&mut self) {
-//         // TODO: How to free TLS
-//         // (thread's address space is no longer active here)
-//     }
-// }
-
 #[derive(Debug, Clone, Copy)]
 /// Represents a snapshot of a thread's state.
 pub struct ThreadSnapshot {
@@ -366,21 +358,19 @@ extern "C" fn user_trampoline() -> ! {
     if let Some(tlst) = loaded_binary.tls_template() {
         let tls_size = tlst.mem_size();
         let num_pages = tls_size.div_ceil(M4KiB::SIZE);
-        let pages = super::current_process()
+        let pages = root_proc
             .address_space()
             .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(num_pages))
             .unwrap();
 
         let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
         frame_alloc::with_frame_allocator(|fralloc| {
-            super::current_process()
-                .address_space()
-                .with_page_table(|pt| {
-                    for page in pages {
-                        let frame = fralloc.allocate_frame().unwrap();
-                        pt.map(page, frame, flags, fralloc).flush();
-                    }
-                });
+            root_proc.address_space().with_page_table(|pt| {
+                for page in pages {
+                    let frame = fralloc.allocate_frame().unwrap();
+                    pt.map(page, frame, flags, fralloc).flush();
+                }
+            });
         });
 
         let tls_vaddr = pages.start().start_address();
@@ -413,6 +403,7 @@ extern "C" fn user_trampoline() -> ! {
         crate::arch::locals::store_thread_locals(tls);
     }
 
+    drop(root_proc); // Decrease the reference count of the process
     unsafe { crate::arch::userspace::enter_usermode(loaded_binary.entry_point(), rsp) };
 }
 
@@ -494,14 +485,6 @@ impl ThreadStacks {
         page_range
     }
 }
-
-// impl Drop for ThreadStacks {
-//     #[inline]
-//     fn drop(&mut self) {
-//         // TODO:
-//         // How to recover allocated frames and free them ?
-//     }
-// }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Tls {

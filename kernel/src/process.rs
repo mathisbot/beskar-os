@@ -137,6 +137,14 @@ impl Process {
     }
 }
 
+impl Drop for Process {
+    fn drop(&mut self) {
+        // Safety: The process is finished and has no more threads running.
+        // We can safely close all files associated with it.
+        unsafe { crate::storage::vfs().close_all_from_process(self.pid.as_u64()) };
+    }
+}
+
 struct BinaryData<'a> {
     input: binary::Binary<'a>,
     loaded: Once<binary::LoadedBinary>,

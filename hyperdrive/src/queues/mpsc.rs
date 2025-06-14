@@ -106,6 +106,9 @@ use core::{
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
 
+/// A trait that describes a type that can be used in an `MpscQueue`.
+///
+/// The type must provide a way to link the elements together and a way to capture and release the data.
 pub trait Queueable: Sized {
     /// `Handle` is the type that owns the data.
     ///
