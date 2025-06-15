@@ -1,6 +1,7 @@
 use super::gdt::{DOUBLE_FAULT_IST, PAGE_FAULT_IST};
 use crate::locals;
 use beskar_hal::{
+    instructions::{int_disable, int_enable},
     registers::{CS, Cr0, Cr2},
     structures::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
 };
@@ -197,16 +198,19 @@ extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFram
 info_isr!(spurious_interrupt_handler);
 
 #[inline]
-pub fn int_disable() {
-    unsafe {
-        core::arch::asm!("cli", options(nomem, preserves_flags, nostack));
-    }
-}
-
-#[inline]
-pub fn int_enable() {
-    unsafe {
-        core::arch::asm!("sti", options(nomem, preserves_flags, nostack));
+pub fn without_interrupts<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let rflags = beskar_hal::registers::Rflags::read();
+    if rflags & beskar_hal::registers::Rflags::IF == 0 {
+        // Interrupts are already disabled, just call the function
+        f()
+    } else {
+        int_disable();
+        let result = f();
+        int_enable();
+        result
     }
 }
 

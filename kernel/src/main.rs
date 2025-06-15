@@ -56,7 +56,7 @@ fn kmain() -> ! {
             ));
 
             scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new_from_binary(
-                user_proc.clone(),
+                user_proc,
                 Priority::Normal,
                 alloc::vec![0; 1024*64],
             )));

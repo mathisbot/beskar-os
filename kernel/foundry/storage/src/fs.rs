@@ -5,7 +5,7 @@ pub mod dev;
 pub mod ext2;
 pub mod fat;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone, Copy, Eq, PartialEq)]
 pub enum FileError {
     #[error("I/O error")]
     Io,
@@ -102,7 +102,7 @@ impl PathBuf {
 
     #[must_use]
     #[inline]
-    pub fn as_path(&self) -> Path {
+    pub fn as_path(&self) -> Path<'_> {
         Path(&self.0)
     }
 }
