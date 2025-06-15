@@ -71,6 +71,32 @@ impl<T> Slot<T> {
             value: UnsafeCell::new(MaybeUninit::uninit()),
         }
     }
+
+    #[inline]
+    /// Writes a value to this slot and updates the sequence number.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the value is valid and that no other thread
+    /// is writing to this slot at the same time.
+    pub unsafe fn write(&self, value: T, pos: usize) {
+        unsafe { (*self.value.get()).write(value) };
+        self.sequence.store(pos + 1, Ordering::Release);
+    }
+
+    #[must_use]
+    #[inline]
+    /// Reads a value from this slot and updates the sequence number.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the value is valid and that no other thread
+    /// is writing to this slot at the same time.
+    pub unsafe fn read(&self, pos: usize, size: usize) -> T {
+        let value = unsafe { (&*self.value.get()).assume_init_read() };
+        self.sequence.store(pos + size, Ordering::Release);
+        value
+    }
 }
 
 // Safety: Data races are avoided by using atomic operations for the indices.
@@ -133,10 +159,11 @@ impl<const SIZE: usize, T> MpmcQueue<SIZE, T> {
                         Ordering::Relaxed,
                     ) {
                         Ok(_old) => {
-                            // Safety: We are the only thread writing to this slot and the pointer is valid.
-                            unsafe { (*slot.value.get()).write(value) };
-                            slot.sequence.store(pos + 1, Ordering::Release);
-                            break; // Successfully pushed the value
+                            // Safety: We are the only thread writing to this slot.
+                            unsafe {
+                                slot.write(value, pos);
+                            };
+                            break Ok(()); // Successfully pushed the value
                         }
                         Err(current) => {
                             pos = current; // Retry with the current position
@@ -144,15 +171,13 @@ impl<const SIZE: usize, T> MpmcQueue<SIZE, T> {
                     }
                 }
                 core::cmp::Ordering::Less => {
-                    return Err(MpmcQueueFullError(value)); // Queue is full
+                    break Err(MpmcQueueFullError(value)); // Queue is full
                 }
                 core::cmp::Ordering::Greater => {
                     pos = self.write_index.load(Ordering::Relaxed); // Retry
                 }
             }
         }
-
-        Ok(())
     }
 
     #[must_use]
@@ -173,10 +198,9 @@ impl<const SIZE: usize, T> MpmcQueue<SIZE, T> {
                         Ordering::Relaxed,
                     ) {
                         Ok(_old) => {
-                            // Safety: We are the only thread writing to this slot and the pointer is valid.
-                            let value = unsafe { (&*slot.value.get()).assume_init_read() };
-                            slot.sequence.store(pos + SIZE, Ordering::Release);
-                            return Some(value); // Successfully pushed the value
+                            // Safety: We are the only thread accessing this slot.
+                            let value = unsafe { slot.read(pos, SIZE) };
+                            break Some(value); // Successfully pushed the value
                         }
                         Err(current) => {
                             pos = current; // Retry with the current position
@@ -184,7 +208,7 @@ impl<const SIZE: usize, T> MpmcQueue<SIZE, T> {
                     }
                 }
                 core::cmp::Ordering::Less => {
-                    return None; // Queue is empty
+                    break None; // Queue is empty
                 }
                 core::cmp::Ordering::Greater => {
                     pos = self.read_index.load(Ordering::Relaxed); // Retry

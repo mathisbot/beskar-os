@@ -190,10 +190,12 @@ impl Scheduler {
     }
 }
 
-#[must_use]
 #[inline]
-fn get_scheduler() -> &'static Scheduler {
-    locals!().scheduler().get().unwrap()
+fn with_scheduler<R, F: FnOnce(&'static Scheduler) -> R>(f: F) -> R {
+    without_interrupts(|| {
+        let scheduler = locals!().scheduler().get().unwrap();
+        f(scheduler)
+    })
 }
 
 /// A thread should be spawned with this function.
@@ -222,19 +224,17 @@ extern "C" fn guard_thread() -> ! {
 ///
 /// This function does not perform the context switch.
 pub(crate) fn reschedule() -> Option<ContextSwitch> {
-    get_scheduler().reschedule()
+    with_scheduler(Scheduler::reschedule)
 }
 
 #[must_use]
 #[inline]
 /// Returns the current thread ID.
 pub fn current_thread_id() -> ThreadId {
-    without_interrupts(|| {
+    with_scheduler(|scheduler| {
         // Safety:
-        // If the scheduler changes the values mid read,
-        // it means the current thread is no longer executed.
-        // Upon return, the thread will be the same as before!
-        unsafe { get_scheduler().current_thread.force_lock() }.id()
+        // Interrupts are disabled, so the current thread cannot change.
+        unsafe { scheduler.current_thread.force_lock() }.id()
     })
 }
 
@@ -242,12 +242,10 @@ pub fn current_thread_id() -> ThreadId {
 #[inline]
 /// Returns the current thread's state.
 pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
-    without_interrupts(|| {
+    with_scheduler(|scheduler| {
         // Safety:
-        // If the scheduler changes the values mid read,
-        // it means the current thread is no longer executed.
-        // Upon return, the thread will be the same as before!
-        unsafe { get_scheduler().current_thread.force_lock() }.snapshot()
+        // Interrupts are disabled, so the current thread cannot change.
+        unsafe { scheduler.current_thread.force_lock() }.snapshot()
     })
 }
 
@@ -255,12 +253,10 @@ pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
 #[inline]
 /// Returns the current process.
 pub fn current_process() -> Arc<super::Process> {
-    without_interrupts(|| {
+    with_scheduler(|scheduler| {
         // Safety:
-        // If the scheduler changes the values mid read,
-        // it means the current thread is no longer executed.
-        // Upon return, the thread will be the same as before!
-        unsafe { get_scheduler().current_thread.force_lock() }.process()
+        // Interrupts are disabled, so the current thread cannot change.
+        unsafe { scheduler.current_thread.force_lock() }.process()
     })
 }
 
@@ -293,7 +289,9 @@ pub fn set_scheduling(enable: bool) {
 
 #[inline]
 pub fn change_current_thread_priority(priority: priority::Priority) {
-    get_scheduler().change_current_thread_priority(priority);
+    with_scheduler(|scheduler| {
+        scheduler.change_current_thread_priority(priority);
+    });
 }
 
 /// Exits the current thread.
@@ -305,7 +303,7 @@ pub fn change_current_thread_priority(priority: priority::Priority) {
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.
 pub unsafe fn exit_current_thread() -> ! {
-    get_scheduler().exit_current_thread();
+    with_scheduler(Scheduler::exit_current_thread);
 
     // Try to reschedule the thread.
     thread_yield();
@@ -347,9 +345,10 @@ impl hyperdrive::locks::BackOff for Yield {
 
 /// Put the current thread to sleep.
 pub fn sleep() {
-    get_scheduler()
-        .should_sleep_thread
-        .store(true, Ordering::Relaxed);
+    with_scheduler(|scheduler| {
+        scheduler.should_sleep_thread.store(true, Ordering::Relaxed);
+    });
+
     if !thread_yield() {
         // TODO: What to do if the thread was not rescheduled?
         // Maybe push the thread in the sleeping queue and

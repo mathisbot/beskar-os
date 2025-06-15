@@ -344,16 +344,16 @@ extern "C" fn user_trampoline() -> ! {
     let loaded_binary = root_proc.load_binary();
 
     // Allocate a user stack
-    let rsp = super::get_scheduler()
-        .current_thread
-        .with_locked(|t| {
+    let rsp = super::with_scheduler(|scheduler| {
+        scheduler.current_thread.with_locked(|t| {
             t.stack.as_mut().map(|ts| {
                 ts.allocate_all(4 * M4KiB::SIZE);
                 ts.user_stack_top().unwrap()
             })
         })
-        .expect("Thread stack not found")
-        .as_ptr();
+    })
+    .expect("Current thread stack allocation failed")
+    .as_ptr();
 
     if let Some(tlst) = loaded_binary.tls_template() {
         let tls_size = tlst.mem_size();
@@ -397,9 +397,11 @@ extern "C" fn user_trampoline() -> ! {
 
         // Locking the scheduler's current thread is a bit ugly, but it is better than force locking it
         // (as otherwise the scheduler could get stuck on `Once::get`).
-        super::get_scheduler()
-            .current_thread
-            .with_locked(|t| t.tls.call_once(|| tls));
+        super::with_scheduler(|scheduler| {
+            scheduler.current_thread.with_locked(|t| {
+                t.tls.call_once(|| tls);
+            });
+        });
         crate::arch::locals::store_thread_locals(tls);
     }
 
