@@ -4,9 +4,7 @@ use beskar_core::arch::{
     VirtAddr,
     paging::{CacheFlush, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
 };
-use beskar_hal::{
-    instructions::STACK_DEBUG_INSTR, paging::page_table::Flags, registers::Rflags, userspace::Ring,
-};
+use beskar_hal::{instructions::STACK_DEBUG_INSTR, paging::page_table::Flags, userspace::Ring};
 use core::{
     mem::offset_of,
     pin::Pin,
@@ -167,7 +165,7 @@ impl Thread {
         stack_bottom -= size_of::<usize>();
 
         // Push the thread registers
-        let thread_regs = ThreadRegisters::new(Rflags::IF, entry_point as u64, stack_ptr as u64);
+        let thread_regs = ThreadRegisters::new(entry_point, stack_ptr);
         let thread_regs_bytes = unsafe {
             core::mem::transmute::<ThreadRegisters, [u8; size_of::<ThreadRegisters>()]>(thread_regs)
         };

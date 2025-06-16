@@ -24,20 +24,35 @@ pub fn init() -> DriverResult<()> {
 }
 
 #[derive(Error, Debug, Clone, Copy)]
-enum Ps2Error {
+pub enum Ps2Error {
     #[error("PS/2 controller self-test failed")]
-    SelfTestFailed,
+    SelfTest,
     #[error("PS/2 controller first port test failed")]
-    FirstPortTestFailed,
-    #[error("PS/2 controller second port test failed")]
-    SecondPortTestFailed,
+    FirstPortTest,
+    // #[error("PS/2 controller second port test failed")]
+    // SecondPortTest,
     #[error("PS/2 keyboard reset failed")]
-    KeyboardResetFailed,
+    KeyboardReset,
+    #[error("PS/2 controller does not support keyboard")]
+    KeyboardUnsupported,
 
     #[error("PS/2 controller data send failed")]
-    SendingFailed,
+    Sending,
     #[error("PS/2 controller data receive failed")]
-    ReceivingFailed,
+    Receiving,
+}
+
+impl From<Ps2Error> for beskar_core::drivers::DriverError {
+    fn from(error: Ps2Error) -> Self {
+        match error {
+            Ps2Error::KeyboardUnsupported => Self::Absent,
+            Ps2Error::FirstPortTest
+            // | Ps2Error::SecondPortTest
+            | Ps2Error::KeyboardReset
+            | Ps2Error::SelfTest => Self::Invalid,
+            Ps2Error::Sending | Ps2Error::Receiving => Self::Unknown,
+        }
+    }
 }
 
 type Ps2Result<T> = Result<T, Ps2Error>;
@@ -52,8 +67,8 @@ enum Ps2Command {
     DisableFirstPort = 0xAD,
     DisableSecondPort = 0xA7,
     EnableFirstPort = 0xAE,
-    EnableSecondPort = 0xA8,
-    TestSecondPort = 0xA9,
+    // EnableSecondPort = 0xA8,
+    // TestSecondPort = 0xA9,
     TestFirstPort = 0xAB,
     ReadConfigByte = 0x20,
     WriteConfigByte = 0x60,
@@ -107,12 +122,12 @@ impl Ps2Controller {
         let _ = self.read_data();
     }
 
-    pub fn initialize(&self) -> DriverResult<()> {
+    pub fn initialize(&self) -> Ps2Result<()> {
         let keyboard_support = ACPI.get().unwrap().fadt().ps2_keyboard();
         PS2_AVAILABLE.store(keyboard_support, Ordering::Relaxed);
         if !keyboard_support {
             video::warn!("PS/2 controller not supported by ACPI");
-            return Err(beskar_core::drivers::DriverError::Absent);
+            return Err(Ps2Error::KeyboardUnsupported);
         }
 
         self.write_command(Ps2Command::DisableFirstPort);
@@ -139,7 +154,7 @@ impl Ps2Controller {
             }
             if !has_passed {
                 video::warn!("PS/2 controller self-test failed");
-                return Err(beskar_core::drivers::DriverError::Invalid);
+                return Err(Ps2Error::SelfTest);
             }
         }
         self.write_config(config);
@@ -156,7 +171,7 @@ impl Ps2Controller {
             }
             if !has_passed {
                 video::warn!("PS/2 controller first port test failed");
-                return Err(beskar_core::drivers::DriverError::Invalid);
+                return Err(Ps2Error::FirstPortTest);
             }
         }
 
@@ -199,7 +214,7 @@ impl Ps2Controller {
                 return Ok(());
             }
         }
-        Err(Ps2Error::SendingFailed)
+        Err(Ps2Error::Sending)
     }
 
     /// Receive a Device to Host command from the PS/2 controller.
@@ -209,7 +224,7 @@ impl Ps2Controller {
                 return Ok(self.read_data());
             }
         }
-        Err(Ps2Error::ReceivingFailed)
+        Err(Ps2Error::Receiving)
     }
 
     #[inline]
@@ -220,6 +235,7 @@ impl Ps2Controller {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScancodeSet {
     Set1 = 1,
     Set2 = 2,
@@ -299,7 +315,7 @@ impl<'a> Ps2Keyboard<'a> {
                 // Resend
             } else if value == 0xFC || value == 0xFD {
                 // SelfTestFail
-                return Err(Ps2Error::KeyboardResetFailed);
+                return Err(Ps2Error::KeyboardReset);
             }
         }
         // Try one last time to propagate error
@@ -323,7 +339,11 @@ impl<'a> Ps2Keyboard<'a> {
     }
 
     #[must_use]
-    pub fn scancode_to_keycode(&self, scancode: u8) -> Option<KeyEvent> {
+    pub fn scancode_to_keycode(&self, extended: bool, scancode: u8) -> Option<KeyEvent> {
+        if extended {
+            // TODO: Handle extended keys
+            return None;
+        }
         match self.scancode_set {
             ScancodeSet::Set1 => Self::scancode_set1_to_keycode(scancode),
             // 2 => self.scancode_set2_to_char(scancode),
@@ -501,7 +521,7 @@ pub fn handle_keyboard_interrupt() {
 fn handle_real_key(extended: bool, key: u8) {
     let keyboard = PS2_KEYBOARD.get().unwrap();
 
-    let Some(key_event) = keyboard.scancode_to_keycode(key) else {
+    let Some(key_event) = keyboard.scancode_to_keycode(extended, key) else {
         video::warn!("Unknown key: {:#X}", key);
         return;
     };

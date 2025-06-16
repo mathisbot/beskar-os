@@ -36,7 +36,7 @@ fn kmain() -> ! {
             beskar_hal::process::Kind::Driver,
             None,
         ));
-        scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new(
+        scheduler::spawn_thread(alloc::boxed::Box::new(Thread::new(
             driver_proc,
             Priority::Low,
             alloc::vec![0; 1024 * 128],
@@ -55,7 +55,7 @@ fn kmain() -> ! {
                 )),
             ));
 
-            scheduler::spawn_thread(alloc::boxed::Box::pin(Thread::new_from_binary(
+            scheduler::spawn_thread(alloc::boxed::Box::new(Thread::new_from_binary(
                 user_proc,
                 Priority::Normal,
                 alloc::vec![0; 1024*64],

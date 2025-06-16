@@ -1,8 +1,8 @@
+use crate::mem::{EarlyFrameAllocator, Level4Entries};
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
     paging::{CacheFlush, Frame, FrameAllocator, M4KiB, Mapper as _, MemSize, Page, Translator},
 };
-
 use beskar_hal::paging::page_table::{Flags, OffsetPageTable};
 use xmas_elf::{
     ElfFile,
@@ -11,8 +11,6 @@ use xmas_elf::{
     program::{self, ProgramHeader, Type},
     sections::Rela,
 };
-
-use crate::mem::{EarlyFrameAllocator, Level4Entries};
 
 pub struct KernelLoadingUtils<'a> {
     kernel: &'a ElfFile<'a>,
@@ -403,24 +401,7 @@ fn handle_segment_dynamic(dynamic_segment: ProgramHeader, klu: &mut KernelLoadin
 fn copy_from_krnlspc(klu: &KernelLoadingUtils, addr: VirtAddr, buf: &mut [u8]) {
     let end_addr = {
         let offset = u64::try_from(buf.len() - 1).unwrap();
-        assert!(
-            offset < 0x1_0000_0000_0000,
-            "Outside of virtual address space"
-        );
-
-        let mut addr = addr.as_u64().checked_add(offset).expect("Address overflow");
-
-        match addr >> 47 {
-            0x1 => {
-                addr |= 0x1FFFF << 47;
-            }
-            0x2 => {
-                panic!("Address overflow");
-            }
-            _ => {}
-        }
-
-        VirtAddr::new(addr)
+        addr + offset
     };
 
     let start_page = Page::<M4KiB>::containing_address(addr);
@@ -466,24 +447,7 @@ fn copy_from_krnlspc(klu: &KernelLoadingUtils, addr: VirtAddr, buf: &mut [u8]) {
 fn copy_to_krnlspc(klu: &mut KernelLoadingUtils, addr: VirtAddr, buf: &[u8]) {
     let end_addr = {
         let offset = u64::try_from(buf.len() - 1).unwrap();
-        assert!(
-            offset < 0x1_0000_0000_0000,
-            "Outside of virtual address space"
-        );
-
-        let mut addr = addr.as_u64().checked_add(offset).expect("Address overflow");
-
-        match addr >> 47 {
-            0x1 => {
-                addr |= 0x1FFFF << 47;
-            }
-            0x2 => {
-                panic!("Address overflow");
-            }
-            _ => {}
-        }
-
-        VirtAddr::new(addr)
+        addr + offset
     };
 
     let start_page = Page::<M4KiB>::containing_address(addr);

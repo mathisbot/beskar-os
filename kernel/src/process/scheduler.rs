@@ -52,7 +52,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
             guard_thread,
         );
 
-        spawn_thread(Box::pin(clean_thread));
+        spawn_thread(Box::new(clean_thread));
     });
 }
 
@@ -99,6 +99,11 @@ impl Scheduler {
     #[inline]
     pub fn exit_current_thread(&self) {
         self.should_exit_thread.store(true, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn sleep_current_thread(&self) {
+        self.should_sleep_thread.store(true, Ordering::Relaxed);
     }
 
     #[must_use]
@@ -188,6 +193,11 @@ impl Scheduler {
             })
         })?
     }
+
+    pub fn schedule(mut thread: Box<Thread>) {
+        unsafe { thread.set_state(thread::ThreadState::Ready) };
+        QUEUE.get().unwrap().append(Pin::new(thread));
+    }
 }
 
 #[inline]
@@ -261,8 +271,8 @@ pub fn current_process() -> Arc<super::Process> {
 }
 
 #[inline]
-pub fn spawn_thread(thread: Pin<Box<Thread>>) {
-    QUEUE.get().unwrap().append(thread);
+pub fn spawn_thread(thread: Box<Thread>) {
+    Scheduler::schedule(thread);
 }
 
 /// Sets the scheduling of the scheduler.
@@ -315,6 +325,7 @@ pub unsafe fn exit_current_thread() -> ! {
     }
 }
 
+#[expect(clippy::must_use_candidate, reason = "Yields the CPU")]
 /// Hint to the scheduler to reschedule the current thread.
 ///
 /// Returns `true` if the thread was rescheduled, `false` otherwise.
@@ -346,7 +357,7 @@ impl hyperdrive::locks::BackOff for Yield {
 /// Put the current thread to sleep.
 pub fn sleep() {
     with_scheduler(|scheduler| {
-        scheduler.should_sleep_thread.store(true, Ordering::Relaxed);
+        scheduler.sleep_current_thread();
     });
 
     if !thread_yield() {
@@ -363,7 +374,7 @@ pub fn sleep() {
 pub fn wake_up(thread: ThreadId) -> bool {
     SLEEPING.with_locked(|wq| {
         wq.remove(&thread).is_some_and(|thread| {
-            QUEUE.get().unwrap().append(Pin::new(thread));
+            Scheduler::schedule(thread);
             true
         })
     })

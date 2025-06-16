@@ -30,7 +30,8 @@ bashkar = { path = "userspace/bashkar", artifact = "bin", target = "x86_64-unkno
 
 [profile.release]
 panic = "abort"
-lto = true
+lto = "fat"
+strip = "symbols"
 
 [profile.dev]
 panic = "abort"
