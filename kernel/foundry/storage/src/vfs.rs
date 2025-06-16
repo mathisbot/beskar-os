@@ -201,8 +201,14 @@ impl<H: VfsHelper> Vfs<H> {
     ///
     /// This function should only be called with a `u64` of a process that has completed its execution.
     pub unsafe fn close_all_from_process(&self, pid: u64) {
-        let mut open_handles = self.open_handles.write();
-        open_handles.retain(|_handle, open_file| open_file.process_id != pid);
+        self.open_handles.write().retain(|_handle, open_file| {
+            let retained = open_file.process_id != pid;
+            if !retained {
+                self.path_to_fs(open_file.path.as_path(), |fs, rel_path| fs.close(rel_path))
+                    .unwrap();
+            }
+            retained
+        });
     }
 
     /// Deletes a file at the given path.

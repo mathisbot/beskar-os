@@ -126,7 +126,7 @@ where
     }
 }
 
-impl<S: MemSize> driver_api::PhysicalMappingTrait<S> for PhysicalMapping<S>
+impl<S: MemSize> driver_api::PhysicalMapper<S> for PhysicalMapping<S>
 where
     for<'a> PageTable<'a>: Mapper<S, Flags>,
 {

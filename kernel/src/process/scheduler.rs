@@ -1,4 +1,4 @@
-use crate::locals;
+use crate::{arch::interrupts::without_interrupts, locals};
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc};
 use beskar_core::arch::VirtAddr;
 use core::{
@@ -52,7 +52,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
             guard_thread,
         );
 
-        spawn_thread(Box::pin(clean_thread));
+        spawn_thread(Box::new(clean_thread));
     });
 }
 
@@ -101,6 +101,11 @@ impl Scheduler {
         self.should_exit_thread.store(true, Ordering::Relaxed);
     }
 
+    #[inline]
+    pub fn sleep_current_thread(&self) {
+        self.should_sleep_thread.store(true, Ordering::Relaxed);
+    }
+
     #[must_use]
     #[inline]
     pub fn current_priority(&self) -> priority::Priority {
@@ -119,14 +124,14 @@ impl Scheduler {
     /// if scheduling was successful.
     fn reschedule(&self) -> Option<ContextSwitch> {
         self.current_thread.try_with_locked(|thread| {
-            crate::arch::interrupts::int_disable();
+            beskar_hal::instructions::int_disable();
 
             // Swap the current thread with the next one.
             let mut new_thread =
                 Pin::into_inner(if let Some(new_thread) = QUEUE.get().unwrap().next() {
                     new_thread
                 } else {
-                    crate::arch::interrupts::int_enable();
+                    beskar_hal::instructions::int_enable();
                     return None;
                 });
 
@@ -188,12 +193,19 @@ impl Scheduler {
             })
         })?
     }
+
+    pub fn schedule(mut thread: Box<Thread>) {
+        unsafe { thread.set_state(thread::ThreadState::Ready) };
+        QUEUE.get().unwrap().append(Pin::new(thread));
+    }
 }
 
-#[must_use]
 #[inline]
-fn get_scheduler() -> &'static Scheduler {
-    locals!().scheduler().get().unwrap()
+fn with_scheduler<R, F: FnOnce(&'static Scheduler) -> R>(f: F) -> R {
+    without_interrupts(|| {
+        let scheduler = locals!().scheduler().get().unwrap();
+        f(scheduler)
+    })
 }
 
 /// A thread should be spawned with this function.
@@ -222,44 +234,45 @@ extern "C" fn guard_thread() -> ! {
 ///
 /// This function does not perform the context switch.
 pub(crate) fn reschedule() -> Option<ContextSwitch> {
-    get_scheduler().reschedule()
+    with_scheduler(Scheduler::reschedule)
 }
 
 #[must_use]
 #[inline]
 /// Returns the current thread ID.
 pub fn current_thread_id() -> ThreadId {
-    // Safety:
-    // If the scheduler changes the values mid read,
-    // it means the current thread is no longer executed.
-    // Upon return, the thread will be the same as before!
-    unsafe { get_scheduler().current_thread.force_lock() }.id()
+    with_scheduler(|scheduler| {
+        // Safety:
+        // Interrupts are disabled, so the current thread cannot change.
+        unsafe { scheduler.current_thread.force_lock() }.id()
+    })
 }
 
 #[must_use]
 #[inline]
 /// Returns the current thread's state.
 pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
-    // Safety:
-    // If the scheduler changes the values mid read,
-    // it means the current thread is no longer executed.
-    // Upon return, the thread will be the same as before!
-    unsafe { get_scheduler().current_thread.force_lock() }.snapshot()
+    with_scheduler(|scheduler| {
+        // Safety:
+        // Interrupts are disabled, so the current thread cannot change.
+        unsafe { scheduler.current_thread.force_lock() }.snapshot()
+    })
 }
 
 #[must_use]
 #[inline]
 /// Returns the current process.
 pub fn current_process() -> Arc<super::Process> {
-    // Safety:
-    // Swapping current thread is done using a memory swap of a `Box` (pointer), so it is impossible
-    // that the current thread is "partly" read before swap and "partly" after swap.
-    unsafe { get_scheduler().current_thread.force_lock() }.process()
+    with_scheduler(|scheduler| {
+        // Safety:
+        // Interrupts are disabled, so the current thread cannot change.
+        unsafe { scheduler.current_thread.force_lock() }.process()
+    })
 }
 
 #[inline]
-pub fn spawn_thread(thread: Pin<Box<Thread>>) {
-    QUEUE.get().unwrap().append(thread);
+pub fn spawn_thread(thread: Box<Thread>) {
+    Scheduler::schedule(thread);
 }
 
 /// Sets the scheduling of the scheduler.
@@ -286,7 +299,9 @@ pub fn set_scheduling(enable: bool) {
 
 #[inline]
 pub fn change_current_thread_priority(priority: priority::Priority) {
-    get_scheduler().change_current_thread_priority(priority);
+    with_scheduler(|scheduler| {
+        scheduler.change_current_thread_priority(priority);
+    });
 }
 
 /// Exits the current thread.
@@ -298,18 +313,19 @@ pub fn change_current_thread_priority(priority: priority::Priority) {
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.
 pub unsafe fn exit_current_thread() -> ! {
-    get_scheduler().exit_current_thread();
+    with_scheduler(Scheduler::exit_current_thread);
 
     // Try to reschedule the thread.
     thread_yield();
 
     // If no thread is waiting, loop.
-    crate::arch::interrupts::int_enable();
+    beskar_hal::instructions::int_enable();
     loop {
         crate::arch::halt();
     }
 }
 
+#[expect(clippy::must_use_candidate, reason = "Yields the CPU")]
 /// Hint to the scheduler to reschedule the current thread.
 ///
 /// Returns `true` if the thread was rescheduled, `false` otherwise.
@@ -340,9 +356,10 @@ impl hyperdrive::locks::BackOff for Yield {
 
 /// Put the current thread to sleep.
 pub fn sleep() {
-    get_scheduler()
-        .should_sleep_thread
-        .store(true, Ordering::Relaxed);
+    with_scheduler(|scheduler| {
+        scheduler.sleep_current_thread();
+    });
+
     if !thread_yield() {
         // TODO: What to do if the thread was not rescheduled?
         // Maybe push the thread in the sleeping queue and
@@ -357,7 +374,7 @@ pub fn sleep() {
 pub fn wake_up(thread: ThreadId) -> bool {
     SLEEPING.with_locked(|wq| {
         wq.remove(&thread).is_some_and(|thread| {
-            QUEUE.get().unwrap().append(Pin::new(thread));
+            Scheduler::schedule(thread);
             true
         })
     })

@@ -15,6 +15,8 @@ It defines:
     - Views
     - Volatile Pointers with compile-time Access Rights
 - Queues
+    - Multiple Producer, Multiple Consumer
     - Multiple Producer, Single Consumer and intrusive
+    - Simple FIFO Ring Buffer
 - Sync
     - Barrier

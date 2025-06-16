@@ -47,7 +47,6 @@ use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU8, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
 /// Possible states of the `Once` structure.
 enum State {
     Uninitialized,
