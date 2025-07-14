@@ -9,6 +9,10 @@ use beskar_hal::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors};
 #[repr(C, align(8))]
 struct SyscallRegisters {
     rax: u64,
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
     rdi: u64,
     rsi: u64,
     rdx: u64,
@@ -37,10 +41,18 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
         "push rdx",
         "push rsi",
         "push rdi",
+        "push r12",
+        "push r13",
+        "push r14",
+        "push r15",
         "push rax",
         "mov rdi, rsp", // Regs pointer
         "call {}",
         "pop rax", // RAX now contains syscall exit code
+        "pop r15",
+        "pop r14",
+        "pop r13",
+        "pop r12",
         "pop rdi",
         "pop rsi",
         "pop rdx",

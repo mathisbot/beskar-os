@@ -1,4 +1,4 @@
-use beskar_hal::registers::Cr0;
+use beskar_hal::registers::{Cr0, Rflags};
 
 #[unsafe(naked)]
 /// Switches the current stack and CR3 to the ones provided.
@@ -69,7 +69,7 @@ pub unsafe extern "C" fn switch(old_stack: *mut *mut u8, new_stack: *const u8, c
     );
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 /// Registers that are relevant for the thread context.
 pub struct ThreadRegisters {
@@ -95,7 +95,10 @@ pub struct ThreadRegisters {
 impl ThreadRegisters {
     #[must_use]
     #[inline]
-    pub const fn new(rflags: u64, rip: u64, rbp: u64) -> Self {
+    pub fn new(entry: extern "C" fn() -> !, rbp: *mut u8) -> Self {
+        let rip = u64::try_from(entry as usize).unwrap();
+        let rbp = u64::try_from(rbp as usize).unwrap();
+        let rflags = Rflags::IF;
         Self {
             r15: 0,
             r14: 0,

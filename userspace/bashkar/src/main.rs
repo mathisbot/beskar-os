@@ -18,6 +18,8 @@ fn main() {
                     let input = tty.get_input_line();
                     let (command, args) = bashkar::commands::parse_command_line(input);
 
+                    // FIXME: Cloning the args into Strings is necessary to avoid borrowing issues below,
+                    // but it would be better to avoid this.
                     let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
 
                     let _exec_res = bashkar::commands::execute_command(&command, &args_ref, tty);

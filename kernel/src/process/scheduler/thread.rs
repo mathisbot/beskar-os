@@ -4,9 +4,7 @@ use beskar_core::arch::{
     VirtAddr,
     paging::{CacheFlush, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
 };
-use beskar_hal::{
-    instructions::STACK_DEBUG_INSTR, paging::page_table::Flags, registers::Rflags, userspace::Ring,
-};
+use beskar_hal::{instructions::STACK_DEBUG_INSTR, paging::page_table::Flags, userspace::Ring};
 use core::{
     mem::offset_of,
     pin::Pin,
@@ -54,7 +52,7 @@ impl Eq for Thread {}
 
 impl PartialOrd for Thread {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.id.cmp(&other.id))
+        Some(self.cmp(other))
     }
 }
 impl Ord for Thread {
@@ -92,7 +90,7 @@ impl Thread {
             stack: None,
             // Will be overwritten before being used.
             last_stack_ptr: core::ptr::null_mut(),
-            link: Link::default(),
+            link: Link::new(),
             tls: Once::uninit(),
         }
     }
@@ -117,7 +115,7 @@ impl Thread {
             state: ThreadState::Ready,
             stack: Some(ThreadStacks::new(stack)),
             last_stack_ptr: stack_ptr,
-            link: Link::default(),
+            link: Link::new(),
             tls: Once::uninit(),
         }
     }
@@ -167,7 +165,7 @@ impl Thread {
         stack_bottom -= size_of::<usize>();
 
         // Push the thread registers
-        let thread_regs = ThreadRegisters::new(Rflags::IF, entry_point as u64, stack_ptr as u64);
+        let thread_regs = ThreadRegisters::new(entry_point, stack_ptr);
         let thread_regs_bytes = unsafe {
             core::mem::transmute::<ThreadRegisters, [u8; size_of::<ThreadRegisters>()]>(thread_regs)
         };
@@ -180,7 +178,7 @@ impl Thread {
     }
 
     #[must_use]
-    pub(super) fn new_stub(root_proc: Arc<Process>) -> Self {
+    pub(super) const fn new_stub(root_proc: Arc<Process>) -> Self {
         Self {
             id: ThreadId(0),
             root_proc,
@@ -188,19 +186,9 @@ impl Thread {
             state: ThreadState::Ready,
             stack: None,
             last_stack_ptr: core::ptr::null_mut(),
-            link: Link::default(),
+            link: Link::new(),
             tls: Once::uninit(),
         }
-    }
-
-    /// Changes the priority of the thread.
-    ///
-    /// ## Safety
-    ///
-    /// This function should only be called on a currently active thread,
-    /// as queues in the scheduler are sorted by priority.
-    pub(super) const unsafe fn set_priority(&mut self, priority: Priority) {
-        self.priority = priority;
     }
 
     #[inline]
@@ -265,14 +253,6 @@ impl Thread {
         ThreadSnapshot::new(self.id, kst)
     }
 }
-
-// impl Drop for Thread {
-//     #[inline]
-//     fn drop(&mut self) {
-//         // TODO: How to free TLS
-//         // (thread's address space is no longer active here)
-//     }
-// }
 
 #[derive(Debug, Clone, Copy)]
 /// Represents a snapshot of a thread's state.
@@ -352,35 +332,33 @@ extern "C" fn user_trampoline() -> ! {
     let loaded_binary = root_proc.load_binary();
 
     // Allocate a user stack
-    let rsp = super::get_scheduler()
-        .current_thread
-        .with_locked(|t| {
-            t.stack.as_mut().map(|ts| {
+    let rsp = super::with_scheduler(|scheduler| {
+        scheduler.current.with_locked(|thread| {
+            thread.stack.as_mut().map(|ts| {
                 ts.allocate_all(4 * M4KiB::SIZE);
                 ts.user_stack_top().unwrap()
             })
         })
-        .expect("Thread stack not found")
-        .as_ptr();
+    })
+    .expect("Current thread stack allocation failed")
+    .as_ptr();
 
     if let Some(tlst) = loaded_binary.tls_template() {
         let tls_size = tlst.mem_size();
         let num_pages = tls_size.div_ceil(M4KiB::SIZE);
-        let pages = super::current_process()
+        let pages = root_proc
             .address_space()
             .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(num_pages))
             .unwrap();
 
         let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
         frame_alloc::with_frame_allocator(|fralloc| {
-            super::current_process()
-                .address_space()
-                .with_page_table(|pt| {
-                    for page in pages {
-                        let frame = fralloc.allocate_frame().unwrap();
-                        pt.map(page, frame, flags, fralloc).flush();
-                    }
-                });
+            root_proc.address_space().with_page_table(|pt| {
+                for page in pages {
+                    let frame = fralloc.allocate_frame().unwrap();
+                    pt.map(page, frame, flags, fralloc).flush();
+                }
+            });
         });
 
         let tls_vaddr = pages.start().start_address();
@@ -407,12 +385,15 @@ extern "C" fn user_trampoline() -> ! {
 
         // Locking the scheduler's current thread is a bit ugly, but it is better than force locking it
         // (as otherwise the scheduler could get stuck on `Once::get`).
-        super::get_scheduler()
-            .current_thread
-            .with_locked(|t| t.tls.call_once(|| tls));
+        super::with_scheduler(|scheduler| {
+            scheduler.current.with_locked(|thread| {
+                thread.tls.call_once(|| tls);
+            });
+        });
         crate::arch::locals::store_thread_locals(tls);
     }
 
+    drop(root_proc); // Decrease the reference count of the process
     unsafe { crate::arch::userspace::enter_usermode(loaded_binary.entry_point(), rsp) };
 }
 
@@ -452,9 +433,7 @@ impl ThreadStacks {
         self.user_pages
             .get()
             .map(|r| r.start().start_address() + r.size())
-            .map(|p| unsafe {
-                NonNull::new_unchecked(p.align_down(Self::STACK_ALIGNMENT).as_mut_ptr())
-            })
+            .and_then(|p| NonNull::new(p.align_down(Self::STACK_ALIGNMENT).as_mut_ptr()))
     }
 
     #[must_use]
@@ -496,14 +475,6 @@ impl ThreadStacks {
         page_range
     }
 }
-
-// impl Drop for ThreadStacks {
-//     #[inline]
-//     fn drop(&mut self) {
-//         // TODO:
-//         // How to recover allocated frames and free them ?
-//     }
-// }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Tls {

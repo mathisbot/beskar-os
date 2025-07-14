@@ -68,6 +68,7 @@ pub enum SyscallExitCode {
 }
 
 impl SyscallExitCode {
+    #[track_caller]
     #[inline]
     /// Unwraps the syscall exit code, panicking if it is a failure.
     ///

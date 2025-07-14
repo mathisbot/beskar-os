@@ -62,7 +62,7 @@ use super::{BackOff, Spin};
 use core::{
     cell::UnsafeCell,
     marker::PhantomData,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 #[derive(Default)]
@@ -93,13 +93,13 @@ impl<T, B: BackOff> RwLock<T, B> {
     }
 
     #[must_use]
-    pub fn read(&self) -> ReadGuard<T, B> {
+    pub fn read(&self) -> ReadGuard<'_, T, B> {
         self.state.read_lock();
         ReadGuard { lock: self }
     }
 
     #[must_use]
-    pub fn write(&self) -> WriteGuard<T, B> {
+    pub fn write(&self) -> WriteGuard<'_, T, B> {
         self.state.write_lock();
         WriteGuard { lock: self }
     }
@@ -161,7 +161,7 @@ impl<T, B: BackOff> Drop for WriteGuard<'_, T, B> {
 /// The state of the lock.
 struct AtomicState<B: BackOff = Spin> {
     /// The number of readers.
-    readers: AtomicUsize,
+    readers: AtomicU32,
     /// Whether a writer has acquired the lock.
     writer: AtomicBool,
     /// Back-off strategy.
@@ -173,7 +173,7 @@ impl<B: BackOff> AtomicState<B> {
     #[inline]
     pub const fn new() -> Self {
         Self {
-            readers: AtomicUsize::new(0),
+            readers: AtomicU32::new(0),
             writer: AtomicBool::new(false),
             _back_off: PhantomData,
         }
