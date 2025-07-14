@@ -16,6 +16,7 @@ impl VirtAddr {
     pub const ZERO: Self = Self(0);
 
     #[must_use]
+    #[track_caller]
     #[inline]
     pub const fn new(addr: u64) -> Self {
         Self::try_new(addr).expect("Invalid virtual address")
@@ -159,6 +160,7 @@ impl PhysAddr {
     pub const ZERO: Self = Self(0);
 
     #[must_use]
+    #[track_caller]
     #[inline]
     pub const fn new(addr: u64) -> Self {
         Self::try_new(addr).expect("Invalid physical address")

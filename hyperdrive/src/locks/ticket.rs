@@ -84,7 +84,6 @@ impl<T, B: BackOff> TicketLock<T, B> {
     }
 
     #[must_use]
-    #[inline]
     /// Locks the ticket lock and returns a guard.
     pub fn lock(&self) -> TicketGuard<'_, T, B> {
         // Get the ticket number for this thread.

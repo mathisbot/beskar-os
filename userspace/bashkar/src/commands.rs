@@ -32,13 +32,11 @@ pub fn execute_command(command: &str, args: &[&str], tty: &mut Tty) -> CommandRe
 
 /// Parse a command line into a command and arguments
 pub fn parse_command_line(line: &str) -> (String, Vec<String>) {
-    let mut parts: Vec<String> = line.split_whitespace().map(ToString::to_string).collect();
+    let mut args = line.split_whitespace().map(ToString::to_string);
 
-    if parts.is_empty() {
-        return (String::new(), Vec::new());
-    }
+    let command = args.next().unwrap_or_default();
+    let parts: Vec<_> = args.collect();
 
-    let command = parts.remove(0);
     (command, parts)
 }
 

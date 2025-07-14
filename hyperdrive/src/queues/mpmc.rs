@@ -302,8 +302,11 @@ mod tests {
         mpmc.push(Box::new(1));
         mpmc.push(Box::new(2));
 
-        assert_eq!(mpmc.pop(), Some(Box::new(1)));
-        assert_eq!(mpmc.pop(), Some(Box::new(2)));
+        let popped1 = mpmc.pop().unwrap();
+        let popped2 = mpmc.pop().unwrap();
+
+        assert_eq!(*popped1, 1);
+        assert_eq!(*popped2, 2);
     }
 
     #[test]

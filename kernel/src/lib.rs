@@ -28,13 +28,9 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     beskar_hal::instructions::int_disable();
 
     #[cfg(debug_assertions)]
-    video::error!("[PANIC]: Core {} - {}", locals!().core_id(), panic_info);
+    video::error!("[PANIC] {panic_info}");
     #[cfg(not(debug_assertions))]
-    video::error!(
-        "[PANIC]: Core {} - {}",
-        locals!().core_id(),
-        panic_info.message()
-    );
+    video::error!("[PANIC] {}", panic_info.message());
 
     // If more than one core is present, then both processes and APICs are initialized.
     if crate::locals::core_count() > 1 {

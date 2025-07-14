@@ -3,6 +3,10 @@
 //! This structure is somewhat similar to `std::sync::Once`, and it does not provide interior mutability.
 //! It is used to perform a one-time initialization of a value, and then provide a reference to it.
 //!
+//! If initialization fails, the value will be marked as poisoned and a panic will occur.
+//! This behavior depends on panic unwinding, so it does not work in `no_std` environments
+//! with `panic = "abort"`.
+//!
 //! If you need one-time initialization with interior mutability, consider combining this structure with a lock.
 //!
 //! ## Examples
@@ -49,9 +53,9 @@ use core::sync::atomic::{AtomicU8, Ordering};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Possible states of the `Once` structure.
 enum State {
-    Uninitialized,
+    Initialized = 0,
     Initializing,
-    Initialized,
+    Uninitialized,
     Poisoned,
 }
 
@@ -61,9 +65,9 @@ impl State {
     /// Converts the state to a `u8` value.
     const fn as_u8(self) -> u8 {
         match self {
-            Self::Uninitialized => 0,
+            Self::Initialized => 0,
             Self::Initializing => 1,
-            Self::Initialized => 2,
+            Self::Uninitialized => 2,
             Self::Poisoned => 3,
         }
     }
@@ -74,9 +78,9 @@ impl State {
     /// Returns `None` if the value is not a valid state.
     const fn from_u8(value: u8) -> Option<Self> {
         match value {
-            0 => Some(Self::Uninitialized),
+            0 => Some(Self::Initialized),
             1 => Some(Self::Initializing),
-            2 => Some(Self::Initialized),
+            2 => Some(Self::Uninitialized),
             3 => Some(Self::Poisoned),
             _ => None,
         }
@@ -101,7 +105,7 @@ impl AtomicState {
     #[must_use]
     #[inline]
     pub const fn uninit() -> Self {
-        Self(AtomicU8::new(State::Uninitialized.as_u8()))
+        Self::new(State::Uninitialized)
     }
 
     #[must_use]
@@ -233,14 +237,23 @@ impl<T> Once<T> {
     }
 
     #[must_use]
+    #[track_caller]
     /// Returns a reference to the value if it has been initialized.
     ///
     /// If the value is still initializing, this function will block until initialization is complete.
     ///
-    /// # Warning
+    /// # Panics
     ///
-    /// If initialization fails, the value will be marked as poisoned and `None` will be returned.
+    /// If initialization fails, the value will be marked as poisoned and a panic will occur.
+    /// This behavior depends on panic unwinding, so it does not work in `no_std` environments
+    /// with `panic = "abort"`.
     pub fn get(&self) -> Option<&T> {
+        #[cold]
+        #[track_caller]
+        fn poisoned() -> ! {
+            panic!("Once is poisoned, cannot get value");
+        }
+
         match self.state.load(Ordering::Acquire) {
             State::Initialized => {
                 // Safety:
@@ -257,10 +270,11 @@ impl<T> Once<T> {
                     Some(unsafe { (*self.value.get()).assume_init_ref() })
                 } else {
                     debug_assert_eq!(state, State::Poisoned);
-                    None
+                    poisoned();
                 }
             }
-            State::Uninitialized | State::Poisoned => None,
+            State::Uninitialized => None,
+            State::Poisoned => poisoned(),
         }
     }
 }
@@ -409,10 +423,27 @@ mod test {
         };
         handle_that_panics.join().unwrap_err();
 
-        // Poisoning the `Once` should not leave the value in an `Initializing` state.
-        // This call should finish immediately (instead of infinite loop).
-        assert!(once.get().is_none());
         assert!(!once.is_initialized());
         assert!(once.is_poisoned());
+    }
+
+    #[test]
+    #[should_panic(expected = "Once is poisoned, cannot get value")]
+    fn test_poison_get() {
+        let once = Arc::new(Once::uninit());
+
+        let handle_that_panics = {
+            let once = once.clone();
+            spawn(move || {
+                once.call_once(|| {
+                    panic!("Initialization failed!");
+                });
+            })
+        };
+        handle_that_panics.join().unwrap_err();
+
+        // Poisoning the `Once` should not leave the value in an `Initializing` state.
+        // This call should finish (panic) immediately (instead of infinite loop).
+        let _ = once.get();
     }
 }

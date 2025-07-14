@@ -52,7 +52,7 @@ impl Eq for Thread {}
 
 impl PartialOrd for Thread {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.id.cmp(&other.id))
+        Some(self.cmp(other))
     }
 }
 impl Ord for Thread {
@@ -189,16 +189,6 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
         }
-    }
-
-    /// Changes the priority of the thread.
-    ///
-    /// ## Safety
-    ///
-    /// This function should only be called on a currently active thread,
-    /// as queues in the scheduler are sorted by priority.
-    pub(super) const unsafe fn set_priority(&mut self, priority: Priority) {
-        self.priority = priority;
     }
 
     #[inline]
@@ -343,8 +333,8 @@ extern "C" fn user_trampoline() -> ! {
 
     // Allocate a user stack
     let rsp = super::with_scheduler(|scheduler| {
-        scheduler.current_thread.with_locked(|t| {
-            t.stack.as_mut().map(|ts| {
+        scheduler.current.with_locked(|thread| {
+            thread.stack.as_mut().map(|ts| {
                 ts.allocate_all(4 * M4KiB::SIZE);
                 ts.user_stack_top().unwrap()
             })
@@ -396,8 +386,8 @@ extern "C" fn user_trampoline() -> ! {
         // Locking the scheduler's current thread is a bit ugly, but it is better than force locking it
         // (as otherwise the scheduler could get stuck on `Once::get`).
         super::with_scheduler(|scheduler| {
-            scheduler.current_thread.with_locked(|t| {
-                t.tls.call_once(|| tls);
+            scheduler.current.with_locked(|thread| {
+                thread.tls.call_once(|| tls);
             });
         });
         crate::arch::locals::store_thread_locals(tls);

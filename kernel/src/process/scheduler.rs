@@ -1,9 +1,10 @@
-use crate::{arch::interrupts::without_interrupts, locals};
+use crate::locals;
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc};
 use beskar_core::arch::VirtAddr;
+use beskar_hal::instructions::without_interrupts;
 use core::{
     pin::Pin,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
 use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
@@ -76,45 +77,41 @@ impl ContextSwitch {
 }
 
 pub struct Scheduler {
-    current_thread: McsLock<Box<Thread>>,
+    current: McsLock<Box<Thread>>,
     /// A local, atomic, priority for the current thread.
-    current_priority: priority::AtomicPriority,
-    should_exit_thread: AtomicBool,
-    should_sleep_thread: AtomicBool,
+    should_exit: AtomicBool,
+    should_sleep: AtomicBool,
 }
 
 impl Scheduler {
     #[must_use]
+    #[inline]
     fn new(kernel_thread: thread::Thread) -> Self {
-        let current_priority = priority::AtomicPriority::new(kernel_thread.priority());
-
         Self {
-            current_thread: McsLock::new(Box::new(kernel_thread)),
-            current_priority,
-            should_exit_thread: AtomicBool::new(false),
-            should_sleep_thread: AtomicBool::new(false),
+            current: McsLock::new(Box::new(kernel_thread)),
+            should_exit: AtomicBool::new(false),
+            should_sleep: AtomicBool::new(false),
         }
     }
 
     #[inline]
-    pub fn exit_current_thread(&self) {
-        self.should_exit_thread.store(true, Ordering::Relaxed);
+    /// Sets an inner flag to indicate that the current thread should exit.
+    ///
+    /// This function does not perform the context switch, but it will
+    /// ensure that the next time the scheduler is called, the current thread
+    /// will be exited.
+    fn set_exit(&self) {
+        self.should_exit.store(true, Ordering::Relaxed);
     }
 
     #[inline]
-    pub fn sleep_current_thread(&self) {
-        self.should_sleep_thread.store(true, Ordering::Relaxed);
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn current_priority(&self) -> priority::Priority {
-        self.current_priority.load(Ordering::Relaxed)
-    }
-
-    #[inline]
-    pub fn change_current_thread_priority(&self, new_priority: priority::Priority) {
-        self.current_priority.store(new_priority, Ordering::Relaxed);
+    /// Sets an inner flag to indicate that the current thread should sleep.
+    ///
+    /// This function does not perform the context switch, but it will
+    /// ensure that the next time the scheduler is called, the current thread
+    /// will be put to sleep.
+    fn set_sleep(&self) {
+        self.should_sleep.store(true, Ordering::Relaxed);
     }
 
     #[must_use]
@@ -123,84 +120,72 @@ impl Scheduler {
     /// This function does not change the context, but will disable interrupts
     /// if scheduling was successful.
     fn reschedule(&self) -> Option<ContextSwitch> {
-        self.current_thread.try_with_locked(|thread| {
-            beskar_hal::instructions::int_disable();
+        self.current
+            .try_with_locked(|thread| {
+                // Swap the current thread with the next one.
+                let mut new_thread = Pin::into_inner(QUEUE.get().unwrap().next()?);
 
-            // Swap the current thread with the next one.
-            let mut new_thread =
-                Pin::into_inner(if let Some(new_thread) = QUEUE.get().unwrap().next() {
-                    new_thread
+                core::mem::swap(thread.as_mut(), new_thread.as_mut());
+                let mut old_thread = new_thread; // Renaming for clarity.
+
+                // Gather information about the old thread.
+                let old_should_exit = self.should_exit.swap(false, Ordering::Relaxed);
+                let old_should_wait = self.should_sleep.swap(false, Ordering::Relaxed);
+
+                debug_assert_eq!(thread.state(), thread::ThreadState::Ready);
+                unsafe { thread.set_state(thread::ThreadState::Running) };
+
+                // Handle stack pointers.
+                let old_stack = if old_should_exit {
+                    // In the case of the thread exiting, we cannot write to the `Thread` struct anymore.
+                    // Therefore, we write to a useless static variable because we won't need RSP value.
+                    static USELESS: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
+                    // Note: there may be data races here, but we do not care.
+                    USELESS.as_ptr()
                 } else {
-                    beskar_hal::instructions::int_enable();
-                    return None;
-                });
+                    old_thread.last_stack_ptr_mut()
+                };
+                let new_stack = thread.last_stack_ptr();
 
-            core::mem::swap(thread.as_mut(), new_thread.as_mut());
-            let mut old_thread = new_thread; // Renaming for clarity.
-
-            // Gather information about the old thread.
-            let old_priority = self
-                .current_priority
-                .swap(thread.priority(), Ordering::Relaxed);
-            unsafe { old_thread.set_priority(old_priority) };
-            let old_should_exit = self.should_exit_thread.swap(false, Ordering::Relaxed);
-            let old_should_wait = self.should_sleep_thread.swap(false, Ordering::Relaxed);
-
-            debug_assert_eq!(thread.state(), thread::ThreadState::Ready);
-            unsafe { thread.set_state(thread::ThreadState::Running) };
-
-            // Handle stack pointers.
-            let old_stack = if old_should_exit {
-                // In the case of the thread exiting, we cannot write to the `Thread` struct anymore.
-                // Therefore, we write to a useless static variable because we won't need RSP value.
-                static mut USELESS: *mut u8 = core::ptr::null_mut();
-                #[expect(static_mut_refs, reason = "We do not care about data races here.")]
-                // Safety: There will be data races, but we don't care lol
-                unsafe {
-                    &mut USELESS
+                let cr3 = thread.process().address_space().cr3_raw();
+                if let Some(tls) = thread.tls() {
+                    crate::arch::locals::store_thread_locals(tls);
                 }
-            } else {
-                old_thread.last_stack_ptr_mut()
-            };
-            let new_stack = thread.last_stack_ptr();
 
-            let cr3 = thread.process().address_space().cr3_raw();
-            if let Some(tls) = thread.tls() {
-                crate::arch::locals::store_thread_locals(tls);
-            }
+                if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
+                    let tss = unsafe { locals!().gdt().force_lock() }.tss_mut().unwrap();
+                    tss.privilege_stack_table[0] = VirtAddr::from_ptr(rsp0.as_ptr());
+                }
 
-            if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
-                let tss = unsafe { locals!().gdt().force_lock() }.tss_mut().unwrap();
-                tss.privilege_stack_table[0] = VirtAddr::from_ptr(rsp0.as_ptr());
-            }
+                if old_should_exit {
+                    // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
+                    // This job should be done by a cleaning thread.
+                    FINISHED.get().unwrap().enqueue(Pin::new(old_thread));
+                } else if old_should_wait {
+                    unsafe { old_thread.set_state(thread::ThreadState::Sleeping) };
+                    SLEEPING.with_locked(|wq| wq.insert(old_thread.id(), old_thread));
+                } else {
+                    unsafe { old_thread.set_state(thread::ThreadState::Ready) };
+                    QUEUE.get().unwrap().append(Pin::new(old_thread));
+                }
 
-            if old_should_exit {
-                // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
-                // This job should be done by a cleaning thread.
-                FINISHED.get().unwrap().enqueue(Pin::new(old_thread));
-            } else if old_should_wait {
-                unsafe { old_thread.set_state(thread::ThreadState::Sleeping) };
-                SLEEPING.with_locked(|wq| wq.insert(old_thread.id(), old_thread));
-            } else {
-                unsafe { old_thread.set_state(thread::ThreadState::Ready) };
-                QUEUE.get().unwrap().append(Pin::new(old_thread));
-            }
+                beskar_hal::instructions::int_disable();
 
-            Some(ContextSwitch {
-                old_stack,
-                new_stack,
-                cr3,
+                Some(ContextSwitch {
+                    old_stack,
+                    new_stack,
+                    cr3,
+                })
             })
-        })?
-    }
-
-    pub fn schedule(mut thread: Box<Thread>) {
-        unsafe { thread.set_state(thread::ThreadState::Ready) };
-        QUEUE.get().unwrap().append(Pin::new(thread));
+            .flatten()
     }
 }
 
 #[inline]
+/// Executes a closure with the scheduler.
+///
+/// Note that this function does not involve any locking,
+/// it simply makes sure that interrupts are disabled.
 fn with_scheduler<R, F: FnOnce(&'static Scheduler) -> R>(f: F) -> R {
     without_interrupts(|| {
         let scheduler = locals!().scheduler().get().unwrap();
@@ -244,7 +229,7 @@ pub fn current_thread_id() -> ThreadId {
     with_scheduler(|scheduler| {
         // Safety:
         // Interrupts are disabled, so the current thread cannot change.
-        unsafe { scheduler.current_thread.force_lock() }.id()
+        unsafe { scheduler.current.force_lock() }.id()
     })
 }
 
@@ -255,7 +240,7 @@ pub(crate) fn current_thread_snapshot() -> thread::ThreadSnapshot {
     with_scheduler(|scheduler| {
         // Safety:
         // Interrupts are disabled, so the current thread cannot change.
-        unsafe { scheduler.current_thread.force_lock() }.snapshot()
+        unsafe { scheduler.current.force_lock() }.snapshot()
     })
 }
 
@@ -266,13 +251,14 @@ pub fn current_process() -> Arc<super::Process> {
     with_scheduler(|scheduler| {
         // Safety:
         // Interrupts are disabled, so the current thread cannot change.
-        unsafe { scheduler.current_thread.force_lock() }.process()
+        unsafe { scheduler.current.force_lock() }.process()
     })
 }
 
 #[inline]
-pub fn spawn_thread(thread: Box<Thread>) {
-    Scheduler::schedule(thread);
+pub fn spawn_thread(mut thread: Box<Thread>) {
+    unsafe { thread.set_state(thread::ThreadState::Ready) };
+    QUEUE.get().unwrap().append(Pin::new(thread));
 }
 
 /// Sets the scheduling of the scheduler.
@@ -297,13 +283,6 @@ pub fn set_scheduling(enable: bool) {
     });
 }
 
-#[inline]
-pub fn change_current_thread_priority(priority: priority::Priority) {
-    with_scheduler(|scheduler| {
-        scheduler.change_current_thread_priority(priority);
-    });
-}
-
 /// Exits the current thread.
 ///
 /// This function will enable interrupts, otherwise the system would halt.
@@ -313,7 +292,7 @@ pub fn change_current_thread_priority(priority: priority::Priority) {
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.
 pub unsafe fn exit_current_thread() -> ! {
-    with_scheduler(Scheduler::exit_current_thread);
+    with_scheduler(Scheduler::set_exit);
 
     // Try to reschedule the thread.
     thread_yield();
@@ -357,7 +336,7 @@ impl hyperdrive::locks::BackOff for Yield {
 /// Put the current thread to sleep.
 pub fn sleep() {
     with_scheduler(|scheduler| {
-        scheduler.sleep_current_thread();
+        scheduler.set_sleep();
     });
 
     if !thread_yield() {
@@ -370,11 +349,12 @@ pub fn sleep() {
 
 /// Wakes up a thread that is sleeping.
 ///
-/// Returns `true` if the thread was woken up, `false` otherwise.
+/// Returns `true` if the thread was woken up,
+/// `false` if the thread was not sleeping.
 pub fn wake_up(thread: ThreadId) -> bool {
     SLEEPING.with_locked(|wq| {
         wq.remove(&thread).is_some_and(|thread| {
-            Scheduler::schedule(thread);
+            spawn_thread(thread);
             true
         })
     })

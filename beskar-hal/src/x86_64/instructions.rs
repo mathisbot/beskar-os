@@ -1,7 +1,7 @@
 #[inline]
 pub unsafe fn load_tss(selector: u16) {
     unsafe {
-        core::arch::asm!("ltr {:x}", in(reg) selector, options(nostack, preserves_flags));
+        core::arch::asm!("ltr {:x}", in(reg) selector, options(nostack, readonly, preserves_flags));
     }
 }
 
@@ -45,6 +45,25 @@ pub fn int_disable() {
 pub fn int_enable() {
     unsafe {
         core::arch::asm!("sti", options(nomem, preserves_flags, nostack));
+    }
+}
+
+#[inline]
+pub fn without_interrupts<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    use crate::registers::Rflags;
+
+    let rflags = Rflags::read();
+    if rflags & Rflags::IF == 0 {
+        // Interrupts are already disabled, just call the function
+        f()
+    } else {
+        int_disable();
+        let result = f();
+        int_enable();
+        result
     }
 }
 

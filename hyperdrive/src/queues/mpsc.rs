@@ -190,6 +190,7 @@ pub enum DequeueResult<T: Queueable> {
 
 impl<T: Queueable> DequeueResult<T> {
     #[must_use]
+    #[track_caller]
     #[inline]
     /// Unwraps the result.
     ///
