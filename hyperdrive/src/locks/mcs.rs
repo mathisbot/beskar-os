@@ -199,7 +199,7 @@ impl<T, B: BackOff> McsLock<T, B> {
         node.set_next(ptr::null_mut());
 
         // Place the node at the end of the queue
-        let prev = self.tail.swap(node, Ordering::Acquire);
+        let prev = self.tail.swap(node, Ordering::AcqRel);
 
         if let Some(prev_ptr) = NonNull::new(prev) {
             unsafe { prev_ptr.as_ref() }.set_next(node);
@@ -452,7 +452,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
         &'s self,
         node: &'node mut McsNode,
     ) -> Option<MUMcsGuard<'node, 's, T, B>> {
-        self.is_initialized().then(|| self.lock(node))
+        self.is_initialized().then(move || self.lock(node))
     }
 
     #[inline]
