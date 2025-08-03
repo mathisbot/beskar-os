@@ -197,7 +197,7 @@ impl NvmeControllers {
                 .maximum_data_transfer_size()
                 .map_or(u64::MAX, |raw| {
                     let mps_min = u64::from(self.capabilities().mpsmin());
-                    mps_min.checked_mul(1 << raw.get()).unwrap_or(u64::MAX)
+                    mps_min.saturating_mul(1 << raw.get())
                 });
 
         // --- Part Three: I/O queues creation ---

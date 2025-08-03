@@ -81,8 +81,8 @@ impl<T: IdtFnPtr> IdtEntry<T> {
         self.ptr_high = u32::try_from((addr >> 32) & 0xFFFF_FFFF).unwrap();
 
         self.options_cs = cs;
-        self.options = 0b1110_0000_0000; // 64-bit interrupt gate
-        self.options |= 1 << 15; // Present bit
+        // 64-bit present interrupt gate
+        self.options = 0b1000_1110_0000_0000;
     }
 
     /// Set the stack index for this IDT entry.
@@ -412,9 +412,9 @@ impl InterruptDescriptorTable {
 
     #[must_use]
     #[inline]
-    pub fn irq(&mut self, index: u8) -> &mut IdtEntry<Handler> {
-        let offset_idx = index.checked_sub(32).unwrap();
-        &mut self.interrupts[usize::from(offset_idx)]
+    pub fn irq(&mut self, index: u8) -> Option<&mut IdtEntry<Handler>> {
+        let offset_idx = index.checked_sub(32)?;
+        self.interrupts.get_mut(usize::from(offset_idx))
     }
 
     pub fn load(&'static self) {

@@ -1,3 +1,4 @@
+use crate::mem::address_space::{self, AddressSpace};
 use alloc::{
     string::{String, ToString},
     sync::Arc,
@@ -6,8 +7,6 @@ use beskar_hal::process::Kind;
 use binary::LoadedBinary;
 use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use hyperdrive::{once::Once, ptrs::view::ViewRef};
-
-use crate::mem::address_space::{self, AddressSpace};
 
 pub mod binary;
 pub mod scheduler;
@@ -137,6 +136,17 @@ impl Process {
     }
 }
 
+impl Drop for Process {
+    fn drop(&mut self) {
+        video::debug!(
+            "Process \"{}\" (PID: {}) is being dropped",
+            self.name,
+            self.pid.as_u64()
+        );
+        crate::storage::vfs().close_all_from_process(self.pid.as_u64());
+    }
+}
+
 struct BinaryData<'a> {
     input: binary::Binary<'a>,
     loaded: Once<binary::LoadedBinary>,
@@ -180,8 +190,6 @@ pub fn current() -> Arc<Process> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pcid(u16);
 
-static PCID_COUNTER: AtomicU16 = AtomicU16::new(0);
-
 impl Default for Pcid {
     fn default() -> Self {
         Self::new()
@@ -192,6 +200,8 @@ impl Pcid {
     #[must_use]
     #[inline]
     pub fn new() -> Self {
+        static PCID_COUNTER: AtomicU16 = AtomicU16::new(0);
+
         let raw: u16 = PCID_COUNTER.fetch_add(1, Ordering::Relaxed);
 
         if raw > 4095 {

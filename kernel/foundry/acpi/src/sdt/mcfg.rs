@@ -40,7 +40,7 @@ struct McfgHeader {
 }
 
 // See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt>
-impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>> Mcfg<M> {
+impl<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> Mcfg<M> {
     #[must_use]
     pub fn parse(&self) -> ParsedMcfg {
         let nb_cs = (usize::try_from(self.length()).unwrap() - size_of::<McfgHeader>())

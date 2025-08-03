@@ -4,8 +4,9 @@ use thiserror::Error;
 pub mod dev;
 pub mod ext2;
 pub mod fat;
+pub mod in_mem;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone, Copy, Eq, PartialEq)]
 pub enum FileError {
     #[error("I/O error")]
     Io,
@@ -102,7 +103,7 @@ impl PathBuf {
 
     #[must_use]
     #[inline]
-    pub fn as_path(&self) -> Path {
+    pub fn as_path(&self) -> Path<'_> {
         Path(&self.0)
     }
 }
@@ -111,6 +112,15 @@ impl core::borrow::Borrow<str> for PathBuf {
     #[inline]
     fn borrow(&self) -> &str {
         &self.0
+    }
+}
+
+impl<'a> Path<'a> {
+    #[must_use]
+    #[inline]
+    /// Creates a new `Path` from the given string slice.
+    pub const fn new(path: &'a str) -> Self {
+        Self(path)
     }
 }
 

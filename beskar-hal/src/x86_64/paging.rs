@@ -14,7 +14,7 @@ impl<S: MemSize> TlbFlush<S> {
     #[inline]
     pub fn flush(&self) {
         unsafe {
-            core::arch::asm!("invlpg [{}]", in(reg) self.0.start_address().as_u64(), options(nostack, preserves_flags));
+            core::arch::asm!("invlpg [{}]", in(reg) self.0.start_address().as_u64(), options(nostack, nomem, preserves_flags));
         }
     }
 

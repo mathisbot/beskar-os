@@ -25,20 +25,18 @@ pub fn execute_command(command: &str, args: &[&str], tty: &mut Tty) -> CommandRe
             cmd_echo(args, tty);
             Ok(())
         }
-        "exit" => cmd_exit(),
+        "exit" => beskar_lib::exit(beskar_lib::ExitCode::Success),
         _ => unknown(command, tty),
     }
 }
 
 /// Parse a command line into a command and arguments
 pub fn parse_command_line(line: &str) -> (String, Vec<String>) {
-    let mut parts: Vec<String> = line.split_whitespace().map(ToString::to_string).collect();
+    let mut args = line.split_whitespace().map(ToString::to_string);
 
-    if parts.is_empty() {
-        return (String::new(), Vec::new());
-    }
+    let command = args.next().unwrap_or_default();
+    let parts: Vec<_> = args.collect();
 
-    let command = parts.remove(0);
     (command, parts)
 }
 
@@ -58,15 +56,6 @@ fn cmd_echo(args: &[&str], tty: &mut Tty) {
     let output = args.join(" ");
     tty.write_str(&output);
     tty.write_str("\n");
-}
-
-fn cmd_exit() -> ! {
-    crate::video::screen::with_screen(|screen| {
-        // Safety: We are exiting the program, so we can safely close the framebuffer file.
-        unsafe { screen.close_file() };
-    });
-
-    beskar_lib::exit(beskar_lib::ExitCode::Success);
 }
 
 fn unknown(command: &str, tty: &mut Tty) -> CommandResult {
