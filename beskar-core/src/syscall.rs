@@ -1,6 +1,6 @@
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
 #[repr(u64)]
 pub enum Syscall {
     /// Exit syscall.
@@ -52,10 +52,11 @@ pub enum Syscall {
     /// Invalid syscall.
     ///
     /// Any syscall that is not recognized.
+    #[num_enum(default)]
     Invalid = u64::MAX,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
 #[repr(u64)]
 pub enum SyscallExitCode {
     /// The syscall succeeded
@@ -64,6 +65,7 @@ pub enum SyscallExitCode {
     Failure = 1,
 
     /// Any other (invalid) exit code.
+    #[num_enum(default)]
     Other,
 }
 
@@ -76,7 +78,12 @@ impl SyscallExitCode {
     ///
     /// Panics if the syscall exit code is not a success.
     pub fn unwrap(self) {
-        assert_ne!(self, Self::Failure, "Syscall failed!");
+        assert_eq!(
+            self,
+            Self::Success,
+            "Called unwrap on a syscall exit code that was not successful: {:?}",
+            self
+        );
     }
 }
 

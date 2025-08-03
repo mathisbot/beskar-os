@@ -9,11 +9,11 @@ use core::mem::MaybeUninit;
 /// Panics if the syscall fails.
 /// This will happen if the input data is invalid or if randomness fails to be generated.
 pub fn rand_fill(buf: &mut [u8]) {
-    const KEYBOARD_FILE: &str = "/dev/rand";
+    const RAND_FILE: &str = "/dev/rand";
 
     // FIXME: This is very inefficient and faillible if some other process
     // is using the rand file.
-    let file = File::open(KEYBOARD_FILE).unwrap();
+    let file = File::open(RAND_FILE).unwrap();
 
     let read_res = file.read(buf, 0);
 

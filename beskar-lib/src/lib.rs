@@ -35,10 +35,7 @@ pub fn exit(code: ExitCode) -> ! {
 /// Panics if the syscall fails (should never happen).
 pub fn sleep(duration: Duration) {
     let res = arch::syscalls::syscall_1(Syscall::Sleep, duration.total_millis());
-    assert_eq!(
-        SyscallExitCode::try_from(res).unwrap_or(SyscallExitCode::Failure),
-        SyscallExitCode::Success
-    );
+    SyscallExitCode::from(res).unwrap();
 }
 
 #[macro_export]
@@ -52,7 +49,7 @@ macro_rules! entry_point {
         ///
         /// Do not call this function.
         unsafe extern "C" fn __program_entry() {
-            unsafe { $crate::__init() };
+            $crate::__init();
             ($path)();
             $crate::exit($crate::ExitCode::Success);
         }

@@ -63,7 +63,7 @@ impl State {
     #[must_use]
     #[inline]
     /// Converts the state to a `u8` value.
-    const fn as_u8(self) -> u8 {
+    pub const fn as_u8(self) -> u8 {
         match self {
             Self::Initialized => 0,
             Self::Initializing => 1,
@@ -76,7 +76,7 @@ impl State {
     #[inline]
     /// Converts a `u8` value to a `State`.
     /// Returns `None` if the value is not a valid state.
-    const fn from_u8(value: u8) -> Option<Self> {
+    pub const fn from_u8(value: u8) -> Option<Self> {
         match value {
             0 => Some(Self::Initialized),
             1 => Some(Self::Initializing),
@@ -93,7 +93,7 @@ impl State {
     /// # Safety
     ///
     /// The value must be a valid state.
-    const unsafe fn from_u8_unchecked(value: u8) -> Self {
+    pub const unsafe fn from_u8_unchecked(value: u8) -> Self {
         unsafe { Self::from_u8(value).unwrap_unchecked() }
     }
 }

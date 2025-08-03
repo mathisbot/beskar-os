@@ -1,4 +1,4 @@
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
 
 #[derive(Debug, Clone, Copy)]
 pub struct KeyEvent {
@@ -47,14 +47,14 @@ impl KeyEvent {
             None
         } else {
             debug_assert!(value >> 16 == 0);
-            let key = KeyCode::try_from(u8::try_from(value & 0xFF).unwrap()).unwrap();
+            let key = KeyCode::from(u8::try_from(value & 0xFF).unwrap());
             let pressed = KeyState::try_from(u8::try_from((value >> 8) & 0xFF).unwrap()).unwrap();
             Some(Self { key, pressed })
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
 #[repr(u8)]
 pub enum KeyCode {
     A,
@@ -169,6 +169,7 @@ pub enum KeyCode {
     WindowsLeft,
     WindowsRight,
 
+    #[num_enum(default)]
     Unknown,
 }
 

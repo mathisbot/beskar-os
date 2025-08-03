@@ -17,8 +17,8 @@ use beskar_core::{
 macro_rules! entry_point {
     ($path:path $(, $arg:expr)*) => {
         #[unsafe(export_name = "_start")]
-        pub extern "C" fn __kernel_entry(boot_info: &'static mut $crate::BootInfo) -> ! {
-            unsafe { ($path)(boot_info $(, $arg)*) }
+        extern "C" fn __kernel_entry(boot_info: &'static mut $crate::BootInfo) -> ! {
+            ($path)(boot_info $(, $arg)*)
         }
     };
 }

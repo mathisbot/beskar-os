@@ -173,6 +173,8 @@ pub struct MpscQueue<T: Queueable> {
     being_dequeued: AtomicBool,
     /// The stub node.
     stub: NonNull<T>,
+    /// dropck marker.
+    _marker: core::marker::PhantomData<T>,
 }
 
 unsafe impl<T: Queueable> Send for MpscQueue<T> {}
@@ -244,6 +246,7 @@ impl<T: Queueable> MpscQueue<T> {
             tail: AtomicPtr::new(stub_ptr.as_ptr()),
             being_dequeued: AtomicBool::new(false),
             stub: stub_ptr,
+            _marker: core::marker::PhantomData,
         }
     }
 

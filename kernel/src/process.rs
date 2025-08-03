@@ -143,9 +143,7 @@ impl Drop for Process {
             self.name,
             self.pid.as_u64()
         );
-        // Safety: The process is finished and has no more threads running.
-        // We can safely close all files associated with it.
-        unsafe { crate::storage::vfs().close_all_from_process(self.pid.as_u64()) };
+        crate::storage::vfs().close_all_from_process(self.pid.as_u64());
     }
 }
 

@@ -47,7 +47,7 @@ impl<T> core::error::Error for MpmcQueueFullError<T> {}
 /// A multiple-producer multiple-consumer queue.
 pub struct MpmcQueue<const SIZE: usize, T> {
     /// The buffer that holds the data.
-    buffer: [Slot<T>; SIZE],
+    buffer: [Slot<T, SIZE>; SIZE],
     /// The index of the next element to be read.
     read_index: AtomicUsize,
     /// The index of the next element to be written.
@@ -55,14 +55,14 @@ pub struct MpmcQueue<const SIZE: usize, T> {
 }
 
 #[derive(Debug)]
-struct Slot<T> {
+struct Slot<T, const SIZE: usize> {
     /// The sequence number for this slot.
     sequence: AtomicUsize,
     /// The value stored in this slot.
     value: UnsafeCell<MaybeUninit<T>>,
 }
 
-impl<T> Slot<T> {
+impl<T, const SIZE: usize> Slot<T, SIZE> {
     #[must_use]
     #[inline]
     pub const fn new(sequence: usize) -> Self {
@@ -78,7 +78,7 @@ impl<T> Slot<T> {
     /// # Safety
     ///
     /// The caller must ensure that the value is valid and that no other thread
-    /// is writing to this slot at the same time.
+    /// is accessing this slot at the same time.
     pub unsafe fn write(&self, value: T, pos: usize) {
         unsafe { (*self.value.get()).write(value) };
         self.sequence.store(pos + 1, Ordering::Release);
@@ -92,9 +92,9 @@ impl<T> Slot<T> {
     ///
     /// The caller must ensure that the value is valid and that no other thread
     /// is writing to this slot at the same time.
-    pub unsafe fn read(&self, pos: usize, size: usize) -> T {
+    pub unsafe fn read(&self, pos: usize) -> T {
         let value = unsafe { (&*self.value.get()).assume_init_read() };
-        self.sequence.store(pos + size, Ordering::Release);
+        self.sequence.store(pos + SIZE, Ordering::Release);
         value
     }
 }
@@ -199,7 +199,7 @@ impl<const SIZE: usize, T> MpmcQueue<SIZE, T> {
                     ) {
                         Ok(_old) => {
                             // Safety: We are the only thread accessing this slot.
-                            let value = unsafe { slot.read(pos, SIZE) };
+                            let value = unsafe { slot.read(pos) };
                             break Some(value); // Successfully pushed the value
                         }
                         Err(current) => {

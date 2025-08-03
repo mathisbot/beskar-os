@@ -16,9 +16,7 @@ pub fn poll_keyboard() -> Option<KeyEvent> {
 
     // FIXME: This is very inefficient and faillible if some other process
     // is using the keyboard file.
-    let Ok(file) = File::open(KEYBOARD_FILE) else {
-        return None;
-    };
+    let file = File::open(KEYBOARD_FILE).ok()?;
 
     let mut buffer = KeyboardEventBuffer([0_u8; size_of::<u64>()]);
     let bytes_read = file.read(&mut buffer.0, 0).unwrap_or(0);

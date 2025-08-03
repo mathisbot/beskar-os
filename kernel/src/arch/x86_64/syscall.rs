@@ -7,12 +7,12 @@ use beskar_hal::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(8))]
+/// Represents the pushed registers during a syscall.
+///
+/// We only push Caller-saved registers, as the others will be saved
+/// by the inner syscall handlers.
 struct SyscallRegisters {
     rax: u64,
-    r15: u64,
-    r14: u64,
-    r13: u64,
-    r12: u64,
     rdi: u64,
     rsi: u64,
     rdx: u64,
@@ -41,18 +41,10 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
         "push rdx",
         "push rsi",
         "push rdi",
-        "push r12",
-        "push r13",
-        "push r14",
-        "push r15",
         "push rax",
         "mov rdi, rsp", // Regs pointer
         "call {}",
         "pop rax", // RAX now contains syscall exit code
-        "pop r15",
-        "pop r14",
-        "pop r13",
-        "pop r12",
         "pop rdi",
         "pop rsi",
         "pop rdx",
@@ -69,7 +61,7 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
 /// Handles stack switching and calling the actual syscall handler.
 ///
 /// This function is called from the assembly stub above.
-extern "sysv64" fn syscall_handler_impl(regs: *mut SyscallRegisters) {
+extern "sysv64" fn syscall_handler_impl(regs: &mut SyscallRegisters) {
     // Currently, we are on the user stack. It is undefined whether we are right where the
     // assembly stub left us (because of the prologue), but the place we want to be is in the `regs` argument.
 
@@ -108,10 +100,7 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
         six: regs.r9,
     };
 
-    let res = syscall(
-        Syscall::try_from(regs.rax).unwrap_or(Syscall::Invalid),
-        &args,
-    );
+    let res = syscall(Syscall::from(regs.rax), &args);
 
     // Store result
     regs.rax = res.as_u64();
