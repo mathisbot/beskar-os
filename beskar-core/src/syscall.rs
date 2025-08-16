@@ -81,8 +81,7 @@ impl SyscallExitCode {
         assert_eq!(
             self,
             Self::Success,
-            "Called unwrap on a syscall exit code that was not successful: {:?}",
-            self
+            "Called unwrap on a syscall exit code that was not successful: {self:?}",
         );
     }
 }

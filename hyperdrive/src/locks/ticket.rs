@@ -109,16 +109,6 @@ impl<T, B: BackOff> TicketLock<T, B> {
         unsafe { &mut *self.data.get() }
     }
 
-    #[inline]
-    /// Unlocks the ticket lock.
-    ///
-    /// # Safety
-    ///
-    /// The caller must be the owner of the lock.
-    unsafe fn unlock(&self) {
-        self.now_serving.fetch_add(1, Ordering::Release);
-    }
-
     #[must_use]
     #[inline]
     /// Consumes the lock and returns the inner data.
@@ -135,8 +125,7 @@ pub struct TicketGuard<'l, T, B: BackOff> {
 impl<T, B: BackOff> Drop for TicketGuard<'_, T, B> {
     #[inline]
     fn drop(&mut self) {
-        // Safety: If the guard exists, we have the lock.
-        unsafe { self.lock.unlock() };
+        self.lock.now_serving.fetch_add(1, Ordering::Release);
     }
 }
 

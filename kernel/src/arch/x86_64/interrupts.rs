@@ -132,7 +132,7 @@ macro_rules! panic_isr {
 
 macro_rules! panic_isr_with_errcode {
     ($name:ident) => {
-        extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame, err_code: u64) -> () {
+        extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame, err_code: u64) {
             panic!(
                 "EXCEPTION: {} INTERRUPT {:#x} on core {}\n{:#?}",
                 stringify!($name),
@@ -146,7 +146,7 @@ macro_rules! panic_isr_with_errcode {
 
 macro_rules! info_isr {
     ($name:ident) => {
-        extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
+        extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) {
             video::info!(
                 "{} INTERRUPT on core {} - t{}",
                 stringify!($name),
