@@ -294,6 +294,7 @@ fn cpuid_supported() -> bool {
 pub enum CpuVendor {
     Intel,
     Amd,
+    ViaTechnology,
     Other,
 }
 
@@ -302,6 +303,7 @@ impl From<&[u8; 12]> for CpuVendor {
         match vendor {
             b"GenuineIntel" | b"GenuineIotel" => Self::Intel,
             b"AuthenticAMD" => Self::Amd,
+            b"CentaurHauls" | b"VIA VIA VIA " => Self::ViaTechnology,
             _ => Self::Other,
         }
     }

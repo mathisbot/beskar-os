@@ -69,10 +69,9 @@ impl Heap {
     }
 
     pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        let Some(ptr) = NonNull::new(ptr) else {
-            return;
-        };
-        unsafe { self.linked_list.deallocate(ptr, layout) };
+        if let Some(ptr) = NonNull::new(ptr) {
+            unsafe { self.linked_list.deallocate(ptr, layout) }
+        }
     }
 }
 

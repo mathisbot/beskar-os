@@ -12,11 +12,13 @@ use beskar_core::{
 /// This macro defines the entry point of the kernel.
 ///
 /// This will be called by the bootloader.
+///
+/// You can pass additional arguments that will be forwarded to your entry point function.
 macro_rules! entry_point {
-    ($path:path) => {
+    ($path:path $(, $arg:expr)*) => {
         #[unsafe(export_name = "_start")]
-        pub extern "C" fn __kernel_entry(boot_info: &'static mut $crate::BootInfo) -> ! {
-            ($path)(boot_info)
+        extern "C" fn __kernel_entry(boot_info: &'static mut $crate::BootInfo) -> ! {
+            ($path)(boot_info $(, $arg)*)
         }
     };
 }

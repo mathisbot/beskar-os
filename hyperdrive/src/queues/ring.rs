@@ -77,6 +77,10 @@ impl<const SIZE: usize, T> Ring<SIZE, T> {
     #[must_use]
     #[inline]
     /// Creates a new ring buffer.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the `SIZE` is 0.
     pub const fn new() -> Self {
         assert!(SIZE > 0, "Ring buffer size must be greater than 0");
         Self {
@@ -159,6 +163,10 @@ impl<const SIZE: usize, T> Ring<SIZE, T> {
     }
 
     /// Pushes a new value into the ring buffer.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the buffer is full.
     pub const fn push(&mut self, value: T) {
         let next_write_index = self.next_write_index();
 

@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 noto-sans-mono-bitmap = { version = "0.3.1", default-features = false, features = ["font_weights_default", "size_20", "unicode_ranges_all"] }
-num_enum = { version = "0.7.3", default-features = false }
+num_enum = { version = "0.7.4", default-features = false }
 thiserror = { workspace = true }

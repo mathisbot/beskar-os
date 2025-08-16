@@ -6,12 +6,29 @@
 //! It is not suitable for high contention scenarios, but it is a good
 //! alternative to spin locks in low contention scenarios.
 //!
+//! Note that rustc currently requires that you at least specify either the back-off strategy
+//! (and will infer the type of `T`) or the type of `T` (and will use the default `Spin`
+//! back-off strategy).
+//!
+//! ```rust
+//! # use hyperdrive::locks::ticket::TicketLock;
+//! # use hyperdrive::locks::Spin;
+//! #
+//! let lock = TicketLock::<u32>::new(0); // `Spin` is used
+//! let lock = TicketLock::<_, Spin>::new(0); // `T` is inferred
+//! ```
+//!
+//! ```rust,compile_fail
+//! # use hyperdrive::locks::rw::RwLock;
+//! let lock = TicketLock::new(0);
+//! ```
+//!
 //! # Example
 //!
 //! ```rust
 //! # use hyperdrive::locks::ticket::TicketLock;
 //! # use hyperdrive::locks::Spin;
-//! let lock = TicketLock::<_, Spin>::new(0);
+//! let lock = TicketLock::<u8>::new(0);
 //!
 //! let mut guard = lock.lock();
 //! *guard = 42;
@@ -67,7 +84,6 @@ impl<T, B: BackOff> TicketLock<T, B> {
     }
 
     #[must_use]
-    #[inline]
     /// Locks the ticket lock and returns a guard.
     pub fn lock(&self) -> TicketGuard<'_, T, B> {
         // Get the ticket number for this thread.
@@ -93,16 +109,6 @@ impl<T, B: BackOff> TicketLock<T, B> {
         unsafe { &mut *self.data.get() }
     }
 
-    #[inline]
-    /// Unlocks the ticket lock.
-    ///
-    /// # Safety
-    ///
-    /// The caller must be the owner of the lock.
-    unsafe fn unlock(&self) {
-        self.now_serving.fetch_add(1, Ordering::Release);
-    }
-
     #[must_use]
     #[inline]
     /// Consumes the lock and returns the inner data.
@@ -119,8 +125,7 @@ pub struct TicketGuard<'l, T, B: BackOff> {
 impl<T, B: BackOff> Drop for TicketGuard<'_, T, B> {
     #[inline]
     fn drop(&mut self) {
-        // Safety: If the guard exists, we have the lock.
-        unsafe { self.lock.unlock() };
+        self.lock.now_serving.fetch_add(1, Ordering::Release);
     }
 }
 

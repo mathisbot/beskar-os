@@ -106,7 +106,7 @@ impl<A: Access, T: ?Sized> Volatile<A, T> {
     #[inline]
     /// Creates a new volatile pointer from a mutable reference.
     pub const fn from_mut(ptr: &mut T) -> Self {
-        Self::new(unsafe { NonNull::new_unchecked(ptr) })
+        Self::new(NonNull::from_mut(ptr))
     }
 
     #[must_use]
@@ -170,8 +170,7 @@ impl<A: ReadAccess, T: ?Sized> Volatile<A, T> {
     #[inline]
     /// Creates a new volatile pointer from a reference.
     pub const fn from_ref(ptr: &T) -> Volatile<ReadOnly, T> {
-        let ptr_mut = unsafe { NonNull::new_unchecked(core::ptr::from_ref(ptr).cast_mut()) };
-        Self::new_read_only(ptr_mut)
+        Self::new_read_only(NonNull::from_ref(ptr))
     }
 
     #[must_use]

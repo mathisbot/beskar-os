@@ -1,10 +1,15 @@
 {
-    // These settings are mandatory when working in `no_std` environments.
-    // Otherwise, rust-analyzer will panic trying to find the standard library
+    // Prevent rust-analyzer from searching for `stdlib` in `no_std` environments
     "rust-analyzer.check.allTargets": false,
     "rust-analyzer.check.targets": [
         "x86_64-unknown-none",
         "x86_64-unknown-uefi"
     ],
-    "rust-analyzer.check.features": [],
+    // Do not trigger bindeps
+    "rust-analyzer.check.extraArgs": ["--exclude", "beskar-os"],
+    // Do not run build scripts
+    "rust-analyzer.cargo.buildScripts.enable": false,
+
+    // Optimization for large `no_std` projects
+    "rust-analyzer.lens.enable": false,
 }

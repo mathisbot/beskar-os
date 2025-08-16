@@ -11,9 +11,9 @@ struct TscClock;
 
 pub fn init() {
     let hpet_res = crate::drivers::hpet::init();
-    HPET_AVAILABLE.store(hpet_res.is_ok(), Ordering::Release);
+    HPET_AVAILABLE.store(hpet_res.is_ok(), Ordering::Relaxed);
     let tsc_res = crate::drivers::tsc::init();
-    TSC_AVAILABLE.store(tsc_res.is_ok(), Ordering::Release);
+    TSC_AVAILABLE.store(tsc_res.is_ok(), Ordering::Relaxed);
 }
 
 /// Waits for AT LEAST the given number of milliseconds.
