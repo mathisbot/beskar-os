@@ -98,4 +98,3 @@ jobs:
 
       - name: Run Rustfmt
         run: cargo fmt --verbose --all -- --check
-

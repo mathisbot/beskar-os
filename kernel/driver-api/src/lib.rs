@@ -14,7 +14,7 @@ pub use beskar_core::drivers::{DriverError, DriverResult};
 ///
 /// Be careful to only use the original mapped length, as accessing outside
 /// could result in undefined behavior if the memory is used by another mapping.
-pub trait PhysicalMappingTrait<S: MemSize = M4KiB> {
+pub trait PhysicalMapper<S: MemSize = M4KiB> {
     /// Create a new physical mapping.
     fn new(paddr: PhysAddr, length: usize, flags: Flags) -> Self;
 

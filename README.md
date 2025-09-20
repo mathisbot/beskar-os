@@ -23,9 +23,9 @@ Throughout the development process, I always follow four objectives:
 
 I have many milestones ideas for the OS:
 
-1. Being completely self-hosted
-2. Successfully ping `1.1.1.1`
-3. Run Doom?
+- [X] Run Doom (see [Doom](userspace/doom/README.md))
+- [ ] Successfully ping `1.1.1.1`
+- [ ] Being completely self-hosted
 
 ## Design and architecture
 

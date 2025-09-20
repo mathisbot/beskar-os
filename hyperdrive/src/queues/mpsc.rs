@@ -44,9 +44,7 @@
 //!     }
 //!
 //!     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-//!         let base = ptr.as_ptr().cast::<Link<Self>>();
-//!         let ptr = unsafe { base.byte_add(offset_of!(Element, next)) };
-//!         unsafe { NonNull::new_unchecked(ptr) }
+//!         unsafe { ptr.byte_add(offset_of!(Self, next)) }.cast()
 //!     }
 //! }
 //! ```
@@ -56,9 +54,12 @@
 //! `Link` is the API that the queue uses to link the elements together.
 //!
 //! While it is a bit more complex on the inside, it behaves like a simple pointer to the next element.
-//! This is why it is possible to write `get_link` the way it is in the above example.
 //!
-//! ## Usage
+//! ## `MpcsQueue`
+//!
+//! An intrusive, multiple-producer single-consumer queue.
+//!
+//! ### Example
 //!
 //! ```rust
 //! # use hyperdrive::queues::mpsc::{Link, MpscQueue, Queueable};
@@ -89,9 +90,7 @@
 //! #     }
 //! #
 //! #     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-//! #         let base = ptr.as_ptr().cast::<Link<Self>>();
-//! #         let ptr = unsafe { base.byte_add(offset_of!(Element, next)) };
-//! #         unsafe { NonNull::new_unchecked(ptr) }
+//! #         unsafe { ptr.byte_add(offset_of!(Self, next)) }.cast()
 //! #     }
 //! # }
 //! #
@@ -107,6 +106,9 @@ use core::{
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
 
+/// A trait that describes a type that can be used in an `MpscQueue`.
+///
+/// The type must provide a way to link the elements together and a way to capture and release the data.
 pub trait Queueable: Sized {
     /// `Handle` is the type that owns the data.
     ///
@@ -145,6 +147,15 @@ pub struct Link<T> {
 
 impl<T> Default for Link<T> {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Link<T> {
+    #[must_use]
+    #[inline]
+    /// Creates a new link.
+    pub const fn new() -> Self {
         Self {
             next: AtomicPtr::new(ptr::null_mut()),
             _pin: core::marker::PhantomPinned,
@@ -162,6 +173,8 @@ pub struct MpscQueue<T: Queueable> {
     being_dequeued: AtomicBool,
     /// The stub node.
     stub: NonNull<T>,
+    /// dropck marker.
+    _marker: core::marker::PhantomData<T>,
 }
 
 unsafe impl<T: Queueable> Send for MpscQueue<T> {}
@@ -179,6 +192,8 @@ pub enum DequeueResult<T: Queueable> {
 
 impl<T: Queueable> DequeueResult<T> {
     #[must_use]
+    #[track_caller]
+    #[inline]
     /// Unwraps the result.
     ///
     /// ## Panics
@@ -193,6 +208,7 @@ impl<T: Queueable> DequeueResult<T> {
     }
 
     #[must_use]
+    #[inline]
     /// Unwraps the result without checking its value.
     ///
     /// ## Safety
@@ -214,6 +230,7 @@ impl<T: Queueable> Default for MpscQueue<T>
 where
     T::Handle: Default,
 {
+    #[inline]
     fn default() -> Self {
         Self::new(T::Handle::default())
     }
@@ -221,6 +238,7 @@ where
 
 impl<T: Queueable> MpscQueue<T> {
     #[must_use]
+    #[inline]
     pub fn new(stub: T::Handle) -> Self {
         let stub_ptr = <T as Queueable>::release(stub);
         Self {
@@ -228,6 +246,7 @@ impl<T: Queueable> MpscQueue<T> {
             tail: AtomicPtr::new(stub_ptr.as_ptr()),
             being_dequeued: AtomicBool::new(false),
             stub: stub_ptr,
+            _marker: core::marker::PhantomData,
         }
     }
 
@@ -383,9 +402,7 @@ mod tests {
         }
 
         unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-            let base = ptr.as_ptr().cast::<Link<Self>>();
-            let ptr = unsafe { base.byte_add(offset_of!(Self, next)) };
-            unsafe { NonNull::new_unchecked(ptr) }
+            unsafe { ptr.byte_add(offset_of!(Self, next)) }.cast()
         }
     }
 
@@ -402,9 +419,7 @@ mod tests {
         }
 
         unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
-            let base = ptr.as_ptr().cast::<Link<Self>>();
-            let ptr = unsafe { base.byte_add(offset_of!(Self, next)) };
-            unsafe { NonNull::new_unchecked(ptr) }
+            unsafe { ptr.byte_add(offset_of!(Self, next)) }.cast()
         }
     }
 

@@ -8,16 +8,24 @@ static PCIE_HANDLER: MUMcsLock<PciExpressHandler<PhysicalMapping<M2MiB>>> = MUMc
 static LEGACY_PCI_HANDLER: McsLock<LegacyPciHandler> = McsLock::new(LegacyPciHandler::new());
 
 pub fn init() -> DriverResult<()> {
-    if let Ok(device_count) = init_express() {
-        video::info!("PCIe devices found: {}", device_count);
-        DriverResult::Ok(())
-    } else if let Ok(device_count) = init_legacy() {
-        video::info!("Legacy PCI devices found: {}", device_count);
-        DriverResult::Ok(())
-    } else {
-        video::error!("PCI failed to initialize or no PCI devices were found");
-        DriverResult::Err(DriverError::Invalid)
-    }
+    init_express().map_or_else(
+        |_| {
+            init_legacy().map_or_else(
+                |_| {
+                    video::error!("PCI failed to initialize or no PCI devices were found");
+                    DriverResult::Err(DriverError::Invalid)
+                },
+                |device_count| {
+                    video::info!("Legacy PCI devices found: {}", device_count);
+                    DriverResult::Ok(())
+                },
+            )
+        },
+        |device_count| {
+            video::info!("PCIe devices found: {}", device_count);
+            DriverResult::Ok(())
+        },
+    )
 }
 
 fn init_express() -> DriverResult<usize> {

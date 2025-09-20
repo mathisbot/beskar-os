@@ -195,7 +195,7 @@ impl<T, B: BackOff> McsLock<T, B> {
     /// This function allows for a more fine-grained control over the duration of the lock.
     pub fn lock<'s, 'node>(&'s self, node: &'node mut McsNode) -> McsGuard<'node, 's, T, B> {
         // Assert the node is ready to be used
-        node.locked.store(true, Ordering::Release);
+        node.locked.store(true, Ordering::Relaxed);
         node.set_next(ptr::null_mut());
 
         // Place the node at the end of the queue
@@ -224,15 +224,13 @@ impl<T, B: BackOff> McsLock<T, B> {
         node: &'node mut McsNode,
     ) -> Option<McsGuard<'node, 's, T, B>> {
         // Assert the node is ready to be used
-        node.locked.store(true, Ordering::Release);
         node.set_next(ptr::null_mut());
+        // Note: we do not care about `locked` here as this field will never be accessed
 
         // Try to place the node at the end of the queue
         self.tail
-            .compare_exchange(ptr::null_mut(), node, Ordering::AcqRel, Ordering::Relaxed)
+            .compare_exchange(ptr::null_mut(), node, Ordering::Acquire, Ordering::Relaxed)
             .ok()?;
-
-        node.locked.store(false, Ordering::Release);
 
         Some(McsGuard { lock: self, node })
     }
@@ -320,7 +318,7 @@ impl<T, B: BackOff> DerefMut for McsGuard<'_, '_, T, B> {
 
 impl<T, B: BackOff> Drop for McsGuard<'_, '_, T, B> {
     fn drop(&mut self) {
-        // Check if the node is at the front of the queue
+        // Check if the node is the back of the queue
         if self.node.next().is_none() {
             if self
                 .lock
@@ -411,23 +409,17 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     }
 
     #[must_use]
+    #[inline]
     /// Locks the lock and returns a guard.
     ///
     /// ## Panics
     ///
     /// Panics if the lock is not initialized.
     pub fn lock<'s, 'node>(&'s self, node: &'node mut McsNode) -> MUMcsGuard<'node, 's, T, B> {
-        // Panicking before locking the inner lock has two effects:
-        // - It doesn't poison the lock
-        // - If anyone de-initializes the lock exactly after this check,
-        //   it will result in undefined behavior.
+        // Panicking before locking the inner lock so that it doesn't poison the lock
         assert!(self.is_initialized(), "MUMcsLock not initialized");
 
         let guard = self.inner_lock.lock(node);
-
-        // If de-initialization is implemented, this line should be uncommented.
-        // It can cause poisoning in the very specific case mentioned above.
-        // assert!(self.is_initialized(), "MUMcsLock not initialized");
 
         MUMcsGuard { inner_guard: guard }
     }
@@ -447,16 +439,11 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
 
         let guard = self.inner_lock.try_lock(node)?;
 
-        // If de-initialization is implemented, this line should be uncommented.
-        // if !self.is_initialized() {
-        //     drop(guard);
-        //     return None;
-        // }
-
         Some(MUMcsGuard { inner_guard: guard })
     }
 
     #[must_use]
+    #[inline]
     /// Try to lock the lock if it has been initialized.
     /// Returns `None` if the lock has not been initialized.
     ///
@@ -465,14 +452,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
         &'s self,
         node: &'node mut McsNode,
     ) -> Option<MUMcsGuard<'node, 's, T, B>> {
-        if self.is_initialized() {
-            // If anyone de-initializes the lock exactly between these two lines,
-            // there could still be a panic.
-            // If de-initialization is implemented, `compare_exchange` should be used.
-            Some(self.lock(node))
-        } else {
-            None
-        }
+        self.is_initialized().then(move || self.lock(node))
     }
 
     #[inline]
@@ -527,8 +507,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     #[inline]
     /// Consume the lock and returns the inner data if it is initialized.
     pub fn into_inner(mut self) -> Option<T> {
-        if self.is_initialized() {
-            self.is_init.store(false, Ordering::Relaxed);
+        if self.is_init.swap(false, Ordering::Acquire) {
             // Safety: The lock is initialized.
             // We cannot use `assume_init` as `inner_lock` is part of `self`.
             // Therefore, we need to `assume_init_read` the value, and "uninitialize"

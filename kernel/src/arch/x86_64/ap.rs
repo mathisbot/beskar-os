@@ -81,7 +81,11 @@ pub fn start_up_aps(core_count: usize) {
     // Update section .data of the AP trampoline code
 
     // Entry Point address
-    write_sipi(payload_vaddr, 0, crate::boot::kap_entry as u64);
+    write_sipi(
+        payload_vaddr,
+        0,
+        u64::try_from(crate::boot::kap_entry as usize).unwrap(),
+    );
 
     // Pointer to the address of the top of the stack
     // Note that using `as_ptr` is safe as the trampoline code uses atomic instructions
@@ -120,8 +124,8 @@ pub fn start_up_aps(core_count: usize) {
         }
     }
 
-    // Wait for all APs to be ready
-    while locals::get_ready_core_count() != core_count {
+    // Wait for all APs to register themselves
+    while locals::core_count() != core_count {
         core::hint::spin_loop();
     }
 

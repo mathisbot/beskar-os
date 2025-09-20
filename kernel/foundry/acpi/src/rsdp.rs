@@ -3,7 +3,7 @@ use core::mem::offset_of;
 use super::AcpiRevision;
 use beskar_core::arch::{PhysAddr, VirtAddr, paging::M4KiB};
 use beskar_hal::paging::page_table::Flags;
-use driver_api::PhysicalMappingTrait;
+use driver_api::PhysicalMapper;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
@@ -34,13 +34,13 @@ struct Xsdp2 {
 }
 
 #[derive(Debug)]
-pub struct Rsdp<M: PhysicalMappingTrait<M4KiB>> {
+pub struct Rsdp<M: PhysicalMapper<M4KiB>> {
     start_vaddr: VirtAddr,
     revision: AcpiRevision,
     _physical_mapping: M,
 }
 
-impl<M: PhysicalMappingTrait<M4KiB>> Rsdp<M> {
+impl<M: PhysicalMapper<M4KiB>> Rsdp<M> {
     /// Map, validate, read and unmap the RSDP.
     ///
     /// Returns the RSDT address.

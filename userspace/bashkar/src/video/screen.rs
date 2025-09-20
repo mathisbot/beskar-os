@@ -109,14 +109,6 @@ impl Screen {
     pub const fn buffer_mut(&mut self) -> &mut [u8] {
         self.internal_fb
     }
-
-    #[inline]
-    /// # Safety
-    ///
-    /// The screen will be invalid for use after this function is called.
-    pub(crate) unsafe fn close_file(&mut self) {
-        beskar_lib::io::close(self.fb_file.handle()).unwrap();
-    }
 }
 
 /// Returns the screen info.
@@ -128,7 +120,6 @@ pub fn screen_info() -> &'static Info {
     SCREEN_INFO.get().unwrap()
 }
 
-/// Draws a primitive on the internal buffer.
 pub fn with_screen<R, F: FnOnce(&mut Screen) -> R>(f: F) -> R {
     SCREEN.with_locked(f)
 }

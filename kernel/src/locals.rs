@@ -1,15 +1,14 @@
-use core::{ptr::NonNull, sync::atomic::AtomicUsize};
-
-use alloc::boxed::Box;
-
 use crate::arch::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts};
+use alloc::boxed::Box;
+use core::{
+    ptr::NonNull,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use hyperdrive::{
     locks::mcs::{MUMcsLock, McsLock},
     once::Once,
 };
 
-/// Count APs that are ready, right before entering `enter_kmain`
-static CORE_READY: AtomicUsize = AtomicUsize::new(0);
 /// Distributes core IDs
 static CORE_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -19,7 +18,7 @@ static CORE_ID: AtomicUsize = AtomicUsize::new(0);
 static ALL_CORE_LOCALS: [Once<NonNull<CoreLocalsInfo>>; 256] = [const { Once::uninit() }; 256];
 
 pub fn init() {
-    let core_id = CORE_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    let core_id = CORE_ID.fetch_add(1, Ordering::Relaxed);
     let apic_id = crate::arch::apic::apic_id();
 
     let mut core_locals = Box::new(CoreLocalsInfo {
@@ -28,18 +27,16 @@ pub fn init() {
         ..CoreLocalsInfo::empty()
     });
 
-    ALL_CORE_LOCALS[core_id].call_once(|| unsafe { NonNull::new_unchecked(core_locals.as_mut()) });
+    ALL_CORE_LOCALS[core_id].call_once(|| NonNull::from_mut(core_locals.as_mut()));
 
     crate::arch::locals::store_locals(Box::leak(core_locals));
-
-    CORE_READY.fetch_add(1, core::sync::atomic::Ordering::Release);
 }
 
 #[must_use]
 #[inline]
 /// Returns the number of currently active cores
-pub fn get_ready_core_count() -> usize {
-    CORE_READY.load(core::sync::atomic::Ordering::Acquire)
+pub fn core_count() -> usize {
+    CORE_ID.load(core::sync::atomic::Ordering::Acquire)
 }
 
 pub struct CoreLocalsInfo {

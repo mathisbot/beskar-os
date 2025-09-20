@@ -188,19 +188,14 @@ impl Configuration {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
+    #[default]
     Inactive,
     OneShot(ModeConfiguration),
     Periodic(ModeConfiguration),
     /// Only supported on newer CPUs.
     TscDeadline,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Self::Inactive
-    }
 }
 
 impl Mode {

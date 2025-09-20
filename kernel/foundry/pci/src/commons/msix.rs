@@ -6,10 +6,10 @@ use beskar_core::arch::paging::M4KiB;
 use beskar_hal::paging::page_table::Flags;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
-use driver_api::PhysicalMappingTrait;
+use driver_api::PhysicalMapper;
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
-pub struct MsiX<M: PhysicalMappingTrait<M4KiB>, H: MsiHelper> {
+pub struct MsiX<M: PhysicalMapper<M4KiB>, H: MsiHelper> {
     capability: MsiXCapability,
     table: Volatile<ReadWrite, TableEntry>,
     pba: Volatile<ReadWrite, u64>,
@@ -48,7 +48,7 @@ struct MsiX070 {
     pba: u32,
 }
 
-impl<M: PhysicalMappingTrait<M4KiB>, H: MsiHelper> MsiX<M, H> {
+impl<M: PhysicalMapper<M4KiB>, H: MsiHelper> MsiX<M, H> {
     pub fn new(handler: &mut dyn PciHandler, device: &super::Device) -> Option<Self> {
         let msix_cap = MsiXCapability::find(handler, device)?;
 

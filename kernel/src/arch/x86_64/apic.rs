@@ -453,7 +453,7 @@ impl IoApic {
         enable_disable_interrupts(false);
 
         let id_offset = IOAPICID_CNTER.fetch_add(1, Ordering::Relaxed);
-        let cpu_count = locals::get_ready_core_count();
+        let cpu_count = locals::core_count();
         // Each APIC device must have a unique ID to be uniquely addressed
         // on the APIC Bus.
         assert!(

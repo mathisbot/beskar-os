@@ -21,14 +21,13 @@ pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
     KERNEL_CODE_INFO.call_once(|| *kernel_info);
 
     let kernel_pt = {
-        let bootloader_pt_vaddr = {
-            let recursive_index = u64::from(recursive_index);
-            let vaddr = (recursive_index << 39)
-                | (recursive_index << 30)
-                | (recursive_index << 21)
-                | (recursive_index << 12);
-            VirtAddr::new_extend(vaddr)
-        };
+        let bootloader_pt_vaddr = VirtAddr::from_pt_indices(
+            recursive_index,
+            recursive_index,
+            recursive_index,
+            recursive_index,
+            0,
+        );
 
         // Safety: The page table given by the bootloader is valid
         let bootloader_pt = unsafe { &mut *bootloader_pt_vaddr.as_mut_ptr() };
@@ -149,9 +148,8 @@ impl AddressSpace {
         });
 
         let lvl4_vaddr = {
-            assert!(u16::try_from(recursive_idx).is_ok(), "Index is too large");
-            let i = u64::try_from(recursive_idx).unwrap();
-            VirtAddr::new_extend((i << 39) | (i << 30) | (i << 21) | (i << 12))
+            let i = u16::try_from(recursive_idx).unwrap();
+            VirtAddr::from_pt_indices(i, i, i, i, 0)
         };
 
         // Create a new process page allocator with a whole PLM4 index area free (256TiB)
@@ -178,7 +176,7 @@ impl AddressSpace {
     /// Returns whether a certain memory range is owned by the address space.
     pub fn is_addr_owned(&self, start: VirtAddr, end: VirtAddr) -> bool {
         let Some(idx) = self.pgalloc_pml4_idx else {
-            video::warn!("`AddressSpace::is_addr_owned` called on a non-user address space");
+            video::warn!("`AddressSpace::is_addr_owned` called without PGALLOC PML4 index");
             return false;
         };
 

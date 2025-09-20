@@ -15,7 +15,7 @@ pub fn init_serial() {
 }
 
 pub fn init_screen() {
-    let info = crate::video::with_physical_framebuffer(|screen| screen.info());
+    let info = super::with_physical_framebuffer(|screen| screen.info());
     let screen = ScreenWriter::new(info);
     SCREEN_LOGGER.init(screen);
 }
@@ -118,7 +118,7 @@ impl ScreenWriter {
 
 impl core::fmt::Write for ScreenWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        crate::video::with_physical_framebuffer(|screen| {
+        super::with_physical_framebuffer(|screen| {
             self.0.write_str(screen.buffer_mut(), s);
         });
         Ok(())

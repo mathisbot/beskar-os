@@ -25,19 +25,15 @@ static KERNEL_PANIC: Once<()> = Once::uninit();
 
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
-    arch::interrupts::int_disable();
+    beskar_hal::instructions::int_disable();
 
     #[cfg(debug_assertions)]
-    video::error!("[PANIC]: Core {} - {}", locals!().core_id(), panic_info);
+    video::error!("[PANIC] {panic_info}");
     #[cfg(not(debug_assertions))]
-    video::error!(
-        "[PANIC]: Core {} - {}",
-        locals!().core_id(),
-        panic_info.message()
-    );
+    video::error!("[PANIC] {}", panic_info.message());
 
     // If more than one core is present, then both processes and APICs are initialized.
-    if crate::locals::get_ready_core_count() > 1 {
+    if crate::locals::core_count() > 1 {
         use crate::arch::apic::ipi;
 
         if process::scheduler::current_process().kind() == beskar_hal::process::Kind::Kernel {

@@ -1,10 +1,7 @@
-use alloc::boxed::Box;
 use beskar_core::drivers::keyboard::KeyEvent;
-use core::mem::offset_of;
-use hyperdrive::{
-    once::Once,
-    queues::mpsc::{Link, MpscQueue, Queueable},
-};
+use hyperdrive::{once::Once, queues::mpmc::MpmcQueue};
+
+const QUEUE_SIZE: usize = 25;
 
 static KEYBOARD_MANAGER: Once<KeyboardManager> = Once::uninit();
 
@@ -12,47 +9,8 @@ pub fn init() {
     KEYBOARD_MANAGER.call_once(KeyboardManager::new);
 }
 
-struct QueuedKeyEvent {
-    event: KeyEvent,
-    _link: Link<Self>,
-}
-
-impl Queueable for QueuedKeyEvent {
-    type Handle = Box<Self>;
-
-    unsafe fn capture(ptr: core::ptr::NonNull<Self>) -> Self::Handle {
-        unsafe { Box::from_raw(ptr.as_ptr()) }
-    }
-
-    unsafe fn get_link(ptr: core::ptr::NonNull<Self>) -> core::ptr::NonNull<Link<Self>> {
-        unsafe { ptr.byte_add(offset_of!(Self, _link)) }.cast()
-    }
-
-    fn release(r: Self::Handle) -> core::ptr::NonNull<Self> {
-        let boxed_event = Box::into_raw(r);
-        unsafe { core::ptr::NonNull::new_unchecked(boxed_event) }
-    }
-}
-
-impl QueuedKeyEvent {
-    #[must_use]
-    #[inline]
-    pub fn new(event: KeyEvent) -> Self {
-        Self {
-            event,
-            _link: Link::default(),
-        }
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn event(&self) -> KeyEvent {
-        self.event
-    }
-}
-
 pub struct KeyboardManager {
-    event_queue: MpscQueue<QueuedKeyEvent>,
+    event_queue: MpmcQueue<QUEUE_SIZE, KeyEvent>,
 }
 
 impl Default for KeyboardManager {
@@ -66,19 +24,24 @@ impl KeyboardManager {
     #[inline]
     pub fn new() -> Self {
         Self {
-            event_queue: MpscQueue::new(Box::new(QueuedKeyEvent::new(KeyEvent::stub()))),
+            event_queue: MpmcQueue::new(),
         }
     }
+
     #[inline]
     pub fn push_event(&self, event: KeyEvent) {
-        let queued_event = Box::new(QueuedKeyEvent::new(event));
-        self.event_queue.enqueue(queued_event);
+        let push_res = self.event_queue.try_push(event);
+        #[cfg(debug_assertions)]
+        if push_res.is_err() {
+            // FIXME: Override old events instead of dropping new ones.
+            video::debug!("Keyboard event queue is full, dropping event: {:?}", event);
+        }
     }
 
     #[must_use]
     #[inline]
     pub fn poll_event(&self) -> Option<KeyEvent> {
-        self.event_queue.dequeue().map(|event| event.event())
+        self.event_queue.pop()
     }
 }
 

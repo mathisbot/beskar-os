@@ -1,10 +1,15 @@
 use super::gdt::{DOUBLE_FAULT_IST, PAGE_FAULT_IST};
 use crate::locals;
+use beskar_core::arch::VirtAddr;
 use beskar_hal::{
+    instructions::int_enable,
     registers::{CS, Cr0, Cr2},
     structures::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
 };
-use core::{cell::UnsafeCell, sync::atomic::AtomicU8};
+use core::{
+    cell::UnsafeCell,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
 pub fn init() {
     let interrupts = locals!().interrupts();
@@ -59,7 +64,9 @@ pub fn init() {
         idt.page_fault.set_stack_index(PAGE_FAULT_IST);
     }
 
-    idt.irq(0xFF).set_handler_fn(spurious_interrupt_handler, cs);
+    idt.irq(0xFF)
+        .unwrap()
+        .set_handler_fn(spurious_interrupt_handler, cs);
 
     idt.load();
 
@@ -125,7 +132,7 @@ macro_rules! panic_isr {
 
 macro_rules! panic_isr_with_errcode {
     ($name:ident) => {
-        extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame, err_code: u64) -> () {
+        extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame, err_code: u64) {
             panic!(
                 "EXCEPTION: {} INTERRUPT {:#x} on core {}\n{:#?}",
                 stringify!($name),
@@ -139,7 +146,7 @@ macro_rules! panic_isr_with_errcode {
 
 macro_rules! info_isr {
     ($name:ident) => {
-        extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) -> () {
+        extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) {
             video::info!(
                 "{} INTERRUPT on core {} - t{}",
                 stringify!($name),
@@ -197,20 +204,6 @@ extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFram
 info_isr!(spurious_interrupt_handler);
 
 #[inline]
-pub fn int_disable() {
-    unsafe {
-        core::arch::asm!("cli", options(nomem, preserves_flags, nostack));
-    }
-}
-
-#[inline]
-pub fn int_enable() {
-    unsafe {
-        core::arch::asm!("sti", options(nomem, preserves_flags, nostack));
-    }
-}
-
-#[inline]
 /// Allocates a new IRQ handler in the IDT and return its index.
 ///
 /// A CPU index may be passed to bind the IRQ to a specific CPU core.
@@ -226,17 +219,17 @@ pub fn new_irq(
     let core_id = core.unwrap_or_else(|| locals!().core_id());
     let core_locals = crate::locals::get_specific_core_locals(core_id).unwrap();
 
-    let idx = IDX.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-    assert!(idx < 255, "No more IRQs available");
+    let idx = IDX.fetch_add(1, Ordering::Relaxed);
 
     let idt = unsafe { &mut *core_locals.interrupts().idt.get() };
+    let idt_entry = idt.irq(idx).expect("IRQ counter has overflown");
 
     assert_eq!(
-        idt.irq(idx).handler_vaddr().as_u64(),
-        0,
+        idt_entry.handler_vaddr(),
+        VirtAddr::ZERO,
         "IRQ {idx} is already used",
     );
-    idt.irq(idx).set_handler_fn(handler, CS::read());
+    idt_entry.set_handler_fn(handler, CS::read());
 
     (idx, core_id)
 }

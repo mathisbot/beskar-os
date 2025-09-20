@@ -69,8 +69,7 @@ pub fn open(path: &str) -> Result<Handle, FileError> {
 /// Returns a `FileError` if the syscall fails.
 pub fn close(handle: Handle) -> Result<(), FileError> {
     let res = syscalls::syscall_1(Syscall::Close, handle.cast_unsigned());
-    if SyscallExitCode::try_from(res).unwrap_or(SyscallExitCode::Other) == SyscallExitCode::Success
-    {
+    if SyscallExitCode::from(res) == SyscallExitCode::Success {
         Ok(())
     } else {
         Err(FileError { code: -1 })

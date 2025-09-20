@@ -4,17 +4,17 @@ use acpi::sdt::mcfg::ParsedConfigurationSpace;
 use alloc::vec::Vec;
 use beskar_core::arch::{PhysAddr, paging::M2MiB};
 use beskar_hal::paging::page_table::Flags;
-use driver_api::PhysicalMappingTrait;
+use driver_api::PhysicalMapper;
 
 use super::commons::{Class, Csp, Device, PciAddress, RegisterOffset, SbdfAddress};
 
-pub struct PciExpressHandler<M: PhysicalMappingTrait<M2MiB>> {
+pub struct PciExpressHandler<M: PhysicalMapper<M2MiB>> {
     configuration_spaces: &'static [ParsedConfigurationSpace],
     physical_mappings: Vec<M>,
     devices: Vec<Device>,
 }
 
-impl<M: PhysicalMappingTrait<M2MiB>> PciExpressHandler<M> {
+impl<M: PhysicalMapper<M2MiB>> PciExpressHandler<M> {
     #[must_use]
     #[inline]
     pub fn new(configuration_spaces: &'static [ParsedConfigurationSpace]) -> Self {
@@ -169,7 +169,7 @@ impl<M: PhysicalMappingTrait<M2MiB>> PciExpressHandler<M> {
     }
 }
 
-impl<M: PhysicalMappingTrait<M2MiB>> super::PciHandler for PciExpressHandler<M> {
+impl<M: PhysicalMapper<M2MiB>> super::PciHandler for PciExpressHandler<M> {
     fn devices(&self) -> &[super::commons::Device] {
         &self.devices
     }

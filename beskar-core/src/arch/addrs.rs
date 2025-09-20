@@ -12,7 +12,11 @@ pub struct VirtAddr(u64);
 pub struct PhysAddr(u64);
 
 impl VirtAddr {
+    pub const MAX: Self = Self(u64::MAX);
+    pub const ZERO: Self = Self(0);
+
     #[must_use]
+    #[track_caller]
     #[inline]
     pub const fn new(addr: u64) -> Self {
         Self::try_new(addr).expect("Invalid virtual address")
@@ -48,6 +52,26 @@ impl VirtAddr {
     pub fn from_ptr<T: ?Sized>(ptr: *const T) -> Self {
         // Safety: pointers are always canonical addresses
         unsafe { Self::new_unchecked(ptr.cast::<()>() as u64) }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Create a new virtual address from page table indices.
+    ///
+    /// Indices will be truncated to 9 bits each, as per the x86-64 paging scheme.
+    pub fn from_pt_indices(
+        p4_index: u16,
+        p3_index: u16,
+        p2_index: u16,
+        p1_index: u16,
+        offset: u16,
+    ) -> Self {
+        let addr = (u64::from(p4_index & 0x1FF) << 39)
+            | (u64::from(p3_index & 0x1FF) << 30)
+            | (u64::from(p2_index & 0x1FF) << 21)
+            | (u64::from(p1_index & 0x1FF) << 12)
+            | u64::from(offset & 0xFFF);
+        Self::new_extend(addr)
     }
 
     #[must_use]
@@ -132,9 +156,11 @@ impl VirtAddr {
 }
 
 impl PhysAddr {
-    pub const MAX_VALID: u64 = 0x000F_FFFF_FFFF_FFFF;
+    pub const MAX: Self = Self(0x000F_FFFF_FFFF_FFFF);
+    pub const ZERO: Self = Self(0);
 
     #[must_use]
+    #[track_caller]
     #[inline]
     pub const fn new(addr: u64) -> Self {
         Self::try_new(addr).expect("Invalid physical address")
@@ -153,7 +179,7 @@ impl PhysAddr {
     #[must_use]
     #[inline]
     pub const fn new_truncate(addr: u64) -> Self {
-        let truncated = addr & Self::MAX_VALID;
+        let truncated = addr & Self::MAX.0;
         // Safety: We just truncated the address to fit in the valid range
         unsafe { Self::new_unchecked(truncated) }
     }
@@ -306,8 +332,20 @@ mod tests {
 
     #[test]
     fn test_v() {
-        let addr = PhysAddr::new(0x18000031060);
+        let addr = VirtAddr::new(0x18000031060);
         assert_eq!(addr.as_u64(), 0x18000031060);
+    }
+
+    #[test]
+    fn test_v_from_idx() {
+        let addr = VirtAddr::new(0x18000031060);
+        let p4_index = addr.p4_index();
+        let p3_index = addr.p3_index();
+        let p2_index = addr.p2_index();
+        let p1_index = addr.p1_index();
+        let offset = u16::try_from(addr.as_u64() & 0xFFF).unwrap();
+        let same_addr = VirtAddr::from_pt_indices(p4_index, p3_index, p2_index, p1_index, offset);
+        assert_eq!(addr, same_addr);
     }
 
     #[test]

@@ -1,5 +1,8 @@
 use crate::arch::syscalls;
-use beskar_core::syscall::Syscall;
+use beskar_core::{
+    arch::paging::{M4KiB, MemSize as _},
+    syscall::Syscall,
+};
 use core::{num::NonZeroU64, ptr::NonNull};
 use hyperdrive::locks::mcs::MUMcsLock;
 
@@ -10,7 +13,8 @@ struct Heap;
 #[global_allocator]
 static HEAP: Heap = Heap;
 
-pub(crate) const HEAP_SIZE: u64 = 1024 * 1024; // 1 MiB
+pub(crate) const HEAP_SIZE: u64 = 20 * 1024 * 1024; // 20 MiB
+beskar_core::static_assert!(HEAP_SIZE.is_multiple_of(M4KiB::SIZE));
 
 unsafe impl core::alloc::GlobalAlloc for Heap {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {

@@ -3,7 +3,7 @@ use core::mem::offset_of;
 use super::AcpiRevision;
 use beskar_core::arch::{PhysAddr, VirtAddr, paging::M4KiB};
 use beskar_hal::paging::page_table::Flags;
-use driver_api::PhysicalMappingTrait;
+use driver_api::PhysicalMapper;
 
 pub mod dsdt;
 pub mod fadt;
@@ -115,7 +115,7 @@ pub unsafe trait Sdt {
 }
 
 #[derive(Debug)]
-pub struct Rsdt<M: PhysicalMappingTrait<M4KiB>> {
+pub struct Rsdt<M: PhysicalMapper<M4KiB>> {
     start_vaddr: VirtAddr,
     acpi_revision: AcpiRevision,
     _physical_mapping: M,
@@ -123,13 +123,13 @@ pub struct Rsdt<M: PhysicalMappingTrait<M4KiB>> {
 
 // Safety:
 // RSDT is a valid SDT.
-unsafe impl<M: PhysicalMappingTrait<M4KiB>> Sdt for Rsdt<M> {
+unsafe impl<M: PhysicalMapper<M4KiB>> Sdt for Rsdt<M> {
     fn start(&self) -> *const u8 {
         self.start_vaddr.as_ptr()
     }
 }
 
-impl<M: PhysicalMappingTrait<M4KiB>> Rsdt<M> {
+impl<M: PhysicalMapper<M4KiB>> Rsdt<M> {
     pub fn load(rsdt_paddr: PhysAddr) -> Self {
         let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
@@ -250,7 +250,7 @@ impl Signature {
 /// ## Safety
 ///
 /// The provided physical address must point to a potentially valid SDT.
-unsafe fn map<M: PhysicalMappingTrait<M4KiB>>(phys_addr: PhysAddr) -> M {
+unsafe fn map<M: PhysicalMapper<M4KiB>>(phys_addr: PhysAddr) -> M {
     let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
     let header_mapping = M::new(phys_addr, core::mem::size_of::<SdtHeader>(), flags);
@@ -275,13 +275,12 @@ unsafe fn map<M: PhysicalMappingTrait<M4KiB>>(phys_addr: PhysAddr) -> M {
 macro_rules! impl_sdt {
     ($name:ident) => {
         #[derive(Debug)]
-        pub struct $name<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>>
-        {
+        pub struct $name<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> {
             start_vaddr: ::beskar_core::arch::VirtAddr,
             _physical_mapping: M,
         }
 
-        unsafe impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>>
+        unsafe impl<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>>
             $crate::sdt::Sdt for $name<M>
         {
             fn start(&self) -> *const u8 {
@@ -289,7 +288,7 @@ macro_rules! impl_sdt {
             }
         }
 
-        impl<M: ::driver_api::PhysicalMappingTrait<::beskar_core::arch::paging::M4KiB>> $name<M> {
+        impl<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> $name<M> {
             #[must_use]
             pub fn load(paddr: ::beskar_core::arch::PhysAddr) -> Self {
                 use $crate::sdt::Sdt;

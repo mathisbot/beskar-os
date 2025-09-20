@@ -68,10 +68,12 @@ pub trait KernelDevice {
 impl<T: KernelDevice> BlockDevice for T {
     const BLOCK_SIZE: usize = 1;
 
+    #[inline]
     fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), BlockDeviceError> {
         self.read(dst, offset)
     }
 
+    #[inline]
     fn write(&mut self, src: &[u8], offset: usize) -> Result<(), BlockDeviceError> {
         self.write(src, offset)
     }
