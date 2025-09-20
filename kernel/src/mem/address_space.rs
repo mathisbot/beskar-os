@@ -148,9 +148,8 @@ impl AddressSpace {
         });
 
         let lvl4_vaddr = {
-            assert!(u16::try_from(recursive_idx).is_ok(), "Index is too large");
-            let i = u64::try_from(recursive_idx).unwrap();
-            VirtAddr::new_extend((i << 39) | (i << 30) | (i << 21) | (i << 12))
+            let i = u16::try_from(recursive_idx).unwrap();
+            VirtAddr::from_pt_indices(i, i, i, i, 0)
         };
 
         // Create a new process page allocator with a whole PLM4 index area free (256TiB)
@@ -177,7 +176,6 @@ impl AddressSpace {
     /// Returns whether a certain memory range is owned by the address space.
     pub fn is_addr_owned(&self, start: VirtAddr, end: VirtAddr) -> bool {
         let Some(idx) = self.pgalloc_pml4_idx else {
-            #[cfg(debug_assertions)]
             video::warn!("`AddressSpace::is_addr_owned` called without PGALLOC PML4 index");
             return false;
         };

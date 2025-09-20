@@ -24,6 +24,8 @@ pub struct Tty {
     input_buffer: String,
     /// Current cursor position
     cursor_pos: usize,
+    // Keyboard modifiers
+    modifiers: keyboard::KeyModifiers,
 }
 
 impl Default for Tty {
@@ -57,6 +59,7 @@ impl Tty {
             writer: FramebufferWriter::new(new_info),
             input_buffer: String::new(),
             cursor_pos: 0,
+            modifiers: keyboard::KeyModifiers::new(),
         }
     }
 
@@ -136,7 +139,18 @@ impl Tty {
         let key = event.key();
         let pressed = event.pressed();
 
-        if pressed != KeyState::Pressed {
+        if pressed != KeyState::Pressed
+            // Modifiers keys still need to be handled when released
+            && !matches!(
+                key,
+                KeyCode::ShiftLeft
+                    | KeyCode::ShiftRight
+                    | KeyCode::CtrlLeft
+                    | KeyCode::CtrlRight
+                    | KeyCode::AltLeft
+                    | KeyCode::AltRight
+            )
+        {
             return false;
         }
 
@@ -165,8 +179,25 @@ impl Tty {
                 });
                 true
             }
+            KeyCode::CapsLock => {
+                self.modifiers
+                    .set_caps_locked(!self.modifiers.is_caps_locked());
+                false
+            }
+            KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                self.modifiers.set_shifted(pressed == KeyState::Pressed);
+                false
+            }
+            KeyCode::CtrlLeft | KeyCode::CtrlRight => {
+                self.modifiers.set_ctrled(pressed == KeyState::Pressed);
+                false
+            }
+            KeyCode::AltLeft | KeyCode::AltRight => {
+                self.modifiers.set_alted(pressed == KeyState::Pressed);
+                false
+            }
             k => {
-                let c = k.as_char();
+                let c = k.as_char(self.modifiers);
                 if c != '\0' {
                     self.input_buffer.insert(self.cursor_pos, c);
                     self.cursor_pos += 1;

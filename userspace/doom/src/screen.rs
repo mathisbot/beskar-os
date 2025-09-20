@@ -2,10 +2,18 @@ use beskar_core::video::Info;
 use core::{mem::MaybeUninit, num::NonZeroU64, ops::Range};
 use hyperdrive::{locks::mcs::MUMcsLock, once::Once};
 
+const SCREENWIDTH: usize = 320;
+const SCREENHEIGHT: usize = 200;
+
 static SCREEN: MUMcsLock<Screen> = MUMcsLock::uninit();
 static SCREEN_INFO: Once<Info> = Once::uninit();
 
 const FB_FILE: &str = "/dev/fb";
+
+#[link(name = "puredoom", kind = "static")]
+unsafe extern "C" {
+    unsafe fn doom_get_framebuffer(channel: i32) -> *const u8;
+}
 
 pub fn init() {
     SCREEN.init(Screen::new());
@@ -27,7 +35,7 @@ fn read_screen_info() -> Info {
     unsafe { info.assume_init() }
 }
 
-pub struct Screen {
+struct Screen {
     info: Info,
     fb_file: beskar_lib::io::File,
     internal_fb: &'static mut [u8],
@@ -77,7 +85,6 @@ impl Screen {
     }
 
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     #[expect(clippy::needless_pass_by_value, reason = "This is ugly otherwise")]
     pub fn flush(&self, rows: Option<Range<u16>>) {
         let stride = usize::from(self.info.stride());
@@ -116,10 +123,26 @@ impl Screen {
 /// # Panics
 ///
 /// Panics if the screen info has not been initialized yet.
-pub fn screen_info() -> &'static Info {
+fn screen_info() -> &'static Info {
     SCREEN_INFO.get().unwrap()
 }
 
-pub fn with_screen<R, F: FnOnce(&mut Screen) -> R>(f: F) -> R {
+fn with_screen<R, F: FnOnce(&mut Screen) -> R>(f: F) -> R {
     SCREEN.with_locked(f)
+}
+
+#[expect(clippy::missing_panics_doc, reason = "Never panics")]
+pub fn draw() {
+    let fb_start = unsafe { doom_get_framebuffer(4) };
+    let fb = unsafe { core::slice::from_raw_parts(fb_start, SCREENWIDTH * SCREENHEIGHT * 4) };
+
+    let stride = usize::from(screen_info().stride());
+    with_screen(|screen| {
+        let mut buffer_mut = screen.buffer_mut();
+        for row in fb.chunks_exact(SCREENWIDTH * 4) {
+            buffer_mut[..SCREENWIDTH * 4].copy_from_slice(row);
+            buffer_mut = &mut buffer_mut[stride * 4..];
+        }
+        screen.flush(Some(0..u16::try_from(SCREENHEIGHT).unwrap()));
+    });
 }

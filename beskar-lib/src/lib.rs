@@ -13,6 +13,7 @@ mod arch;
 pub mod io;
 pub mod mem;
 pub mod rand;
+pub mod time;
 
 #[panic_handler]
 fn panic(info: &::core::panic::PanicInfo) -> ! {
@@ -42,6 +43,7 @@ pub fn sleep(duration: Duration) {
 /// Sets the entry point for the program.
 macro_rules! entry_point {
     ($path:path) => {
+        #[macro_use]
         extern crate alloc;
 
         #[unsafe(export_name = "_start")]
@@ -64,5 +66,7 @@ pub fn __init() {
     CALL_ONCE.call_once(|| {
         let res = mem::mmap(mem::HEAP_SIZE, None);
         unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };
+
+        time::init();
     });
 }

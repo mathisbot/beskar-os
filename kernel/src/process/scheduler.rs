@@ -335,9 +335,7 @@ impl hyperdrive::locks::BackOff for Yield {
 
 /// Put the current thread to sleep.
 pub fn sleep() {
-    with_scheduler(|scheduler| {
-        scheduler.set_sleep();
-    });
+    with_scheduler(Scheduler::set_sleep);
 
     if !thread_yield() {
         // TODO: What to do if the thread was not rescheduled?

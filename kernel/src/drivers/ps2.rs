@@ -339,13 +339,10 @@ impl<'a> Ps2Keyboard<'a> {
     }
 
     #[must_use]
+    #[inline]
     pub fn scancode_to_keycode(&self, extended: bool, scancode: u8) -> Option<KeyEvent> {
-        if extended {
-            // TODO: Handle extended keys
-            return None;
-        }
         match self.scancode_set {
-            ScancodeSet::Set1 => Self::scancode_set1_to_keycode(scancode),
+            ScancodeSet::Set1 => Self::scancode_set1_to_keycode(extended, scancode),
             // 2 => self.scancode_set2_to_char(scancode),
             // 3 => self.scancode_set3_to_char(scancode),
             _ => None,
@@ -353,7 +350,7 @@ impl<'a> Ps2Keyboard<'a> {
     }
 
     #[must_use]
-    fn scancode_set1_to_keycode(mut scancode: u8) -> Option<KeyEvent> {
+    fn scancode_set1_to_keycode(extended: bool, mut scancode: u8) -> Option<KeyEvent> {
         let pressed = if scancode & 0x80 == 0 {
             KeyState::Pressed
         } else {
@@ -361,95 +358,100 @@ impl<'a> Ps2Keyboard<'a> {
             KeyState::Released
         };
 
-        let keycode = match scancode {
-            0x1E => Some(KeyCode::A),
-            0x30 => Some(KeyCode::B),
-            0x2E => Some(KeyCode::C),
-            0x20 => Some(KeyCode::D),
-            0x12 => Some(KeyCode::E),
-            0x21 => Some(KeyCode::F),
-            0x22 => Some(KeyCode::G),
-            0x23 => Some(KeyCode::H),
-            0x17 => Some(KeyCode::I),
-            0x24 => Some(KeyCode::J),
-            0x25 => Some(KeyCode::K),
-            0x26 => Some(KeyCode::L),
-            0x32 => Some(KeyCode::M),
-            0x31 => Some(KeyCode::N),
-            0x18 => Some(KeyCode::O),
-            0x19 => Some(KeyCode::P),
-            0x10 => Some(KeyCode::Q),
-            0x13 => Some(KeyCode::R),
-            0x1F => Some(KeyCode::S),
-            0x14 => Some(KeyCode::T),
-            0x16 => Some(KeyCode::U),
-            0x2F => Some(KeyCode::V),
-            0x11 => Some(KeyCode::W),
-            0x2D => Some(KeyCode::X),
-            0x15 => Some(KeyCode::Y),
-            0x2C => Some(KeyCode::Z),
+        let keycode = match (extended, scancode) {
+            (false, 0x1E) => Some(KeyCode::A),
+            (false, 0x30) => Some(KeyCode::B),
+            (false, 0x2E) => Some(KeyCode::C),
+            (false, 0x20) => Some(KeyCode::D),
+            (false, 0x12) => Some(KeyCode::E),
+            (false, 0x21) => Some(KeyCode::F),
+            (false, 0x22) => Some(KeyCode::G),
+            (false, 0x23) => Some(KeyCode::H),
+            (false, 0x17) => Some(KeyCode::I),
+            (false, 0x24) => Some(KeyCode::J),
+            (false, 0x25) => Some(KeyCode::K),
+            (false, 0x26) => Some(KeyCode::L),
+            (false, 0x32) => Some(KeyCode::M),
+            (false, 0x31) => Some(KeyCode::N),
+            (false, 0x18) => Some(KeyCode::O),
+            (false, 0x19) => Some(KeyCode::P),
+            (false, 0x10) => Some(KeyCode::Q),
+            (false, 0x13) => Some(KeyCode::R),
+            (false, 0x1F) => Some(KeyCode::S),
+            (false, 0x14) => Some(KeyCode::T),
+            (false, 0x16) => Some(KeyCode::U),
+            (false, 0x2F) => Some(KeyCode::V),
+            (false, 0x11) => Some(KeyCode::W),
+            (false, 0x2D) => Some(KeyCode::X),
+            (false, 0x15) => Some(KeyCode::Y),
+            (false, 0x2C) => Some(KeyCode::Z),
 
-            0x0B => Some(KeyCode::Num0),
-            0x02 => Some(KeyCode::Num1),
-            0x03 => Some(KeyCode::Num2),
-            0x04 => Some(KeyCode::Num3),
-            0x05 => Some(KeyCode::Num4),
-            0x06 => Some(KeyCode::Num5),
-            0x07 => Some(KeyCode::Num6),
-            0x08 => Some(KeyCode::Num7),
-            0x09 => Some(KeyCode::Num8),
-            0x0A => Some(KeyCode::Num9),
+            (false, 0x0B) => Some(KeyCode::Num0),
+            (false, 0x02) => Some(KeyCode::Num1),
+            (false, 0x03) => Some(KeyCode::Num2),
+            (false, 0x04) => Some(KeyCode::Num3),
+            (false, 0x05) => Some(KeyCode::Num4),
+            (false, 0x06) => Some(KeyCode::Num5),
+            (false, 0x07) => Some(KeyCode::Num6),
+            (false, 0x08) => Some(KeyCode::Num7),
+            (false, 0x09) => Some(KeyCode::Num8),
+            (false, 0x0A) => Some(KeyCode::Num9),
 
-            0x0C => Some(KeyCode::Minus),
-            0x0D => Some(KeyCode::Equal),
-            0x1A => Some(KeyCode::LeftBracket),
-            0x1B => Some(KeyCode::RightBracket),
-            0x2B => Some(KeyCode::Backslash),
-            0x27 => Some(KeyCode::Semicolon),
-            0x28 => Some(KeyCode::Apostrophe),
-            0x29 => Some(KeyCode::Tilde),
-            0x33 => Some(KeyCode::Comma),
-            0x34 => Some(KeyCode::Dot),
-            0x35 => Some(KeyCode::Slash),
+            (false, 0x0C) => Some(KeyCode::Minus),
+            (false, 0x0D) => Some(KeyCode::Equal),
+            (false, 0x1A) => Some(KeyCode::LeftBracket),
+            (false, 0x1B) => Some(KeyCode::RightBracket),
+            (false, 0x2B) => Some(KeyCode::Backslash),
+            (false, 0x27) => Some(KeyCode::Semicolon),
+            (false, 0x28) => Some(KeyCode::Apostrophe),
+            (false, 0x29) => Some(KeyCode::Tilde),
+            (false, 0x33) => Some(KeyCode::Comma),
+            (false, 0x34) => Some(KeyCode::Dot),
+            (false, 0x35) => Some(KeyCode::Slash),
 
-            0x1C => Some(KeyCode::Enter),
-            0x39 => Some(KeyCode::Space),
-            0x0E => Some(KeyCode::Backspace),
-            0x0F => Some(KeyCode::Tab),
-            0x3A => Some(KeyCode::CapsLock),
-            0x2A => Some(KeyCode::ShiftLeft),
-            0x36 => Some(KeyCode::ShiftRight),
-            0x1D => Some(KeyCode::CtrlLeft),
-            0x38 => Some(KeyCode::AltLeft),
+            (false, 0x1C) => Some(KeyCode::Enter),
+            (false, 0x39) => Some(KeyCode::Space),
+            (false, 0x0E) => Some(KeyCode::Backspace),
+            (false, 0x0F) => Some(KeyCode::Tab),
+            (false, 0x3A) => Some(KeyCode::CapsLock),
+            (false, 0x2A) => Some(KeyCode::ShiftLeft),
+            (false, 0x36) => Some(KeyCode::ShiftRight),
+            (false, 0x1D) => Some(KeyCode::CtrlLeft),
+            (false, 0x38) => Some(KeyCode::AltLeft),
 
-            0x3B => Some(KeyCode::F1),
-            0x3C => Some(KeyCode::F2),
-            0x3D => Some(KeyCode::F3),
-            0x3E => Some(KeyCode::F4),
-            0x3F => Some(KeyCode::F5),
-            0x40 => Some(KeyCode::F6),
-            0x41 => Some(KeyCode::F7),
-            0x42 => Some(KeyCode::F8),
-            0x43 => Some(KeyCode::F9),
-            0x44 => Some(KeyCode::F10),
-            0x57 => Some(KeyCode::F11),
-            0x58 => Some(KeyCode::F12),
+            (false, 0x3B) => Some(KeyCode::F1),
+            (false, 0x3C) => Some(KeyCode::F2),
+            (false, 0x3D) => Some(KeyCode::F3),
+            (false, 0x3E) => Some(KeyCode::F4),
+            (false, 0x3F) => Some(KeyCode::F5),
+            (false, 0x40) => Some(KeyCode::F6),
+            (false, 0x41) => Some(KeyCode::F7),
+            (false, 0x42) => Some(KeyCode::F8),
+            (false, 0x43) => Some(KeyCode::F9),
+            (false, 0x44) => Some(KeyCode::F10),
+            (false, 0x57) => Some(KeyCode::F11),
+            (false, 0x58) => Some(KeyCode::F12),
 
-            0x52 => Some(KeyCode::Numpad0),
-            0x4F => Some(KeyCode::Numpad1),
-            0x50 => Some(KeyCode::Numpad2),
-            0x51 => Some(KeyCode::Numpad3),
-            0x4B => Some(KeyCode::Numpad4),
-            0x4C => Some(KeyCode::Numpad5),
-            0x4D => Some(KeyCode::Numpad6),
-            0x47 => Some(KeyCode::Numpad7),
-            0x48 => Some(KeyCode::Numpad8),
-            0x49 => Some(KeyCode::Numpad9),
-            0x4E => Some(KeyCode::NumpadAdd),
-            0x4A => Some(KeyCode::NumpadSub),
-            0x37 => Some(KeyCode::NumpadMul),
-            // 0x35 => Some(KeyCode::NumpadDiv),
-            0x53 => Some(KeyCode::NumpadDot),
+            (false, 0x52) => Some(KeyCode::Numpad0),
+            (false, 0x4F) => Some(KeyCode::Numpad1),
+            (false, 0x50) => Some(KeyCode::Numpad2),
+            (false, 0x51) => Some(KeyCode::Numpad3),
+            (false, 0x4B) => Some(KeyCode::Numpad4),
+            (false, 0x4C) => Some(KeyCode::Numpad5),
+            (false, 0x4D) => Some(KeyCode::Numpad6),
+            (false, 0x47) => Some(KeyCode::Numpad7),
+            (false, 0x48) => Some(KeyCode::Numpad8),
+            (false, 0x49) => Some(KeyCode::Numpad9),
+            (false, 0x4E) => Some(KeyCode::NumpadAdd),
+            (false, 0x4A) => Some(KeyCode::NumpadSub),
+            (false, 0x37) => Some(KeyCode::NumpadMul),
+            // (false, 0x35) => Some(KeyCode::NumpadDiv),
+            (false, 0x53) => Some(KeyCode::NumpadDot),
+
+            (true, 0x48) => Some(KeyCode::ArrowUp),
+            (true, 0x50) => Some(KeyCode::ArrowDown),
+            (true, 0x4B) => Some(KeyCode::ArrowLeft),
+            (true, 0x4D) => Some(KeyCode::ArrowRight),
 
             // TODO: Modifier keys
             _ => None,
@@ -522,7 +524,7 @@ fn handle_real_key(extended: bool, key: u8) {
     let keyboard = PS2_KEYBOARD.get().unwrap();
 
     let Some(key_event) = keyboard.scancode_to_keycode(extended, key) else {
-        video::warn!("Unknown key: {:#X}", key);
+        video::warn!("Unknown key: {:#X} (extended: {})", key, extended);
         return;
     };
 

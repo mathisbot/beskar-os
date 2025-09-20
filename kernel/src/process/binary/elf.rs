@@ -70,8 +70,13 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
             for (page, wp) in page_range.into_iter().zip(working_page_range) {
                 let frame = fralloc.allocate_frame().unwrap();
                 pt.map(page, frame, dummy_flags, fralloc).flush();
-                pt.map(wp, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)
-                    .flush();
+                pt.map(
+                    wp,
+                    frame,
+                    Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+                    fralloc,
+                )
+                .flush();
             }
         });
     });
@@ -142,7 +147,10 @@ fn sanity_check(elf: &ElfFile) -> BinaryResult<()> {
         elf.header.pt1.os_abi() == header::OsAbi::SystemV
             || elf.header.pt1.os_abi() == header::OsAbi::Linux
     );
-    ensure!(elf.header.pt2.entry_point() != 0);
+    ensure!(matches!(
+        elf.header.pt2.type_().as_type(),
+        header::Type::Executable | header::Type::SharedObject
+    ));
 
     Ok(())
 }
@@ -164,14 +172,12 @@ fn load_segments(
                 handle_segment_load(elf, ph, offset, working_offset)?;
             }
             Type::Tls => {
-                if tls_template.is_some() {
-                    return Err(LoadError::InvalidBinary);
-                }
-                tls_template = Some(TlsTemplate {
+                let previous = tls_template.replace(TlsTemplate {
                     start: offset + ph.virtual_addr(),
                     file_size: ph.file_size(),
                     mem_size: ph.mem_size(),
                 });
+                ensure!(previous.is_none());
             }
             Type::Interp => {
                 return Err(LoadError::InvalidBinary);
@@ -182,14 +188,14 @@ fn load_segments(
 
     // Relocate memory addresses
     for ph in elf.program_iter() {
-        if faillible!(ph.get_type()) == Type::Dynamic {
+        if ph.get_type() == Ok(Type::Dynamic) {
             handle_segment_dynamic(elf, ph, offset, working_offset)?;
         }
     }
 
     // Handle GNU_RELRO segments
     for ph in elf.program_iter() {
-        if faillible!(ph.get_type()) == Type::GnuRelro {
+        if ph.get_type() == Ok(Type::GnuRelro) {
             handle_segment_gnurelro(ph, offset)?;
         }
     }
@@ -249,27 +255,30 @@ fn zero_bss(
     working_offset: VirtAddr,
 ) {
     let zero_start = offset + ph.virtual_addr() + ph.file_size();
-    let zero_end = offset + ph.virtual_addr() + ph.mem_size() - 1;
+    let zero_end = offset + ph.virtual_addr() + ph.mem_size();
 
     let working_zero_start = working_offset + ph.virtual_addr() + ph.file_size();
 
-    let unaligned = zero_start.as_u64() % M4KiB::SIZE;
-    if unaligned != 0 {
-        let len =
-            usize::try_from((M4KiB::SIZE - unaligned).min(ph.mem_size() - ph.file_size())).unwrap();
-        for i in 0..len {
-            unsafe {
-                working_zero_start
-                    .as_mut_ptr::<u8>()
-                    .byte_add(i)
-                    .write_volatile(0);
-            }
+    {
+        let unaligned_down = zero_start.as_u64() % M4KiB::SIZE;
+        if unaligned_down != 0 {
+            let len =
+                usize::try_from((M4KiB::SIZE - unaligned_down).min(ph.mem_size() - ph.file_size()))
+                    .unwrap();
+            unsafe { working_zero_start.as_mut_ptr::<u8>().write_bytes(0, len) };
         }
+        let unaligned_up = zero_end.as_u64() % M4KiB::SIZE;
+        let len = usize::try_from(unaligned_up.min(ph.mem_size() - ph.file_size())).unwrap();
+        unsafe {
+            (working_offset + ph.virtual_addr() + ph.mem_size() - unaligned_up)
+                .as_mut_ptr::<u8>()
+                .write_bytes(0, len);
+        };
     }
 
     let zero_start_page =
         Page::<M4KiB>::from_start_address(zero_start.align_up(M4KiB::SIZE)).unwrap();
-    let zero_end_page = Page::<M4KiB>::containing_address(zero_end);
+    let zero_end_page = Page::<M4KiB>::containing_address(zero_end.align_down(M4KiB::SIZE) - 1);
 
     let mut segment_flags = Flags::PRESENT;
     if ph.flags().is_write() {
@@ -283,20 +292,12 @@ fn zero_bss(
     }
 
     for page in Page::range_inclusive(zero_start_page, zero_end_page) {
-        // FIXME: Free these frames on binary unload
-        crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-            let frame = fralloc.allocate_frame().unwrap();
-            // We need to zero the frame, so start by setting the page as writable
-            pt.map(page, frame, Flags::PRESENT | Flags::WRITABLE, fralloc)
-                .flush();
-        });
         unsafe {
             page.start_address().as_mut_ptr::<usize>().write_bytes(
                 0,
                 usize::try_from(M4KiB::SIZE).unwrap() / size_of::<usize>(),
             );
         }
-        // Finally, set the page with the correct flags (potentially without WRITABLE)
         pt.update_flags(page, segment_flags).unwrap().flush();
     }
 }

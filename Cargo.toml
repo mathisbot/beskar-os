@@ -11,7 +11,7 @@ repository = "https://github.com/mathisbot/beskar-os/"
 members = [
     "bootloader",
     "kernel",
-    "userspace/bashkar"
+    "userspace/*"
 ]
 
 [workspace.dependencies]
@@ -27,6 +27,7 @@ xmas-elf = "0.10.0"
 bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }
 kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
 bashkar = { path = "userspace/bashkar", artifact = "bin", target = "x86_64-unknown-none" }
+# doom = { path = "userspace/doom", artifact = "bin", target = "x86_64-unknown-none" }
 
 [profile.release]
 panic = "abort"

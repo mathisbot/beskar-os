@@ -1,5 +1,5 @@
 use super::File;
-pub use beskar_core::drivers::keyboard::{KeyCode, KeyEvent, KeyState};
+pub use beskar_core::drivers::keyboard::{KeyCode, KeyEvent, KeyModifiers, KeyState};
 
 #[repr(align(8))]
 struct KeyboardEventBuffer([u8; size_of::<u64>()]);

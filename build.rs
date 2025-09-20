@@ -59,12 +59,15 @@ fn main() {
         .expect("Failed to copy bootloader.efi");
     fs::copy(&kernel_path, "efi_disk/efi/kernelx64.elf").expect("Failed to copy kernel");
 
-    // TODO:: Build a disk image for the ramdisk
     let bashkar = var("CARGO_BIN_FILE_BASHKAR").unwrap();
     fs::copy(&bashkar, "efi_disk/efi/ramdisk.img").expect("Failed to copy bashkar");
-    for crate_name in USERSPACE_APPS {
-        let cargo_venv = crate_name_to_cargo_venv(crate_name);
-        let _built_path = var(cargo_venv).expect("Failed to get built path");
-        // TODO: Add to the ramdisk image
-    }
+    // let doom = var("CARGO_BIN_FILE_DOOM").unwrap();
+    // fs::copy(&doom, "efi_disk/efi/ramdisk.img").expect("Failed to copy doom");
+
+    // TODO:: Build a disk image for the ramdisk
+    // for crate_name in USERSPACE_APPS {
+    //     let cargo_venv = crate_name_to_cargo_venv(crate_name);
+    //     let _built_path = var(cargo_venv).expect("Failed to get built path");
+    //     // TODO: Add to the ramdisk image
+    // }
 }
