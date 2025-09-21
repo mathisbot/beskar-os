@@ -1,4 +1,8 @@
-use beskar_lib::io::keyboard::{KeyCode, KeyState};
+use beskar_lib::io::{
+    File,
+    keyboard::{KeyCode, KeyEvent, KeyState},
+};
+use hyperdrive::once::Once;
 
 #[link(name = "puredoom", kind = "static")]
 unsafe extern "C" {
@@ -163,8 +167,36 @@ impl From<KeyCode> for DoomKeyT {
     }
 }
 
+#[repr(align(8))]
+struct KeyboardEventBuffer([u8; size_of::<u64>()]);
+
+// Capture the keyboard file for the lifetime of the program.
+static KEYBOARD_HANDLE: Once<File> = Once::uninit();
+
+#[must_use]
+#[inline]
+/// # Panics
+///
+/// This function panics if opening the keyboard file fails (only once).
+pub fn poll_keyboard() -> Option<KeyEvent> {
+    const KEYBOARD_FILE: &str = "/dev/keyboard";
+
+    KEYBOARD_HANDLE.call_once(|| File::open(KEYBOARD_FILE).unwrap());
+    let file = KEYBOARD_HANDLE.get().unwrap();
+
+    let mut buffer = KeyboardEventBuffer([0_u8; size_of::<u64>()]);
+    let bytes_read = file.read(&mut buffer.0, 0).unwrap_or(0);
+
+    if bytes_read == buffer.0.len() {
+        let value = u64::from_ne_bytes(buffer.0);
+        KeyEvent::unpack_option(value)
+    } else {
+        None
+    }
+}
+
 pub fn poll_inputs() {
-    while let Some(event) = beskar_lib::io::keyboard::poll_keyboard() {
+    while let Some(event) = poll_keyboard() {
         let doom_key = DoomKeyT::from(event.key());
         match event.pressed() {
             KeyState::Pressed => unsafe { doom_key_down(doom_key) },

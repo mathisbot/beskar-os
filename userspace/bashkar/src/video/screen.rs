@@ -76,10 +76,8 @@ impl Screen {
         }
     }
 
-    #[inline]
     #[expect(clippy::missing_panics_doc, reason = "Never panics")]
-    #[expect(clippy::needless_pass_by_value, reason = "This is ugly otherwise")]
-    pub fn flush(&self, rows: Option<Range<u16>>) {
+    pub fn flush(&self, rows: Option<&Range<u16>>) {
         let stride = usize::from(self.info.stride());
         let max_row = usize::from(self.info.height());
         let bpp = usize::from(self.info.bytes_per_pixel());

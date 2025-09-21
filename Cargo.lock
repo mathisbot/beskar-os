@@ -85,7 +85,6 @@ name = "bootloader-api"
 version = "0.1.0"
 dependencies = [
  "beskar-core",
- "beskar-hal",
 ]
 
 [[package]]

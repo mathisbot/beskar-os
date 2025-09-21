@@ -84,9 +84,7 @@ impl Screen {
         }
     }
 
-    #[inline]
-    #[expect(clippy::needless_pass_by_value, reason = "This is ugly otherwise")]
-    pub fn flush(&self, rows: Option<Range<u16>>) {
+    pub fn flush(&self, rows: Option<&Range<u16>>) {
         let stride = usize::from(self.info.stride());
         let max_row = usize::from(self.info.height());
         let bpp = usize::from(self.info.bytes_per_pixel());
@@ -143,6 +141,6 @@ pub fn draw() {
             buffer_mut[..SCREENWIDTH * 4].copy_from_slice(row);
             buffer_mut = &mut buffer_mut[stride * 4..];
         }
-        screen.flush(Some(0..u16::try_from(SCREENHEIGHT).unwrap()));
+        screen.flush(Some(&(0..u16::try_from(SCREENHEIGHT).unwrap())));
     });
 }

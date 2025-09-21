@@ -20,7 +20,7 @@ const USERSPACE_APPS: [&str; 1] = ["bashkar"];
 /// A macro to print cargo instructions.
 macro_rules! cargo {
     ($param:expr, $value:expr) => {
-        println!("cargo:{param}={value}", param = $param, value = $value);
+        println!("cargo::{param}={value}", param = $param, value = $value);
     };
 }
 
