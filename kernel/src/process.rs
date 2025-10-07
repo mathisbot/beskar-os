@@ -89,7 +89,7 @@ pub struct Process {
 impl Process {
     #[must_use]
     #[inline]
-    pub fn new(name: &str, kind: Kind, binary: Option<binary::Binary<'static>>) -> Self {
+    pub fn new<S: ToString>(name: S, kind: Kind, binary: Option<binary::Binary<'static>>) -> Self {
         Self {
             name: name.to_string(),
             pid: ProcessId::new(),
@@ -138,11 +138,6 @@ impl Process {
 
 impl Drop for Process {
     fn drop(&mut self) {
-        video::debug!(
-            "Process \"{}\" (PID: {}) is being dropped",
-            self.name,
-            self.pid.as_u64()
-        );
         crate::storage::vfs().close_all_from_process(self.pid.as_u64());
     }
 }
@@ -200,11 +195,12 @@ impl Pcid {
     #[must_use]
     #[inline]
     pub fn new() -> Self {
+        const MAX_PCID: u16 = 1 << 12;
         static PCID_COUNTER: AtomicU16 = AtomicU16::new(0);
 
         let raw: u16 = PCID_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-        if raw > 4095 {
+        if raw >= MAX_PCID {
             todo!("PCID recycling");
         }
 
@@ -214,7 +210,6 @@ impl Pcid {
     #[must_use]
     #[inline]
     pub const fn as_u16(&self) -> u16 {
-        debug_assert!(self.0 <= 4095, "PCID out of bounds");
         self.0
     }
 }

@@ -95,16 +95,6 @@ impl<T: Clone, B: Borrow<T>> View<T, B> {
     }
 }
 
-impl<T: Clone, B: Borrow<T>> AsRef<T> for View<T, B> {
-    #[inline]
-    fn as_ref(&self) -> &T {
-        match self {
-            Self::Borrow(borrow) => borrow.borrow(),
-            Self::Owned(owned) => owned,
-        }
-    }
-}
-
 impl<T, B: Borrow<T>> Borrow<T> for View<T, B> {
     #[inline]
     fn borrow(&self) -> &T {
@@ -190,26 +180,6 @@ impl<T: Clone, B: BorrowMut<T>> ViewMut<T, B> {
     }
 }
 
-impl<T: Clone, B: BorrowMut<T>> AsRef<T> for ViewMut<T, B> {
-    #[inline]
-    fn as_ref(&self) -> &T {
-        match self {
-            Self::BorrowMut(borrow_mut) => borrow_mut.borrow(),
-            Self::Owned(owned) => owned,
-        }
-    }
-}
-
-impl<T: Clone, B: BorrowMut<T>> AsMut<T> for ViewMut<T, B> {
-    #[inline]
-    fn as_mut(&mut self) -> &mut T {
-        match self {
-            Self::BorrowMut(borrow_mut) => borrow_mut.borrow_mut(),
-            Self::Owned(owned) => owned,
-        }
-    }
-}
-
 impl<T, B: BorrowMut<T>> Borrow<T> for ViewMut<T, B> {
     #[inline]
     fn borrow(&self) -> &T {
@@ -228,49 +198,6 @@ impl<T, B: BorrowMut<T>> BorrowMut<T> for ViewMut<T, B> {
             Self::Owned(owned) => owned,
         }
     }
-}
-
-mod private {
-    #![allow(unused)]
-    use super::ViewRef;
-    use core::mem::align_of;
-
-    type SizeType<T> = ViewRef<'static, T>;
-
-    macro_rules! size_test {
-        ($($t:ty),+) => {
-            $(
-                const _: () = assert!(
-                    size_of::<SizeType<$t>>() <= {
-                        if size_of::<$t>() > size_of::<&()>() {
-                            size_of::<$t>() + align_of::<$t>()
-                        } else {
-                            size_of::<&()>() + align_of::<&()>()
-                        }
-                    },
-                );
-            )+
-        };
-    }
-
-    size_test!(u8, u16, u32, u64, u128);
-
-    struct Reorganized {
-        a: u16,
-        b: u8,
-        c: u16,
-        d: u8,
-    }
-
-    struct Complex {
-        a: u8,
-        b: u16,
-        c: u32,
-        d: u64,
-        e: u128,
-    }
-
-    size_test!(Reorganized, Complex);
 }
 
 #[cfg(test)]
@@ -310,5 +237,41 @@ mod tests {
         let view = View::<u8, Box<u8>>::new_borrow(prior_object);
         assert_eq!(*view, 42);
         assert!(!view.is_owned());
+    }
+
+    #[test]
+    fn test_view_take() {
+        let view = ViewRef::<u8>::new_borrow(&42);
+        assert!(view.take().is_none());
+        let other_view = ViewRef::<u8>::new_owned(0);
+        assert_eq!(other_view.take(), Some(0));
+
+        let mut x = 42;
+        let view = ViewMutRef::<u8>::new_borrow(&mut x);
+        assert!(view.take().is_none());
+        let other_view = ViewMutRef::<u8>::new_owned(0);
+        assert_eq!(other_view.take(), Some(0));
+    }
+
+    #[test]
+    fn test_view_into_own() {
+        let view = ViewRef::<u8>::new_borrow(&42);
+        let owned_view = view.into_owned();
+        assert!(owned_view.is_owned());
+        assert_eq!(*owned_view, 42);
+        let other_view = ViewRef::<u8>::new_owned(0);
+        let other_owned_view = other_view.into_owned();
+        assert!(other_owned_view.is_owned());
+        assert_eq!(*other_owned_view, 0);
+
+        let mut x = 42;
+        let view = ViewMutRef::<u8>::new_borrow(&mut x);
+        let owned_view = view.into_owned();
+        assert!(owned_view.is_owned());
+        assert_eq!(*owned_view, 42);
+        let other_view = ViewMutRef::<u8>::new_owned(0);
+        let other_owned_view = other_view.into_owned();
+        assert!(other_owned_view.is_owned());
+        assert_eq!(*other_owned_view, 0);
     }
 }

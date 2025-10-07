@@ -11,23 +11,6 @@
 //! These structure accept a generic type `T` that is the type of the data protected by the lock.
 //! The second generic type `B` is the back-off strategy used by the lock.
 //!
-//! Note that rustc currently requires that you at least specify either the back-off strategy
-//! (and will infer the type of `T`) or the type of `T` (and will use the default `Spin`
-//! back-off strategy).
-//!
-//! ```rust
-//! # use hyperdrive::locks::mcs::{McsLock, McsNode};
-//! # use hyperdrive::locks::Spin;
-//! #
-//! let lock = McsLock::<u32>::new(0); // `Spin` is used
-//! let lock = McsLock::<_, Spin>::new(0); // `T` is inferred
-//! ```
-//!
-//! ```rust,compile_fail
-//! # use hyperdrive::locks::mcs::{MUMcsLock, McsNode};
-//! let lock = McsLock::new(0_u32);
-//! ```
-//!
 //! ### `McsLock`
 //!
 //! To access the content of the lock, use the `with_locked` method.
@@ -557,6 +540,9 @@ mod tests {
         let mut guard = lock.lock(&mut node);
         *guard = 42;
         assert_eq!(*guard, 42);
+        drop(guard);
+
+        assert_eq!(lock.into_inner(), 42);
     }
 
     #[test]
@@ -589,12 +575,15 @@ mod tests {
         let mut node = McsNode::new();
 
         let guard = lock.lock(&mut node);
-        let failed_guard = lock.try_with_locked(|value| {
+        let failed_guard = lock.try_with_locked(|_v| unreachable!());
+        assert!(failed_guard.is_none());
+        drop(guard);
+
+        let res = lock.try_with_locked(|value| {
             *value = 42;
             *value
         });
-        assert!(failed_guard.is_none());
-        drop(guard);
+        assert_eq!(res, Some(42));
     }
 
     #[test]
@@ -619,6 +608,16 @@ mod tests {
         let mut guard = lock.lock(&mut node);
         *guard = 0;
         assert_eq!(*guard, 0);
+    }
+
+    #[test]
+    fn test_mumcs_lock_single_init() {
+        let lock = TestMUMcsLock::uninit();
+
+        lock.init(42);
+        lock.init(0);
+
+        assert_eq!(lock.into_inner(), Some(42));
     }
 
     #[test]
@@ -683,10 +682,7 @@ mod tests {
     fn test_mumcs_lock_with_locked_if_init() {
         let lock = TestMUMcsLock::uninit();
 
-        let res = lock.with_locked_if_init(|value| {
-            *value = 0;
-            *value
-        });
+        let res = lock.with_locked_if_init(|_v| unreachable!());
         assert!(res.is_none());
 
         lock.init(42);
@@ -702,20 +698,14 @@ mod tests {
     fn test_mumcs_lock_try_with_locked() {
         let lock = TestMUMcsLock::uninit();
 
-        let res = lock.try_with_locked(|value| {
-            *value = 0;
-            *value
-        });
+        let res = lock.try_with_locked(|_v| unreachable!());
         assert!(res.is_none());
 
         lock.init(42);
 
         let mut node = McsNode::new();
         let guard = lock.try_lock(&mut node);
-        let res = lock.try_with_locked(|value| {
-            *value = 0;
-            *value
-        });
+        let res = lock.try_with_locked(|_v| unreachable!());
         assert!(guard.is_some());
         assert!(res.is_none());
     }
@@ -731,9 +721,12 @@ mod tests {
     #[test]
     #[cfg(miri)]
     fn test_mumcs_into_inner() {
+        let lock = TestMUMcsLock::<()>::uninit();
+        assert!(lock.into_inner().is_none());
+
         let lock = TestMUMcsLock::uninit();
         lock.init(Box::new(42));
-        let _boxed = lock.into_inner().unwrap();
+        assert!(lock.into_inner().is_some());
     }
 
     #[test]

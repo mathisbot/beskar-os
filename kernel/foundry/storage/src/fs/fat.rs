@@ -206,6 +206,17 @@ impl<D: BlockDevice> FileSystem for FatFs<D> {
     ) -> super::FileResult<usize> {
         todo!("Write file to FAT filesystem");
     }
+
+    fn metadata(&mut self, path: super::Path) -> super::FileResult<super::FileMetadata> {
+        todo!("Get file metadata from FAT filesystem");
+    }
+
+    fn read_dir(
+        &mut self,
+        path: super::Path,
+    ) -> super::FileResult<alloc::vec::Vec<super::PathBuf>> {
+        todo!("Read directory from FAT filesystem");
+    }
 }
 
 #[cfg(test)]

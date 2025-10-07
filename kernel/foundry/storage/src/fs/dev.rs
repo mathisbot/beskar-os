@@ -108,4 +108,23 @@ impl FileSystem for DeviceFS {
         }
         Err(super::FileError::NotFound)
     }
+
+    fn metadata(&mut self, path: super::Path) -> super::FileResult<super::FileMetadata> {
+        for device in &mut self.devices {
+            if device.path.as_path() == path {
+                return Ok(super::FileMetadata {
+                    size: 0,
+                    file_type: super::FileType::File,
+                });
+            }
+        }
+        Err(super::FileError::NotFound)
+    }
+
+    fn read_dir(&mut self, path: super::Path) -> super::FileResult<Vec<super::PathBuf>> {
+        if path.0 != "/" {
+            return Err(super::FileError::NotFound);
+        }
+        Ok(self.devices.iter().map(|d| d.path.clone()).collect())
+    }
 }

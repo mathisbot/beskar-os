@@ -186,6 +186,26 @@ impl FileSystem for InMemoryFS<'_> {
         // InMemoryFS does not support writing to files
         Err(super::FileError::UnsupportedOperation)
     }
+
+    fn metadata(&mut self, path: super::Path) -> super::FileResult<super::FileMetadata> {
+        let Some(file) = self.infos.iter().find(|file| file.name() == path.as_str()) else {
+            return Err(super::FileError::NotFound);
+        };
+
+        Ok(super::FileMetadata::new(file.size(), super::FileType::File))
+    }
+
+    fn read_dir(&mut self, path: super::Path) -> super::FileResult<Vec<super::PathBuf>> {
+        if path.as_str() != "/" {
+            return Err(super::FileError::NotFound);
+        }
+
+        Ok(self
+            .infos
+            .iter()
+            .map(|file| super::PathBuf::new(file.name()))
+            .collect())
+    }
 }
 
 #[cfg(test)]

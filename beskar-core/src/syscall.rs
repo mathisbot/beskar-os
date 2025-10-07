@@ -111,3 +111,21 @@ pub enum ExitCode {
     Success = 0,
     Failure = 1,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_syscall_exit_code_unwrap() {
+        SyscallExitCode::Success.unwrap();
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Called unwrap on a syscall exit code that was not successful: Failure"
+    )]
+    fn test_syscall_exit_code_unwrap_failure() {
+        SyscallExitCode::Failure.unwrap();
+    }
+}

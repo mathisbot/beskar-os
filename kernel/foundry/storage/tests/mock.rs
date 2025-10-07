@@ -155,6 +155,30 @@ impl<B: BlockDevice> FileSystem for MockFS<B> {
         }
         Err(FileError::NotFound)
     }
+
+    fn metadata(&mut self, path: Path) -> FileResult<storage::fs::FileMetadata> {
+        for file in &self.files {
+            if file.name == path.as_str() {
+                return Ok(storage::fs::FileMetadata::new(
+                    file.length,
+                    storage::fs::FileType::File,
+                ));
+            }
+        }
+        Err(FileError::NotFound)
+    }
+
+    fn read_dir(&mut self, path: Path) -> FileResult<Vec<PathBuf>> {
+        if path.as_str() != "/" {
+            return Err(FileError::NotFound);
+        }
+        let paths = self
+            .files
+            .iter()
+            .map(|file| PathBuf::new(&file.name))
+            .collect();
+        Ok(paths)
+    }
 }
 
 impl<B: BlockDevice> MockFS<B> {

@@ -103,6 +103,8 @@ impl Cr4 {
     pub const SMXE: u64 = 1 << 14;
     pub const FSGSBASE: u64 = 1 << 16;
     pub const PCIDE: u64 = 1 << 17;
+    pub const SMEP: u64 = 1 << 20;
+    pub const SMAP: u64 = 1 << 21;
 
     #[must_use]
     #[inline]

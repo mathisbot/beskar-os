@@ -238,4 +238,12 @@ impl<H: VfsHelper> Vfs<H> {
             fs.write(rel_path, buffer, offset)
         })
     }
+
+    pub fn metadata(&self, path: Path) -> FileResult<crate::fs::FileMetadata> {
+        self.path_to_fs(path, |fs, rel_path| fs.metadata(rel_path))
+    }
+
+    pub fn read_dir(&self, path: Path) -> FileResult<alloc::vec::Vec<PathBuf>> {
+        self.path_to_fs(path, |fs, rel_path| fs.read_dir(rel_path))
+    }
 }

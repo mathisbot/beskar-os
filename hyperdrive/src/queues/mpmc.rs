@@ -152,7 +152,7 @@ impl<const SIZE: usize, T> MpmcQueue<SIZE, T> {
 
             match seq.cmp(&pos) {
                 core::cmp::Ordering::Equal => {
-                    match self.write_index.compare_exchange_weak(
+                    match self.write_index.compare_exchange(
                         pos,
                         pos + 1,
                         Ordering::Relaxed,
@@ -191,7 +191,7 @@ impl<const SIZE: usize, T> MpmcQueue<SIZE, T> {
 
             match seq.cmp(&(pos + 1)) {
                 core::cmp::Ordering::Equal => {
-                    match self.read_index.compare_exchange_weak(
+                    match self.read_index.compare_exchange(
                         pos,
                         pos + 1,
                         Ordering::Relaxed,

@@ -214,6 +214,7 @@ pub fn new_irq(
     /// IDT index counter.
     ///
     /// It skips the first 32 entries, which are reserved for exceptions.
+    // TODO: Per-core IRQ counters
     static IDX: AtomicU8 = AtomicU8::new(32);
 
     let core_id = core.unwrap_or_else(|| locals!().core_id());
@@ -233,3 +234,6 @@ pub fn new_irq(
 
     (idx, core_id)
 }
+
+// Safety: access to the IDT is synchronized by an atomic index counter
+unsafe impl Sync for Interrupts {}

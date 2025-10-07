@@ -6,23 +6,6 @@
 //! The structure accept a generic type `T` that is the type of the data protected by the lock.
 //! The second generic type `B` is the back-off strategy used by the lock.
 //!
-//! Note that rustc currently requires that you at least specify either the back-off strategy
-//! (and will infer the type of `T`) or the type of `T` (and will use the default `Spin`
-//! back-off strategy).
-//!
-//! ```rust
-//! # use hyperdrive::locks::rw::RwLock;
-//! # use hyperdrive::locks::Spin;
-//! #
-//! let lock = RwLock::<u32>::new(0); // `Spin` is used
-//! let lock = RwLock::<_, Spin>::new(0); // `T` is inferred
-//! ```
-//!
-//! ```rust,compile_fail
-//! # use hyperdrive::locks::rw::RwLock;
-//! let lock = RwLock::new(0);
-//! ```
-//!
 //! ## Examples
 //!
 //! Reads only:
@@ -120,7 +103,6 @@ impl<T, B: BackOff> core::ops::Deref for ReadGuard<'_, T, B> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        debug_assert!(!self.lock.state.writer.load(Ordering::Acquire));
         unsafe { &*self.lock.data.get() }
     }
 }
@@ -146,7 +128,6 @@ impl<T, B: BackOff> core::ops::Deref for WriteGuard<'_, T, B> {
 
 impl<T, B: BackOff> core::ops::DerefMut for WriteGuard<'_, T, B> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        debug_assert_eq!(self.lock.state.readers.load(Ordering::Acquire), 0);
         unsafe { &mut *self.lock.data.get() }
     }
 }
@@ -191,7 +172,7 @@ impl<B: BackOff> AtomicState<B> {
             // We give the priority to the writer:
             // if he acquired it before us, we give it the lock
             if self.writer.load(Ordering::Acquire) {
-                self.readers.fetch_sub(1, Ordering::Acquire);
+                self.readers.fetch_sub(1, Ordering::Relaxed);
             } else {
                 break;
             }
@@ -200,7 +181,6 @@ impl<B: BackOff> AtomicState<B> {
 
     #[inline]
     pub fn read_unlock(&self) {
-        debug_assert_ne!(self.readers.load(Ordering::Relaxed), 0);
         self.readers.fetch_sub(1, Ordering::Release);
     }
 
@@ -223,8 +203,6 @@ impl<B: BackOff> AtomicState<B> {
 
     #[inline]
     pub fn write_unlock(&self) {
-        debug_assert!(self.readers.load(Ordering::Acquire) == 0);
-        debug_assert!(self.writer.load(Ordering::Acquire));
         self.writer.store(false, Ordering::Release);
     }
 }

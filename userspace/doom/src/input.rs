@@ -178,7 +178,7 @@ static KEYBOARD_HANDLE: Once<File> = Once::uninit();
 /// # Panics
 ///
 /// This function panics if opening the keyboard file fails (only once).
-pub fn poll_keyboard() -> Option<KeyEvent> {
+fn poll_keyboard() -> Option<KeyEvent> {
     const KEYBOARD_FILE: &str = "/dev/keyboard";
 
     KEYBOARD_HANDLE.call_once(|| File::open(KEYBOARD_FILE).unwrap());
@@ -195,6 +195,7 @@ pub fn poll_keyboard() -> Option<KeyEvent> {
     }
 }
 
+/// Polls the keyboard and redistributes events to Doom.
 pub fn poll_inputs() {
     while let Some(event) = poll_keyboard() {
         let doom_key = DoomKeyT::from(event.key());

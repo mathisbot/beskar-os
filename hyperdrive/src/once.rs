@@ -163,12 +163,8 @@ pub struct Once<T> {
 // Safety:
 // `Once` only provides an immutable reference to the value when initialized.
 // On initialization, we manually make sure there are no data races.
-#[expect(
-    clippy::non_send_fields_in_send_ty,
-    reason = "Synchronization primitive"
-)]
-unsafe impl<T> Send for Once<T> {}
-unsafe impl<T> Sync for Once<T> {}
+unsafe impl<T: Send> Send for Once<T> {}
+unsafe impl<T: Send + Sync> Sync for Once<T> {}
 
 impl<T> Once<T> {
     #[must_use]
@@ -290,16 +286,21 @@ impl<T> Drop for Once<T> {
     }
 }
 
-/// A guard structure that marks the inner `Once` as poisoned when dropped.
-struct PoisonGuard<'a, T>(&'a Once<T>);
-
-impl<T> PoisonGuard<'_, T> {
+impl<T> Poisonable for Once<T> {
     #[inline]
-    /// Mark the inner `Once` as poisoned.
-    fn poison_once(&self) {
-        self.0.state.store(State::Poisoned, Ordering::Release);
+    fn poison(&self) {
+        self.state.store(State::Poisoned, Ordering::Release);
     }
+}
 
+trait Poisonable {
+    fn poison(&self);
+}
+
+/// A guard structure that marks the inner value as poisoned when dropped.
+struct PoisonGuard<'a, P: Poisonable>(&'a P);
+
+impl<P: Poisonable> PoisonGuard<'_, P> {
     #[inline]
     /// Call this function when initialization is successful.
     const fn init_success(self) {
@@ -309,17 +310,14 @@ impl<T> PoisonGuard<'_, T> {
 
     #[must_use]
     #[inline]
-    /// Safely call the given initializer function and return the initialized value.
+    /// Safely call the given function and return the initialized value.
     ///
     /// On success, the behavior is transparent.
     /// On failure, the given `Once` is marked as poisoned.
-    pub fn guard_call<F>(once: &Once<T>, initializer: F) -> T
-    where
-        F: FnOnce() -> T,
-    {
-        let poison_guard = PoisonGuard(once);
+    pub fn guard_call<T, F: FnOnce() -> T>(poisonable: &P, f: F) -> T {
+        let poison_guard = PoisonGuard(poisonable);
 
-        let initialized_value = initializer();
+        let initialized_value = f();
 
         poison_guard.init_success();
 
@@ -327,10 +325,10 @@ impl<T> PoisonGuard<'_, T> {
     }
 }
 
-impl<T> Drop for PoisonGuard<'_, T> {
+impl<P: Poisonable> Drop for PoisonGuard<'_, P> {
     #[inline]
     fn drop(&mut self) {
-        self.poison_once();
+        self.0.poison();
     }
 }
 
@@ -354,7 +352,7 @@ mod test {
     }
 
     #[test]
-    fn test_init() {
+    fn test_once_init() {
         let once = Once::from_init(42);
         assert!(once.is_initialized());
         once.call_once(|| panic!("This should not be called"));
@@ -379,7 +377,7 @@ mod test {
     }
 
     #[test]
-    fn test_concurrent() {
+    fn test_once_concurrent() {
         let once = Arc::new(Once::uninit());
         once.call_once(|| 42);
 
@@ -410,7 +408,7 @@ mod test {
     }
 
     #[test]
-    fn test_poison() {
+    fn test_once_poison() {
         let once = Arc::new(Once::uninit());
 
         let handle_that_panics = {
@@ -429,7 +427,7 @@ mod test {
 
     #[test]
     #[should_panic(expected = "Once is poisoned, cannot get value")]
-    fn test_poison_get() {
+    fn test_once_poison_get() {
         let once = Arc::new(Once::uninit());
 
         let handle_that_panics = {

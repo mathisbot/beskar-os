@@ -230,15 +230,6 @@ impl Add<u64> for VirtAddr {
     }
 }
 
-impl Add<Self> for VirtAddr {
-    type Output = Self;
-
-    #[inline]
-    fn add(self, rhs: Self) -> Self {
-        Self::new_extend(self.0.checked_add(rhs.0).unwrap())
-    }
-}
-
 impl Sub<u64> for VirtAddr {
     type Output = Self;
 
@@ -263,15 +254,6 @@ impl Add<u64> for PhysAddr {
     #[inline]
     fn add(self, rhs: u64) -> Self {
         Self::new(self.0.checked_add(rhs).unwrap())
-    }
-}
-
-impl Add<Self> for PhysAddr {
-    type Output = Self;
-
-    #[inline]
-    fn add(self, rhs: Self) -> Self {
-        Self::new(self.0.checked_add(rhs.0).unwrap())
     }
 }
 
@@ -314,6 +296,7 @@ mod tests {
         let addr = PhysAddr::new(0x18000031060);
         assert_eq!(addr.align_down(0x1000).as_u64(), 0x18000031000);
         assert_eq!(addr.align_up(0x1000).as_u64(), 0x18000032000);
+        assert!(addr.is_aligned(0x20));
     }
 
     #[test]
@@ -334,6 +317,14 @@ mod tests {
     fn test_v() {
         let addr = VirtAddr::new(0x18000031060);
         assert_eq!(addr.as_u64(), 0x18000031060);
+    }
+
+    #[test]
+    fn test_v_from_ptr() {
+        let x = 42u64;
+        let addr = VirtAddr::from_ptr(&x);
+        assert_eq!(addr.as_ptr(), core::ptr::from_ref(&x));
+        assert!(addr.is_aligned(u64::try_from(core::mem::align_of::<u64>()).unwrap()));
     }
 
     #[test]

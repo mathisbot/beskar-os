@@ -42,7 +42,7 @@ extern "C" fn print(s: *const c_char) {
 
 extern "C" fn malloc(size: i32) -> *mut c_void {
     if size == 0 {
-        // `alloc` states the the layout size must be non-zero.
+        // `alloc` states the layout size must be non-zero.
         return core::ptr::dangling_mut();
     }
 

@@ -241,6 +241,12 @@ impl<S: MemSize> Iterator for PageIterator<S> {
             None
         }
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let exact_len = self.len();
+        (exact_len, Some(exact_len))
+    }
 }
 
 impl<S: MemSize> ExactSizeIterator for PageIterator<S> {

@@ -18,3 +18,17 @@ pub fn get_raster_backed(c: char) -> RasterizedChar {
         get_raster(BACKUP_CHAR, FontWeight::Regular, CHAR_HEIGHT_INTERNAL).unwrap_unchecked()
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_raster_backed() {
+        for c in '\0'..='~' {
+            let _ = get_raster_backed(c);
+        }
+        let _ = get_raster_backed('中');
+        let _ = get_raster_backed('\u{10FFFF}');
+    }
+}
