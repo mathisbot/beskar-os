@@ -136,7 +136,7 @@ pub struct McsNode {
     /// Whether the node is locked (has access to the locked data).
     locked: AtomicBool,
     /// Next node in the queue.
-    next: AtomicPtr<McsNode>,
+    next: AtomicPtr<Self>,
 }
 
 impl McsNode {

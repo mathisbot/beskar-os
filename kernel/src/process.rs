@@ -89,9 +89,9 @@ pub struct Process {
 impl Process {
     #[must_use]
     #[inline]
-    pub fn new<S: ToString>(name: S, kind: Kind, binary: Option<binary::Binary<'static>>) -> Self {
+    pub fn new(name: &str, kind: Kind, binary: Option<binary::Binary<'static>>) -> Self {
         Self {
-            name: name.to_string(),
+            name: String::from(name),
             pid: ProcessId::new(),
             address_space: ViewRef::new_owned(AddressSpace::new()),
             kind,

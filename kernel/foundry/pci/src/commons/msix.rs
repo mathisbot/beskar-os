@@ -135,6 +135,7 @@ impl<M: PhysicalMapper<M4KiB>, H: MsiHelper> MsiX<M, H> {
 
 impl MsiXCapability {
     #[must_use]
+    #[expect(clippy::similar_names)]
     pub fn find(handler: &mut dyn PciHandler, device: &super::Device) -> Option<Self> {
         let c = iter_capabilities(handler, device).find(|c| c.id() == CapabilityHeader::ID_MSIX)?;
 

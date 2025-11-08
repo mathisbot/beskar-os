@@ -101,15 +101,8 @@ impl<'a> InMemoryFS<'a> {
                     return Err(InMemoryFSError::BufferTooSmall);
                 }
 
-                let raw_header = unsafe {
-                    // SAFETY: We made sure that the buffer is large enough.
-                    data[cursor..]
-                        .as_ptr()
-                        .try_cast_aligned::<RawHeader>()
-                        .unwrap()
-                        .as_ref()
-                        .unwrap()
-                };
+                // SAFETY: We made sure that the buffer is large enough.
+                let raw_header = unsafe { &*data[cursor..].as_ptr().cast::<RawHeader>() };
 
                 if raw_header.size().saturating_add(cursor) > data.len() {
                     return Err(InMemoryFSError::InvalidHeaderSize);

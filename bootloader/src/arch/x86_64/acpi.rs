@@ -1,5 +1,6 @@
 use beskar_core::arch::PhysAddr;
 use hyperdrive::once::Once;
+use uefi::table::cfg::ConfigTableEntry;
 
 use crate::{info, warn};
 
@@ -9,12 +10,12 @@ pub fn init() {
     if let Some(paddr) = uefi::system::with_config_table(|config_entries| {
         config_entries
             .iter()
-            .find(|config_entry| config_entry.guid == uefi::table::cfg::ACPI2_GUID)
+            .find(|config_entry| config_entry.guid == ConfigTableEntry::ACPI2_GUID)
             .map_or_else(
                 || {
                     config_entries
                         .iter()
-                        .find(|config_entry| config_entry.guid == uefi::table::cfg::ACPI_GUID)
+                        .find(|config_entry| config_entry.guid == ConfigTableEntry::ACPI_GUID)
                         .map_or_else(
                             || {
                                 warn!("ACPI RSDP not found");

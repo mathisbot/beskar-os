@@ -33,18 +33,15 @@ fn init_express() -> DriverResult<usize> {
         return Err(DriverError::Absent);
     };
 
-    let pcie_handler = PciExpressHandler::new(mcfg.configuration_spaces());
-    PCIE_HANDLER.init(pcie_handler);
+    let mut pcie_handler = PciExpressHandler::new(mcfg.configuration_spaces());
 
-    let device_count = with_pcie_handler(|handler| {
-        handler.update_devices();
-        handler.devices().len()
-    })
-    .unwrap();
+    pcie_handler.update_devices();
+    let device_count = pcie_handler.devices().len();
 
     if device_count == 0 {
         Err(DriverError::Invalid)
     } else {
+        PCIE_HANDLER.init(pcie_handler);
         Ok(device_count)
     }
 }

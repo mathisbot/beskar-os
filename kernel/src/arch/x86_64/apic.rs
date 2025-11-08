@@ -160,16 +160,15 @@ impl LocalApic {
                 }
 
                 let triggermode: u32 = match nmi.flags().trigger_mode() {
-                    acpi::sdt::madt::TriggerMode::Edge => 0,
-                    acpi::sdt::madt::TriggerMode::Level => 1,
+                    acpi::sdt::madt::TriggerMode::Edge
                     // Apparently bus default is edge
-                    acpi::sdt::madt::TriggerMode::BusDefault => 0,
+                    | acpi::sdt::madt::TriggerMode::BusDefault => 0,
+                    acpi::sdt::madt::TriggerMode::Level => 1,
                 };
                 let polarity: u32 = match nmi.flags().polarity() {
-                    acpi::sdt::madt::Polarity::High => 0,
-                    acpi::sdt::madt::Polarity::Low => 1,
                     // Apparently bus default is high
-                    acpi::sdt::madt::Polarity::BusDefault => 0,
+                    acpi::sdt::madt::Polarity::High | acpi::sdt::madt::Polarity::BusDefault => 0,
+                    acpi::sdt::madt::Polarity::Low => 1,
                 };
 
                 let (irq, _) =
@@ -488,14 +487,15 @@ impl IoApic {
                     DeliveryMode::Fixed
                 },
                 trigger_mode: match flags.trigger_mode() {
-                    acpi::sdt::madt::TriggerMode::Edge => TriggerMode::Edge,
+                    acpi::sdt::madt::TriggerMode::Edge
+                    | acpi::sdt::madt::TriggerMode::BusDefault => TriggerMode::Edge,
                     acpi::sdt::madt::TriggerMode::Level => TriggerMode::Level,
-                    acpi::sdt::madt::TriggerMode::BusDefault => TriggerMode::Edge,
                 },
                 pin_polarity: match flags.polarity() {
-                    acpi::sdt::madt::Polarity::High => PinPolarity::High,
+                    acpi::sdt::madt::Polarity::High | acpi::sdt::madt::Polarity::BusDefault => {
+                        PinPolarity::High
+                    }
                     acpi::sdt::madt::Polarity::Low => PinPolarity::Low,
-                    acpi::sdt::madt::Polarity::BusDefault => PinPolarity::High,
                 },
                 remote_irr: false,
                 int_vec: irq,

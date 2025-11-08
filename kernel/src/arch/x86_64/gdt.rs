@@ -16,7 +16,7 @@ pub const PAGE_FAULT_IST: u8 = 1;
 
 pub struct Gdt {
     loaded: bool,
-    inner_gdt: MaybeUninit<GlobalDescriptorTable>,
+    inner: MaybeUninit<GlobalDescriptorTable>,
     tss: MaybeUninit<TaskStateSegment>,
     kernel_code_selector: MaybeUninit<u16>,
     kernel_data_selector: MaybeUninit<u16>,
@@ -30,7 +30,7 @@ impl Gdt {
     pub const fn uninit() -> Self {
         Self {
             loaded: false,
-            inner_gdt: MaybeUninit::uninit(),
+            inner: MaybeUninit::uninit(),
             tss: MaybeUninit::uninit(),
             kernel_code_selector: MaybeUninit::uninit(),
             kernel_data_selector: MaybeUninit::uninit(),
@@ -55,7 +55,7 @@ impl Gdt {
         let user_data_selector = gdt.append(GdtDescriptor::user_data_segment());
         let user_code_selector = gdt.append(GdtDescriptor::user_code_segment());
 
-        self.inner_gdt.write(gdt);
+        self.inner.write(gdt);
         self.tss.write(tss);
         self.kernel_code_selector.write(kernel_code_selector);
         self.kernel_data_selector.write(kernel_data_selector);
@@ -64,7 +64,7 @@ impl Gdt {
 
         // Safety: We just initialized the GDT.
         // According to function's safety guards, `self` is valid for `'static`.
-        let gdt = unsafe { &mut *core::ptr::from_mut(self.inner_gdt.assume_init_mut()) };
+        let gdt = unsafe { &mut *core::ptr::from_mut(self.inner.assume_init_mut()) };
 
         // Safety: We just initialized the TSS.
         // According to function's safety guards, `self` is valid for `'static`.
@@ -179,7 +179,7 @@ impl Gdt {
     #[inline]
     pub const fn gdt(&self) -> Option<&GlobalDescriptorTable> {
         if self.loaded {
-            Some(unsafe { self.inner_gdt.assume_init_ref() })
+            Some(unsafe { self.inner.assume_init_ref() })
         } else {
             None
         }

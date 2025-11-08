@@ -122,8 +122,7 @@ impl AddressSpace {
         let (recursive_idx, pte) = pt
             .iter_entries_mut()
             .enumerate()
-            .filter(|(_, e)| e.is_null())
-            .next_back()
+            .rfind(|(_, e)| e.is_null())
             .unwrap();
 
         pte.set(frame.start_address(), Flags::PRESENT | Flags::WRITABLE);
@@ -132,8 +131,7 @@ impl AddressSpace {
         let free_idx = u16::try_from(
             pt.iter_entries_mut()
                 .enumerate()
-                .filter(|(_, e)| e.is_null())
-                .next_back()
+                .rfind(|(_, e)| e.is_null())
                 .expect("No free index for the page allocator")
                 .0,
         )

@@ -24,6 +24,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_get_raster_backup_char() {
+        assert!(get_raster(BACKUP_CHAR, FontWeight::Regular, CHAR_HEIGHT_INTERNAL).is_some());
+    }
+
+    #[test]
     fn test_get_raster_backed() {
         for c in '\0'..='~' {
             let _ = get_raster_backed(c);
