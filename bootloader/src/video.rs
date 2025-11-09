@@ -57,7 +57,7 @@ impl PhysicalFrameBuffer {
     #[inline]
     /// Converts the physical framebuffer to a (virtual) framebuffer.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The provided framebuffer must only be used to transfer the framebuffer to the kernel.
     pub const unsafe fn to_framebuffer(&self, vaddr: VirtAddr) -> FrameBuffer {

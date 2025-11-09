@@ -55,7 +55,7 @@ pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
 pub struct AddressSpace {
     /// Page table of the address space
     ///
-    /// ## WARNING
+    /// # WARNING
     ///
     /// This field is only valid if the address space is active.
     pt: McsLock<PageTable<'static>>,
@@ -211,7 +211,7 @@ impl AddressSpace {
 
     /// Operate on the page table of the address space.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if the address space is not active.
     pub fn with_page_table<R>(&self, f: impl FnOnce(&mut PageTable<'static>) -> R) -> R {
@@ -226,6 +226,16 @@ impl AddressSpace {
         f: impl FnOnce(&mut super::page_alloc::PageAllocator<PROCESS_PGALLOC_VRANGES>) -> R,
     ) -> R {
         self.pgalloc.with_locked(f)
+    }
+}
+
+impl Drop for AddressSpace {
+    fn drop(&mut self) {
+        // We recall that the address space's page table is not active anymore
+        debug_assert!(
+            !self.is_active(),
+            "Address space is suspiciously still active on drop"
+        );
     }
 }
 

@@ -1,3 +1,5 @@
+use super::{EarlyFrameAllocator, PageTables};
+use crate::{KERNEL_STACK_NB_PAGES, arch::chg_ctx, debug, info, kernel_elf};
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
     paging::{CacheFlush as _, Frame, FrameAllocator as _, M4KiB, Mapper, MemSize as _, Page},
@@ -8,10 +10,6 @@ use beskar_hal::{
 };
 use bootloader_api::{KernelInfo, RamdiskInfo};
 use xmas_elf::{ElfFile, program::ProgramHeader};
-
-use crate::{KERNEL_STACK_NB_PAGES, arch::chg_ctx, debug, info, kernel_elf};
-
-use super::{EarlyFrameAllocator, PageTables};
 
 const KERNEL_STACK_SIZE: u64 = KERNEL_STACK_NB_PAGES * M4KiB::SIZE;
 
@@ -86,11 +84,11 @@ impl Level4Entries {
 
     /// Returns the first index of `num` contiguous unused level 4 entries.
     ///
-    /// ## Note
+    /// # Note
     ///
     /// Marks each returned index as used.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if no contiguous free entries are found.
     pub fn get_free_entries(&mut self, num: usize) -> u16 {
@@ -108,11 +106,11 @@ impl Level4Entries {
 
     /// Returns a virtual address that is not used.
     ///
-    /// ## Note
+    /// # Note
     ///
     /// Marks associated entries indices as used.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if no contiguous free memory is found.
     pub fn get_free_address(&mut self, size: u64) -> VirtAddr {

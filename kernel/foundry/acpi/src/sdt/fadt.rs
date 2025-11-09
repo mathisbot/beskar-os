@@ -118,7 +118,7 @@ struct FullFadt {
     hypervisor_vendor_id: u64,
 }
 
-impl<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> Fadt<M> {
+impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Fadt<M> {
     #[must_use]
     pub fn parse(&self) -> ParsedFadt {
         assert!(usize::try_from(self.length()).unwrap() >= size_of::<MinimalFadt>());

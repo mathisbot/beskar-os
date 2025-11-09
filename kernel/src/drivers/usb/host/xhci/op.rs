@@ -133,7 +133,7 @@ impl CommandRegister {
 
     /// Performs a "light" reset, which is a reset that does not affect the state of the ports.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// To perform such a reset, the Light HC Reset Capability bit must be set in HCCPARAMS1.
     pub unsafe fn light_reset(self) {

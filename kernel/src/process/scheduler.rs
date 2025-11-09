@@ -31,7 +31,7 @@ static SLEEPING: McsLock<BTreeMap<ThreadId, Box<Thread>>> = McsLock::new(BTreeMa
 
 /// This function initializes the scheduler with the kernel thread.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// This function should only be called once, and only by the kernel, with the kernel thread.
 pub unsafe fn init(kernel_thread: thread::Thread) {
@@ -68,7 +68,7 @@ impl ContextSwitch {
     #[inline]
     /// Performs the context switch.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// See `kernel::arch::context::context_switch`.
     pub unsafe fn perform(&self) {
@@ -215,7 +215,7 @@ extern "C" fn guard_thread() -> ! {
 ///
 /// If rescheduling happens (i.e. returned value is `Some`), interrupts are disabled.
 ///
-/// ## Warning
+/// # Warning
 ///
 /// This function does not perform the context switch.
 pub(crate) fn reschedule() -> Option<ContextSwitch> {
@@ -287,7 +287,7 @@ pub fn set_scheduling(enable: bool) {
 ///
 /// This function will enable interrupts, otherwise the system would halt.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.

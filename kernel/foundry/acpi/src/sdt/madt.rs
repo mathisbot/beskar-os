@@ -229,7 +229,7 @@ struct X2ApicNmi {
 }
 
 // See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt>
-impl<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> Madt<M> {
+impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Madt<M> {
     #[must_use]
     #[expect(clippy::too_many_lines, reason = "Many fields to parse")]
     pub fn parse(&self) -> ParsedMadt {

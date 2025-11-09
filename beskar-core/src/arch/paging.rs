@@ -46,7 +46,7 @@ pub trait CacheFlush<S: MemSize> {
     fn flush(&self);
     /// Ignore the flush operation on the TLB.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The page table containing the page must not be used at the moment,
     /// otherwise the CPU will not be aware of the changes.

@@ -25,7 +25,7 @@ fn panic(info: &::core::panic::PanicInfo) -> ! {
 /// Exit the program with the given exit code.
 pub fn exit(code: ExitCode) -> ! {
     let _ = arch::syscalls::syscall_1(Syscall::Exit, code as u64);
-    unsafe { ::core::hint::unreachable_unchecked() }
+    unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[inline]

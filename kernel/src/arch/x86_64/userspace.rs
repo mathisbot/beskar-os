@@ -1,6 +1,6 @@
 /// Enter usermode.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// The given stack pointer must be valid, i.e. the stack must be big enough as well as user accessible.
 /// The given entrypoint should point to valid, user accessible code.

@@ -20,7 +20,7 @@ beskar-hal = { path = "beskar-hal" }
 beskar-lib = { path = "beskar-lib" }
 bootloader-api = { path = "bootloader/bootloader-api" }
 hyperdrive = { path = "hyperdrive" }
-thiserror = { version = "2.0.16", default-features = false }
+thiserror = { version = "2.0.17", default-features = false }
 xmas-elf = "0.10.0"
 
 [build-dependencies]

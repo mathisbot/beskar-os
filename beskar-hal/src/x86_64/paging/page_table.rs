@@ -33,7 +33,7 @@ impl Flags {
     /// A set of flags that are used to mark the parent entries in the page table.
     /// The flags are present and writable.
     ///
-    /// ## Warning
+    /// # Warning
     ///
     /// If any child page is USER ACCESSIBLE, then the parent page must also be USER ACCESSIBLE.
     const PARENT: Self = Self(1 | (1 << 1));

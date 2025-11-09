@@ -4,7 +4,7 @@ use core::mem::MaybeUninit;
 #[inline]
 /// Fills the buffer with random bytes
 ///
-/// ## Panics
+/// # Panics
 ///
 /// Panics if the syscall fails.
 /// This will happen if the input data is invalid or if randomness fails to be generated.
@@ -26,11 +26,11 @@ pub fn rand_fill(buf: &mut [u8]) {
 #[must_use]
 /// Generates a random value of the given type
 ///
-/// ## Safety
+/// # Safety
 ///
 /// Any random sequence of bytes should be a valid instance of the given type.
 ///
-/// ## Panics
+/// # Panics
 ///
 /// Panics if randomness fails to be generated.
 pub unsafe fn rand<T: Sized>() -> T {

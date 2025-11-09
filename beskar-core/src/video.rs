@@ -295,7 +295,7 @@ impl FrameBuffer {
     #[inline]
     /// Creates a new framebuffer instance.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The given start address and info must describe a valid framebuffer.
     pub const unsafe fn new(start_addr: VirtAddr, info: Info) -> Self {

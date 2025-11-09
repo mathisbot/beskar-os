@@ -42,7 +42,7 @@ pub(crate) unsafe fn init_heap(start: *mut u8, size: usize) {
 #[inline]
 /// Map memory into the address space
 ///
-/// ## Panics
+/// # Panics
 ///
 /// Panics if the syscall fails.
 pub fn mmap(size: u64, alignment: Option<NonZeroU64>) -> NonNull<u8> {

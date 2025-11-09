@@ -19,7 +19,7 @@ impl Cr0 {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid CR0 value.
     pub unsafe fn write(value: u64) {
@@ -29,7 +29,7 @@ impl Cr0 {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid CR0 flag.
     pub unsafe fn insert_flags(flag: u64) {
@@ -118,7 +118,7 @@ impl Cr4 {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid CR4 value.
     pub unsafe fn write(value: u64) {
@@ -128,7 +128,7 @@ impl Cr4 {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid CR4 flag.
     pub unsafe fn insert_flags(flag: u64) {
@@ -154,7 +154,7 @@ impl Efer {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid EFER value.
     pub unsafe fn write(value: u64) {
@@ -162,7 +162,7 @@ impl Efer {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid EFER flag.
     pub unsafe fn insert_flags(flag: u64) {
@@ -238,7 +238,7 @@ impl Star {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The values written must be valid STAR values.
     pub fn write(selectors: StarSelectors) {
@@ -288,7 +288,7 @@ impl Rflags {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid RFLAGS value.
     pub unsafe fn write(value: u64) {
@@ -298,7 +298,7 @@ impl Rflags {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid RFLAGS flag.
     pub unsafe fn insert_flags(flag: u64) {
@@ -320,7 +320,7 @@ impl SFMask {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid SFMASK value.
     pub unsafe fn write(value: u64) {
@@ -328,7 +328,7 @@ impl SFMask {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid SFMASK flag.
     pub unsafe fn insert_flags(flag: u64) {

@@ -245,7 +245,7 @@ impl<T, B: BackOff> McsLock<T, B> {
     #[expect(clippy::mut_from_ref, reason = "Force lock")]
     /// Force access to the data.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// Caller is responsible for ensuring there are no data races.
     pub unsafe fn force_lock(&self) -> &mut T {
@@ -395,7 +395,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     #[inline]
     /// Locks the lock and returns a guard.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if the lock is not initialized.
     pub fn lock<'s, 'node>(&'s self, node: &'node mut McsNode) -> MUMcsGuard<'node, 's, T, B> {
@@ -478,7 +478,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     #[expect(clippy::mut_from_ref, reason = "Force lock")]
     /// Force access to the data.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// Inner lock must be initialized.
     /// Caller is responsible for ensuring there are no data races.

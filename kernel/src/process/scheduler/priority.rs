@@ -68,7 +68,7 @@ impl From<Priority> for u8 {
 
 /// A trait for managing thread queues.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// The `next` function must not allocate memory, acquire locks, ...
 /// because it will be used by interrupt handlers.

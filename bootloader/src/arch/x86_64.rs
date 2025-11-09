@@ -9,7 +9,7 @@ pub fn init() {
 
 /// Change context and jump to the kernel entry point.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// The caller must ensure that the four adresses are valid.
 pub unsafe fn chg_ctx(

@@ -194,7 +194,7 @@ impl Thread {
     #[inline]
     /// Changes the state of the thread.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// This function should only be called on a currently active thread.
     pub(super) const unsafe fn set_state(&mut self, state: ThreadState) {
@@ -321,7 +321,7 @@ impl ThreadId {
 
 /// Trampoline function to load the binary and call the entry point.
 ///
-/// ## Warning
+/// # Warning
 ///
 /// This function should not be called directly, but rather be used
 /// as an entry point for threads.

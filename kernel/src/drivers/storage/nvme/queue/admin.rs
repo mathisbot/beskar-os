@@ -127,7 +127,7 @@ pub struct IdentifyController {
     /// The value is in commands and is reported as a power of two (2^n)
     rab: u8,
     ieee_oui: [u8; 3],
-    /// ## Warning
+    /// # Warning
     ///
     /// Optional field.
     cmpion: u8,
@@ -147,7 +147,7 @@ pub struct IdentifyController {
     /// This value is a bitflag.
     /// Refer to the specification p.323
     controller_attr: u32,
-    /// ## Warning
+    /// # Warning
     ///
     /// Optional field.
     rrls: u16,

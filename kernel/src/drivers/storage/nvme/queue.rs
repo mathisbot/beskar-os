@@ -78,7 +78,7 @@ impl SubmissionQueue {
 
     /// Push a new entry to the queue
     ///
-    /// ## Warning
+    /// # Warning
     ///
     /// The entries are not reported to the controller until `flush` is called.
     pub fn push(&mut self, entry: SubmissionEntry) {
@@ -235,7 +235,7 @@ impl CompletionEntry {
     ///
     /// This value only has meaning if `has_finished` returns true.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if the command has not finished.
     pub const fn is_success(self) -> bool {

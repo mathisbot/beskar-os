@@ -23,7 +23,7 @@ use sdt::{
 static ACPI_REVISION: AcpiRevisionStorage = AcpiRevisionStorage::uninit();
 
 /// Advanced Configuration and Power Interface (ACPI) support.
-pub struct Acpi<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> {
+pub struct Acpi<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> {
     madt: ParsedMadt,
     fadt: ParsedFadt,
     hpet: Option<ParsedHpetTable>,
@@ -32,7 +32,7 @@ pub struct Acpi<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4K
     _phantom: core::marker::PhantomData<M>,
 }
 
-impl<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> Acpi<M> {
+impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Acpi<M> {
     #[must_use]
     pub fn from_rsdp_paddr(rsdp_paddr: PhysAddr) -> Self {
         let rsdt_paddr = rsdp::Rsdp::<M>::load(rsdp_paddr).rsdt_paddr();

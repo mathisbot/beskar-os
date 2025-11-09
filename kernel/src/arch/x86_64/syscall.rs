@@ -28,7 +28,7 @@ struct SyscallRegisters {
 #[unsafe(naked)]
 /// Arch syscall handler, to be loaded into LSTAR.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// This function should not be called directly.
 unsafe extern "sysv64" fn syscall_handler_arch() {

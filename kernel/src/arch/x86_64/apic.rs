@@ -80,7 +80,7 @@ pub fn init_ioapic() {
 
 /// Enables/disables interrupts.
 ///
-/// ## Panics
+/// # Panics
 ///
 /// This function will panic if the APIC is not enabled.
 fn enable_disable_interrupts(enable: bool) {
@@ -230,7 +230,7 @@ impl LocalApic {
     ///
     /// This step is mandatory to allow the LAPIC to signal other pending interrupts.
     ///
-    /// ## Notes
+    /// # Notes
     ///
     /// It is safe to call this function in threaded environments, even if the LAPIC is
     /// currently locked.

@@ -267,7 +267,7 @@ impl Bar {
     /// If you want to initialize a `Bar` with a DWORD, it is as simple as
     /// converting the DWORD to a QWORD.
     ///
-    /// ## Example
+    /// # Example
     ///
     /// ```rust,no_run
     /// let dword = 0x1234_5678; // INVALID value

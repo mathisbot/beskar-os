@@ -139,7 +139,7 @@ impl<A: Access, T: ?Sized> Volatile<A, T> {
     ///
     /// Units of `offset` are in terms of `T`. To add bytes, use `byte_add`.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// See `core::ptr::add` for safety requirements.
     pub const unsafe fn add(&self, offset: usize) -> Self
@@ -158,7 +158,7 @@ impl<A: Access, T: ?Sized> Volatile<A, T> {
     ///
     /// Units of `offset` are in terms of bytes. To add in units of `T`, use `add`.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// See `core::ptr::byte_add` for safety requirements.
     pub const unsafe fn byte_add(&self, offset: usize) -> Self {
@@ -174,7 +174,7 @@ impl<A: ReadAccess, T: ?Sized> Volatile<A, T> {
     #[inline]
     /// Reads the value.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The inner pointer must be valid.
     pub unsafe fn read(&self) -> T
@@ -205,7 +205,7 @@ impl<A: WriteAccess, T> Volatile<A, T> {
     #[inline]
     /// Writes the value.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The inner pointer must be valid.
     pub unsafe fn write(&self, value: T) {
@@ -226,7 +226,7 @@ impl<A: ReadAccess + WriteAccess, T> Volatile<A, T> {
     #[inline]
     /// Updates the value.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The inner pointer must be valid.
     pub unsafe fn update(&self, f: impl FnOnce(T) -> T) {

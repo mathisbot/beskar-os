@@ -200,7 +200,7 @@ impl GeneralInterruptStatus {
     #[inline]
     /// Reads the interrupt status of the timer.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The caller ensure the timer is valid.
     pub const fn get_tn_int_status(&self, timer: u8) -> bool {
@@ -211,7 +211,7 @@ impl GeneralInterruptStatus {
     #[inline]
     /// Clears the interrupt status of the timer.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The caller ensure the timer is valid.
     pub const unsafe fn clear_tn_int_status(&mut self, timer: u8) {
@@ -245,7 +245,7 @@ read_write_reg!(TimerConfigCap { timer: u8 });
 impl TimerConfigCap {
     #[must_use]
     #[inline]
-    /// ## WARNING
+    /// # WARNING
     ///
     /// According the `OSDev` wiki, this field can be little bit misleading :
     ///
@@ -431,7 +431,7 @@ pub fn init() -> DriverResult<()> {
 
     assert_eq!(
         hpet_info.base_address().address_space(),
-        ::acpi::sdt::AddressSpace::SystemMemory
+        acpi::sdt::AddressSpace::SystemMemory
     );
 
     // TODO: Only one mapping for the whole HPET block

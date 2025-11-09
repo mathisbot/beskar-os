@@ -8,7 +8,7 @@ pub mod keyboard;
 #[inline]
 /// Print a message to the console
 ///
-/// ## Panics
+/// # Panics
 ///
 /// Panics if the syscall fails (should never happen
 /// for valid input).

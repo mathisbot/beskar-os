@@ -120,7 +120,7 @@ pub trait Queueable: Sized {
 
     /// Capture the data pointed to by the pointer and return a handle to it.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// `ptr` must be a valid pointer to a `Self` instance.
     unsafe fn capture(ptr: NonNull<Self>) -> Self::Handle;
@@ -130,7 +130,7 @@ pub trait Queueable: Sized {
     /// Because an `MpscQueue` is intrusive, the link has to be provided
     /// already allocated in memory, as a pointer.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// `ptr` must be a valid pointer to a `Self` instance.
     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>>;
@@ -196,7 +196,7 @@ impl<T: Queueable> DequeueResult<T> {
     #[inline]
     /// Unwraps the result.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if the result is not of type `Element`.
     pub fn unwrap(self) -> T::Handle {
@@ -211,7 +211,7 @@ impl<T: Queueable> DequeueResult<T> {
     #[inline]
     /// Unwraps the result without checking its value.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The caller must ensure that the result is of type `Element`.
     /// Otherwise, this is immediately undefined behavior.
@@ -257,7 +257,7 @@ impl<T: Queueable> MpscQueue<T> {
         }
     }
 
-    /// ## Safety
+    /// # Safety
     ///
     /// `ptr` must be a valid pointer to a `T` instance.
     unsafe fn enqueue_ptr(&self, ptr: NonNull<T>) {
@@ -298,7 +298,7 @@ impl<T: Queueable> MpscQueue<T> {
         res.map_or(DequeueResult::Empty, DequeueResult::Element)
     }
 
-    /// ## Safety
+    /// # Safety
     ///
     /// The caller must make sure that the queue is not being dequeued by another thread.
     unsafe fn dequeue_impl(&self) -> Option<T::Handle> {

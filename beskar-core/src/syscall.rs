@@ -74,7 +74,7 @@ impl SyscallExitCode {
     #[inline]
     /// Unwraps the syscall exit code, panicking if it is a failure.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if the syscall exit code is not a success.
     pub fn unwrap(self) {
