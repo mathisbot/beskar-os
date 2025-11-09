@@ -85,7 +85,7 @@ impl Tty {
 
             let curr_row = self.writer.y() + u16::try_from(BANNER_HEIGHT).unwrap();
             let end_row = curr_row + CHAR_HEIGHT + LINE_SPACING;
-            screen.flush(Some(&(curr_row..end_row)));
+            screen.flush(Some(&(curr_row..end_row))).unwrap();
         });
     }
 
@@ -113,7 +113,7 @@ impl Tty {
 
             let curr_row = self.writer.y() + u16::try_from(BANNER_HEIGHT).unwrap();
             let end_row = curr_row + CHAR_HEIGHT + LINE_SPACING;
-            screen.flush(Some(&(curr_row..end_row)));
+            screen.flush(Some(&(curr_row..end_row))).unwrap();
         });
     }
 
@@ -175,7 +175,7 @@ impl Tty {
 
                     let curr_row = self.writer.y() + u16::try_from(BANNER_HEIGHT).unwrap();
                     let end_row = curr_row + CHAR_HEIGHT + LINE_SPACING;
-                    screen.flush(Some(&(curr_row..end_row)));
+                    screen.flush(Some(&(curr_row..end_row))).unwrap();
                 });
                 true
             }
@@ -229,7 +229,7 @@ impl Tty {
             let curr_row = self.writer.y() + u16::try_from(BANNER_HEIGHT).unwrap();
             let start_row = curr_row - line_count * (CHAR_HEIGHT + LINE_SPACING);
             let end_row = curr_row + CHAR_HEIGHT + LINE_SPACING;
-            screen.flush(Some(&(start_row..end_row)));
+            screen.flush(Some(&(start_row..end_row))).unwrap();
         });
     }
 }

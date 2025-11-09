@@ -22,6 +22,14 @@ pub struct Arguments {
     pub six: u64,
 }
 
+/// Validate that a memory range is owned by the current process
+/// and is located within its user-space address space.
+#[must_use]
+#[inline]
+pub fn probe(start: VirtAddr, end: VirtAddr) -> bool {
+    process::current().address_space().is_addr_owned(start, end)
+}
+
 #[must_use]
 pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
     match syscall {
@@ -96,7 +104,7 @@ fn sc_mmap(args: &Arguments) -> u64 {
         return 0;
     }
 
-    debug_assert!(process::current().address_space().is_addr_owned(
+    debug_assert!(probe(
         page_range.start().start_address(),
         page_range.end().start_address() + (len - 1),
     ));
@@ -121,10 +129,7 @@ fn sc_read(args: &Arguments) -> i64 {
     let buffer_start = VirtAddr::try_new(args.two).unwrap_or_default();
     let buffer_len = args.three;
 
-    if !process::current()
-        .address_space()
-        .is_addr_owned(buffer_start, buffer_start + buffer_len)
-    {
+    if !probe(buffer_start, buffer_start + buffer_len) {
         return -1;
     }
 
@@ -155,10 +160,7 @@ fn sc_write(args: &Arguments) -> i64 {
     let buffer_start = VirtAddr::try_new(args.two).unwrap_or_default();
     let buffer_len = args.three;
 
-    if !process::current()
-        .address_space()
-        .is_addr_owned(buffer_start, buffer_start + buffer_len)
-    {
+    if !probe(buffer_start, buffer_start + buffer_len) {
         return -1;
     }
 
@@ -182,10 +184,7 @@ fn sc_open(args: &Arguments) -> i64 {
     let path_start = VirtAddr::try_new(args.one).unwrap_or_default();
     let path_len = args.two;
 
-    if !process::current()
-        .address_space()
-        .is_addr_owned(path_start, path_start + path_len)
-    {
+    if !probe(path_start, path_start + path_len) {
         return Handle::INVALID.id();
     }
 

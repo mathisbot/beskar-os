@@ -1,4 +1,7 @@
-use crate::arch::syscalls;
+use crate::{
+    arch::syscalls,
+    error::{MemoryError, MemoryErrorKind, MemoryResult},
+};
 use beskar_core::{
     arch::paging::{M4KiB, MemSize as _},
     syscall::Syscall,
@@ -38,18 +41,23 @@ pub(crate) unsafe fn init_heap(start: *mut u8, size: usize) {
     ALLOCATOR.init(unsafe { linked_list_allocator::Heap::new(start, size) });
 }
 
-#[must_use]
-#[inline]
 /// Map memory into the address space
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the syscall fails.
-pub fn mmap(size: u64, alignment: Option<NonZeroU64>) -> NonNull<u8> {
+/// Returns an error if the memory cannot be mapped.
+pub fn mmap(size: u64, alignment: Option<NonZeroU64>) -> MemoryResult<NonNull<u8>> {
+    if let Some(a) = alignment
+        && !a.get().is_power_of_two()
+    {
+        return Err(MemoryError::new(MemoryErrorKind::InvalidAlignment));
+    }
+
     let res = syscalls::syscall_2(
         Syscall::MemoryMap,
         size,
         alignment.map_or(1, NonZeroU64::get),
     );
-    NonNull::new(res as *mut u8).expect("Memory mapping failed")
+
+    NonNull::new(res as *mut u8).ok_or_else(|| MemoryError::new(MemoryErrorKind::OutOfMemory))
 }

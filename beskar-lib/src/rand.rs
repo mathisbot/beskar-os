@@ -1,51 +1,48 @@
-use crate::io::File;
-use core::mem::MaybeUninit;
+use crate::error::{IoError, IoErrorKind, IoResult};
+use crate::io::{File, Read};
+use core::mem::{self, MaybeUninit};
 
-#[inline]
-/// Fills the buffer with random bytes
+/// Fills the buffer with random bytes.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the syscall fails.
-/// This will happen if the input data is invalid or if randomness fails to be generated.
-pub fn rand_fill(buf: &mut [u8]) {
+/// Returns an error if the random device cannot be read.
+pub fn rand_fill(buf: &mut [u8]) -> IoResult<()> {
     const RAND_FILE: &str = "/dev/rand";
 
-    // FIXME: This is very inefficient and faillible if some other process
-    // is using the rand file.
-    let file = File::open(RAND_FILE).unwrap();
+    // Open the random device
+    let mut file = File::open(RAND_FILE).map_err(|_| IoError::new(IoErrorKind::Other))?;
 
-    let read_res = file.read(buf, 0);
+    // Use read_exact semantics to ensure buffer is fully filled
+    file.read_exact(buf)
+        .map_err(|_| IoError::new(IoErrorKind::UnexpectedEof))?;
 
-    file.close().unwrap();
+    // Close the device (best-effort)
+    let _ = file.close();
 
-    let bytes_read = read_res.unwrap();
-    assert!(bytes_read == buf.len(), "Failed to read random bytes");
+    Ok(())
 }
 
-#[must_use]
-/// Generates a random value of the given type
+/// Generates a random value of the given type.
+///
+/// # Errors
+///
+/// Returns an error if the random device cannot be read.
 ///
 /// # Safety
 ///
-/// Any random sequence of bytes should be a valid instance of the given type.
-///
-/// # Panics
-///
-/// Panics if randomness fails to be generated.
-pub unsafe fn rand<T: Sized>() -> T {
-    let mut res = MaybeUninit::<T>::uninit();
+/// The returned value of type `T` is produced from raw random bytes.
+/// Any random sequence of bytes must be valid for type `T`.
+pub unsafe fn rand<T: Sized>() -> IoResult<T> {
+    let mut uninit = MaybeUninit::<T>::uninit();
+    let buf = unsafe {
+        core::slice::from_raw_parts_mut(uninit.as_mut_ptr().cast::<u8>(), mem::size_of::<T>())
+    };
 
-    // Safety:
-    // `MaybeUninit` guarantees that the layout is the same as `T`
-    // so that the memory is valid for writes.
-    let slice =
-        unsafe { core::slice::from_raw_parts_mut(res.as_mut_ptr().cast::<u8>(), size_of::<T>()) };
+    rand_fill(buf)?;
 
-    rand_fill(slice);
-
-    // Safety:
-    // We just initialized the value and because of the function's safety guards,
-    // the result is a valid instance of the given type
-    unsafe { res.assume_init() }
+    // Safety: buffer just initialized with bytes from the random device.
+    // As per the function safety contract, any byte sequence is valid for `T`.
+    let val = unsafe { uninit.assume_init() };
+    Ok(val)
 }

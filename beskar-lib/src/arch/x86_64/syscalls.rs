@@ -1,6 +1,5 @@
 use beskar_core::syscall::Syscall;
 
-#[must_use]
 pub fn syscall_1(syscall: Syscall, arg1: u64) -> u64 {
     let res_code: u64;
     unsafe {
@@ -15,7 +14,6 @@ pub fn syscall_1(syscall: Syscall, arg1: u64) -> u64 {
     res_code
 }
 
-#[must_use]
 pub fn syscall_2(syscall: Syscall, arg1: u64, arg2: u64) -> u64 {
     let res_code: u64;
     unsafe {
@@ -31,7 +29,6 @@ pub fn syscall_2(syscall: Syscall, arg1: u64, arg2: u64) -> u64 {
     res_code
 }
 
-#[must_use]
 pub fn syscall_4(syscall: Syscall, arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> u64 {
     let res_code: u64;
     unsafe {

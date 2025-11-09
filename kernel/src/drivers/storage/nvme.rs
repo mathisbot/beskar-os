@@ -189,7 +189,7 @@ impl NvmeControllers {
             while self.acq.pop().is_none() {
                 core::hint::spin_loop();
             }
-            unsafe { &*ptr }
+            unsafe { ptr.read() }
         };
 
         self.max_transfer_sz =

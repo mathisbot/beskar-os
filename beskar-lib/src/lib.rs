@@ -5,13 +5,19 @@
 
 extern crate alloc;
 
-use beskar_core::syscall::{Syscall, SyscallExitCode};
-pub use beskar_core::{syscall::ExitCode, time::Duration};
+pub use beskar_core::syscall::ExitCode;
+use beskar_core::{
+    syscall::{Syscall, SyscallExitCode},
+    time::Duration,
+};
 use hyperdrive::once::Once;
 
 mod arch;
+pub mod error;
+use error::{SyscallError, SyscallResult};
 pub mod io;
 pub mod mem;
+pub mod prelude;
 pub mod rand;
 pub mod time;
 
@@ -21,7 +27,7 @@ fn panic(info: &::core::panic::PanicInfo) -> ! {
     exit(ExitCode::Failure);
 }
 
-#[inline]
+#[cold]
 /// Exit the program with the given exit code.
 pub fn exit(code: ExitCode) -> ! {
     let _ = arch::syscalls::syscall_1(Syscall::Exit, code as u64);
@@ -31,12 +37,15 @@ pub fn exit(code: ExitCode) -> ! {
 #[inline]
 /// Sleep for **at least** the given duration.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the syscall fails (should never happen).
-pub fn sleep(duration: Duration) {
+/// Returns an error if the syscall fails.
+pub fn sleep(duration: Duration) -> SyscallResult<()> {
     let res = arch::syscalls::syscall_1(Syscall::Sleep, duration.total_millis());
-    SyscallExitCode::from(res).unwrap();
+    match SyscallExitCode::from(res) {
+        SyscallExitCode::Success => Ok(()),
+        _ => Err(SyscallError::new(-1)),
+    }
 }
 
 #[macro_export]
@@ -64,7 +73,7 @@ pub fn __init() {
     static CALL_ONCE: Once<()> = Once::uninit();
 
     CALL_ONCE.call_once(|| {
-        let res = mem::mmap(mem::HEAP_SIZE, None);
+        let res = mem::mmap(mem::HEAP_SIZE, None).expect("Memory mapping failed");
         unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };
 
         time::init();
