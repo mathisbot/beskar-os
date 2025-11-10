@@ -6,10 +6,7 @@
 extern crate alloc;
 
 pub use beskar_core::syscall::ExitCode;
-use beskar_core::{
-    syscall::{Syscall, SyscallExitCode},
-    time::Duration,
-};
+use beskar_core::{syscall::SyscallExitCode, time::Duration};
 use hyperdrive::once::Once;
 
 mod arch;
@@ -19,19 +16,19 @@ pub mod io;
 pub mod mem;
 pub mod prelude;
 pub mod rand;
+mod sys;
 pub mod time;
 
 #[panic_handler]
 fn panic(info: &::core::panic::PanicInfo) -> ! {
     println!("Panic occurred: {}", info);
-    exit(ExitCode::Failure);
+    sys::sc_exit(ExitCode::Failure);
 }
 
 #[cold]
 /// Exit the program with the given exit code.
 pub fn exit(code: ExitCode) -> ! {
-    let _ = arch::syscalls::syscall_1(Syscall::Exit, code as u64);
-    unsafe { core::hint::unreachable_unchecked() }
+    sys::sc_exit(code)
 }
 
 #[inline]
@@ -41,8 +38,8 @@ pub fn exit(code: ExitCode) -> ! {
 ///
 /// Returns an error if the syscall fails.
 pub fn sleep(duration: Duration) -> SyscallResult<()> {
-    let res = arch::syscalls::syscall_1(Syscall::Sleep, duration.total_millis());
-    match SyscallExitCode::from(res) {
+    let code = sys::sc_sleep(duration.total_millis());
+    match code {
         SyscallExitCode::Success => Ok(()),
         _ => Err(SyscallError::new(-1)),
     }

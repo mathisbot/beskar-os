@@ -1,13 +1,16 @@
 use super::traits::{Read, Seek, SeekFrom, Write};
-use crate::{
-    arch::syscalls,
-    error::{FileError, FileErrorKind, FileResult, IoError, IoErrorKind, IoResult},
-};
+use crate::error::{FileError, FileErrorKind, FileResult, IoError, IoErrorKind, IoResult};
 use alloc::string::String;
-use beskar_core::syscall::{Syscall, SyscallExitCode};
+use beskar_core::syscall::SyscallExitCode;
 use core::convert::TryFrom;
 
 type Handle = i64;
+
+#[must_use]
+#[inline]
+const fn is_valid_handle(handle: Handle) -> bool {
+    handle >= 0
+}
 
 /// Represents an opened file
 pub struct File {
@@ -17,22 +20,6 @@ pub struct File {
 }
 
 impl File {
-    #[must_use]
-    #[inline]
-    const fn new(handle: Handle, path: String) -> Self {
-        Self {
-            handle,
-            position: 0,
-            path,
-        }
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn path(&self) -> &str {
-        &self.path
-    }
-
     #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Open a file
     ///
@@ -40,19 +27,23 @@ impl File {
     ///
     /// Returns an error if the file cannot be opened
     pub fn open(path: &str) -> FileResult<Self> {
-        let raw_res = syscalls::syscall_2(
-            Syscall::Open,
-            path.as_ptr() as u64,
-            path.len().try_into().unwrap(),
-        );
-        let handle = raw_res.cast_signed();
-
-        if handle >= 0 {
-            Ok(Self::new(handle, String::from(path)))
+        let handle = crate::sys::sc_open(path.as_ptr(), path.len().try_into().unwrap());
+        if is_valid_handle(handle) {
+            Ok(Self {
+                handle,
+                position: 0,
+                path: String::from(path),
+            })
         } else {
             // TODO: Distinguish error kinds based on syscall error code
             Err(FileError::new(FileErrorKind::Other))
         }
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn path(&self) -> &str {
+        &self.path
     }
 
     #[inline]
@@ -72,8 +63,8 @@ impl File {
     ///
     /// Returns an error if the file cannot be closed
     pub fn close(self) -> FileResult<()> {
-        let res = syscalls::syscall_1(Syscall::Close, self.handle.cast_unsigned());
-        if SyscallExitCode::from(res) == SyscallExitCode::Success {
+        let code = crate::sys::sc_close(self.handle);
+        if code == SyscallExitCode::Success {
             Ok(())
         } else {
             Err(FileError::new(FileErrorKind::Other))
@@ -83,17 +74,13 @@ impl File {
 
 impl Read for File {
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
-        let raw_res = syscalls::syscall_4(
-            Syscall::Read,
-            self.handle.cast_unsigned(),
-            buf.as_ptr() as u64,
+        let n = crate::sys::sc_read(
+            self.handle,
+            buf.as_mut_ptr(),
             buf.len().try_into().unwrap(),
             self.position,
         );
-        let n = raw_res.cast_signed();
-
-        if n >= 0 {
-            let n = usize::try_from(n).unwrap();
+        if let Ok(n) = usize::try_from(n) {
             self.position += u64::try_from(n).unwrap();
             Ok(n)
         } else {
@@ -104,17 +91,13 @@ impl Read for File {
 
 impl Write for File {
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        let raw_res = syscalls::syscall_4(
-            Syscall::Write,
-            self.handle.cast_unsigned(),
-            buf.as_ptr() as u64,
+        let n = crate::sys::sc_write(
+            self.handle,
+            buf.as_ptr(),
             buf.len().try_into().unwrap(),
             self.position,
         );
-        let n = raw_res.cast_signed();
-
-        if n >= 0 {
-            let n = usize::try_from(n).unwrap();
+        if let Ok(n) = usize::try_from(n) {
             self.position += u64::try_from(n).unwrap();
             Ok(n)
         } else {
@@ -155,6 +138,6 @@ impl core::fmt::Write for File {
 impl Drop for File {
     #[inline]
     fn drop(&mut self) {
-        let _ = syscalls::syscall_1(Syscall::Close, self.handle.cast_unsigned());
+        crate::sys::sc_close(self.handle);
     }
 }

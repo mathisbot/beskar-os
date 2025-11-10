@@ -1,12 +1,14 @@
-use core::mem::{MaybeUninit, align_of, size_of};
-use core::num::NonZeroU64;
-use core::ops::Range;
-
-use crate::error::{IoError, IoErrorKind, IoResult};
-use crate::io::SeekFrom;
-use crate::io::{File, Read, Seek, Write};
-use crate::mem;
+use crate::{
+    error::IoResult,
+    io::{File, Read, Seek, SeekFrom, Write},
+    mem,
+};
 use beskar_core::video::Info;
+use core::{
+    mem::{MaybeUninit, align_of, size_of},
+    num::NonZeroU64,
+    ops::Range,
+};
 
 /// A convenient framebuffer wrapper. It maps an internal buffer and provides
 /// simple `flush` semantics to write ranges back to the kernel framebuffer device.
@@ -26,39 +28,36 @@ impl FrameBuffer {
     ///
     /// Returns an error if the framebuffer device cannot be opened or mapped.
     pub fn open() -> crate::error::Result<Self> {
+        let mut fb_file = File::open(Self::FB_FILE)?;
+
         // Read screen info
-        let mut info_uninit = MaybeUninit::<Info>::uninit();
-        let info_buf = unsafe {
-            core::slice::from_raw_parts_mut(
-                info_uninit.as_mut_ptr().cast::<u8>(),
-                size_of::<Info>(),
-            )
+        let info = {
+            let mut uninit = MaybeUninit::<Info>::uninit();
+            let buf = unsafe {
+                core::slice::from_raw_parts_mut(uninit.as_mut_ptr().cast::<u8>(), size_of::<Info>())
+            };
+
+            fb_file.read_exact(buf)?;
+
+            unsafe { uninit.assume_init() }
         };
 
-        let mut fb_file = File::open(Self::FB_FILE)?;
-        fb_file.read_exact(info_buf)?;
-        let info = unsafe { info_uninit.assume_init() };
+        debug_assert_eq!(info.bytes_per_pixel(), 4);
 
         // Map internal framebuffer
-        let internal_fb_start = mem::mmap(
-            u64::from(info.size()),
-            Some(NonZeroU64::new(u64::try_from(align_of::<u32>()).unwrap()).unwrap()),
-        )
-        .map_err(|_| IoError::new(IoErrorKind::Other))?;
-        let internal_fb = unsafe {
-            core::slice::from_raw_parts_mut(
-                internal_fb_start.as_ptr(),
-                usize::try_from(info.size()).unwrap(),
-            )
+        let internal_fb = {
+            let internal_fb_start = mem::mmap(
+                u64::from(info.size()),
+                Some(NonZeroU64::new(u64::try_from(align_of::<u32>()).unwrap()).unwrap()),
+            )?;
+            unsafe {
+                core::slice::from_raw_parts_mut(
+                    internal_fb_start.as_ptr(),
+                    usize::try_from(info.size()).unwrap(),
+                )
+            }
         };
-
-        // Clear the internal framebuffer
-        {
-            let (prefix, large, suffix) = unsafe { internal_fb.align_to_mut::<u64>() };
-            prefix.fill(0);
-            large.fill(0);
-            suffix.fill(0);
-        }
+        internal_fb.fill(0);
 
         Ok(Self {
             info,
@@ -79,14 +78,12 @@ impl FrameBuffer {
         let bpp = usize::from(self.info.bytes_per_pixel());
 
         let offset_in_screen = rows
-            .as_ref()
             .map_or(0, |r| usize::from(r.start) * stride)
             .min(max_row * stride);
 
         let offset = offset_in_screen * bpp;
 
         let end = rows
-            .as_ref()
             .map_or_else(
                 || usize::try_from(self.info.size()).unwrap(),
                 |r| usize::from(r.end) * stride * bpp,

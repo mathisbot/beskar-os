@@ -1,11 +1,5 @@
-use crate::{
-    arch::syscalls,
-    error::{MemoryError, MemoryErrorKind, MemoryResult},
-};
-use beskar_core::{
-    arch::paging::{M4KiB, MemSize as _},
-    syscall::Syscall,
-};
+use crate::error::{MemoryError, MemoryErrorKind, MemoryResult};
+use beskar_core::arch::paging::{M4KiB, MemSize as _};
 use core::{num::NonZeroU64, ptr::NonNull};
 use hyperdrive::locks::mcs::MUMcsLock;
 
@@ -53,11 +47,7 @@ pub fn mmap(size: u64, alignment: Option<NonZeroU64>) -> MemoryResult<NonNull<u8
         return Err(MemoryError::new(MemoryErrorKind::InvalidAlignment));
     }
 
-    let res = syscalls::syscall_2(
-        Syscall::MemoryMap,
-        size,
-        alignment.map_or(1, NonZeroU64::get),
-    );
+    let ptr = crate::sys::sc_mmap(size, alignment.map_or(1, NonZeroU64::get));
 
-    NonNull::new(res as *mut u8).ok_or_else(|| MemoryError::new(MemoryErrorKind::OutOfMemory))
+    NonNull::new(ptr).ok_or_else(|| MemoryError::new(MemoryErrorKind::OutOfMemory))
 }
