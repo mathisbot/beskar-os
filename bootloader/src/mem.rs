@@ -15,7 +15,7 @@ mod phys;
 pub use phys::EarlyFrameAllocator;
 
 mod virt;
-pub use virt::{Level4Entries, Mappings};
+pub use virt::Mappings;
 use xmas_elf::ElfFile;
 
 use crate::{debug, info};
@@ -79,8 +79,7 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
             let ptr: *const Entries =
                 (physical_offset + old_frame.start_address().as_u64()).as_ptr();
 
-            // ## Safety
-            // We are reading a page table from a valid physical address mapped
+            // Safety: We are reading a page table from a valid physical address mapped
             // in the virtual address space.
             unsafe { &*ptr }
         };
@@ -92,8 +91,7 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
         let table = {
             let ptr: *mut Entries = (physical_offset + frame.start_address().as_u64()).as_mut_ptr();
 
-            // ## Safety
-            // We are writing a page table to a valid physical address
+            // Safety: We are writing a page table to a valid physical address
             // mapped in the virtual address space.
             unsafe {
                 ptr.write(Entries::new());

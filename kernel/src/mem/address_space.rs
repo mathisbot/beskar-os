@@ -8,31 +8,31 @@ use beskar_hal::{
     paging::page_table::{Entries, Flags, PageTable},
     registers::{Cr3, Efer},
 };
-use bootloader_api::KernelInfo;
+use bootloader_api::{
+    KERNEL_AS_BASE, KERNEL_POOL_BASE, KERNEL_PT_RECURSIVE_INDEX, KERNEL_PT_START_ENTRY, KernelInfo,
+};
 use hyperdrive::{locks::mcs::McsLock, once::Once};
 
 static KERNEL_ADDRESS_SPACE: Once<AddressSpace> = Once::uninit();
 
 static KERNEL_CODE_INFO: Once<KernelInfo> = Once::uninit();
 
-const PROCESS_PGALLOC_VRANGES: usize = 128;
+const PROCESS_PGALLOC_VRANGES: usize = 64;
 
 pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
     KERNEL_CODE_INFO.call_once(|| *kernel_info);
 
     let kernel_pt = {
-        let bootloader_pt_vaddr = VirtAddr::from_pt_indices(
+        let vaddr = VirtAddr::from_pt_indices(
             recursive_index,
             recursive_index,
             recursive_index,
             recursive_index,
             0,
         );
-
         // Safety: The page table given by the bootloader is valid
-        let bootloader_pt = unsafe { &mut *bootloader_pt_vaddr.as_mut_ptr() };
-
-        PageTable::new(bootloader_pt)
+        let raw_pt = unsafe { &mut *vaddr.as_mut_ptr::<Entries>() };
+        PageTable::new(raw_pt)
     };
 
     if cpuid::check_feature(cpuid::CpuFeature::TCE) {
@@ -41,12 +41,14 @@ pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
 
     KERNEL_ADDRESS_SPACE.call_once(|| {
         let (frame, _flags) = Cr3::read();
-        let pgalloc = McsLock::new(page_alloc::PageAllocator::new_from_pt(&kernel_pt));
+        let pgalloc = McsLock::new(page_alloc::PageAllocator::new_range(
+            KERNEL_POOL_BASE,
+            VirtAddr::MAX,
+        ));
         AddressSpace {
             pt: McsLock::new(kernel_pt),
             lvl4_paddr: frame.start_address(),
             pgalloc,
-            pgalloc_pml4_idx: None,
         }
     });
 }
@@ -64,11 +66,6 @@ pub struct AddressSpace {
     // FIXME: Make it less than 1KiB!
     /// The process-specific page allocator
     pgalloc: McsLock<super::page_alloc::PageAllocator<PROCESS_PGALLOC_VRANGES>>,
-    /// The index of the PML4 entry used by the page allocator
-    ///
-    /// Currently, this is only used to check if the address space owns any address
-    /// in the syscall handler.
-    pgalloc_pml4_idx: Option<u16>,
 }
 
 impl Default for AddressSpace {
@@ -107,35 +104,17 @@ impl AddressSpace {
         let mut pt = Entries::new();
 
         curr_addr_space.with_page_table(|cpt| {
-            let userspc_idx = curr_addr_space.pgalloc_pml4_idx.map(usize::from);
-
             for (i, pte) in cpt
                 .entries()
                 .iter_entries()
                 .enumerate()
-                .filter(|(i, pte)| userspc_idx != Some(*i) && !pte.is_null())
+                .skip(usize::from(KERNEL_PT_START_ENTRY))
             {
                 pt[i] = *pte;
             }
         });
-
-        let (recursive_idx, pte) = pt
-            .iter_entries_mut()
-            .enumerate()
-            .rfind(|(_, e)| e.is_null())
-            .unwrap();
-
-        pte.set(frame.start_address(), Flags::PRESENT | Flags::WRITABLE);
-
-        // We will need another free index to give to the page allocator
-        let free_idx = u16::try_from(
-            pt.iter_entries_mut()
-                .enumerate()
-                .rfind(|(_, e)| e.is_null())
-                .expect("No free index for the page allocator")
-                .0,
-        )
-        .unwrap();
+        pt[usize::from(KERNEL_PT_RECURSIVE_INDEX)]
+            .set(frame.start_address(), Flags::PRESENT | Flags::WRITABLE);
 
         unsafe { page.start_address().as_mut_ptr::<Entries>().write(pt) };
 
@@ -146,14 +125,14 @@ impl AddressSpace {
         });
 
         let lvl4_vaddr = {
-            let i = u16::try_from(recursive_idx).unwrap();
+            let i = KERNEL_PT_RECURSIVE_INDEX;
             VirtAddr::from_pt_indices(i, i, i, i, 0)
         };
 
         // Create a new process page allocator with a whole PLM4 index area free (256TiB)
         let pgalloc = {
-            let start_page = Page::<M4KiB>::from_p4p3p2p1(free_idx, 0, 0, 0);
-            let end_page = Page::<M4KiB>::from_p4p3p2p1(free_idx, 511, 511, 511);
+            let start_page = Page::<M4KiB>::from_p4p3p2p1(0, 0, 0, 0);
+            let end_page = Page::<M4KiB>::from_p4p3p2p1(KERNEL_PT_START_ENTRY - 1, 511, 511, 511);
 
             let start_vaddr = start_page.start_address();
             let end_vaddr = end_page.start_address() + (M4KiB::SIZE - 1);
@@ -165,26 +144,14 @@ impl AddressSpace {
             pt: McsLock::new(PageTable::new(unsafe { &mut *lvl4_vaddr.as_mut_ptr() })),
             lvl4_paddr: frame.start_address(),
             pgalloc: McsLock::new(pgalloc),
-            pgalloc_pml4_idx: Some(free_idx),
         }
     }
 
     #[must_use]
     #[inline]
     /// Returns whether a certain memory range is owned by the address space.
-    pub fn is_addr_owned(&self, start: VirtAddr, end: VirtAddr) -> bool {
-        let Some(idx) = self.pgalloc_pml4_idx else {
-            video::warn!("`AddressSpace::is_addr_owned` called without PGALLOC PML4 index");
-            return false;
-        };
-
-        let start_page = Page::from_p4p3p2p1(idx, 0, 0, 0);
-        let end_page = Page::from_p4p3p2p1(idx, 511, 511, 511);
-
-        let start_vaddr = start_page.start_address();
-        let end_vaddr = end_page.start_address() + (M4KiB::SIZE - 1);
-
-        start >= start_vaddr && end <= end_vaddr
+    pub fn is_addr_owned(&self, _start: VirtAddr, end: VirtAddr) -> bool {
+        end < KERNEL_AS_BASE
     }
 
     #[must_use]

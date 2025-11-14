@@ -1,9 +1,10 @@
-use crate::mem::{EarlyFrameAllocator, Level4Entries};
+use crate::mem::EarlyFrameAllocator;
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
     paging::{CacheFlush, Frame, FrameAllocator, M4KiB, Mapper as _, MemSize, Page, Translator},
 };
 use beskar_hal::paging::page_table::{Flags, OffsetPageTable};
+use bootloader_api::KERNEL_IMAGE_BASE;
 use xmas_elf::{
     ElfFile,
     dynamic::Tag,
@@ -14,7 +15,6 @@ use xmas_elf::{
 
 pub struct KernelLoadingUtils<'a> {
     kernel: &'a ElfFile<'a>,
-    level_4_entries: &'a mut Level4Entries,
     page_table: &'a mut OffsetPageTable<'static>,
     frame_allocator: &'a mut EarlyFrameAllocator,
 }
@@ -24,13 +24,11 @@ impl<'a> KernelLoadingUtils<'a> {
     #[inline]
     pub const fn new(
         kernel: &'a ElfFile<'a>,
-        level_4_entries: &'a mut Level4Entries,
         page_table: &'a mut OffsetPageTable<'static>,
         frame_allocator: &'a mut EarlyFrameAllocator,
     ) -> Self {
         Self {
             kernel,
-            level_4_entries,
             page_table,
             frame_allocator,
         }
@@ -64,42 +62,29 @@ pub fn load_kernel_elf(mut klu: KernelLoadingUtils) -> LoadedKernelInfo {
     );
 
     // Get the offset of the kernel image in the virtual address space
-    let virtual_address_offset = match klu.kernel.header.pt2.type_().as_type() {
-        header::Type::Executable => {
-            // Kernel built by cargo should always be shared object (of the workspace)
-            crate::warn!("Kernel is unexpectedly an executable.");
-            0
-        }
-        header::Type::SharedObject => {
-            let (min_addr, max_addr) = klu
-                .kernel
-                .program_iter()
-                .filter_map(|header| {
-                    if header.get_type() == Ok(xmas_elf::program::Type::Load) {
-                        Some((
-                            header.virtual_addr(),
-                            header.virtual_addr() + header.mem_size(),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .fold((u64::MAX, 0), |(min, max), (start, end)| {
-                    (min.min(start), max.max(end))
-                });
+    let virtual_address_offset = {
+        let (min_addr, max_addr) = klu
+            .kernel
+            .program_iter()
+            .filter_map(|header| {
+                if header.get_type() == Ok(xmas_elf::program::Type::Load) {
+                    Some((
+                        header.virtual_addr(),
+                        header.virtual_addr() + header.mem_size(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .fold((u64::MAX, 0), |(min, max), (start, end)| {
+                (min.min(start), max.max(end))
+            });
 
-            assert!(min_addr <= max_addr, "No loadable segments");
+        assert!(min_addr <= max_addr, "No loadable segments");
 
-            let size = max_addr - min_addr;
-            let offset = klu.level_4_entries.get_free_address(size).as_u64();
-
-            offset - min_addr
-        }
-        _ => panic!("Unsupported ELF file type"),
-    };
-
-    klu.level_4_entries
-        .mark_segments(klu.kernel.program_iter(), virtual_address_offset);
+        KERNEL_IMAGE_BASE - min_addr
+    }
+    .as_u64();
 
     let _lsi = load_segments(&mut klu, virtual_address_offset);
 

@@ -124,6 +124,20 @@ impl<S: MemSize> FrameRangeInclusive<S> {
     pub fn size(&self) -> u64 {
         S::SIZE * self.len()
     }
+
+    #[must_use]
+    #[inline]
+    /// Checks if the given frame is within this range.
+    pub fn contains(&self, frame: Frame<S>) -> bool {
+        frame >= self.start && frame <= self.end
+    }
+
+    #[must_use]
+    #[inline]
+    /// Checks if this range overlaps with another range.
+    pub fn overlaps(&self, other: &Self) -> bool {
+        !(self.end < other.start || self.start > other.end)
+    }
 }
 
 impl<S: MemSize> IntoIterator for FrameRangeInclusive<S> {

@@ -11,7 +11,7 @@ use beskar_core::{
     mem::ranges::MemoryRange,
 };
 use beskar_hal::paging::page_table::Flags;
-use bootloader_api::BootInfo;
+use bootloader_api::{BOOT_INFO_BASE, BootInfo};
 use core::alloc::Layout;
 use mem::{EarlyFrameAllocator, Mappings, PageTables};
 
@@ -37,9 +37,7 @@ pub fn create_boot_info(
         .extend(Layout::array::<MemoryRange>(max_region_count).unwrap())
         .unwrap();
 
-    let boot_info_addr = mappings
-        .level_4_entries_mut()
-        .get_free_address(u64::try_from(layout.size()).unwrap());
+    let boot_info_addr = BOOT_INFO_BASE;
 
     let memory_map_regions_addr = boot_info_addr + u64::try_from(memory_regions_offset).unwrap();
     let memory_map_regions_end = boot_info_addr + u64::try_from(layout.size()).unwrap();
@@ -63,8 +61,7 @@ pub fn create_boot_info(
     let memory_regions =
         unsafe { frame_allocator.construct_memory_map(memory_map_regions_addr, max_region_count) };
 
-    // ## Safety
-    // We are writing to a valid memory region, and converting its pointer to a mutable reference.
+    // Safety: We are writing to a valid memory region, and converting its pointer to a mutable reference.
     unsafe {
         boot_info_addr.as_mut_ptr::<BootInfo>().write(BootInfo {
             memory_regions,

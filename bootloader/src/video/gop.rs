@@ -1,13 +1,11 @@
 //! Handles the Graphical Output Protocol (GOP) provided by the UEFI firmware.
-
+use super::PhysicalFrameBuffer;
 use beskar_core::arch::PhysAddr;
 use beskar_core::video::{Info, PixelBitmask, PixelFormat};
 use uefi::{
     boot,
     proto::console::gop::{self, GraphicsOutput},
 };
-
-use super::PhysicalFrameBuffer;
 
 #[must_use]
 /// Initializes the GOP and returns the (physical) framebuffer.
@@ -20,20 +18,11 @@ pub fn init() -> PhysicalFrameBuffer {
 
     let best_mode = gop
         .modes()
-        .max_by(|a, b| {
-            // BltOnly pixel format is not supported
-            // as it won't be available for the kernel.
-            if a.info().pixel_format() == gop::PixelFormat::BltOnly {
-                return core::cmp::Ordering::Less;
-            }
-
-            let res_a = a.info().resolution();
-            let res_b = b.info().resolution();
-
-            match res_a.0.cmp(&res_b.0) {
-                core::cmp::Ordering::Equal => res_a.1.cmp(&res_b.1),
-                other => other,
-            }
+        .filter(|m| m.info().pixel_format() != gop::PixelFormat::BltOnly)
+        .max_by_key(|m| {
+            let (w, h) = m.info().resolution();
+            // Prefer larger width/height, then smaller stride
+            (w, h, core::cmp::Reverse(m.info().stride()))
         })
         .unwrap();
 

@@ -16,6 +16,12 @@ impl VirtAddr {
     pub const ZERO: Self = Self(0);
 
     #[must_use]
+    #[inline]
+    const fn canonicalize(raw: u64) -> u64 {
+        ((raw << 16).cast_signed() >> 16).cast_unsigned()
+    }
+
+    #[must_use]
     #[track_caller]
     #[inline]
     pub const fn new(addr: u64) -> Self {
@@ -36,15 +42,8 @@ impl VirtAddr {
     #[inline]
     /// Create a new valid virtual address by sign extending the address.
     pub const fn new_extend(addr: u64) -> Self {
-        #[expect(
-            clippy::cast_sign_loss,
-            clippy::cast_possible_wrap,
-            reason = "Sign extension"
-        )]
-        // Perform sign extension
-        let extended = ((addr << 16) as i64 >> 16) as u64;
         // Safety: We made sure the address is canonical
-        unsafe { Self::new_unchecked(extended) }
+        unsafe { Self::new_unchecked(Self::canonicalize(addr)) }
     }
 
     #[must_use]
@@ -80,14 +79,7 @@ impl VirtAddr {
     ///
     /// The given address must be a canonical virtual address.
     pub const unsafe fn new_unchecked(addr: u64) -> Self {
-        #[expect(
-            clippy::cast_sign_loss,
-            clippy::cast_possible_wrap,
-            reason = "Sign extension"
-        )]
-        {
-            debug_assert!(((addr << 16) as i64 >> 16) as u64 == addr);
-        }
+        debug_assert!(Self::canonicalize(addr) == addr);
         Self(addr)
     }
 

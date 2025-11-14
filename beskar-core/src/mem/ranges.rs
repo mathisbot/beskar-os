@@ -255,9 +255,8 @@ impl<const N: usize> MemoryRanges<N> {
             if end > range.end {
                 continue;
             }
-            let prev_size = allocation.map(|(start, end, _)| end - start);
 
-            if allocation.is_none() || end - start < prev_size.unwrap() {
+            if allocation.is_none_or(|(s, e, _)| end - start < e - s) {
                 allocation = Some((
                     start,
                     end,

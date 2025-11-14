@@ -102,11 +102,9 @@ impl ops::Add<Duration> for Instant {
 }
 
 impl ops::AddAssign<Duration> for Instant {
+    #[inline]
     fn add_assign(&mut self, rhs: Duration) {
-        self.micros = self
-            .total_micros()
-            .checked_add(rhs.total_micros())
-            .expect("overflow when adding durations");
+        *self = *self + rhs;
     }
 }
 
@@ -123,11 +121,9 @@ impl ops::Sub<Duration> for Instant {
 }
 
 impl ops::SubAssign<Duration> for Instant {
+    #[inline]
     fn sub_assign(&mut self, rhs: Duration) {
-        self.micros = self
-            .total_micros()
-            .checked_sub(rhs.total_micros())
-            .expect("underflow when subtracting durations");
+        *self = *self - rhs;
     }
 }
 
@@ -235,11 +231,9 @@ impl ops::Add<Self> for Duration {
 }
 
 impl ops::AddAssign<Self> for Duration {
+    #[inline]
     fn add_assign(&mut self, rhs: Self) {
-        self.micros = self
-            .total_micros()
-            .checked_add(rhs.total_micros())
-            .expect("overflow when adding durations");
+        *self = *self + rhs;
     }
 }
 
@@ -256,11 +250,9 @@ impl ops::Sub<Self> for Duration {
 }
 
 impl ops::SubAssign<Self> for Duration {
+    #[inline]
     fn sub_assign(&mut self, rhs: Self) {
-        self.micros = self
-            .total_micros()
-            .checked_sub(rhs.total_micros())
-            .expect("under when subtracting durations");
+        *self = *self - rhs;
     }
 }
 
@@ -270,38 +262,35 @@ impl<T: Into<u64>> ops::Mul<T> for Duration {
     fn mul(self, rhs: T) -> Self {
         Self::from_micros(
             self.micros
-                .checked_mul(<T as Into<u64>>::into(rhs))
+                .checked_mul(rhs.into())
                 .expect("overflow when multiplying durations"),
         )
     }
 }
 
 impl<T: Into<u64>> ops::MulAssign<T> for Duration {
+    #[inline]
     fn mul_assign(&mut self, rhs: T) {
-        self.micros = self
-            .total_micros()
-            .checked_mul(<T as Into<u64>>::into(rhs))
-            .expect("overflow when multiplying durations");
+        *self = *self * rhs;
     }
 }
 
 impl<T: Into<u64>> ops::Div<T> for Duration {
     type Output = Self;
+
     fn div(self, rhs: T) -> Self {
         Self::from_micros(
             self.micros
-                .checked_div(<T as Into<u64>>::into(rhs))
+                .checked_div(rhs.into())
                 .expect("division by zero when dividing durations"),
         )
     }
 }
 
 impl<T: Into<u64>> ops::DivAssign<T> for Duration {
+    #[inline]
     fn div_assign(&mut self, rhs: T) {
-        self.micros = self
-            .total_micros()
-            .checked_div(<T as Into<u64>>::into(rhs))
-            .expect("division by zero when dividing durations");
+        *self = *self / rhs;
     }
 }
 
