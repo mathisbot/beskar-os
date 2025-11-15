@@ -8,19 +8,20 @@ use beskar_hal::{
     paging::page_table::{Entries, Flags, PageTable},
     registers::{Cr3, Efer},
 };
-use bootloader_api::{
-    KERNEL_AS_BASE, KERNEL_POOL_BASE, KERNEL_PT_RECURSIVE_INDEX, KERNEL_PT_START_ENTRY, KernelInfo,
-};
+use bootloader_api::{KERNEL_AS_BASE, KERNEL_POOL_BASE, KERNEL_PT_START_ENTRY, KernelInfo};
 use hyperdrive::{locks::mcs::McsLock, once::Once};
 
 static KERNEL_ADDRESS_SPACE: Once<AddressSpace> = Once::uninit();
 
 static KERNEL_CODE_INFO: Once<KernelInfo> = Once::uninit();
 
+static KERNEL_PT_RECURSIVE_INDEX: Once<u16> = Once::uninit();
+
 const PROCESS_PGALLOC_VRANGES: usize = 64;
 
 pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
     KERNEL_CODE_INFO.call_once(|| *kernel_info);
+    KERNEL_PT_RECURSIVE_INDEX.call_once(|| recursive_index);
 
     let kernel_pt = {
         let vaddr = VirtAddr::from_pt_indices(
@@ -81,6 +82,8 @@ impl AddressSpace {
         let curr_process = scheduler::current_process();
         let curr_addr_space = curr_process.address_space();
 
+        let recursive_index = KERNEL_PT_RECURSIVE_INDEX.get().copied().unwrap();
+
         let page = curr_addr_space
             .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<M4KiB>(1))
             .unwrap()
@@ -113,7 +116,7 @@ impl AddressSpace {
                 pt[i] = *pte;
             }
         });
-        pt[usize::from(KERNEL_PT_RECURSIVE_INDEX)]
+        pt[usize::from(recursive_index)]
             .set(frame.start_address(), Flags::PRESENT | Flags::WRITABLE);
 
         unsafe { page.start_address().as_mut_ptr::<Entries>().write(pt) };
@@ -125,11 +128,11 @@ impl AddressSpace {
         });
 
         let lvl4_vaddr = {
-            let i = KERNEL_PT_RECURSIVE_INDEX;
+            let i = recursive_index;
             VirtAddr::from_pt_indices(i, i, i, i, 0)
         };
 
-        // Create a new process page allocator with a whole PLM4 index area free (256TiB)
+        // Create a new process page allocator with 256 PLM4 index free (128TiB)
         let pgalloc = {
             let start_page = Page::<M4KiB>::from_p4p3p2p1(0, 0, 0, 0);
             let end_page = Page::<M4KiB>::from_p4p3p2p1(KERNEL_PT_START_ENTRY - 1, 511, 511, 511);

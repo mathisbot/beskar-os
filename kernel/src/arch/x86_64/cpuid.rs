@@ -68,6 +68,7 @@ pub fn cpuid(leaf: Leaf) -> CpuidResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code, reason = "Unused CPU features registers may be used later")]
 /// Every meaningful CPUID register
 pub enum CpuidReg {
     Eax,
@@ -102,7 +103,7 @@ impl core::fmt::Display for CpuFeature {
     }
 }
 
-// TODO: Add more features!
+#[allow(dead_code, reason = "Unused CPU features may be added later")]
 impl CpuFeature {
     // LEAF 1
 

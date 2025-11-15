@@ -8,11 +8,7 @@ license = "MIT"
 repository = "https://github.com/mathisbot/beskar-os/"
 
 [workspace]
-members = [
-    "bootloader",
-    "kernel",
-    "userspace/*"
-]
+members = ["bootloader", "kernel", "userspace/*"]
 
 [workspace.dependencies]
 beskar-core = { path = "beskar-core" }

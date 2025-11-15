@@ -27,7 +27,8 @@ pub fn make_mappings(
     page_tables: &mut PageTables,
 ) -> Mappings {
     // Assert recursive mapping
-    page_tables.kernel.entries_mut()[usize::from(KERNEL_PT_RECURSIVE_INDEX)].set(
+    let recursive_index = KERNEL_PT_RECURSIVE_INDEX;
+    page_tables.kernel.entries_mut()[usize::from(recursive_index)].set(
         page_tables.kernel_level_4_frame.start_address(),
         Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
     );
@@ -178,7 +179,7 @@ pub fn make_mappings(
         stack_top: stack_end_addr,
         entry_point: kernel_entry_point,
         framebuffer: framebuffer_virt_addr,
-        recursive_index: KERNEL_PT_RECURSIVE_INDEX,
+        recursive_index,
         kernel_info,
         ramdisk_info,
     }
