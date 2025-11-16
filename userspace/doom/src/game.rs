@@ -33,15 +33,15 @@ pub fn init() {
     unsafe { doom_set_getenv(getenv) };
 }
 
+#[cfg(debug_assertions)]
 extern "C" fn print(s: *const c_char) {
-    #[cfg(debug_assertions)]
-    {
-        let s = unsafe { core::ffi::CStr::from_ptr(s) };
-        if let Ok(s) = s.to_str() {
-            beskar_lib::println!("DOOM: {}", s);
-        }
+    let s = unsafe { core::ffi::CStr::from_ptr(s) };
+    if let Ok(s) = s.to_str() {
+        beskar_lib::println!("DOOM: {}", s);
     }
 }
+#[cfg(not(debug_assertions))]
+extern "C" fn print(_s: *const c_char) {}
 
 extern "C" fn malloc(size: i32) -> *mut c_void {
     if size == 0 {

@@ -246,7 +246,7 @@ impl AddressSpace {
                         frame_allocator.free(frame);
                     }
                 }
-            })
+            });
         });
         self.with_pgalloc(|pgalloc| {
             pgalloc.free_pages(page_range);
