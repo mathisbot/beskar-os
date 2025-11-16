@@ -3,12 +3,17 @@
 
 extern crate alloc;
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use hyperdrive::once::Once;
 use kernel::{
     locals,
-    process::{Process, scheduler},
+    process::{
+        Process,
+        scheduler::{self, thread::user_trampoline},
+    },
+    storage::vfs,
 };
+use storage::fs::{Path, PathBuf, in_mem::InMemoryFS};
 
 kernel::kernel_main!(kmain);
 
@@ -44,22 +49,28 @@ fn kmain() -> ! {
         )));
 
         if let Some(ramdisk) = kernel::boot::ramdisk() {
-            // TODO: Only pass the file location to the process creation.
-            // File loading should be done in the process itself.
-            let user_proc = Arc::new(Process::new(
-                "User",
-                beskar_hal::process::Kind::User,
-                Some(kernel::process::binary::Binary::new(
-                    ramdisk,
-                    kernel::process::binary::BinaryType::Elf,
-                )),
-            ));
+            let ramfs = InMemoryFS::new(ramdisk).unwrap();
+            vfs().mount(PathBuf::new("/ramdisk"), Box::new(ramfs));
+            let ram_files = vfs().read_dir(Path::new("/ramdisk/")).unwrap();
 
-            scheduler::spawn_thread(alloc::boxed::Box::new(Thread::new_from_binary(
-                user_proc,
-                Priority::High,
-                alloc::vec![0; 1024*64],
-            )));
+            for file in ram_files {
+                let full_path = PathBuf::new("/ramdisk").join(file.as_path().as_str());
+                video::info!(
+                    "Starting user process for file: {}",
+                    full_path.as_path().as_str()
+                );
+                let user_proc = Arc::new(Process::new(
+                    "User",
+                    beskar_hal::process::Kind::User,
+                    Some(full_path),
+                ));
+                scheduler::spawn_thread(alloc::boxed::Box::new(Thread::new(
+                    user_proc,
+                    Priority::High,
+                    alloc::vec![0; 1024*64],
+                    user_trampoline,
+                )));
+            }
         }
     });
 

@@ -34,9 +34,12 @@ pub fn init() {
 }
 
 extern "C" fn print(s: *const c_char) {
-    let s = unsafe { core::ffi::CStr::from_ptr(s) };
-    if let Ok(s) = s.to_str() {
-        beskar_lib::println!("DOOM: {}", s);
+    #[cfg(debug_assertions)]
+    {
+        let s = unsafe { core::ffi::CStr::from_ptr(s) };
+        if let Ok(s) = s.to_str() {
+            beskar_lib::println!("DOOM: {}", s);
+        }
     }
 }
 

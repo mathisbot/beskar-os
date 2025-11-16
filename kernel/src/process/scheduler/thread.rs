@@ -1,10 +1,15 @@
-use crate::{arch::context::ThreadRegisters, mem::frame_alloc};
+use crate::{
+    arch::context::ThreadRegisters,
+    mem::frame_alloc,
+    process::binary::{Binary, BinaryType, LoadedBinary},
+    storage::vfs,
+};
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
     VirtAddr,
     paging::{CacheFlush, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
 };
-use beskar_hal::{instructions::STACK_DEBUG_INSTR, paging::page_table::Flags, userspace::Ring};
+use beskar_hal::{instructions::STACK_DEBUG_INSTR, paging::page_table::Flags};
 use core::{
     mem::offset_of,
     pin::Pin,
@@ -15,6 +20,7 @@ use hyperdrive::{
     once::Once,
     queues::mpsc::{Link, Queueable},
 };
+use storage::fs::Path;
 
 use super::{super::Process, priority::Priority};
 
@@ -81,7 +87,7 @@ impl Queueable for Thread {
 impl Thread {
     #[must_use]
     #[inline]
-    pub(crate) fn new_kernel(kernel_process: Arc<Process>) -> Self {
+    pub(in super::super) fn new_kernel(kernel_process: Arc<Process>) -> Self {
         Self {
             id: ThreadId::new(),
             root_proc: kernel_process,
@@ -118,28 +124,6 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
         }
-    }
-
-    #[must_use]
-    /// Create a new thread with the given stack, and the root process' binary.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the root process does not have a binary.
-    pub fn new_from_binary(root_proc: Arc<Process>, priority: Priority, stack: Vec<u8>) -> Self {
-        assert!(
-            root_proc.binary_data.is_some(),
-            "Root process has no binary"
-        );
-
-        let trampoline = match root_proc.kind.ring() {
-            Ring::User => user_trampoline,
-            Ring::Hypervisor => todo!("Ring2 binary threads"),
-            Ring::Driver => todo!("Ring1 binary threads"),
-            Ring::Kernel => todo!("Ring0 binary threads"),
-        };
-
-        Self::new(root_proc, priority, stack, trampoline)
     }
 
     /// Setup the stack and move stack pointer to the end of the stack.
@@ -319,17 +303,46 @@ impl ThreadId {
     }
 }
 
+fn thread_load_binary(path: Path) -> LoadedBinary {
+    let curr_proc = super::current_process();
+    let handle = vfs().open(path).unwrap();
+
+    let file_info = vfs().metadata(path).unwrap();
+
+    let page_range = curr_proc
+        .address_space()
+        .alloc_map::<M4KiB>(file_info.size(), Flags::PRESENT | Flags::WRITABLE)
+        .unwrap();
+
+    let input_buffer = unsafe {
+        core::slice::from_raw_parts_mut(
+            page_range.start().start_address().as_mut_ptr::<u8>(),
+            file_info.size(),
+        )
+    };
+    let input_bytes = vfs().read(handle, input_buffer, 0).unwrap();
+    assert_eq!(input_bytes, input_buffer.len());
+
+    vfs().close(handle).unwrap();
+
+    let binary = Binary::new(input_buffer, BinaryType::Elf);
+    let loaded_binary = binary.load().unwrap();
+
+    // Safety: Binary has been laoded, input bytes can be freed.
+    unsafe { curr_proc.address_space().unmap_free(page_range) };
+
+    loaded_binary
+}
+
 /// Trampoline function to load the binary and call the entry point.
 ///
 /// # Warning
 ///
 /// This function should not be called directly, but rather be used
 /// as an entry point for threads.
-extern "C" fn user_trampoline() -> ! {
+pub extern "C" fn user_trampoline() -> ! {
     let root_proc = super::current_process();
-
-    // Load the binary into the process' address space.
-    let loaded_binary = root_proc.load_binary();
+    let loaded_binary = thread_load_binary(root_proc.binary().unwrap());
 
     // Allocate a user stack
     let rsp = super::with_scheduler(|scheduler| {
@@ -345,22 +358,14 @@ extern "C" fn user_trampoline() -> ! {
 
     if let Some(tlst) = loaded_binary.tls_template() {
         let tls_size = tlst.mem_size();
-        let num_pages = tls_size.div_ceil(M4KiB::SIZE);
+
         let pages = root_proc
             .address_space()
-            .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(num_pages))
+            .alloc_map::<M4KiB>(
+                usize::try_from(tls_size).unwrap(),
+                Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE,
+            )
             .unwrap();
-
-        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
-        frame_alloc::with_frame_allocator(|fralloc| {
-            root_proc.address_space().with_page_table(|pt| {
-                for page in pages {
-                    let frame = fralloc.allocate_frame().unwrap();
-                    pt.map(page, frame, flags, fralloc).flush();
-                }
-            });
-        });
-
         let tls_vaddr = pages.start().start_address();
 
         // Copy TLS initialization image from binary

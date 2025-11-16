@@ -10,11 +10,13 @@ use beskar_core::arch::{
     paging::{Frame, M4KiB, MemSize},
 };
 use beskar_core::mem::ranges::{MemoryRange, MemoryRanges};
-use hyperdrive::locks::mcs::MUMcsLock;
+use hyperdrive::locks::mcs::McsLock;
 
-const MAX_MEMORY_REGIONS: usize = 256;
+const MAX_MEMORY_REGIONS: usize = 4096;
 
-static KFRAME_ALLOC: MUMcsLock<FrameAllocator> = MUMcsLock::uninit();
+static KFRAME_ALLOC: McsLock<FrameAllocator> = McsLock::new(FrameAllocator {
+    memory_ranges: MemoryRanges::new(),
+});
 
 pub fn init(ranges: &[MemoryRange]) {
     assert!(!ranges.is_empty(), "No usable memory regions found");
@@ -25,21 +27,18 @@ pub fn init(ranges: &[MemoryRange]) {
         );
     }
 
-    let mut mranges = MemoryRanges::<MAX_MEMORY_REGIONS>::new();
-    ranges.iter().take(MAX_MEMORY_REGIONS).for_each(|r| {
-        mranges.insert(*r);
+    KFRAME_ALLOC.with_locked(|frallocator| {
+        ranges.iter().take(MAX_MEMORY_REGIONS).for_each(|r| {
+            frallocator.memory_ranges.insert(*r);
+        });
+        video::info!(
+            "Free memory: {} MiB",
+            frallocator.memory_ranges.sum() / 1_048_576
+        );
+
+        // Make sure physical frame for the AP trampoline code is reserved
+        reserve_tramp_frame(frallocator);
     });
-
-    video::info!("Free memory: {} MiB", mranges.sum() / 1_048_576);
-
-    let mut frallocator = FrameAllocator {
-        memory_ranges: mranges,
-    };
-
-    // Make sure physical frame for the AP trampoline code is reserved
-    reserve_tramp_frame(&mut frallocator);
-
-    KFRAME_ALLOC.init(frallocator);
 }
 
 pub struct FrameAllocator {

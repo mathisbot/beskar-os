@@ -2,7 +2,7 @@ use super::{frame_alloc, page_alloc};
 use crate::{arch::cpuid, process::scheduler};
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _, Page},
+    paging::{CacheFlush as _, M4KiB, Mapper, MemSize, Page, PageRangeInclusive},
 };
 use beskar_hal::{
     paging::page_table::{Entries, Flags, PageTable},
@@ -134,7 +134,7 @@ impl AddressSpace {
 
         // Create a new process page allocator with 256 PLM4 index free (128TiB)
         let pgalloc = {
-            let start_page = Page::<M4KiB>::from_p4p3p2p1(0, 0, 0, 0);
+            let start_page = Page::<M4KiB>::from_p4p3p2p1(0, 0, 0, 1);
             let end_page = Page::<M4KiB>::from_p4p3p2p1(KERNEL_PT_START_ENTRY - 1, 511, 511, 511);
 
             let start_vaddr = start_page.start_address();
@@ -196,6 +196,61 @@ impl AddressSpace {
         f: impl FnOnce(&mut super::page_alloc::PageAllocator<PROCESS_PGALLOC_VRANGES>) -> R,
     ) -> R {
         self.pgalloc.with_locked(f)
+    }
+
+    #[must_use]
+    /// Allocate and map a memory region of the given size with the given flags.
+    ///
+    /// Note that it acquires locks on the process-specific page allocator, then on both the system-wide frame allocator and
+    /// the process-specific page allocator.
+    pub fn alloc_map<S: MemSize>(&self, size: usize, flags: Flags) -> Option<PageRangeInclusive<S>>
+    where
+        PageTable<'static>: Mapper<S, beskar_hal::paging::page_table::Flags>,
+    {
+        let pages = u64::try_from(size).unwrap().div_ceil(S::SIZE);
+        let page_range = self.with_pgalloc(|pgalloc| pgalloc.allocate_pages(pages))?;
+
+        frame_alloc::with_frame_allocator(|frame_allocator| {
+            for page in page_range {
+                let frame = frame_allocator.alloc()?;
+                self.with_page_table(|page_table| {
+                    page_table
+                        .map(page, frame, flags | Flags::PRESENT, frame_allocator)
+                        .flush();
+                });
+            }
+            Some(())
+        })?;
+
+        Some(page_range)
+    }
+
+    /// Unmap and free a memory region.
+    ///
+    /// Note that it acquires locks on both the system-wide frame allocator and
+    /// the process-specific page allocator, then on the process-specific page allocator.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the pages are not in use after this call.
+    /// Furthermore, the mapped physical frames must not be mapped elsewhere.
+    pub unsafe fn unmap_free<S: MemSize>(&self, page_range: PageRangeInclusive<S>)
+    where
+        PageTable<'static>: Mapper<S, beskar_hal::paging::page_table::Flags>,
+    {
+        frame_alloc::with_frame_allocator(|frame_allocator| {
+            self.with_page_table(|page_table| {
+                for page in page_range {
+                    if let Some((frame, flush)) = page_table.unmap(page) {
+                        flush.flush();
+                        frame_allocator.free(frame);
+                    }
+                }
+            })
+        });
+        self.with_pgalloc(|pgalloc| {
+            pgalloc.free_pages(page_range);
+        });
     }
 }
 

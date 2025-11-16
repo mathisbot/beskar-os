@@ -110,6 +110,13 @@ impl PathBuf {
     pub fn as_path(&self) -> Path<'_> {
         Path(&self.0)
     }
+
+    #[inline]
+    pub fn join(&self, path: &str) -> PathBuf {
+        let mut new_path = self.0.clone();
+        new_path.push_str(path);
+        PathBuf(new_path)
+    }
 }
 
 impl core::borrow::Borrow<str> for PathBuf {
