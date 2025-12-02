@@ -43,8 +43,8 @@ name = "beskar-lib"
 version = "0.1.0"
 dependencies = [
  "beskar-core",
+ "heaperion",
  "hyperdrive",
- "linked_list_allocator",
 ]
 
 [[package]]
@@ -128,6 +128,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a3076410a55c90011c298b04d0cfa770b00fa04e1e3c97d3f6c9de105a03844"
 
 [[package]]
+name = "heaperion"
+version = "0.1.0"
+
+[[package]]
 name = "holonet"
 version = "0.1.0"
 dependencies = [
@@ -147,21 +151,15 @@ dependencies = [
  "beskar-hal",
  "bootloader-api",
  "driver-api",
+ "heaperion",
  "holonet",
  "hyperdrive",
- "linked_list_allocator",
  "pci",
  "storage",
  "thiserror",
  "video",
  "xmas-elf",
 ]
-
-[[package]]
-name = "linked_list_allocator"
-version = "0.10.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9afa463f5405ee81cdb9cc2baf37e08ec7e4c8209442b5d72c04cfb2cd6e6286"
 
 [[package]]
 name = "log"

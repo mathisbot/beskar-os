@@ -41,36 +41,36 @@ pub fn init() {
         });
     });
 
-    KERNEL_HEAP.init(Heap::new(page_range));
+    KERNEL_HEAP.init(Heap::new(page_range).unwrap());
 }
 
 struct Heap {
-    linked_list: linked_list_allocator::Heap,
+    heap: heaperion::Heap,
 }
 
 impl Heap {
-    pub fn new(page_range: PageRangeInclusive<M2MiB>) -> Self {
+    pub fn new(page_range: PageRangeInclusive<M2MiB>) -> heaperion::Result<Self> {
         let start_address = page_range.start().start_address().as_u64();
         let end_address = page_range.end().start_address().as_u64() + (M2MiB::SIZE - 1);
 
         let size = usize::try_from(end_address - start_address + 1).unwrap();
-        let linked_list = unsafe {
-            linked_list_allocator::Heap::new(page_range.start().start_address().as_mut_ptr(), size)
-        };
+        let heap =
+            unsafe { heaperion::Heap::new(page_range.start().start_address().as_mut_ptr(), size) }?;
 
-        Self { linked_list }
+        Ok(Self { heap })
     }
 
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        self.linked_list
-            .allocate_first_fit(layout)
+        self.heap
+            .allocate(layout)
             .ok()
             .map_or(core::ptr::null_mut(), core::ptr::NonNull::as_ptr)
     }
 
     pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if let Some(ptr) = NonNull::new(ptr) {
-            unsafe { self.linked_list.deallocate(ptr, layout) }
+            let res = unsafe { self.heap.deallocate(ptr, layout) };
+            debug_assert!(res.is_ok(), "Heap deallocation failed: {:?}", res);
         }
     }
 }
