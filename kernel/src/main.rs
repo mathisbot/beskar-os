@@ -9,7 +9,10 @@ use kernel::{
     locals,
     process::{
         Process,
-        scheduler::{self, thread::user_trampoline},
+        scheduler::{
+            self, Priority,
+            thread::{Thread, user_trampoline},
+        },
     },
     storage::vfs,
 };
@@ -33,9 +36,6 @@ fn kmain() -> ! {
     // (GUI, ...)
 
     SPAWN_ONCE.call_once(|| {
-        use kernel::process::scheduler::{self, priority::Priority, thread::Thread};
-        extern crate alloc;
-
         let driver_proc = Arc::new(Process::new(
             "Drivers",
             beskar_hal::process::Kind::Driver,

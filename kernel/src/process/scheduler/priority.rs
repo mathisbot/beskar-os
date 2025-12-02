@@ -1,37 +1,37 @@
 //! Manages the priority of processes.
 //!
 //! This helps the scheduler to decide which process to run next.
-
+use super::thread::Thread;
+use crate::process::Process;
+use alloc::{boxed::Box, sync::Arc};
 use core::{
     pin::Pin,
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
 };
-
-use alloc::{boxed::Box, sync::Arc};
 use hyperdrive::queues::mpsc::MpscQueue;
-
-use crate::process::Process;
-
-use super::thread::Thread;
 
 #[derive(Debug)]
 pub struct AtomicPriority(AtomicU8);
 
 impl AtomicPriority {
     #[must_use]
+    #[inline]
     pub const fn new(priority: Priority) -> Self {
         Self(AtomicU8::new(priority as u8))
     }
 
     #[must_use]
+    #[inline]
     pub fn load(&self, order: Ordering) -> Priority {
         self.0.load(order).try_into().unwrap()
     }
 
+    #[inline]
     pub fn store(&self, priority: Priority, order: Ordering) {
         self.0.store(priority.into(), order);
     }
 
+    #[inline]
     pub fn swap(&self, priority: Priority, order: Ordering) -> Priority {
         self.0.swap(priority.into(), order).try_into().unwrap()
     }
@@ -61,6 +61,7 @@ impl TryFrom<u8> for Priority {
 }
 
 impl From<Priority> for u8 {
+    #[inline]
     fn from(priority: Priority) -> Self {
         priority as Self
     }
@@ -104,6 +105,7 @@ impl RoundRobinQueues {
     }
 
     /// Cycle through the priorities.
+    #[inline]
     fn cycle_priority(&self) -> Priority {
         let current = self.current.fetch_add(1, Ordering::Relaxed);
         self.cycle[current % self.cycle.len()]

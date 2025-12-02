@@ -10,7 +10,8 @@ use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
 use thread::{Thread, ThreadId};
 
-pub mod priority;
+mod priority;
+pub use priority::Priority;
 pub mod thread;
 
 /// The time quantum for the scheduler, in milliseconds.
@@ -326,9 +327,9 @@ pub fn is_scheduling_init() -> bool {
 /// A back-off stategy that yields the CPU.
 pub struct Yield;
 
-impl hyperdrive::locks::BackOff for Yield {
+impl hyperdrive::locks::RelaxStrategy for Yield {
     #[inline]
-    fn back_off() {
+    fn relax() {
         thread_yield();
     }
 }

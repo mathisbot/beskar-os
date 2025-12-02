@@ -1,4 +1,7 @@
-use core::{fmt, ops};
+use core::{
+    fmt, ops,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 /// The amount of microseconds in a millisecond.
 pub const MICROS_PER_MILLI: u64 = 1_000;
@@ -294,6 +297,48 @@ impl<T: Into<u64>> ops::DivAssign<T> for Duration {
     }
 }
 
+/// A variant of `Instant` that can be safely shared between threads.
+pub struct AtomicInstant {
+    micros: AtomicU64,
+}
+
+impl AtomicInstant {
+    #[must_use]
+    #[inline]
+    /// Creates a new `AtomicInstant`.
+    pub const fn new(instant: Instant) -> Self {
+        Self {
+            micros: AtomicU64::new(instant.total_micros()),
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    /// Loads the current value of the `AtomicInstant`.
+    ///
+    /// See `AtomicU64::load` for details on the `Ordering` parameter and caveats.
+    pub fn load(&self, order: Ordering) -> Instant {
+        Instant::from_micros(self.micros.load(order))
+    }
+
+    #[inline]
+    /// Stores a new value into the `AtomicInstant`.
+    ///
+    /// See `AtomicU64::store` for details on the `Ordering` parameter and caveats.
+    pub fn store(&self, instant: Instant, order: Ordering) {
+        self.micros.store(instant.total_micros(), order);
+    }
+
+    #[inline]
+    /// Adds the given duration to the `AtomicInstant`, returning the previous value.
+    ///
+    /// See `AtomicU64::fetch_add` for details on the `Ordering` parameter and caveats.
+    pub fn fetch_add(&self, duration: Duration, order: Ordering) -> Instant {
+        let prev_micros = self.micros.fetch_add(duration.total_micros(), order);
+        Instant::from_micros(prev_micros)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -352,5 +397,25 @@ mod test {
     #[should_panic(expected = "underflow when subtracting durations")]
     fn test_duration_underflow() {
         let _ = Duration::from_millis(0) - Duration::from_millis(1);
+    }
+
+    #[test]
+    fn test_instant_atomic() {
+        let atomic_instant = AtomicInstant::new(Instant::from_millis(1000));
+        assert_eq!(
+            atomic_instant.load(Ordering::Relaxed),
+            Instant::from_millis(1000)
+        );
+        atomic_instant.store(Instant::from_millis(2000), Ordering::Relaxed);
+        assert_eq!(
+            atomic_instant.load(Ordering::Relaxed),
+            Instant::from_millis(2000)
+        );
+        let prev = atomic_instant.fetch_add(Duration::from_millis(500), Ordering::Relaxed);
+        assert_eq!(prev, Instant::from_millis(2000));
+        assert_eq!(
+            atomic_instant.load(Ordering::Relaxed),
+            Instant::from_millis(2500)
+        );
     }
 }

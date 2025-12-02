@@ -41,7 +41,7 @@
 //! assert_eq!(*r, 1);
 //! ```
 
-use super::{BackOff, Spin};
+use super::{RelaxStrategy, Spin};
 use core::{
     cell::UnsafeCell,
     marker::PhantomData,
@@ -50,23 +50,19 @@ use core::{
 
 #[derive(Default)]
 /// A read-write lock.
-pub struct RwLock<T, B: BackOff = Spin> {
+pub struct RwLock<T: ?Sized, R: RelaxStrategy = Spin> {
+    /// The state of the lock.
+    state: AtomicState<R>,
     /// The data protected by the lock.
     data: UnsafeCell<T>,
-    /// The state of the lock.
-    state: AtomicState<B>,
 }
 
 // Safety:
 // `RwLock` is a synchronization primitive.
-#[expect(
-    clippy::non_send_fields_in_send_ty,
-    reason = "Synchronization primitive"
-)]
-unsafe impl<T, B: BackOff> Send for RwLock<T, B> {}
-unsafe impl<T, B: BackOff> Sync for RwLock<T, B> {}
+unsafe impl<T: ?Sized + Send, R: RelaxStrategy> Send for RwLock<T, R> {}
+unsafe impl<T: ?Sized + Send + Sync, R: RelaxStrategy> Sync for RwLock<T, R> {}
 
-impl<T, B: BackOff> RwLock<T, B> {
+impl<T, R: RelaxStrategy> RwLock<T, R> {
     #[must_use]
     pub const fn new(data: T) -> Self {
         Self {
@@ -76,30 +72,32 @@ impl<T, B: BackOff> RwLock<T, B> {
     }
 
     #[must_use]
-    pub fn read(&self) -> ReadGuard<'_, T, B> {
-        self.state.read_lock();
-        ReadGuard { lock: self }
-    }
-
-    #[must_use]
-    pub fn write(&self) -> WriteGuard<'_, T, B> {
-        self.state.write_lock();
-        WriteGuard { lock: self }
-    }
-
-    #[must_use]
     #[inline]
     pub fn into_inner(self) -> T {
         self.data.into_inner()
     }
 }
 
-/// A guard that allows read-only access to the data.
-pub struct ReadGuard<'a, T, B: BackOff> {
-    lock: &'a RwLock<T, B>,
+impl<T: ?Sized, R: RelaxStrategy> RwLock<T, R> {
+    #[must_use]
+    pub fn read(&self) -> ReadGuard<'_, T, R> {
+        self.state.read_lock();
+        ReadGuard { lock: self }
+    }
+
+    #[must_use]
+    pub fn write(&self) -> WriteGuard<'_, T, R> {
+        self.state.write_lock();
+        WriteGuard { lock: self }
+    }
 }
 
-impl<T, B: BackOff> core::ops::Deref for ReadGuard<'_, T, B> {
+/// A guard that allows read-only access to the data.
+pub struct ReadGuard<'a, T: ?Sized, R: RelaxStrategy> {
+    lock: &'a RwLock<T, R>,
+}
+
+impl<T: ?Sized, R: RelaxStrategy> core::ops::Deref for ReadGuard<'_, T, R> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -107,18 +105,21 @@ impl<T, B: BackOff> core::ops::Deref for ReadGuard<'_, T, B> {
     }
 }
 
-impl<T, B: BackOff> Drop for ReadGuard<'_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> Drop for ReadGuard<'_, T, R> {
     fn drop(&mut self) {
         self.lock.state.read_unlock();
     }
 }
 
+unsafe impl<T: ?Sized + Sync, R: RelaxStrategy> Send for ReadGuard<'_, T, R> {}
+unsafe impl<T: ?Sized + Sync, R: RelaxStrategy> Sync for ReadGuard<'_, T, R> {}
+
 /// A guard that allows mutable access to the data.
-pub struct WriteGuard<'a, T, B: BackOff> {
-    lock: &'a RwLock<T, B>,
+pub struct WriteGuard<'a, T: ?Sized, R: RelaxStrategy> {
+    lock: &'a RwLock<T, R>,
 }
 
-impl<T, B: BackOff> core::ops::Deref for WriteGuard<'_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> core::ops::Deref for WriteGuard<'_, T, R> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -126,13 +127,13 @@ impl<T, B: BackOff> core::ops::Deref for WriteGuard<'_, T, B> {
     }
 }
 
-impl<T, B: BackOff> core::ops::DerefMut for WriteGuard<'_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> core::ops::DerefMut for WriteGuard<'_, T, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
     }
 }
 
-impl<T, B: BackOff> Drop for WriteGuard<'_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> Drop for WriteGuard<'_, T, R> {
     fn drop(&mut self) {
         self.lock.state.write_unlock();
     }
@@ -140,16 +141,18 @@ impl<T, B: BackOff> Drop for WriteGuard<'_, T, B> {
 
 #[derive(Debug, Default)]
 /// The state of the lock.
-struct AtomicState<B: BackOff = Spin> {
+struct AtomicState<R: RelaxStrategy = Spin> {
     /// The number of readers.
     readers: AtomicU32,
     /// Whether a writer has acquired the lock.
     writer: AtomicBool,
     /// Back-off strategy.
-    _back_off: PhantomData<B>,
+    _back_off: PhantomData<R>,
 }
 
-impl<B: BackOff> AtomicState<B> {
+unsafe impl<R: RelaxStrategy> Send for AtomicState<R> {}
+
+impl<R: RelaxStrategy> AtomicState<R> {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
@@ -163,7 +166,7 @@ impl<B: BackOff> AtomicState<B> {
     pub fn read_lock(&self) {
         loop {
             while self.writer.load(Ordering::Acquire) {
-                B::back_off();
+                R::relax();
             }
 
             // TRY to acquire the lock
@@ -192,12 +195,12 @@ impl<B: BackOff> AtomicState<B> {
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            B::back_off();
+            R::relax();
         }
 
         // Wait until there are no more readers
         while self.readers.load(Ordering::Acquire) != 0 {
-            B::back_off();
+            R::relax();
         }
     }
 

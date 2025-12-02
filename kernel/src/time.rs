@@ -1,7 +1,6 @@
+use crate::drivers::{hpet, tsc};
 pub use beskar_core::time::{Duration, Instant};
 use core::sync::atomic::{AtomicBool, Ordering};
-
-use crate::drivers::{hpet, tsc};
 
 static HPET_AVAILABLE: AtomicBool = AtomicBool::new(false);
 static TSC_AVAILABLE: AtomicBool = AtomicBool::new(false);

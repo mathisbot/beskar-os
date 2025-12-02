@@ -4,7 +4,7 @@ use alloc::{boxed::Box, vec::Vec};
 
 struct DeviceFile {
     path: super::PathBuf,
-    device: Box<dyn KernelDevice>,
+    device: Box<dyn KernelDevice + Send + Sync>,
 }
 
 #[derive(Default)]
@@ -25,13 +25,20 @@ impl DeviceFS {
 
     #[inline]
     /// Adds a new device to the file system.
-    pub fn add_device(&mut self, path: super::PathBuf, device: Box<dyn KernelDevice>) {
+    pub fn add_device(
+        &mut self,
+        path: super::PathBuf,
+        device: Box<dyn KernelDevice + Send + Sync>,
+    ) {
         self.devices.push(DeviceFile { path, device });
     }
 
     #[inline]
     /// Removes a device from the file system.
-    pub fn remove_device(&mut self, path: super::Path) -> Option<Box<dyn KernelDevice>> {
+    pub fn remove_device(
+        &mut self,
+        path: super::Path,
+    ) -> Option<Box<dyn KernelDevice + Send + Sync>> {
         self.devices
             .iter()
             .position(|device| device.path.as_path() == path)

@@ -2,7 +2,7 @@ use crate::process;
 use beskar_core::{
     arch::{
         VirtAddr,
-        paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize},
+        paging::{M4KiB, MemSize},
     },
     syscall::{Syscall, SyscallExitCode, SyscallReturnValue},
 };
@@ -76,40 +76,12 @@ fn sc_mmap(args: &Arguments) -> u64 {
         return 0;
     }
 
-    let Some(page_range) = process::current()
-        .address_space()
-        .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(len.div_ceil(M4KiB::SIZE)))
-    else {
+    let Some(page_range) = process::current().address_space().alloc_map::<M4KiB>(
+        usize::try_from(len).unwrap(),
+        Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE,
+    ) else {
         return 0;
     };
-
-    let success = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-        process::current().address_space().with_page_table(|kpt| {
-            for page in page_range {
-                let Some(frame) = fralloc.alloc() else {
-                    return false;
-                };
-                kpt.map(
-                    page,
-                    frame,
-                    Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE,
-                    fralloc,
-                )
-                .flush();
-            }
-            true
-        })
-    });
-    if !success {
-        return 0;
-    }
-
-    debug_assert!(probe(
-        page_range.start().start_address(),
-        page_range.end().start_address() + (len - 1),
-    ));
-
-    // FIXME: Should the area be zeroed?
 
     page_range.start().start_address().as_u64()
 }
