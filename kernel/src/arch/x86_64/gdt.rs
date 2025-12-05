@@ -1,6 +1,6 @@
 use crate::mem::{address_space, frame_alloc};
 use beskar_core::arch::{
-    VirtAddr,
+    Alignment, VirtAddr,
     paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _},
 };
 use beskar_hal::{
@@ -105,8 +105,7 @@ impl Gdt {
                 });
             });
 
-            VirtAddr::new(page_range.end().start_address().as_u64() + (M4KiB::SIZE - 1))
-                .align_down(16_u64)
+            (page_range.end().start_address() + (M4KiB::SIZE - 1)).aligned_down(Alignment::Align16)
         }
 
         let mut tss = TaskStateSegment::new();

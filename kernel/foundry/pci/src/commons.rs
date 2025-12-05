@@ -304,7 +304,7 @@ impl MemoryBar {
         }
 
         let prefetchable = (value & 0b100) != 0;
-        let base_address = PhysAddr::new(value & !0xF);
+        let base_address = PhysAddr::new_truncate(value & !0xF);
         Self {
             base_address,
             prefetchable,
@@ -334,7 +334,7 @@ impl IoBar {
     #[must_use]
     pub fn from_raw(value: u32) -> Self {
         assert_eq!(value & 0b1, 1, "BAR register is not IO type");
-        let base_address = PhysAddr::new(u64::from(value & 0xFFFF_FFFC));
+        let base_address = PhysAddr::new_truncate(u64::from(value & 0xFFFF_FFFC));
 
         Self { base_address }
     }

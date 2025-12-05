@@ -128,7 +128,7 @@ impl LocalApic {
 
         assert!((base >> 11) & 1 == 1, "APIC not enabled");
 
-        PhysAddr::new(base & 0xF_FFFF_F000)
+        PhysAddr::new_truncate(base & 0xF_FFFF_F000)
     }
 
     #[must_use]

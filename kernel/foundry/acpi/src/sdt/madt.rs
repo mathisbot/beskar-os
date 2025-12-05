@@ -233,7 +233,7 @@ impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Madt<M> {
     #[must_use]
     #[expect(clippy::too_many_lines, reason = "Many fields to parse")]
     pub fn parse(&self) -> ParsedMadt {
-        let mut lapic_paddr = PhysAddr::new(u64::from(unsafe {
+        let mut lapic_paddr = PhysAddr::new_truncate(u64::from(unsafe {
             self.start_vaddr
                 .as_ptr::<u32>()
                 .byte_add(core::mem::offset_of!(MadtHeader, lapic_paddr))
@@ -285,7 +285,7 @@ impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Madt<M> {
 
                     // Unpack packed fields
                     let id = io_apic.id;
-                    let addr = PhysAddr::new(u64::from(io_apic.addr));
+                    let addr = PhysAddr::new_truncate(u64::from(io_apic.addr));
                     let gsi_base = io_apic.gsi_base;
 
                     io_apics.push(ParsedIoApic { id, addr, gsi_base });
@@ -352,7 +352,7 @@ impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Madt<M> {
 
                     let lapic_override =
                         unsafe { entry_start.cast::<LapicAddressOverride>().read_unaligned() };
-                    lapic_paddr = PhysAddr::new(lapic_override.address);
+                    lapic_paddr = PhysAddr::new_truncate(lapic_override.address);
                 }
                 // SAPIC related entries
                 x if (6..=8).contains(&x) => {

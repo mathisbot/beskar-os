@@ -71,7 +71,7 @@ fn compute_total_memory_kib(memory_map: &MemoryMapOwned) -> u64 {
 
 pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTables {
     // All memory is identity mapped by UEFI
-    let physical_offset = VirtAddr::new(0);
+    let physical_offset = VirtAddr::ZERO;
 
     let bootloader_page_table = {
         let old_table = {
@@ -100,7 +100,7 @@ pub fn create_page_tables(frame_allocator: &mut EarlyFrameAllocator) -> PageTabl
         };
 
         // Copy indexes for identity mapped memory
-        let end_vaddr = VirtAddr::new(frame_allocator.max_physical_address().as_u64() - 1);
+        let end_vaddr = VirtAddr::new_extend(frame_allocator.max_physical_address().as_u64() - 1);
         for p4_index in 0..=usize::from(end_vaddr.p4_index()) {
             table[p4_index] = old_table[p4_index];
         }

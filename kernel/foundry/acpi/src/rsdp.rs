@@ -97,7 +97,7 @@ impl<M: PhysicalMapper<M4KiB>> Rsdp<M> {
     }
 
     pub fn rsdt_paddr(&self) -> PhysAddr {
-        PhysAddr::new(match self.revision {
+        PhysAddr::new_truncate(match self.revision {
             AcpiRevision::V1 => {
                 u64::from(unsafe { self.start_vaddr.as_ptr::<Rsdp1>().read().rsdt_addr })
             }

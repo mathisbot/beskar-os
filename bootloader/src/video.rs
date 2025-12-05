@@ -38,7 +38,7 @@ impl PhysicalFrameBuffer {
 
     #[must_use]
     pub const fn start_addr_as_virtual(&self) -> VirtAddr {
-        VirtAddr::new(self.start_addr.as_u64())
+        VirtAddr::new_extend(self.start_addr.as_u64())
     }
 
     #[must_use]

@@ -22,7 +22,7 @@ impl<S: MemSize> Page<S> {
     #[inline]
     pub const fn from_start_address(address: VirtAddr) -> Result<Self, PageError> {
         // Check that the address is correctly aligned.
-        if address.as_u64() != address.align_down(S::SIZE).as_u64() {
+        if address.as_u64() != address.aligned_down(S::ALIGNMENT).as_u64() {
             return Err(PageError::UnalignedAddress);
         }
         Ok(Self {
@@ -35,7 +35,7 @@ impl<S: MemSize> Page<S> {
     #[inline]
     pub const fn containing_address(address: VirtAddr) -> Self {
         Self {
-            start_address: address.align_down(S::SIZE),
+            start_address: address.aligned_down(S::ALIGNMENT),
             size: PhantomData,
         }
     }

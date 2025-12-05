@@ -49,7 +49,7 @@ impl Cr2 {
         unsafe {
             core::arch::asm!("mov {}, cr2", out(reg) value, options(nomem, nostack, preserves_flags));
         }
-        VirtAddr::new(value)
+        unsafe { VirtAddr::new_unchecked(value) }
     }
 }
 
@@ -75,7 +75,7 @@ impl Cr3 {
     #[must_use]
     pub fn read() -> (Frame, u16) {
         let value = Self::read_raw();
-        let addr = PhysAddr::new(value & 0x_000f_ffff_ffff_f000);
+        let addr = unsafe { PhysAddr::new_unchecked(value & 0x_000f_ffff_ffff_f000) };
         let frame = Frame::containing_address(addr);
         (frame, (value & 0xFFF) as u16)
     }
@@ -444,7 +444,7 @@ impl GS {
     #[inline]
     pub fn read_base() -> VirtAddr {
         let base = Self::MSR.read();
-        VirtAddr::new(base)
+        unsafe { VirtAddr::new_unchecked(base) }
     }
 
     #[inline]
@@ -462,7 +462,7 @@ impl FS {
     #[inline]
     pub fn read_base() -> VirtAddr {
         let base = Self::MSR.read();
-        VirtAddr::new(base)
+        unsafe { VirtAddr::new_unchecked(base) }
     }
 
     #[inline]

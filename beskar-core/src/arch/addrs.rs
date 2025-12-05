@@ -1,5 +1,44 @@
 //! Abstraction of physical and virtual addresses.
 use core::ops::{Add, Sub};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive)]
+#[repr(u64)]
+pub enum Alignment {
+    Align1 = 1,
+    Align2 = 2,
+    Align4 = 4,
+    Align8 = 8,
+    Align16 = 16,
+    Align32 = 32,
+    Align64 = 64,
+    Align128 = 128,
+    Align256 = 256,
+    Align512 = 512,
+    Align1K = 1024,
+    Align2K = 2048,
+    Align4K = 4096,
+    Align8K = 8192,
+    Align16K = 16384,
+    Align32K = 32768,
+    Align64K = 65536,
+    Align128K = 131072,
+    Align256K = 262144,
+    Align512K = 524288,
+    Align1M = 1048576,
+    Align2M = 2097152,
+    Align4M = 4194304,
+    Align8M = 8388608,
+    Align16M = 16777216,
+    Align32M = 33554432,
+    Align64M = 67108864,
+    Align128M = 134217728,
+    Align256M = 268435456,
+    Align512M = 536870912,
+    Align1G = 1073741824,
+    Align2G = 2147483648,
+    Align4G = 4294967296,
+}
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -12,24 +51,32 @@ pub struct VirtAddr(u64);
 pub struct PhysAddr(u64);
 
 impl VirtAddr {
+    /// Maximum valid virtual address.
     pub const MAX: Self = Self(u64::MAX);
+    /// Maximum valid virtual address in the lower half.
+    pub const MAX_LOWER_HALF: Self = Self(0x0000_7FFF_FFFF_FFFF);
+    /// Minimum valid virtual address in the upper half.
+    pub const MIN_UPPER_HALF: Self = Self(0xFFFF_8000_0000_0000);
+    /// Zero virtual address.
     pub const ZERO: Self = Self(0);
+
+    const IDX_4_OFFSET: u32 = 39;
+    const IDX_3_OFFSET: u32 = 30;
+    const IDX_2_OFFSET: u32 = 21;
+    const IDX_1_OFFSET: u32 = 12;
 
     #[must_use]
     #[inline]
+    /// Canonicalize a raw virtual address by sign-extending bit 47.
     const fn canonicalize(raw: u64) -> u64 {
         ((raw << 16).cast_signed() >> 16).cast_unsigned()
     }
 
     #[must_use]
-    #[track_caller]
     #[inline]
-    pub const fn new(addr: u64) -> Self {
-        Self::try_new(addr).expect("Invalid virtual address")
-    }
-
-    #[must_use]
-    #[inline]
+    /// Try to create a new valid virtual address.
+    ///
+    /// Returns `None` if the given address is not a canonical virtual address.
     pub const fn try_new(addr: u64) -> Option<Self> {
         let extended = Self::new_extend(addr);
         if extended.as_u64() != addr {
@@ -42,8 +89,7 @@ impl VirtAddr {
     #[inline]
     /// Create a new valid virtual address by sign extending the address.
     pub const fn new_extend(addr: u64) -> Self {
-        // Safety: We made sure the address is canonical
-        unsafe { Self::new_unchecked(Self::canonicalize(addr)) }
+        Self(Self::canonicalize(addr))
     }
 
     #[must_use]
@@ -65,10 +111,10 @@ impl VirtAddr {
         p1_index: u16,
         offset: u16,
     ) -> Self {
-        let addr = (u64::from(p4_index & 0x1FF) << 39)
-            | (u64::from(p3_index & 0x1FF) << 30)
-            | (u64::from(p2_index & 0x1FF) << 21)
-            | (u64::from(p1_index & 0x1FF) << 12)
+        let addr = (u64::from(p4_index & 0x1FF) << Self::IDX_4_OFFSET)
+            | (u64::from(p3_index & 0x1FF) << Self::IDX_3_OFFSET)
+            | (u64::from(p2_index & 0x1FF) << Self::IDX_2_OFFSET)
+            | (u64::from(p1_index & 0x1FF) << Self::IDX_1_OFFSET)
             | u64::from(offset & 0xFFF);
         Self::new_extend(addr)
     }
@@ -103,63 +149,66 @@ impl VirtAddr {
 
     #[must_use]
     #[inline]
-    pub const fn align_down(self, align: u64) -> Self {
-        assert!(align.is_power_of_two());
-        Self::new_extend(self.0 & !(align - 1))
+    pub const fn aligned_down(self, align: Alignment) -> Self {
+        Self(self.0 & !(align as u64 - 1))
     }
 
     #[must_use]
     #[inline]
-    pub const fn align_up(self, align: u64) -> Self {
-        assert!(align.is_power_of_two());
-        Self::new_extend((self.0.checked_add(align - 1).unwrap()) & !(align - 1))
+    pub const fn aligned_up(self, align: Alignment) -> Self {
+        let align_m1 = align as u64 - 1;
+        let aligned_up = (self.0 + align_m1) & !align_m1;
+        Self::new_extend(aligned_up)
     }
 
     #[must_use]
     #[inline]
-    pub const fn is_aligned(self, align: u64) -> bool {
-        assert!(align.is_power_of_two());
-        self.0 & (align - 1) == 0
+    pub const fn is_aligned(self, align: Alignment) -> bool {
+        self.0 & (align as u64 - 1) == 0
     }
 
     #[must_use]
     #[inline]
     pub fn p4_index(self) -> u16 {
-        u16::try_from((self.0 >> 39) & 0x1FF).unwrap()
+        u16::try_from((self.0 >> Self::IDX_4_OFFSET) & 0x1FF).unwrap()
     }
 
     #[must_use]
     #[inline]
     pub fn p3_index(self) -> u16 {
-        u16::try_from((self.0 >> 30) & 0x1FF).unwrap()
+        u16::try_from((self.0 >> Self::IDX_3_OFFSET) & 0x1FF).unwrap()
     }
 
     #[must_use]
     #[inline]
     pub fn p2_index(self) -> u16 {
-        u16::try_from((self.0 >> 21) & 0x1FF).unwrap()
+        u16::try_from((self.0 >> Self::IDX_2_OFFSET) & 0x1FF).unwrap()
     }
 
     #[must_use]
     #[inline]
     pub fn p1_index(self) -> u16 {
-        u16::try_from((self.0 >> 12) & 0x1FF).unwrap()
+        u16::try_from((self.0 >> Self::IDX_1_OFFSET) & 0x1FF).unwrap()
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn page_offset(self) -> u16 {
+        u16::try_from(self.0 & 0xFFF).unwrap()
     }
 }
 
 impl PhysAddr {
+    /// Maximum valid physical address.
     pub const MAX: Self = Self(0x000F_FFFF_FFFF_FFFF);
+    /// Zero physical address.
     pub const ZERO: Self = Self(0);
 
     #[must_use]
-    #[track_caller]
     #[inline]
-    pub const fn new(addr: u64) -> Self {
-        Self::try_new(addr).expect("Invalid physical address")
-    }
-
-    #[must_use]
-    #[inline]
+    /// Try to create a new valid physical address.
+    ///
+    /// Returns `None` if the given address is not a valid physical address.
     pub const fn try_new(addr: u64) -> Option<Self> {
         let truncated = Self::new_truncate(addr);
         if truncated.as_u64() != addr {
@@ -170,10 +219,9 @@ impl PhysAddr {
 
     #[must_use]
     #[inline]
+    /// Create a new physical address, truncating any bits beyond the maximum.
     pub const fn new_truncate(addr: u64) -> Self {
-        let truncated = addr & Self::MAX.0;
-        // Safety: We just truncated the address to fit in the valid range
-        unsafe { Self::new_unchecked(truncated) }
+        Self(addr & Self::MAX.0)
     }
 
     #[must_use]
@@ -182,34 +230,35 @@ impl PhysAddr {
     ///
     /// The given address must be a valid physical address.
     pub const unsafe fn new_unchecked(addr: u64) -> Self {
+        debug_assert!(addr <= Self::MAX.0);
         Self(addr)
     }
 
     #[must_use]
     #[inline]
+    /// Get the raw address as a `u64`.
     pub const fn as_u64(self) -> u64 {
         self.0
     }
 
     #[must_use]
     #[inline]
-    pub const fn align_down(self, align: u64) -> Self {
-        assert!(align.is_power_of_two());
-        Self::new(self.0 & !(align - 1))
+    pub const fn aligned_down(self, align: Alignment) -> Self {
+        Self(self.0 & !(align as u64 - 1))
     }
 
     #[must_use]
     #[inline]
-    pub const fn align_up(self, align: u64) -> Self {
-        assert!(align.is_power_of_two());
-        Self::new((self.0.checked_add(align - 1).unwrap()) & !(align - 1))
+    pub const fn aligned_up(self, align: Alignment) -> Self {
+        let align_m1 = align as u64 - 1;
+        let aligned_up = (self.0 + align_m1) & !align_m1;
+        Self::new_truncate(aligned_up)
     }
 
     #[must_use]
     #[inline]
-    pub const fn is_aligned(self, align: u64) -> bool {
-        assert!(align.is_power_of_two());
-        self.0 & (align - 1) == 0
+    pub const fn is_aligned(self, align: Alignment) -> bool {
+        self.0 & (align as u64 - 1) == 0
     }
 }
 
@@ -218,7 +267,7 @@ impl Add<u64> for VirtAddr {
 
     #[inline]
     fn add(self, rhs: u64) -> Self {
-        Self::new_extend(self.0.checked_add(rhs).unwrap())
+        Self::new_extend(self.0 + rhs)
     }
 }
 
@@ -227,7 +276,7 @@ impl Sub<u64> for VirtAddr {
 
     #[inline]
     fn sub(self, rhs: u64) -> Self {
-        Self::new_extend(self.0.checked_sub(rhs).unwrap())
+        Self::new_extend(self.0 - rhs)
     }
 }
 
@@ -236,7 +285,7 @@ impl Sub<Self> for VirtAddr {
 
     #[inline]
     fn sub(self, rhs: Self) -> u64 {
-        self.0.checked_sub(rhs.0).unwrap()
+        self.0 - rhs.0
     }
 }
 
@@ -245,7 +294,7 @@ impl Add<u64> for PhysAddr {
 
     #[inline]
     fn add(self, rhs: u64) -> Self {
-        Self::new(self.0.checked_add(rhs).unwrap())
+        Self::new_truncate(self.0 + rhs)
     }
 }
 
@@ -254,7 +303,7 @@ impl Sub<u64> for PhysAddr {
 
     #[inline]
     fn sub(self, rhs: u64) -> Self {
-        Self::new(self.0.checked_sub(rhs).unwrap())
+        Self::new_truncate(self.0 - rhs)
     }
 }
 
@@ -263,7 +312,7 @@ impl Sub<Self> for PhysAddr {
 
     #[inline]
     fn sub(self, rhs: Self) -> u64 {
-        self.0.checked_sub(rhs.0).unwrap()
+        self.0 - rhs.0
     }
 }
 

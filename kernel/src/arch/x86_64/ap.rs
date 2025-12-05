@@ -4,7 +4,7 @@ use crate::{
     mem::{address_space, frame_alloc},
 };
 use beskar_core::arch::{
-    PhysAddr, VirtAddr,
+    Alignment, PhysAddr, VirtAddr,
     paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
 };
 use beskar_hal::{
@@ -51,9 +51,9 @@ pub fn start_up_aps(core_count: usize) {
     // Identity-map AP trampoline code, as paging isn't enabled on APs yet.
     // Everything should still be accessible with the same address when paging is enabled.
 
-    let payload_paddr = PhysAddr::new(AP_TRAMPOLINE_PADDR);
+    let payload_paddr = PhysAddr::new_truncate(AP_TRAMPOLINE_PADDR);
     let frame = Frame::<M4KiB>::from_start_address(payload_paddr).unwrap();
-    let payload_vaddr = VirtAddr::new(AP_TRAMPOLINE_PADDR);
+    let payload_vaddr = VirtAddr::new_extend(AP_TRAMPOLINE_PADDR);
     let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
@@ -176,7 +176,7 @@ fn allocate_stack(nb_pages: u64) -> VirtAddr {
         });
     });
 
-    (stack_pages.end().start_address() + (M4KiB::SIZE - 1)).align_down(16_u64)
+    (stack_pages.end().start_address() + (M4KiB::SIZE - 1)).aligned_down(Alignment::Align16)
 }
 
 pub unsafe fn load_ap_regs() {

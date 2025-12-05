@@ -108,9 +108,9 @@ impl ParsedConfigurationSpace {
     pub fn address_range(&self) -> RangeInclusive<PhysAddr> {
         // Minimum bus, device, function, and register numbers
         let start_paddr =
-            PhysAddr::new(self.offset + (u64::from(self.start_pci_bus_number()) << 20));
+            PhysAddr::new_truncate(self.offset + (u64::from(self.start_pci_bus_number()) << 20));
         // Maximum bus, device, function, and register numbers
-        let end_paddr = PhysAddr::new(
+        let end_paddr = PhysAddr::new_truncate(
             self.offset
                 + (u64::from(self.end_pci_bus_number()) << 20)
                 + (31 << 15)

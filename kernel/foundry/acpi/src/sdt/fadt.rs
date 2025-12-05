@@ -157,10 +157,10 @@ impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Fadt<M> {
         let dsdt = fallback_field!(
             minimal = minimal_fadt,
             field = dsdt,
-            convert_minimal = |x| PhysAddr::new(u64::from(x)),
+            convert_minimal = |x| PhysAddr::new_truncate(u64::from(x)),
             full = full_fadt,
             x_field = x_dsdt,
-            convert_full = PhysAddr::new,
+            convert_full = PhysAddr::new_truncate,
             null_cond = |x| x == 0,
         );
 

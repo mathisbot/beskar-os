@@ -705,12 +705,11 @@ impl TaskStateSegment {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
-        const NULL_VADDR: VirtAddr = VirtAddr::new(0);
         Self {
             _reserved1: 0,
-            privilege_stack_table: [NULL_VADDR; 3],
+            privilege_stack_table: [VirtAddr::ZERO; 3],
             _reserved2: 0,
-            interrupt_stack_table: [NULL_VADDR; 7],
+            interrupt_stack_table: [VirtAddr::ZERO; 7],
             _reserved3: [0; 10],
             #[expect(
                 clippy::cast_possible_truncation,

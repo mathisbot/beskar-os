@@ -109,7 +109,7 @@ impl Entry {
     #[must_use]
     #[inline]
     pub const fn addr(self) -> PhysAddr {
-        PhysAddr::new(self.0 & 0x000f_ffff_ffff_f000)
+        unsafe { PhysAddr::new_unchecked(self.0 & 0x000f_ffff_ffff_f000) }
     }
 
     #[must_use]
@@ -417,7 +417,7 @@ impl Mapper<M4KiB, Flags> for PageTable<'_> {
         let p1_entry = &mut p1[usize::from(page.p1_index())];
         let frame = Frame::from_start_address(p1_entry.frame_start()?).unwrap();
 
-        p1_entry.set(PhysAddr::new(0), Flags::EMPTY);
+        p1_entry.set(PhysAddr::ZERO, Flags::EMPTY);
 
         Some((frame, super::TlbFlush::new(page)))
     }
@@ -587,7 +587,7 @@ impl Mapper<M2MiB, Flags> for PageTable<'_> {
 
         let frame = Frame::from_start_address(p2_entry.addr()).unwrap();
 
-        p2_entry.set(PhysAddr::new(0), Flags::EMPTY);
+        p2_entry.set(PhysAddr::ZERO, Flags::EMPTY);
 
         Some((frame, super::TlbFlush::new(page)))
     }
@@ -717,7 +717,7 @@ impl Mapper<M1GiB, Flags> for PageTable<'_> {
 
         let frame = Frame::from_start_address(p3_entry.addr()).unwrap();
 
-        p3_entry.set(PhysAddr::new(0), Flags::EMPTY);
+        p3_entry.set(PhysAddr::ZERO, Flags::EMPTY);
 
         Some((frame, super::TlbFlush::new(page)))
     }
@@ -791,7 +791,7 @@ impl Translator<Flags> for PageTable<'_> {
         }
         if p3_entry.flags() & Flags::HUGE_PAGE != Flags::EMPTY {
             return Some((
-                PhysAddr::new(p3_entry.addr().as_u64() + addr.as_u64() % M1GiB::SIZE),
+                PhysAddr::new_truncate(p3_entry.addr().as_u64() + addr.as_u64() % M1GiB::SIZE),
                 p3_entry.flags(),
             ));
         }
@@ -808,7 +808,7 @@ impl Translator<Flags> for PageTable<'_> {
         }
         if p2_entry.flags() & Flags::HUGE_PAGE != Flags::EMPTY {
             return Some((
-                PhysAddr::new(p2_entry.addr().as_u64() + addr.as_u64() % M2MiB::SIZE),
+                PhysAddr::new_truncate(p2_entry.addr().as_u64() + addr.as_u64() % M2MiB::SIZE),
                 p2_entry.flags(),
             ));
         }
@@ -824,7 +824,7 @@ impl Translator<Flags> for PageTable<'_> {
         }
 
         Some((
-            PhysAddr::new(p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE),
+            PhysAddr::new_truncate(p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE),
             p1_entry.flags(),
         ))
     }
@@ -1038,7 +1038,7 @@ impl Mapper<M4KiB, Flags> for OffsetPageTable<'_> {
         }
 
         let frame = Frame::from_start_address(p1_entry.addr()).unwrap();
-        p1_entry.set(PhysAddr::new(0), Flags::EMPTY);
+        p1_entry.set(PhysAddr::new_truncate(0), Flags::EMPTY);
 
         Some((frame, super::TlbFlush::new(page)))
     }
@@ -1098,7 +1098,7 @@ impl Translator<Flags> for OffsetPageTable<'_> {
             .contains(Flags::HUGE_PAGE)
         {
             return Some((
-                PhysAddr::new(
+                PhysAddr::new_truncate(
                     p3[usize::from(addr.p3_index())].addr().as_u64() + addr.as_u64() % M1GiB::SIZE,
                 ),
                 p3[usize::from(addr.p3_index())].flags(),
@@ -1110,7 +1110,7 @@ impl Translator<Flags> for OffsetPageTable<'_> {
             .contains(Flags::HUGE_PAGE)
         {
             return Some((
-                PhysAddr::new(
+                PhysAddr::new_truncate(
                     p2[usize::from(addr.p2_index())].addr().as_u64() + addr.as_u64() % M2MiB::SIZE,
                 ),
                 p2[usize::from(addr.p2_index())].flags(),
@@ -1125,7 +1125,7 @@ impl Translator<Flags> for OffsetPageTable<'_> {
         }
 
         Some((
-            PhysAddr::new(p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE),
+            PhysAddr::new_truncate(p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE),
             p1_entry.flags(),
         ))
     }

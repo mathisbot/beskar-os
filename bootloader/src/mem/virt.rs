@@ -35,7 +35,7 @@ pub fn make_mappings(
 
     // Map kernel
     let (kernel_entry_point, kernel_info) = {
-        let kernel_paddr = PhysAddr::new(kernel.input.as_ptr() as u64);
+        let kernel_paddr = PhysAddr::new_truncate(kernel.input.as_ptr() as u64);
 
         let kernel_elf::LoadedKernelInfo {
             image_offset: kernel_vaddr,
@@ -86,7 +86,7 @@ pub fn make_mappings(
     // Map ramdisk en higher-half (si présent)
     let ramdisk_info = ramdisk.map(|ramdisk| {
         let size = u64::try_from(ramdisk.len()).unwrap();
-        let ramdisk_paddr = PhysAddr::new(ramdisk.as_ptr() as u64);
+        let ramdisk_paddr = PhysAddr::new_truncate(ramdisk.as_ptr() as u64);
         let start_frame = Frame::from_start_address(ramdisk_paddr).unwrap();
         let end_frame = start_frame + (size / M4KiB::SIZE);
         let start_page = Page::<M4KiB>::from_start_address(RAMDISK_BASE).unwrap();
@@ -130,10 +130,11 @@ pub fn make_mappings(
     // Identity map the jump code
     {
         let chg_ctx_function_addr =
-            PhysAddr::new(u64::try_from(chg_ctx as *const () as usize).unwrap());
+            PhysAddr::new_truncate(u64::try_from(chg_ctx as *const () as usize).unwrap());
         let chg_ctx_function_frame = Frame::<M4KiB>::containing_address(chg_ctx_function_addr);
         for frame in Frame::range_inclusive(chg_ctx_function_frame, chg_ctx_function_frame + 1) {
-            let page = Page::containing_address(VirtAddr::new(frame.start_address().as_u64()));
+            let page =
+                Page::containing_address(VirtAddr::new_extend(frame.start_address().as_u64()));
             page_tables
                 .kernel
                 .map(page, frame, Flags::PRESENT, frame_allocator)
@@ -152,7 +153,7 @@ pub fn make_mappings(
         let gdt_frame = frame_allocator
             .allocate_frame()
             .expect("Failed to allocate a frame");
-        let gdt_virt_addr = VirtAddr::new(gdt_frame.start_address().as_u64());
+        let gdt_virt_addr = VirtAddr::new_extend(gdt_frame.start_address().as_u64());
         let mut gdt = GlobalDescriptorTable::empty();
         let code_selector = gdt.append(GdtDescriptor::kernel_code_segment());
         let data_selector = gdt.append(GdtDescriptor::kernel_data_segment());

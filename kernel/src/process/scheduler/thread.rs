@@ -6,7 +6,7 @@ use crate::{
 };
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
-    VirtAddr,
+    Alignment, VirtAddr,
     paging::{CacheFlush, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
 };
 use beskar_hal::{instructions::STACK_DEBUG_INSTR, paging::page_table::Flags};
@@ -454,7 +454,7 @@ struct ThreadStacks {
 }
 
 impl ThreadStacks {
-    const STACK_ALIGNMENT: u64 = 16;
+    const STACK_ALIGNMENT: Alignment = Alignment::Align16;
 
     #[must_use]
     #[inline]
@@ -479,19 +479,20 @@ impl ThreadStacks {
         self.user_pages
             .get()
             .map(|r| r.start().start_address() + r.size())
-            .and_then(|p| NonNull::new(p.align_down(Self::STACK_ALIGNMENT).as_mut_ptr()))
+            .and_then(|p| NonNull::new(p.aligned_down(Self::STACK_ALIGNMENT).as_mut_ptr()))
     }
 
     #[must_use]
     pub fn kernel_stack_top(&self) -> NonNull<u8> {
-        let stack_start = self.kernel.as_ptr() as usize;
-        let stack_vaddr = VirtAddr::new(u64::try_from(stack_start).unwrap());
-        let stack_end = stack_vaddr + u64::try_from(self.kernel.len()).unwrap();
-        unsafe { NonNull::new_unchecked(stack_end.align_down(Self::STACK_ALIGNMENT).as_mut_ptr()) }
+        let stack_start = VirtAddr::from_ptr(self.kernel.as_ptr());
+        let stack_end = stack_start + u64::try_from(self.kernel.len()).unwrap();
+        unsafe {
+            NonNull::new_unchecked(stack_end.aligned_down(Self::STACK_ALIGNMENT).as_mut_ptr())
+        }
     }
 
     fn allocate(size: u64, flags: Flags) -> PageRangeInclusive {
-        assert!(size >= Self::STACK_ALIGNMENT);
+        assert!(size >= u64::from(Self::STACK_ALIGNMENT));
 
         let (_guard_start, page_range, _guard_end) = super::current_process()
             .address_space()

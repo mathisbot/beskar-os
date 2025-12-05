@@ -38,8 +38,8 @@ impl<'a> KernelLoadingUtils<'a> {
 pub fn load_kernel_elf(mut klu: KernelLoadingUtils) -> LoadedKernelInfo {
     // Assert that the kernel is page aligned
     assert!(
-        PhysAddr::new(core::ptr::from_ref::<u8>(&klu.kernel.input[0]) as u64)
-            .is_aligned(M4KiB::SIZE),
+        PhysAddr::new_truncate(core::ptr::from_ref::<u8>(&klu.kernel.input[0]) as u64)
+            .is_aligned(M4KiB::ALIGNMENT),
         "Kernel is not page aligned"
     );
 
@@ -96,8 +96,10 @@ pub fn load_kernel_elf(mut klu: KernelLoadingUtils) -> LoadedKernelInfo {
         .unwrap_or(0);
 
     LoadedKernelInfo {
-        entry_point: VirtAddr::new(virtual_address_offset + klu.kernel.header.pt2.entry_point()),
-        image_offset: VirtAddr::new(virtual_address_offset),
+        entry_point: VirtAddr::new_extend(
+            virtual_address_offset + klu.kernel.header.pt2.entry_point(),
+        ),
+        image_offset: VirtAddr::new_extend(virtual_address_offset),
         kernel_size: total_size,
     }
 }
@@ -139,9 +141,10 @@ fn load_segments(klu: &mut KernelLoadingUtils, vao: u64) -> LoadedSegmentsInfo {
     // It is currently use to help managing bss section.
     for program_header in klu.kernel.program_iter() {
         if program_header.get_type().unwrap() == Type::Load {
-            let start = VirtAddr::new(vao + program_header.virtual_addr());
-            let end =
-                VirtAddr::new(vao + program_header.virtual_addr() + program_header.mem_size());
+            let start = VirtAddr::new_extend(vao + program_header.virtual_addr());
+            let end = VirtAddr::new_extend(
+                vao + program_header.virtual_addr() + program_header.mem_size(),
+            );
 
             let start_page = Page::<M4KiB>::containing_address(start);
             let end_page = Page::<M4KiB>::containing_address(end - 1);
@@ -169,13 +172,13 @@ fn load_segments(klu: &mut KernelLoadingUtils, vao: u64) -> LoadedSegmentsInfo {
 }
 
 fn handle_segment_load(load_segment: ProgramHeader, klu: &mut KernelLoadingUtils, vao: u64) {
-    let phys_start = PhysAddr::new(core::ptr::from_ref::<u8>(&klu.kernel.input[0]) as u64)
+    let phys_start = PhysAddr::new_truncate(core::ptr::from_ref::<u8>(&klu.kernel.input[0]) as u64)
         + load_segment.offset();
 
     let start_frame = Frame::<M4KiB>::containing_address(phys_start);
     let end_frame = Frame::<M4KiB>::containing_address(phys_start + load_segment.file_size() - 1);
 
-    let virt_start = VirtAddr::new(vao + load_segment.virtual_addr());
+    let virt_start = VirtAddr::new_extend(vao + load_segment.virtual_addr());
     let start_page = Page::<M4KiB>::containing_address(virt_start);
 
     let mut segment_flags = Flags::PRESENT;
@@ -270,7 +273,7 @@ fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelL
         segment_flags = segment_flags.union(Flags::NO_EXECUTE);
     }
 
-    let start_page = Page::<M4KiB>::containing_address(zero_start.align_up(M4KiB::SIZE));
+    let start_page = Page::<M4KiB>::containing_address(zero_start.aligned_up(M4KiB::ALIGNMENT));
     let end_page = Page::containing_address(zero_end - 1);
 
     // Then zero aligned pages
@@ -374,7 +377,7 @@ fn handle_segment_dynamic(dynamic_segment: ProgramHeader, klu: &mut KernelLoadin
             "Address is not loaded"
         );
 
-        let addr = VirtAddr::new(vao + rela.get_offset());
+        let addr = VirtAddr::new_extend(vao + rela.get_offset());
         let value = vao + rela.get_addend();
 
         copy_to_krnlspc(klu, addr, &value.to_ne_bytes());
@@ -511,7 +514,7 @@ fn handle_segment_gnurelro(
     klu: &mut KernelLoadingUtils,
     vao: u64,
 ) {
-    let start = VirtAddr::new(vao + gnurelro_segment.virtual_addr());
+    let start = VirtAddr::new_extend(vao + gnurelro_segment.virtual_addr());
     let start_page = Page::<M4KiB>::containing_address(start);
     let end_page = Page::<M4KiB>::containing_address(start + gnurelro_segment.mem_size() - 1);
 

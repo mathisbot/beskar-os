@@ -54,7 +54,9 @@ impl FrameAllocator {
         let alignment = S::SIZE;
 
         let addr = self.memory_ranges.allocate(size, alignment)?;
-        Some(Frame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
+        let paddr = PhysAddr::new_truncate(u64::try_from(addr).unwrap());
+        let frame = Frame::from_start_address(paddr).unwrap();
+        Some(frame)
     }
 
     #[must_use]
@@ -69,7 +71,9 @@ impl FrameAllocator {
         let addr = self
             .memory_ranges
             .allocate_req(size, alignment, req_ranges)?;
-        Some(Frame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
+        let paddr = PhysAddr::new_truncate(u64::try_from(addr).unwrap());
+        let frame = Frame::from_start_address(paddr).unwrap();
+        Some(frame)
     }
 
     /// Free a frame

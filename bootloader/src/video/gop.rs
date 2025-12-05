@@ -59,7 +59,7 @@ pub fn init() -> PhysicalFrameBuffer {
     let fb_slice = unsafe { core::slice::from_raw_parts_mut(gop_fb.as_mut_ptr(), gop_fb.size()) };
 
     PhysicalFrameBuffer {
-        start_addr: PhysAddr::new(fb_slice.as_mut_ptr() as u64),
+        start_addr: PhysAddr::new_truncate(fb_slice.as_mut_ptr() as u64),
         info: Info::new(
             gop_fb.size().try_into().unwrap(),
             mode_info.resolution().0.try_into().unwrap(),

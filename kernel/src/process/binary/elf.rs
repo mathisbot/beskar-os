@@ -277,8 +277,9 @@ fn zero_bss(
     }
 
     let zero_start_page =
-        Page::<M4KiB>::from_start_address(zero_start.align_up(M4KiB::SIZE)).unwrap();
-    let zero_end_page = Page::<M4KiB>::containing_address(zero_end.align_down(M4KiB::SIZE) - 1);
+        Page::<M4KiB>::from_start_address(zero_start.aligned_up(M4KiB::ALIGNMENT)).unwrap();
+    let zero_end_page =
+        Page::<M4KiB>::containing_address(zero_end.aligned_down(M4KiB::ALIGNMENT) - 1);
 
     let mut segment_flags = Flags::PRESENT;
     if ph.flags().is_write() {

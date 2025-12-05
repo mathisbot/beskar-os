@@ -445,27 +445,29 @@ pub fn init() -> DriverResult<()> {
     // TODO: Only one mapping for the whole HPET block
     // see section 2.3.1 of the spec
 
-    let general_capabilities =
-        GeneralCapabilities::new(PhysAddr::new(hpet_info.general_capabilities().address()));
+    let general_capabilities = GeneralCapabilities::new(PhysAddr::new_truncate(
+        hpet_info.general_capabilities().address(),
+    ));
     general_capabilities.validate(hpet_info);
     video::debug!("HPET period: {} ps", general_capabilities.period() / 1_000);
     if !hpet_info.count_size_capable() {
         video::warn!("HPET count size not capable");
     }
 
-    let mut general_configuration =
-        GeneralConfiguration::new(PhysAddr::new(hpet_info.general_configuration().address()));
+    let mut general_configuration = GeneralConfiguration::new(PhysAddr::new_truncate(
+        hpet_info.general_configuration().address(),
+    ));
     general_configuration.validate();
     general_configuration.set_enable_cnf(false);
 
     let general_interrupt_status = GeneralInterruptStatus::new(
-        PhysAddr::new(hpet_info.general_interrupt_status().address()),
+        PhysAddr::new_truncate(hpet_info.general_interrupt_status().address()),
         general_capabilities.num_timers(),
     );
     general_interrupt_status.validate();
 
     let main_counter_value = MainCounterValue::new(
-        PhysAddr::new(hpet_info.main_counter_value().address()),
+        PhysAddr::new_truncate(hpet_info.main_counter_value().address()),
         general_capabilities.count_size_capable(),
     );
     main_counter_value.validate();
@@ -474,7 +476,7 @@ pub fn init() -> DriverResult<()> {
     let mut timers_comp_value = [const { None }; 32];
     for i in 0..general_capabilities.num_timers() {
         let timer_config_cap: TimerConfigCap = TimerConfigCap::new(
-            PhysAddr::new(hpet_info.timer_n_configuration(i).address()),
+            PhysAddr::new_truncate(hpet_info.timer_n_configuration(i).address()),
             i,
         );
         timer_config_cap.validate();
@@ -483,7 +485,7 @@ pub fn init() -> DriverResult<()> {
         timers_config_cap[usize::from(i)] = Some(timer_config_cap);
 
         let timer_comp_value = TimerCompValue::new(
-            PhysAddr::new(hpet_info.timer_n_comparator_value(i).address()),
+            PhysAddr::new_truncate(hpet_info.timer_n_comparator_value(i).address()),
             size_cap,
         );
         timer_comp_value.validate();

@@ -6,7 +6,7 @@ use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
-use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
+use hyperdrive::{call_once, locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
 use thread::{Thread, ThreadId};
 
@@ -38,8 +38,6 @@ static SLEEPING: McsLock<BTreeMap<ThreadId, Box<Thread>>> = McsLock::new(BTreeMa
 ///
 /// This function should only be called once, and only by the kernel, with the kernel thread.
 pub unsafe fn init(kernel_thread: thread::Thread) {
-    static SPAWN_GUARD_THREAD: Once<()> = Once::uninit();
-
     let kernel_process = kernel_thread.process();
 
     QUEUE.call_once(|| priority::RoundRobinQueues::new(kernel_process.clone()));
@@ -48,7 +46,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
     let scheduler = Scheduler::new(kernel_thread);
     locals!().scheduler().call_once(|| scheduler);
 
-    SPAWN_GUARD_THREAD.call_once(|| {
+    call_once!({
         let clean_thread = Thread::new(
             kernel_process,
             priority::Priority::Low,

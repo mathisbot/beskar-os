@@ -21,7 +21,7 @@ fn find_guid(config_entries: &[ConfigTableEntry], guid: uefi::Guid) -> Option<Ph
     config_entries
         .iter()
         .find(|config_entry| config_entry.guid == guid)
-        .map(|paddr| PhysAddr::new(paddr.address as u64))
+        .map(|paddr| PhysAddr::new_truncate(paddr.address as u64))
 }
 
 pub fn rsdp_paddr() -> Option<PhysAddr> {

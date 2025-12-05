@@ -2,12 +2,12 @@
 //!
 //! It defines the `Frame` and `Page` types, which represent physical memory frames and virtual memory pages, respectively,
 //! as well as traits for memory mapping and translation.
+use super::{Alignment, PhysAddr, VirtAddr};
+
 mod frame;
 pub use frame::{Frame, FrameAllocator, FrameRangeInclusive};
 mod page;
 pub use page::{Page, PageRangeInclusive};
-
-use super::{PhysAddr, VirtAddr};
 
 trait Sealed {}
 impl Sealed for M4KiB {}
@@ -17,6 +17,7 @@ impl Sealed for M1GiB {}
 #[expect(private_bounds, reason = "Forbid impl `MemSize`")]
 pub trait MemSize: Sealed + Copy + Eq + Ord + PartialOrd {
     const SIZE: u64;
+    const ALIGNMENT: Alignment;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,14 +31,17 @@ pub struct M1GiB {}
 
 impl MemSize for M4KiB {
     const SIZE: u64 = 4096;
+    const ALIGNMENT: Alignment = Alignment::Align4K;
 }
 
 impl MemSize for M2MiB {
     const SIZE: u64 = M4KiB::SIZE * 512;
+    const ALIGNMENT: Alignment = Alignment::Align2M;
 }
 
 impl MemSize for M1GiB {
     const SIZE: u64 = M2MiB::SIZE * 512;
+    const ALIGNMENT: Alignment = Alignment::Align1G;
 }
 
 pub trait Flags {}
