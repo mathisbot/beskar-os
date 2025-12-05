@@ -27,6 +27,30 @@ use super::{super::Process, priority::Priority};
 /// The minimum amount of stack space that must be left unused on thread creation.
 const MINIMUM_LEFTOVER_STACK: usize = 0x100; // 256 bytes
 
+/// Thread statistics
+#[derive(Debug, Clone, Copy)]
+pub struct ThreadStats {
+    pub cpu_time_ms: u64,
+    pub wake_time: beskar_core::time::Instant,
+}
+
+impl ThreadStats {
+    #[must_use]
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            cpu_time_ms: 0,
+            wake_time: beskar_core::time::Instant::ZERO,
+        }
+    }
+}
+
+impl Default for ThreadStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct Thread {
     /// The unique identifier of the thread.
     id: ThreadId,
@@ -42,6 +66,8 @@ pub struct Thread {
     last_stack_ptr: *mut u8,
     /// Thread Local Storage
     tls: Once<Tls>,
+    /// Thread statistics for scheduling
+    stats: ThreadStats,
 
     /// Link to the next thread in the queue.
     link: Link<Self>,
@@ -98,6 +124,7 @@ impl Thread {
             last_stack_ptr: core::ptr::null_mut(),
             link: Link::new(),
             tls: Once::uninit(),
+            stats: ThreadStats::new(),
         }
     }
 
@@ -123,6 +150,7 @@ impl Thread {
             last_stack_ptr: stack_ptr,
             link: Link::new(),
             tls: Once::uninit(),
+            stats: ThreadStats::new(),
         }
     }
 
@@ -172,6 +200,7 @@ impl Thread {
             last_stack_ptr: core::ptr::null_mut(),
             link: Link::new(),
             tls: Once::uninit(),
+            stats: ThreadStats::new(),
         }
     }
 
@@ -201,6 +230,18 @@ impl Thread {
     #[inline]
     pub const fn state(&self) -> ThreadState {
         self.state
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn stats(&self) -> &ThreadStats {
+        &self.stats
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn stats_mut(&mut self) -> &mut ThreadStats {
+        &mut self.stats
     }
 
     #[must_use]

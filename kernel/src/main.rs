@@ -4,7 +4,7 @@
 extern crate alloc;
 
 use alloc::{boxed::Box, sync::Arc};
-use hyperdrive::once::Once;
+use hyperdrive::call_once;
 use kernel::{
     locals,
     process::{
@@ -20,8 +20,6 @@ use storage::fs::{Path, PathBuf, in_mem::InMemoryFS};
 
 kernel::kernel_main!(kmain);
 
-static SPAWN_ONCE: Once<()> = Once::uninit();
-
 /// The kernel main function, where every core ends up after initialization
 ///
 /// BSP entry point (called by bootloader) is defined in `boot.rs`.
@@ -35,7 +33,7 @@ fn kmain() -> ! {
     // TODO: Start user-space processes
     // (GUI, ...)
 
-    SPAWN_ONCE.call_once(|| {
+    call_once!({
         let driver_proc = Arc::new(Process::new(
             "Drivers",
             beskar_hal::process::Kind::Driver,

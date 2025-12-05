@@ -27,9 +27,9 @@ pub struct Hpet {
     /// Main Counter Value register.
     main_counter_value: MainCounterValue,
     /// Timers Configuration and Capabilities registers.
-    timers_config_cap: [Option<TimerConfigCap>; 32],
+    _timers_config_cap: [Option<TimerConfigCap>; 32],
     /// Timers Comparator Value registers.
-    timers_comp_value: [Option<TimerCompValue>; 32],
+    _timers_comp_value: [Option<TimerCompValue>; 32],
 }
 
 impl Hpet {
@@ -58,7 +58,7 @@ impl Hpet {
     }
 }
 
-macro_rules! read_write_reg {
+macro_rules! read_reg {
     ($name:ident { $($field_name:ident : $field_type:ty),* $(,)? }) => {
         #[derive(Debug)]
         /// HPET Read/Write register
@@ -92,7 +92,15 @@ macro_rules! read_write_reg {
             const fn read(&self) -> u64 {
                 unsafe { self.vaddr.as_ptr::<u64>().read() }
             }
+        }
+    };
+}
 
+macro_rules! read_write_reg {
+    ($name:ident { $($field_name:ident : $field_type:ty),* $(,)? }) => {
+        read_reg!($name { $($field_name : $field_type),* });
+
+        impl $name {
             /// Use only to write to the register
             const fn as_mut(&mut self) -> &mut u64 {
                 unsafe { &mut *self.vaddr.as_mut_ptr::<u64>() }
@@ -226,7 +234,7 @@ impl GeneralInterruptStatus {
     }
 }
 
-read_write_reg!(MainCounterValue { count_cap: bool });
+read_reg!(MainCounterValue { count_cap: bool });
 
 impl MainCounterValue {
     #[must_use]
@@ -496,8 +504,8 @@ pub fn init() -> DriverResult<()> {
         general_configuration,
         general_interrupt_status,
         main_counter_value,
-        timers_config_cap,
-        timers_comp_value,
+        _timers_config_cap: timers_config_cap,
+        _timers_comp_value: timers_comp_value,
     };
 
     HPET.init(hpet);

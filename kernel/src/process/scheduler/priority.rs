@@ -6,36 +6,9 @@ use crate::process::Process;
 use alloc::{boxed::Box, sync::Arc};
 use core::{
     pin::Pin,
-    sync::atomic::{AtomicU8, AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 use hyperdrive::queues::mpsc::MpscQueue;
-
-#[derive(Debug)]
-pub struct AtomicPriority(AtomicU8);
-
-impl AtomicPriority {
-    #[must_use]
-    #[inline]
-    pub const fn new(priority: Priority) -> Self {
-        Self(AtomicU8::new(priority as u8))
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn load(&self, order: Ordering) -> Priority {
-        self.0.load(order).try_into().unwrap()
-    }
-
-    #[inline]
-    pub fn store(&self, priority: Priority, order: Ordering) {
-        self.0.store(priority.into(), order);
-    }
-
-    #[inline]
-    pub fn swap(&self, priority: Priority, order: Ordering) -> Priority {
-        self.0.swap(priority.into(), order).try_into().unwrap()
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {

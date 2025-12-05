@@ -23,8 +23,19 @@ pub fn wait(duration: Duration) {
         TscClock.wait(duration);
     } else if HPET_AVAILABLE.load(Ordering::Acquire) {
         HpetClock.wait(duration);
+    }
+}
+
+/// Returns the current instant (monotonic time)
+#[must_use]
+#[inline]
+pub fn now() -> Instant {
+    if TSC_AVAILABLE.load(Ordering::Acquire) {
+        TscClock.now()
+    } else if HPET_AVAILABLE.load(Ordering::Acquire) {
+        HpetClock.now()
     } else {
-        panic!("No timer available");
+        Instant::ZERO
     }
 }
 

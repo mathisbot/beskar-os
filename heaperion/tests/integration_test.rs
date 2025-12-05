@@ -8,7 +8,7 @@ use heaperion::HybridAllocator;
 
 #[test]
 fn test_basic_allocation_flow() {
-    let mut buffer = [0u8; 65536];
+    let mut buffer = vec![0u8; 65536];
     let mut allocator = unsafe { HybridAllocator::new(buffer.as_mut_ptr(), buffer.len()) }.unwrap();
 
     // Test various sizes
@@ -36,7 +36,7 @@ fn test_basic_allocation_flow() {
 
 #[test]
 fn test_allocation_patterns() {
-    let mut buffer = [0u8; 131072];
+    let mut buffer = vec![0u8; 131072];
     let mut allocator = unsafe { HybridAllocator::new(buffer.as_mut_ptr(), buffer.len()) }.unwrap();
 
     // Pattern 1: Allocate many small blocks
@@ -86,7 +86,7 @@ fn test_allocation_patterns() {
 
 #[test]
 fn test_alignment_requirements() {
-    let mut buffer = [0u8; 65536];
+    let mut buffer = vec![0u8; 65536];
     let mut allocator = unsafe { HybridAllocator::new(buffer.as_mut_ptr(), buffer.len()) }.unwrap();
 
     // Test various alignment requirements
@@ -108,7 +108,7 @@ fn test_alignment_requirements() {
 
 #[test]
 fn test_stress_mixed_operations() {
-    let mut buffer = [0u8; 262144];
+    let mut buffer = vec![0u8; 262144];
     let mut allocator = unsafe { HybridAllocator::new(buffer.as_mut_ptr(), buffer.len()) }.unwrap();
 
     let mut active_allocations = Vec::new();
@@ -159,7 +159,7 @@ fn test_stress_mixed_operations() {
 
 #[test]
 fn test_fragmentation_handling() {
-    let mut buffer = [0u8; 131072];
+    let mut buffer = vec![0u8; 131072];
     let mut allocator = unsafe { HybridAllocator::new(buffer.as_mut_ptr(), buffer.len()) }.unwrap();
 
     // Create fragmentation by allocating and freeing alternating blocks
@@ -212,7 +212,7 @@ fn test_fragmentation_handling() {
 
 #[test]
 fn test_boundary_sizes() {
-    let mut buffer = [0u8; 65536];
+    let mut buffer = vec![0u8; 65536];
     let mut allocator = unsafe { HybridAllocator::new(buffer.as_mut_ptr(), buffer.len()) }.unwrap();
 
     // Test boundary sizes between slab and buddy
@@ -226,6 +226,42 @@ fn test_boundary_sizes() {
             unsafe {
                 allocator.deallocate(ptr, layout).unwrap();
             }
+        }
+    }
+}
+
+#[test]
+fn test_drain_small() {
+    let mut buffer = vec![0u8; 16384];
+    let mut allocator = unsafe { HybridAllocator::new(buffer.as_mut_ptr(), buffer.len()) }.unwrap();
+
+    let small_layout = Layout::new::<u8>();
+    let ptrs = core::iter::from_fn(|| allocator.allocate(small_layout).ok()).collect::<Vec<_>>();
+
+    let length = ptrs.len();
+
+    for &ptr in &ptrs {
+        unsafe { allocator.deallocate(ptr, small_layout) }.unwrap();
+    }
+
+    let ptrs = core::iter::from_fn(|| allocator.allocate(small_layout).ok()).collect::<Vec<_>>();
+
+    // Test that very small allocations do not damage durably the heap
+    assert_eq!(ptrs.len(), length);
+    for &ptr in &ptrs {
+        unsafe { allocator.deallocate(ptr, small_layout) }.unwrap();
+    }
+
+    let large_layout = Layout::from_size_align(8000, 1).unwrap();
+    let ptr = allocator.allocate(large_layout).unwrap();
+    unsafe { allocator.deallocate(ptr, large_layout) }.unwrap();
+
+    let ptrs = core::iter::from_fn(|| allocator.allocate(small_layout).ok()).collect::<Vec<_>>();
+    assert_eq!(ptrs.len(), length);
+
+    for &ptr in &ptrs {
+        unsafe {
+            allocator.deallocate(ptr, small_layout).unwrap();
         }
     }
 }

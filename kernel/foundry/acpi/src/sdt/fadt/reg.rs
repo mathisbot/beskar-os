@@ -1,3 +1,9 @@
+#![expect(
+    dead_code,
+    unreachable_code,
+    unused_variables,
+    reason = "Incomplete implementation"
+)]
 use crate::sdt::{AccessSize, AddressSpace, GenericAddress};
 use beskar_core::static_assert;
 

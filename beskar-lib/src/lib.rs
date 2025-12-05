@@ -7,7 +7,7 @@ extern crate alloc;
 
 pub use beskar_core::syscall::ExitCode;
 use beskar_core::{syscall::SyscallExitCode, time::Duration};
-use hyperdrive::once::Once;
+use hyperdrive::call_once;
 
 mod arch;
 pub mod error;
@@ -67,9 +67,7 @@ macro_rules! entry_point {
 /// Initialize the standard library.
 #[doc(hidden)]
 pub fn __init() {
-    static CALL_ONCE: Once<()> = Once::uninit();
-
-    CALL_ONCE.call_once(|| {
+    call_once!({
         let res = mem::mmap(mem::HEAP_SIZE, None).expect("Memory mapping failed");
         unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };
 

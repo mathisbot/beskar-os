@@ -43,12 +43,34 @@
 //! perform_once();
 //! ```
 //!
+//! which can be written more concisely using the `call_once!` macro:
+//!
+//! ```rust
+//! # use hyperdrive::once::call_once;
+//! #
+//! // This could be called on many threads,
+//! // but the operation will only be performed once.
+//! call_once!({
+//!     // Perform the operation
+//! });
+//! ```
+//!
 //! Note that, in this case, if every thread calls the function `perform_once` at the same time,
 //! non-executing threads won't block on the operation.
 //! If you want to ensure the operation is complete before proceeding, use `Once::get`.
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU8, Ordering};
+
+#[macro_export]
+/// A macro to simplify the usage of `Once` for one-time calls.
+macro_rules! call_once {
+    ($x:expr) => {{
+        static CALL_ONCE: $crate::once::Once<()> = $crate::once::Once::uninit();
+        CALL_ONCE.call_once(|| $x);
+    }};
+}
+pub use call_once;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Possible states of the `Once` structure.
@@ -443,5 +465,18 @@ mod test {
         // Poisoning the `Once` should not leave the value in an `Initializing` state.
         // This call should finish (panic) immediately (instead of infinite loop).
         let _ = once.get();
+    }
+
+    #[test]
+    fn test_call_once() {
+        static COUNTER: AtomicU8 = AtomicU8::new(0);
+
+        for _ in 0..5 {
+            call_once!({
+                COUNTER.fetch_add(1, Ordering::Relaxed);
+            });
+        }
+
+        assert_eq!(COUNTER.load(Ordering::Relaxed), 1);
     }
 }

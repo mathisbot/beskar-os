@@ -12,7 +12,7 @@ use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 pub struct MsiX<M: PhysicalMapper<M4KiB>, H: MsiHelper> {
     capability: MsiXCapability,
     table: Volatile<ReadWrite, TableEntry>,
-    pba: Volatile<ReadWrite, u64>,
+    _pba: Volatile<ReadWrite, u64>,
     _pmap_table: M,
     _pmap_pba: M,
     _helper: PhantomData<H>,
@@ -87,7 +87,7 @@ impl<M: PhysicalMapper<M4KiB>, H: MsiHelper> MsiX<M, H> {
         Some(Self {
             capability: msix_cap,
             table: Volatile::new(NonNull::new(table_vaddr.as_mut_ptr()).unwrap()),
-            pba: Volatile::new(NonNull::new(pba_vaddr.as_mut_ptr()).unwrap()),
+            _pba: Volatile::new(NonNull::new(pba_vaddr.as_mut_ptr()).unwrap()),
             _pmap_table: pmap_table,
             _pmap_pba: pmap_pba,
             _helper: PhantomData,

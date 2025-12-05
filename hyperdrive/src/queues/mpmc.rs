@@ -216,6 +216,14 @@ impl<const SIZE: usize, T> MpmcQueue<SIZE, T> {
             }
         }
     }
+
+    #[must_use]
+    /// Checks if the queue is empty.
+    pub fn is_empty(&self) -> bool {
+        let read_pos = self.read_index.load(Ordering::Acquire);
+        let write_pos = self.write_index.load(Ordering::Acquire);
+        read_pos == write_pos
+    }
 }
 
 impl<const SIZE: usize, T> Drop for MpmcQueue<SIZE, T> {
@@ -235,15 +243,19 @@ mod tests {
     #[test]
     fn test_mpmc() {
         let mpmc = MpmcQueue::<4, usize>::new();
+        assert!(mpmc.is_empty());
 
         mpmc.push(1);
         mpmc.push(2);
         mpmc.push(3);
 
+        assert!(!mpmc.is_empty());
+
         assert_eq!(mpmc.pop(), Some(1));
         assert_eq!(mpmc.pop(), Some(2));
         assert_eq!(mpmc.pop(), Some(3));
         assert_eq!(mpmc.pop(), None); // Buffer is empty
+        assert!(mpmc.is_empty());
     }
 
     #[test]

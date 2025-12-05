@@ -344,6 +344,18 @@ impl<T: Queueable> MpscQueue<T> {
 
         Some(unsafe { T::capture(tail_node) })
     }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        let Some(tail_node) = NonNull::new(self.tail.load(Ordering::Relaxed)) else {
+            return true;
+        };
+        let next = unsafe { T::get_link(tail_node).as_ref() }
+            .next
+            .load(Ordering::Relaxed);
+
+        tail_node == self.stub && next.is_null()
+    }
 }
 
 impl<T: Queueable> Drop for MpscQueue<T> {
@@ -430,6 +442,7 @@ mod tests {
             next: Link::default(),
         }));
         assert!(queue.dequeue().is_none());
+        assert!(queue.is_empty());
         queue.enqueue(Box::pin(Element {
             value: 1,
             next: Link::default(),
@@ -438,11 +451,13 @@ mod tests {
             value: 2,
             next: Link::default(),
         }));
+        assert!(!queue.is_empty());
         let element1 = queue.dequeue().unwrap();
         let element2 = queue.dequeue().unwrap();
         assert_eq!(element1.value, 1);
         assert_eq!(element2.value, 2);
         assert!(queue.dequeue().is_none());
+        assert!(queue.is_empty());
     }
 
     #[test]

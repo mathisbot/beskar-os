@@ -22,7 +22,9 @@ static RAMDISK: Once<RamdiskInfo> = Once::uninit();
 /// It should only be the entry for the BSP.
 pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> ! {
     KERNEL_MAIN.call_once(|| kernel_main);
-    boot_info.ramdisk_info().map(|&ri| RAMDISK.call_once(|| ri));
+    if let Some(&ri) = boot_info.ramdisk_info() {
+        RAMDISK.call_once(|| ri);
+    }
 
     let core_count = boot_info.cpu_count;
 

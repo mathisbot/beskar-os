@@ -111,11 +111,12 @@ impl PathBuf {
         Path(&self.0)
     }
 
+    #[must_use]
     #[inline]
-    pub fn join(&self, path: &str) -> PathBuf {
+    pub fn join(&self, path: &str) -> Self {
         let mut new_path = self.0.clone();
         new_path.push_str(path);
-        PathBuf(new_path)
+        Self(new_path)
     }
 }
 

@@ -28,6 +28,12 @@ use timer::LapicTimer;
 pub mod ipi;
 pub mod timer;
 
+/// Amount of milliseconds per LAPIC timer interrupt
+pub const MS_PER_INTERRUPT: u32 = 30;
+
+/// LAPIC timer divider
+const TIMER_DIVIDER: timer::Divider = timer::Divider::Eight;
+
 #[must_use]
 pub fn apic_id() -> u8 {
     let cpuid_res = cpuid::cpuid(cpuid::Leaf::new(1));
@@ -61,7 +67,15 @@ pub fn init_lapic() {
 
     let mut lapic = LocalApic::from_paddr(lapic_paddr);
 
-    lapic.timer().calibrate();
+    let timer = lapic.timer();
+    timer.calibrate();
+
+    let ticks_per_ms = timer.rate_mhz().unwrap().get() * 1_000 / TIMER_DIVIDER.as_u32();
+    let ticks = MS_PER_INTERRUPT * ticks_per_ms;
+    timer.set(timer::Mode::Periodic(timer::ModeConfiguration::new(
+        TIMER_DIVIDER,
+        ticks,
+    )));
 
     locals!().lapic().init(lapic);
 }
@@ -263,7 +277,7 @@ extern "x86-interrupt" fn local_nmi_handler(_stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    let rescheduling_result = crate::process::scheduler::reschedule();
+    let rescheduling_result = crate::process::scheduler::scheduler_tick();
 
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 
@@ -325,6 +339,7 @@ pub struct IoApic {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code, reason = "Some registers may not be used yet")]
 enum IoApicReg {
     Id,
     Version,
@@ -354,6 +369,7 @@ impl IoApicReg {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code, reason = "Some destinations may not be used yet")]
 pub enum Destination {
     /// Physical destination
     ///
@@ -382,6 +398,7 @@ pub enum PinPolarity {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code, reason = "Some delivery modes may not be used yet")]
 pub enum DeliveryMode {
     Fixed = 0b000,
     LowestPriority = 0b001,

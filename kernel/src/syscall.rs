@@ -13,6 +13,7 @@ pub fn init() {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[expect(dead_code, reason = "Some fields may not be used yet")]
 pub struct Arguments {
     pub one: u64,
     pub two: u64,

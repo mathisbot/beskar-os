@@ -175,6 +175,10 @@ panic_isr!(hv_injection_handler);
 panic_isr_with_errcode!(vmm_communication_handler);
 panic_isr_with_errcode!(security_exception_handler);
 
+#[expect(
+    unreachable_code,
+    reason = "FPU/SIMD state saving/restoring is not implemented yet"
+)]
 extern "x86-interrupt" fn device_not_available_handler(_stack_frame: InterruptStackFrame) {
     let cr0 = Cr0::read();
     if cr0 & Cr0::TASK_SWITCHED != 0 {

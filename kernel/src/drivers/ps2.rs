@@ -236,6 +236,7 @@ impl Ps2Controller {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(dead_code, reason = "Not all scancode sets are implemented yet")]
 enum ScancodeSet {
     Set1 = 1,
     Set2 = 2,

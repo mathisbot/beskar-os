@@ -3,6 +3,7 @@
 //! (NVM Express Base Specification Revision 2.1) as well as
 //! <https://nvmexpress.org/wp-content/uploads/NVM-Express-PCI-Express-Transport-Specification-Revision-1.1-2024.08.05-Ratified.pdf>
 //! (NVMe over PCIe Transport Specification Revision 1.1).
+#![expect(clippy::too_long_first_doc_paragraph, reason = "Link references")]
 
 use crate::{
     drivers::pci::MsiHelper,

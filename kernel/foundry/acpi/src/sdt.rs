@@ -373,6 +373,12 @@ impl From<RawGenericAddress> for GenericAddress {
     }
 }
 
+impl From<GenericAddress> for RawGenericAddress {
+    fn from(address: GenericAddress) -> Self {
+        address.as_raw()
+    }
+}
+
 impl GenericAddress {
     #[must_use]
     #[inline]
