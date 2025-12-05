@@ -491,8 +491,7 @@ impl BufferSet<'_> {
 impl Drop for BufferSet<'_> {
     fn drop(&mut self) {
         let buffers_start_page =
-            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(self.rx_buffers[0].as_ptr()))
-                .unwrap();
+            Page::<M4KiB>::containing_address(VirtAddr::from_ptr(self.rx_buffers[0].as_ptr()));
         let buffer_page_range = Page::range_inclusive(
             buffers_start_page,
             buffers_start_page
@@ -514,8 +513,7 @@ impl Drop for BufferSet<'_> {
             .with_pgalloc(|palloc| palloc.free_pages(buffer_page_range));
 
         let descriptors_page =
-            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(self.rx_descriptors.as_ptr()))
-                .unwrap();
+            Page::<M4KiB>::containing_address(VirtAddr::from_ptr(self.rx_descriptors.as_ptr()));
         let descriptors_frame = process::current().address_space().with_page_table(|pt| {
             let (frame, tlb) = pt.unmap(descriptors_page).unwrap();
             tlb.flush();

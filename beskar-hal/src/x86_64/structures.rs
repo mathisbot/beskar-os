@@ -757,8 +757,8 @@ mod tests {
         let tss = TaskStateSegment::default();
         let pst = tss.privilege_stack_table;
         let ist = tss.interrupt_stack_table;
-        assert_eq!(pst, [VirtAddr::new(0); 3]);
-        assert_eq!(ist, [VirtAddr::new(0); 7]);
+        assert_eq!(pst, [VirtAddr::new_extend(0); 3]);
+        assert_eq!(ist, [VirtAddr::new_extend(0); 7]);
         assert_eq!(
             tss.iomap_base,
             u16::try_from(size_of::<TaskStateSegment>()).unwrap()

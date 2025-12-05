@@ -2,7 +2,6 @@
 use super::{super::VirtAddr, M1GiB, M2MiB, M4KiB, MemSize};
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
-use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// A virtual memory page.
@@ -12,25 +11,7 @@ pub struct Page<S: MemSize = M4KiB> {
     size: PhantomData<S>,
 }
 
-#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
-pub enum PageError {
-    #[error("Unaligned address")]
-    UnalignedAddress,
-}
-
 impl<S: MemSize> Page<S> {
-    #[inline]
-    pub const fn from_start_address(address: VirtAddr) -> Result<Self, PageError> {
-        // Check that the address is correctly aligned.
-        if address.as_u64() != address.aligned_down(S::ALIGNMENT).as_u64() {
-            return Err(PageError::UnalignedAddress);
-        }
-        Ok(Self {
-            start_address: address,
-            size: PhantomData,
-        })
-    }
-
     #[must_use]
     #[inline]
     pub const fn containing_address(address: VirtAddr) -> Self {
@@ -295,25 +276,19 @@ mod tests {
 
     #[test]
     fn test_p() {
-        let page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1000)).unwrap();
+        let page = Page::<M4KiB>::containing_address(VirtAddr::new_extend(0x1000));
         assert_eq!(page.size(), M4KiB::SIZE);
-        assert_eq!(page.start_address(), VirtAddr::new(0x1000));
+        assert_eq!(page.start_address(), VirtAddr::new_extend(0x1000));
 
-        let same_page = Page::<M4KiB>::containing_address(VirtAddr::new(0x1FFF));
+        let same_page = Page::<M4KiB>::containing_address(VirtAddr::new_extend(0x1FFF));
         assert_eq!(page, same_page);
     }
 
     #[test]
-    fn test_p_unaligned() {
-        let unaligned_page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1001));
-        assert!(unaligned_page == Err(PageError::UnalignedAddress));
-    }
-
-    #[test]
     fn test_p_op() {
-        let page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x2000)).unwrap();
-        let next_page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x3000)).unwrap();
-        let previous_page = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1000)).unwrap();
+        let page = Page::<M4KiB>::containing_address(VirtAddr::new_extend(0x2000));
+        let next_page = Page::<M4KiB>::containing_address(VirtAddr::new_extend(0x3000));
+        let previous_page = Page::<M4KiB>::containing_address(VirtAddr::new_extend(0x1000));
 
         assert_eq!(page + 1, next_page);
         assert_eq!(page - 1, previous_page);
@@ -322,8 +297,8 @@ mod tests {
 
     #[test]
     fn test_p_range() {
-        let start = Page::<M4KiB>::from_start_address(VirtAddr::new(0x1000)).unwrap();
-        let end = Page::<M4KiB>::containing_address(VirtAddr::new(0x2FFF));
+        let start = Page::<M4KiB>::containing_address(VirtAddr::new_extend(0x1000));
+        let end = Page::<M4KiB>::containing_address(VirtAddr::new_extend(0x2FFF));
         let range = Page::range_inclusive(start, end);
         assert_eq!(range.len(), 2);
         assert_eq!(range.size(), 2 * M4KiB::SIZE);

@@ -5,39 +5,56 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive)]
 #[repr(u64)]
 pub enum Alignment {
-    Align1 = 1,
-    Align2 = 2,
-    Align4 = 4,
-    Align8 = 8,
-    Align16 = 16,
-    Align32 = 32,
-    Align64 = 64,
-    Align128 = 128,
-    Align256 = 256,
-    Align512 = 512,
-    Align1K = 1024,
-    Align2K = 2048,
-    Align4K = 4096,
-    Align8K = 8192,
-    Align16K = 16384,
-    Align32K = 32768,
-    Align64K = 65536,
-    Align128K = 131072,
-    Align256K = 262144,
-    Align512K = 524288,
-    Align1M = 1048576,
-    Align2M = 2097152,
-    Align4M = 4194304,
-    Align8M = 8388608,
-    Align16M = 16777216,
-    Align32M = 33554432,
-    Align64M = 67108864,
-    Align128M = 134217728,
-    Align256M = 268435456,
-    Align512M = 536870912,
-    Align1G = 1073741824,
-    Align2G = 2147483648,
-    Align4G = 4294967296,
+    Align1 = 1 << 0,
+    Align2 = 1 << 1,
+    Align4 = 1 << 2,
+    Align8 = 1 << 3,
+    Align16 = 1 << 4,
+    Align32 = 1 << 5,
+    Align64 = 1 << 6,
+    Align128 = 1 << 7,
+    Align256 = 1 << 8,
+    Align512 = 1 << 9,
+    Align1K = 1 << 10,
+    Align2K = 1 << 11,
+    Align4K = 1 << 12,
+    Align8K = 1 << 13,
+    Align16K = 1 << 14,
+    Align32K = 1 << 15,
+    Align64K = 1 << 16,
+    Align128K = 1 << 17,
+    Align256K = 1 << 18,
+    Align512K = 1 << 19,
+    Align1M = 1 << 20,
+    Align2M = 1 << 21,
+    Align4M = 1 << 22,
+    Align8M = 1 << 23,
+    Align16M = 1 << 24,
+    Align32M = 1 << 25,
+    Align64M = 1 << 26,
+    Align128M = 1 << 27,
+    Align256M = 1 << 28,
+    Align512M = 1 << 29,
+    Align1G = 1 << 30,
+    Align2G = 1 << 31,
+    Align4G = 1 << 32,
+    Align8G = 1 << 33,
+    Align16G = 1 << 34,
+    Align32G = 1 << 35,
+    Align64G = 1 << 36,
+    Align128G = 1 << 37,
+    Align256G = 1 << 38,
+    Align512G = 1 << 39,
+}
+
+impl Alignment {
+    #[must_use]
+    #[inline]
+    pub const fn of<T>() -> Self {
+        // Safety: `align_of` always returns a power of two alignment.
+        // `Self` is `repr(u64)`, so transmuting from `u64` is safe.
+        unsafe { core::mem::transmute(core::mem::align_of::<T>() as u64) }
+    }
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -322,41 +339,30 @@ mod tests {
 
     #[test]
     fn test_p() {
-        let addr = PhysAddr::new(0x18000031060);
+        let addr = PhysAddr::new_truncate(0x18000031060);
         assert_eq!(addr.as_u64(), 0x18000031060);
     }
 
     #[test]
-    #[should_panic = "Invalid physical address"]
     fn test_p_reject() {
-        let _ = PhysAddr::new(0x1234567890ABCDEF);
+        let paddr = PhysAddr::try_new(0x1234567890ABCDEF);
+        assert!(paddr.is_none());
     }
 
     #[test]
     fn test_p_align() {
-        let addr = PhysAddr::new(0x18000031060);
-        assert_eq!(addr.align_down(0x1000).as_u64(), 0x18000031000);
-        assert_eq!(addr.align_up(0x1000).as_u64(), 0x18000032000);
-        assert!(addr.is_aligned(0x20));
-    }
-
-    #[test]
-    #[should_panic = "assertion failed: align.is_power_of_two()"]
-    fn test_p_align_down_unaligned() {
-        let addr = PhysAddr::new(0x18000031060);
-        let _ = addr.align_down(0x1001);
-    }
-
-    #[test]
-    #[should_panic = "called `Option::unwrap()` on a `None` value"]
-    fn test_p_underflow() {
-        let addr = PhysAddr::new(0x1000);
-        let _ = addr - 0x1001;
+        let addr = PhysAddr::new_truncate(0x18000031060);
+        assert_eq!(
+            addr.aligned_down(Alignment::Align4K).as_u64(),
+            0x18000031000
+        );
+        assert_eq!(addr.aligned_up(Alignment::Align4K).as_u64(), 0x18000032000);
+        assert!(addr.is_aligned(Alignment::Align32));
     }
 
     #[test]
     fn test_v() {
-        let addr = VirtAddr::new(0x18000031060);
+        let addr = VirtAddr::new_extend(0x18000031060);
         assert_eq!(addr.as_u64(), 0x18000031060);
     }
 
@@ -365,12 +371,13 @@ mod tests {
         let x = 42u64;
         let addr = VirtAddr::from_ptr(&x);
         assert_eq!(addr.as_ptr(), core::ptr::from_ref(&x));
-        assert!(addr.is_aligned(u64::try_from(core::mem::align_of::<u64>()).unwrap()));
+        let alignment = Alignment::of::<u64>();
+        assert!(addr.is_aligned(alignment));
     }
 
     #[test]
     fn test_v_from_idx() {
-        let addr = VirtAddr::new(0x18000031060);
+        let addr = VirtAddr::new_extend(0x18000031060);
         let p4_index = addr.p4_index();
         let p3_index = addr.p3_index();
         let p2_index = addr.p2_index();
@@ -389,45 +396,27 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "Invalid virtual address"]
     fn test_v_reject() {
-        let _ = VirtAddr::new(0x1234567890ABCDEF);
+        let vaddr = VirtAddr::try_new(0x1234567890ABCDEF);
+        assert!(vaddr.is_none());
     }
 
     #[test]
     fn test_v_align() {
-        let addr = VirtAddr::new(0x18000031060);
-        assert_eq!(addr.align_down(0x1000).as_u64(), 0x18000031000);
-        assert_eq!(addr.align_up(0x1000).as_u64(), 0x18000032000);
+        let addr = VirtAddr::new_extend(0x18000031060);
+        assert_eq!(
+            addr.aligned_down(Alignment::Align4K).as_u64(),
+            0x18000031000
+        );
+        assert_eq!(addr.aligned_up(Alignment::Align4K).as_u64(), 0x18000032000);
     }
 
     #[test]
     fn test_v_page_index() {
-        let addr = VirtAddr::new(0x18000031060);
+        let addr = VirtAddr::new_extend(0x18000031060);
         assert_eq!(addr.p4_index(), 3);
         assert_eq!(addr.p3_index(), 0);
         assert_eq!(addr.p2_index(), 0);
         assert_eq!(addr.p1_index(), 49);
-    }
-
-    #[test]
-    #[should_panic = "assertion failed: align.is_power_of_two()"]
-    fn test_v_align_down_unaligned() {
-        let addr = VirtAddr::new_extend(0x18000031060);
-        let _ = addr.align_down(0x1001);
-    }
-
-    #[test]
-    #[should_panic = "called `Option::unwrap()` on a `None` value"]
-    fn test_v_underflow() {
-        let addr = VirtAddr::new(0x1000);
-        let _ = addr - 0x1001;
-    }
-
-    #[test]
-    #[should_panic = "called `Option::unwrap()` on a `None` value"]
-    fn test_v_overflow() {
-        let addr = VirtAddr::new(0xFFFF_FFFF_FFFF_FFFF);
-        let _ = addr + 1;
     }
 }

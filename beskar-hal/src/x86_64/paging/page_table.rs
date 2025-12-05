@@ -201,8 +201,7 @@ impl<'t> PageTable<'t> {
     #[must_use]
     #[inline]
     pub fn new(entries: &'t mut Entries) -> Self {
-        let page =
-            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(entries.0.as_ptr())).unwrap();
+        let page = Page::<M4KiB>::containing_address(VirtAddr::from_ptr(entries.0.as_ptr()));
         let l4_index = page.p4_index();
 
         if page.p3_index() != l4_index || page.p2_index() != l4_index || page.p1_index() != l4_index
@@ -415,7 +414,7 @@ impl Mapper<M4KiB, Flags> for PageTable<'_> {
                 .as_mut_ptr::<Entries>()
         };
         let p1_entry = &mut p1[usize::from(page.p1_index())];
-        let frame = Frame::from_start_address(p1_entry.frame_start()?).unwrap();
+        let frame = Frame::containing_address(p1_entry.frame_start()?);
 
         p1_entry.set(PhysAddr::ZERO, Flags::EMPTY);
 
@@ -500,10 +499,7 @@ impl Mapper<M4KiB, Flags> for PageTable<'_> {
         if p1_entry.is_null() {
             None
         } else {
-            Some((
-                Frame::from_start_address(p1_entry.addr()).unwrap(),
-                p1_entry.flags(),
-            ))
+            Some((Frame::containing_address(p1_entry.addr()), p1_entry.flags()))
         }
     }
 }
@@ -585,7 +581,7 @@ impl Mapper<M2MiB, Flags> for PageTable<'_> {
         }
         assert!(flags.contains(Flags::HUGE_PAGE), "Not a huge page");
 
-        let frame = Frame::from_start_address(p2_entry.addr()).unwrap();
+        let frame = Frame::containing_address(p2_entry.addr());
 
         p2_entry.set(PhysAddr::ZERO, Flags::EMPTY);
 
@@ -651,10 +647,7 @@ impl Mapper<M2MiB, Flags> for PageTable<'_> {
         if p2_entry.is_null() {
             None
         } else {
-            Some((
-                Frame::from_start_address(p2_entry.addr()).unwrap(),
-                p2_entry.flags(),
-            ))
+            Some((Frame::containing_address(p2_entry.addr()), p2_entry.flags()))
         }
     }
 }
@@ -715,7 +708,7 @@ impl Mapper<M1GiB, Flags> for PageTable<'_> {
         }
         assert!(flags.contains(Flags::HUGE_PAGE), "Not a huge page");
 
-        let frame = Frame::from_start_address(p3_entry.addr()).unwrap();
+        let frame = Frame::containing_address(p3_entry.addr());
 
         p3_entry.set(PhysAddr::ZERO, Flags::EMPTY);
 
@@ -762,10 +755,7 @@ impl Mapper<M1GiB, Flags> for PageTable<'_> {
         if p3_entry.is_null() {
             None
         } else {
-            Some((
-                Frame::from_start_address(p3_entry.addr()).unwrap(),
-                p3_entry.flags(),
-            ))
+            Some((Frame::containing_address(p3_entry.addr()), p3_entry.flags()))
         }
     }
 }
@@ -997,7 +987,7 @@ impl Mapper<M4KiB, Flags> for OffsetPageTable<'_> {
         if !p1_entry.flags().contains(Flags::PRESENT) {
             return None;
         }
-        let frame = Frame::from_start_address(p1_entry.addr()).unwrap();
+        let frame = Frame::containing_address(p1_entry.addr());
         Some((frame, p1_entry.flags()))
     }
 
@@ -1037,7 +1027,7 @@ impl Mapper<M4KiB, Flags> for OffsetPageTable<'_> {
             return None;
         }
 
-        let frame = Frame::from_start_address(p1_entry.addr()).unwrap();
+        let frame = Frame::containing_address(p1_entry.addr());
         p1_entry.set(PhysAddr::new_truncate(0), Flags::EMPTY);
 
         Some((frame, super::TlbFlush::new(page)))
@@ -1157,7 +1147,7 @@ mod tests {
     #[test]
     fn test_entry_operations() {
         let mut entry = Entry::default();
-        let addr = PhysAddr::new(0x2000);
+        let addr = PhysAddr::new_truncate(0x2000);
         let flags = Flags::PRESENT | Flags::WRITABLE;
 
         entry.set(addr, flags);
@@ -1172,8 +1162,8 @@ mod tests {
     #[test]
     fn test_entries_clear() {
         let mut entries = Entries::default();
-        entries[0].set(PhysAddr::new(0x1000), Flags::PRESENT);
-        entries[1].set(PhysAddr::new(0x2000), Flags::WRITABLE);
+        entries[0].set(PhysAddr::new_truncate(0x1000), Flags::PRESENT);
+        entries[1].set(PhysAddr::new_truncate(0x2000), Flags::WRITABLE);
 
         entries.clear();
         for entry in entries.iter_entries() {

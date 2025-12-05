@@ -64,7 +64,7 @@ pub fn make_mappings(
             let end_frame = Frame::<M4KiB>::containing_address(
                 fb.start_addr() + (u64::from(fb.info().size()) - 1),
             );
-            let start_page = Page::<M4KiB>::from_start_address(FRAMEBUFFER_BASE).unwrap();
+            let start_page = Page::<M4KiB>::containing_address(FRAMEBUFFER_BASE);
             (start_frame, end_frame, start_page)
         });
         for (i, frame) in Frame::range_inclusive(start_frame, end_frame)
@@ -87,9 +87,9 @@ pub fn make_mappings(
     let ramdisk_info = ramdisk.map(|ramdisk| {
         let size = u64::try_from(ramdisk.len()).unwrap();
         let ramdisk_paddr = PhysAddr::new_truncate(ramdisk.as_ptr() as u64);
-        let start_frame = Frame::from_start_address(ramdisk_paddr).unwrap();
+        let start_frame = Frame::containing_address(ramdisk_paddr);
         let end_frame = start_frame + (size / M4KiB::SIZE);
-        let start_page = Page::<M4KiB>::from_start_address(RAMDISK_BASE).unwrap();
+        let start_page = Page::<M4KiB>::containing_address(RAMDISK_BASE);
         let end_page = start_page + (size / M4KiB::SIZE);
         for (page, frame) in Page::range_inclusive(start_page, end_page)
             .into_iter()
@@ -106,7 +106,7 @@ pub fn make_mappings(
 
     let stack_end_addr = {
         let stack_range = {
-            let guard_page = Page::<M4KiB>::from_start_address(KERNEL_STACK_BASE).unwrap();
+            let guard_page = Page::<M4KiB>::containing_address(KERNEL_STACK_BASE);
             let start_page = guard_page + 1;
             let end_page = start_page + KERNEL_STACK_NB_PAGES - 1;
             Page::range_inclusive(start_page, end_page)
@@ -167,7 +167,7 @@ pub fn make_mappings(
             CS::set(code_selector);
             SS::set(data_selector);
         }
-        let gdt_page = Page::from_start_address(gdt_virt_addr).unwrap();
+        let gdt_page = Page::containing_address(gdt_virt_addr);
         page_tables
             .kernel
             .map(gdt_page, gdt_frame, Flags::PRESENT, frame_allocator)

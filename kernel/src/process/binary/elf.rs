@@ -277,7 +277,7 @@ fn zero_bss(
     }
 
     let zero_start_page =
-        Page::<M4KiB>::from_start_address(zero_start.aligned_up(M4KiB::ALIGNMENT)).unwrap();
+        Page::<M4KiB>::containing_address(zero_start.aligned_up(M4KiB::ALIGNMENT));
     let zero_end_page =
         Page::<M4KiB>::containing_address(zero_end.aligned_down(M4KiB::ALIGNMENT) - 1);
 

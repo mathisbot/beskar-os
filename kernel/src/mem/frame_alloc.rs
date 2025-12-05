@@ -55,7 +55,7 @@ impl FrameAllocator {
 
         let addr = self.memory_ranges.allocate(size, alignment)?;
         let paddr = PhysAddr::new_truncate(u64::try_from(addr).unwrap());
-        let frame = Frame::from_start_address(paddr).unwrap();
+        let frame = Frame::containing_address(paddr);
         Some(frame)
     }
 
@@ -72,7 +72,7 @@ impl FrameAllocator {
             .memory_ranges
             .allocate_req(size, alignment, req_ranges)?;
         let paddr = PhysAddr::new_truncate(u64::try_from(addr).unwrap());
-        let frame = Frame::from_start_address(paddr).unwrap();
+        let frame = Frame::containing_address(paddr);
         Some(frame)
     }
 

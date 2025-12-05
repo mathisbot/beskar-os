@@ -133,7 +133,7 @@ impl LocalApic {
 
     #[must_use]
     pub fn from_paddr(paddr: PhysAddr) -> Self {
-        let frame = Frame::<M4KiB>::from_start_address(paddr).unwrap();
+        let frame = Frame::<M4KiB>::containing_address(paddr);
 
         let apic_flags = Flags::MMIO_SUITABLE;
 

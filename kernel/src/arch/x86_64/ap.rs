@@ -52,9 +52,9 @@ pub fn start_up_aps(core_count: usize) {
     // Everything should still be accessible with the same address when paging is enabled.
 
     let payload_paddr = PhysAddr::new_truncate(AP_TRAMPOLINE_PADDR);
-    let frame = Frame::<M4KiB>::from_start_address(payload_paddr).unwrap();
+    let frame = Frame::<M4KiB>::containing_address(payload_paddr);
     let payload_vaddr = VirtAddr::new_extend(AP_TRAMPOLINE_PADDR);
-    let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
+    let page = Page::<M4KiB>::containing_address(payload_vaddr);
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
         address_space::with_kernel_pt(|page_table| {
@@ -138,7 +138,7 @@ pub fn start_up_aps(core_count: usize) {
         });
     });
     address_space::with_kernel_pgalloc(|page_allocator| {
-        let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
+        let page = Page::<M4KiB>::containing_address(payload_vaddr);
         page_allocator.free_pages(Page::range_inclusive(page, page));
     });
 
