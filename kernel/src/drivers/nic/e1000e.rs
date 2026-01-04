@@ -45,7 +45,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
 
     let flags = Flags::MMIO_SUITABLE;
     // Max size is 128 KiB
-    let pmap = PhysicalMapping::<M4KiB>::new(reg_paddr, 128 * 1024, flags);
+    let pmap = PhysicalMapping::<M4KiB>::new(reg_paddr, 128 * 1024, flags).unwrap();
     let reg_vaddr = pmap.translate(reg_paddr).unwrap();
 
     let (buffer_set, rxdesc_paddr, txdesc_paddr) = BufferSet::new(RX_BUFFERS, TX_BUFFERS);
@@ -371,6 +371,7 @@ impl BufferSet<'_> {
                 .with_page_table(|page_table| {
                     page_table
                         .map(descriptor_page, frame, flags, fralloc)
+                        .unwrap()
                         .flush();
                 });
             frame
@@ -399,7 +400,7 @@ impl BufferSet<'_> {
                 process::current()
                     .address_space()
                     .with_page_table(|page_table| {
-                        page_table.map(page, frame, flags, fralloc).flush();
+                        page_table.map(page, frame, flags, fralloc).unwrap().flush();
                     });
                 frame
             });
@@ -426,7 +427,7 @@ impl BufferSet<'_> {
                 process::current()
                     .address_space()
                     .with_page_table(|page_table| {
-                        page_table.map(page, frame, flags, fralloc).flush();
+                        page_table.map(page, frame, flags, fralloc).unwrap().flush();
                     });
                 frame
             });
@@ -490,8 +491,7 @@ impl BufferSet<'_> {
 
 impl Drop for BufferSet<'_> {
     fn drop(&mut self) {
-        let buffers_start_page =
-            Page::<M4KiB>::containing_address(VirtAddr::from_ptr(self.rx_buffers[0].as_ptr()));
+        let buffers_start_page = VirtAddr::from_ptr(self.rx_buffers[0].as_ptr()).page::<M4KiB>();
         let buffer_page_range = Page::range_inclusive(
             buffers_start_page,
             buffers_start_page

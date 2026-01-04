@@ -7,6 +7,7 @@ edition = "2024"
 acpi = { path = "foundry/acpi" }
 beskar-core = { workspace = true }
 beskar-hal = { workspace = true }
+elf = { path = "src/process/binary/elf" }
 bootloader-api = { workspace = true }
 driver-api = { path = "driver-api" }
 holonet = { path = "foundry/holonet" }
@@ -16,4 +17,3 @@ pci = { path = "foundry/pci" }
 storage = { path = "foundry/storage" }
 thiserror = { workspace = true }
 video = { path = "foundry/video" }
-xmas-elf = { workspace = true }

@@ -26,7 +26,9 @@ pub fn wait(duration: Duration) {
     }
 }
 
-/// Returns the current instant (monotonic time)
+/// Returns the current instant (monotonic time).
+///
+/// If no high-precision timer is available, returns `Instant::MAX`.
 #[must_use]
 #[inline]
 pub fn now() -> Instant {
@@ -35,7 +37,7 @@ pub fn now() -> Instant {
     } else if HPET_AVAILABLE.load(Ordering::Acquire) {
         HpetClock.now()
     } else {
-        Instant::ZERO
+        Instant::MAX
     }
 }
 

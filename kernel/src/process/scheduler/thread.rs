@@ -352,7 +352,10 @@ fn thread_load_binary(path: Path) -> LoadedBinary {
 
     let page_range = curr_proc
         .address_space()
-        .alloc_map::<M4KiB>(file_info.size(), Flags::PRESENT | Flags::WRITABLE)
+        .alloc_map::<M4KiB>(
+            file_info.size(),
+            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+        )
         .unwrap();
 
     let input_buffer = unsafe {
@@ -417,11 +420,15 @@ pub extern "C" fn user_trampoline() -> ! {
             );
         }
         // Zero the rest of the TLS area
+        let allocated_size = usize::try_from(pages.size()).unwrap();
         unsafe {
             tls_vaddr
                 .as_mut_ptr::<u8>()
                 .byte_add(tlst.file_size().try_into().unwrap())
-                .write_bytes(0, (tlst.mem_size() - tlst.file_size()).try_into().unwrap());
+                .write_bytes(
+                    0,
+                    allocated_size - usize::try_from(tlst.file_size()).unwrap(),
+                );
         }
 
         let tls = Tls {
@@ -505,7 +512,7 @@ impl ThreadStacks {
                 .with_page_table(|pt| {
                     for page in page_range {
                         let frame = fralloc.allocate_frame().unwrap();
-                        pt.map(page, frame, flags, fralloc).flush();
+                        pt.map(page, frame, flags, fralloc).unwrap().flush();
                     }
                 });
         });

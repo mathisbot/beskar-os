@@ -118,8 +118,7 @@ impl Slab {
             self.free_list = next;
             self.free_count -= 1;
 
-            // SAFETY: We're returning a pointer from our managed memory
-            Ok(slot.cast::<u8>())
+            Ok(slot.cast())
         } else {
             Err(HeapError::OutOfMemory)
         }

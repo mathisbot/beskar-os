@@ -165,6 +165,8 @@ impl RamdiskInfo {
 
 /// Kernel space starting page table entry.
 pub const KERNEL_PT_START_ENTRY: u16 = 256;
+/// User space last page table entry.
+pub const USER_PT_END_ENTRY: u16 = KERNEL_PT_START_ENTRY - 1;
 /// Kernel space starting page table entry.
 pub const KERNEL_PT_RECURSIVE_INDEX: u16 = 256;
 /// Kernel higher half base virtual address.

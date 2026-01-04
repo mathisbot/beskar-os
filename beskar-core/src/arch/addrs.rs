@@ -1,5 +1,5 @@
 //! Abstraction of physical and virtual addresses.
-use core::ops::{Add, Sub};
+use core::ops::{Add, AddAssign, Sub, SubAssign};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive)]
@@ -54,6 +54,43 @@ impl Alignment {
         // Safety: `align_of` always returns a power of two alignment.
         // `Self` is `repr(u64)`, so transmuting from `u64` is safe.
         unsafe { core::mem::transmute(core::mem::align_of::<T>() as u64) }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn of_val<T>(_: &T) -> Self {
+        Self::of::<T>()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn mask(self) -> u64 {
+        (self as u64) - 1
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
+        self as u64
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn align_down(self, x: u64) -> u64 {
+        x & !self.mask()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn align_up(self, x: u64) -> u64 {
+        let mask = self.mask();
+        (x + mask) & !mask
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_aligned(self, x: u64) -> bool {
+        x & self.mask() == 0
     }
 }
 
@@ -167,21 +204,19 @@ impl VirtAddr {
     #[must_use]
     #[inline]
     pub const fn aligned_down(self, align: Alignment) -> Self {
-        Self(self.0 & !(align as u64 - 1))
+        Self(align.align_down(self.0))
     }
 
     #[must_use]
     #[inline]
     pub const fn aligned_up(self, align: Alignment) -> Self {
-        let align_m1 = align as u64 - 1;
-        let aligned_up = (self.0 + align_m1) & !align_m1;
-        Self::new_extend(aligned_up)
+        Self::new_extend(align.align_up(self.0))
     }
 
     #[must_use]
     #[inline]
     pub const fn is_aligned(self, align: Alignment) -> bool {
-        self.0 & (align as u64 - 1) == 0
+        align.is_aligned(self.0)
     }
 
     #[must_use]
@@ -212,6 +247,12 @@ impl VirtAddr {
     #[inline]
     pub fn page_offset(self) -> u16 {
         u16::try_from(self.0 & 0xFFF).unwrap()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn page<S: super::paging::MemSize>(self) -> super::paging::Page<S> {
+        super::paging::Page::containing_address(self)
     }
 }
 
@@ -261,21 +302,25 @@ impl PhysAddr {
     #[must_use]
     #[inline]
     pub const fn aligned_down(self, align: Alignment) -> Self {
-        Self(self.0 & !(align as u64 - 1))
+        Self(align.align_down(self.0))
     }
 
     #[must_use]
     #[inline]
     pub const fn aligned_up(self, align: Alignment) -> Self {
-        let align_m1 = align as u64 - 1;
-        let aligned_up = (self.0 + align_m1) & !align_m1;
-        Self::new_truncate(aligned_up)
+        Self(align.align_up(self.0))
     }
 
     #[must_use]
     #[inline]
     pub const fn is_aligned(self, align: Alignment) -> bool {
-        self.0 & (align as u64 - 1) == 0
+        align.is_aligned(self.0)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn frame<S: super::paging::MemSize>(self) -> super::paging::Frame<S> {
+        super::paging::Frame::containing_address(self)
     }
 }
 
@@ -287,6 +332,12 @@ impl Add<u64> for VirtAddr {
         Self::new_extend(self.0 + rhs)
     }
 }
+impl AddAssign<u64> for VirtAddr {
+    #[inline]
+    fn add_assign(&mut self, rhs: u64) {
+        *self = *self + rhs;
+    }
+}
 
 impl Sub<u64> for VirtAddr {
     type Output = Self;
@@ -294,6 +345,12 @@ impl Sub<u64> for VirtAddr {
     #[inline]
     fn sub(self, rhs: u64) -> Self {
         Self::new_extend(self.0 - rhs)
+    }
+}
+impl SubAssign<u64> for VirtAddr {
+    #[inline]
+    fn sub_assign(&mut self, rhs: u64) {
+        *self = *self - rhs;
     }
 }
 
@@ -314,6 +371,12 @@ impl Add<u64> for PhysAddr {
         Self::new_truncate(self.0 + rhs)
     }
 }
+impl AddAssign<u64> for PhysAddr {
+    #[inline]
+    fn add_assign(&mut self, rhs: u64) {
+        *self = *self + rhs;
+    }
+}
 
 impl Sub<u64> for PhysAddr {
     type Output = Self;
@@ -321,6 +384,12 @@ impl Sub<u64> for PhysAddr {
     #[inline]
     fn sub(self, rhs: u64) -> Self {
         Self::new_truncate(self.0 - rhs)
+    }
+}
+impl SubAssign<u64> for PhysAddr {
+    #[inline]
+    fn sub_assign(&mut self, rhs: u64) {
+        *self = *self - rhs;
     }
 }
 

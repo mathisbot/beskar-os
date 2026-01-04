@@ -3,6 +3,7 @@
 //! It defines the `Frame` and `Page` types, which represent physical memory frames and virtual memory pages, respectively,
 //! as well as traits for memory mapping and translation.
 use super::{Alignment, PhysAddr, VirtAddr};
+use thiserror::Error;
 
 mod frame;
 pub use frame::{Frame, FrameAllocator, FrameRangeInclusive};
@@ -65,12 +66,30 @@ pub trait Mapper<S: MemSize, F: Flags> {
         frame: Frame<S>,
         flags: F,
         fralloc: &mut A,
-    ) -> impl CacheFlush<S>;
-    fn unmap(&mut self, page: Page<S>) -> Option<(Frame<S>, impl CacheFlush<S>)>;
-    fn update_flags(&mut self, page: Page<S>, flags: F) -> Option<impl CacheFlush<S>>;
+    ) -> Result<impl CacheFlush<S>, MappingError<S>>;
+    fn unmap(&mut self, page: Page<S>) -> Result<(Frame<S>, impl CacheFlush<S>), MappingError<S>>;
+    fn update_flags(
+        &mut self,
+        page: Page<S>,
+        flags: F,
+    ) -> Result<impl CacheFlush<S>, MappingError<S>>;
     fn translate(&self, page: Page<S>) -> Option<(Frame<S>, F)>;
 }
 
 pub trait Translator<F: Flags> {
     fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, F)>;
+}
+
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MappingError<S: MemSize> {
+    #[error("Page is already mapped")]
+    AlreadyMapped(Frame<S>),
+    #[error("Frame allocation failed")]
+    FrameAllocationFailed,
+    #[error("Page is not mapped")]
+    NotMapped,
+    #[error("Unexpected large page encountered")]
+    UnexpectedLargePage,
+    #[error("Unexpected not large page encountered")]
+    UnexpectedNotLargePage,
 }

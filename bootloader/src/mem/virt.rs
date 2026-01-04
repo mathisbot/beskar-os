@@ -76,6 +76,7 @@ pub fn make_mappings(
             page_tables
                 .kernel
                 .map(page, frame, flags, frame_allocator)
+                .expect("Failed to map framebuffer")
                 .flush();
         }
         info!("Mapped framebuffer");
@@ -99,6 +100,7 @@ pub fn make_mappings(
             page_tables
                 .kernel
                 .map(page, frame, flags, frame_allocator)
+                .expect("Failed to map ramdisk")
                 .flush();
         }
         RamdiskInfo::new(start_page.start_address(), size)
@@ -119,6 +121,7 @@ pub fn make_mappings(
             page_tables
                 .kernel
                 .map(page, frame, flags, frame_allocator)
+                .expect("Failed to map kernel stack")
                 .flush();
         }
         let stack_end_addr = stack_range.end().start_address() + M4KiB::SIZE;
@@ -138,6 +141,7 @@ pub fn make_mappings(
             page_tables
                 .kernel
                 .map(page, frame, Flags::PRESENT, frame_allocator)
+                .expect("Failed to map context switch code")
                 .flush();
         }
         info!("Mapped jump code");
@@ -171,6 +175,7 @@ pub fn make_mappings(
         page_tables
             .kernel
             .map(gdt_page, gdt_frame, Flags::PRESENT, frame_allocator)
+            .expect("Failed to map GDT")
             .flush();
         info!("Mapped GDT");
         debug!("GDT at {:#x}", gdt_page.start_address().as_u64());

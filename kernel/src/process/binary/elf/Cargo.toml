@@ -1,0 +1,10 @@
+[package]
+name = "elf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+xmas-elf = "0.10.0"
+beskar-core = { path = "../../../../../beskar-core" }
+
+[dev-dependencies]

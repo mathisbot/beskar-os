@@ -53,7 +53,10 @@ pub fn create_boot_info(
             .expect("Failed to allocate a frame");
 
         for table in [&mut page_tables.kernel, &mut page_tables.bootloader] {
-            table.map(page, frame, flags, &mut frame_allocator).flush();
+            table
+                .map(page, frame, flags, &mut frame_allocator)
+                .expect("Failed to map boot information")
+                .flush();
         }
     }
 

@@ -65,7 +65,7 @@ impl<S: MemSize> Sub<Self> for Frame<S> {
     type Output = u64;
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
-        (self.start_address() - rhs.start_address()) / S::SIZE
+        (self.start_address - rhs.start_address) / S::SIZE
     }
 }
 

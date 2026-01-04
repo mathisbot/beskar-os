@@ -76,8 +76,7 @@ impl Cr3 {
     pub fn read() -> (Frame, u16) {
         let value = Self::read_raw();
         let addr = unsafe { PhysAddr::new_unchecked(value & 0x_000f_ffff_ffff_f000) };
-        let frame = Frame::containing_address(addr);
-        (frame, (value & 0xFFF) as u16)
+        (addr.frame(), (value & 0xFFF) as u16)
     }
 
     #[inline]

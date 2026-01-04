@@ -35,7 +35,8 @@ impl<T> Queue<T> {
             frame.start_address(),
             frame.size().try_into().unwrap(),
             flags,
-        );
+        )
+        .unwrap();
         let base = pmap.translate(frame.start_address()).unwrap();
 
         Ok(Self {

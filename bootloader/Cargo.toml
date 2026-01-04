@@ -9,4 +9,4 @@ beskar-hal = { workspace = true }
 bootloader-api = { workspace = true }
 hyperdrive = { workspace = true }
 uefi = { version = "0.36.1", default-features = false }
-xmas-elf = { workspace = true }
+xmas-elf = "0.10.0"

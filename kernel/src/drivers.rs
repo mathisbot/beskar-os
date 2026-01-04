@@ -1,3 +1,4 @@
+#![expect(dead_code, reason = "Drivers are not fully implemented yet")]
 pub mod acpi;
 pub mod hpet;
 pub mod keyboard;

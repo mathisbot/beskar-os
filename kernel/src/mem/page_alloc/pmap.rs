@@ -5,7 +5,7 @@
 use crate::{mem::frame_alloc, process};
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, Frame, M4KiB, Mapper, MemSize, Page},
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper, MappingError, MemSize, Page},
 };
 use beskar_hal::paging::page_table::{Flags, PageTable};
 
@@ -30,8 +30,11 @@ where
     /// Creates a new physical mapping.
     ///
     /// `flags` will be `OR`ed with `PageTableFlags::PRESENT` to ensure the page is present.
-    #[must_use]
-    pub fn new(start_paddr: PhysAddr, required_length: usize, flags: Flags) -> Self {
+    pub fn new(
+        start_paddr: PhysAddr,
+        required_length: usize,
+        flags: Flags,
+    ) -> Result<Self, MappingError<S>> {
         let end_paddr = start_paddr + u64::try_from(required_length).unwrap();
 
         let start_frame = Frame::<S>::containing_address(start_paddr);
@@ -51,17 +54,18 @@ where
                 .with_page_table(|page_table| {
                     for (frame, page) in frame_range.into_iter().zip(page_range) {
                         page_table
-                            .map(page, frame, flags | Flags::PRESENT, frame_allocator)
+                            .map(page, frame, flags | Flags::PRESENT, frame_allocator)?
                             .flush();
                     }
-                });
-        });
+                    Ok(())
+                })
+        })?;
 
-        Self {
+        Ok(Self {
             start_frame,
             start_page: page_range.start(),
             count,
-        }
+        })
     }
 
     /// Translate a physical address to a virtual address within the mapping.
@@ -113,8 +117,9 @@ where
             .address_space()
             .with_page_table(|page_table| {
                 for page in page_range {
-                    let (_frame, tlb) = page_table.unmap(page).unwrap();
-                    tlb.flush();
+                    if let Ok((_frame, tlb)) = page_table.unmap(page) {
+                        tlb.flush();
+                    }
                 }
             });
 
@@ -126,13 +131,13 @@ where
     }
 }
 
-impl<S: MemSize> driver_api::PhysicalMapper<S> for PhysicalMapping<S>
+impl<S: MemSize + core::fmt::Debug> driver_api::PhysicalMapper<S> for PhysicalMapping<S>
 where
     for<'a> PageTable<'a>: Mapper<S, Flags>,
 {
     #[inline]
     fn new(start_paddr: PhysAddr, required_length: usize, flags: Flags) -> Self {
-        Self::new(start_paddr, required_length, flags)
+        Self::new(start_paddr, required_length, flags).unwrap()
     }
 
     #[inline]

@@ -1,7 +1,7 @@
 use crate::mem::EarlyFrameAllocator;
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
-    paging::{CacheFlush, Frame, FrameAllocator, M4KiB, Mapper as _, MemSize, Page, Translator},
+    paging::{CacheFlush, Frame, FrameAllocator, M4KiB, Mapper as _, MemSize, Page},
 };
 use beskar_hal::paging::page_table::{Flags, OffsetPageTable};
 use bootloader_api::KERNEL_IMAGE_BASE;
@@ -150,10 +150,10 @@ fn load_segments(klu: &mut KernelLoadingUtils, vao: u64) -> LoadedSegmentsInfo {
             let end_page = Page::<M4KiB>::containing_address(end - 1);
 
             for page in Page::range_inclusive(start_page, end_page) {
-                let Some((_, flags)) = klu.page_table.translate_addr(end_page.start_address())
-                else {
-                    panic!("Last page of segment is not mapped");
-                };
+                let (_, flags) = klu
+                    .page_table
+                    .translate(end_page)
+                    .expect("Last page of segment is not mapped");
 
                 if flags.contains(Flags::BIT_9) {
                     let new_flags = flags.without(Flags::BIT_9);
@@ -195,6 +195,7 @@ fn handle_segment_load(load_segment: ProgramHeader, klu: &mut KernelLoadingUtils
         unsafe {
             klu.page_table
                 .map(page, frame, segment_flags, klu.frame_allocator)
+                .expect("Failed to map kernel ELF segment")
                 .ignore_flush();
         }
     }
@@ -217,14 +218,14 @@ fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelL
         let last_page = Page::<M4KiB>::containing_address(zero_start);
 
         let new_frame = {
-            let Some((paddr, flags)) = klu.page_table.translate_addr(last_page.start_address())
-            else {
-                panic!("Last page of segment is not mapped to a 4KiB frame");
-            };
+            let (paddr, flags) = klu
+                .page_table
+                .translate(last_page)
+                .expect("Last page of segment is not mapped to a 4KiB frame");
 
             // Use bit 9 to mark already kernel-space-mapped pages
             if flags.contains(Flags::BIT_9) {
-                Frame::containing_address(paddr)
+                paddr
             } else {
                 let new_frame = klu
                     .frame_allocator
@@ -232,7 +233,7 @@ fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelL
                     .expect("Failed to allocate frame");
                 unsafe {
                     core::ptr::copy_nonoverlapping(
-                        paddr.as_u64() as *const u8,
+                        paddr.start_address().as_u64() as *const u8,
                         new_frame.start_address().as_u64() as *mut u8,
                         usize::try_from(M4KiB::SIZE).unwrap(),
                     );
@@ -248,6 +249,7 @@ fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelL
                             flags.union(Flags::BIT_9),
                             klu.frame_allocator,
                         )
+                        .expect("Failed to map BSS page")
                         .ignore_flush();
                 }
 
@@ -295,6 +297,7 @@ fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelL
         unsafe {
             klu.page_table
                 .map(page, frame, segment_flags, klu.frame_allocator)
+                .expect("Failed to map BSS")
                 .ignore_flush();
         }
     }
@@ -396,10 +399,8 @@ fn copy_from_krnlspc(klu: &KernelLoadingUtils, addr: VirtAddr, buf: &mut [u8]) {
     let end_page = Page::<M4KiB>::containing_address(end_addr);
 
     for page in Page::range_inclusive(start_page, end_page) {
-        let (paddr, _) = klu
-            .page_table
-            .translate_addr(page.start_address())
-            .expect("Page is not mapped");
+        let (frame, _) = klu.page_table.translate(page).expect("Page is not mapped");
+        let paddr = frame.start_address();
 
         // Find the address range to copy
         let page_start = page.start_address();
@@ -443,12 +444,13 @@ fn copy_to_krnlspc(klu: &mut KernelLoadingUtils, addr: VirtAddr, buf: &[u8]) {
 
     for page in Page::range_inclusive(start_page, end_page) {
         let phys_addr = {
-            let Some((paddr, flags)) = klu.page_table.translate_addr(page.start_address()) else {
-                panic!("Last page of segment is not mapped to a 4KiB frame");
-            };
+            let (frame, flags) = klu
+                .page_table
+                .translate(page)
+                .expect("Last page of segment is not mapped to a 4KiB frame");
 
             if flags.contains(Flags::BIT_9) {
-                Frame::containing_address(paddr)
+                frame
             } else {
                 let new_frame = klu
                     .frame_allocator
@@ -457,7 +459,7 @@ fn copy_to_krnlspc(klu: &mut KernelLoadingUtils, addr: VirtAddr, buf: &[u8]) {
 
                 unsafe {
                     core::ptr::copy_nonoverlapping(
-                        paddr.as_u64() as *const u8,
+                        frame.start_address().as_u64() as *const u8,
                         new_frame.start_address().as_u64() as *mut u8,
                         usize::try_from(M4KiB::SIZE).unwrap(),
                     );
@@ -473,6 +475,7 @@ fn copy_to_krnlspc(klu: &mut KernelLoadingUtils, addr: VirtAddr, buf: &[u8]) {
                             flags.union(Flags::BIT_9),
                             klu.frame_allocator,
                         )
+                        .expect("Failed to copy memory to kernel space")
                         .ignore_flush();
                 }
 
@@ -519,9 +522,10 @@ fn handle_segment_gnurelro(
     let end_page = Page::<M4KiB>::containing_address(start + gnurelro_segment.mem_size() - 1);
 
     for page in Page::range_inclusive(start_page, end_page) {
-        let Some((_, flags)) = klu.page_table.translate_addr(page.start_address()) else {
-            panic!("Last page of segment is not mapped");
-        };
+        let (_, flags) = klu
+            .page_table
+            .translate(page)
+            .expect("Last page of segment is not mapped");
 
         if flags.contains(Flags::WRITABLE) {
             let new_flags = flags.without(Flags::WRITABLE);

@@ -22,11 +22,11 @@ pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
     let ahci_paddr = bar.base_address();
 
     let flags = Flags::MMIO_SUITABLE;
-    let pmap = PhysicalMapping::<M4KiB>::new(ahci_paddr, 64, flags);
+    let pmap = PhysicalMapping::<M4KiB>::new(ahci_paddr, 64, flags).unwrap();
 
     let ahci_base = pmap.translate(ahci_paddr).unwrap();
 
-    let ahci = Ahci {
+    let _ahci = Ahci {
         base: ahci_base,
         pmap,
     };

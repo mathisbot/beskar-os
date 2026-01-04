@@ -100,6 +100,7 @@ impl Gdt {
                                 Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
                                 frame_allocator,
                             )
+                            .expect("Failed to allocate TSS stack")
                             .flush();
                     }
                 });

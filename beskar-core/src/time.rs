@@ -19,6 +19,8 @@ pub struct Instant {
 impl Instant {
     /// The null instant, which is the starting point of time.
     pub const ZERO: Self = Self::from_micros(0);
+    /// The maximum representable instant.
+    pub const MAX: Self = Self::from_micros(u64::MAX);
 
     #[must_use]
     #[inline]
@@ -31,9 +33,7 @@ impl Instant {
     #[inline]
     /// Create a new `Instant` from a number of milliseconds.
     pub const fn from_millis(millis: u64) -> Self {
-        let micros = millis
-            .checked_mul(MICROS_PER_MILLI)
-            .expect("millis overflowed");
+        let micros = millis.saturating_mul(MICROS_PER_MILLI);
         Self::from_micros(micros)
     }
     #[must_use]
@@ -41,7 +41,7 @@ impl Instant {
     #[inline]
     /// Create a new `Instant` from a number of seconds.
     pub const fn from_secs(secs: u64) -> Self {
-        let micros = secs.checked_mul(MICROS_PER_SEC).expect("secs overflowed");
+        let micros = secs.saturating_mul(MICROS_PER_SEC);
         Self::from_micros(micros)
     }
 
@@ -96,11 +96,8 @@ impl ops::Add<Duration> for Instant {
     type Output = Self;
 
     fn add(self, rhs: Duration) -> Self {
-        Self::from_micros(
-            self.total_micros()
-                .checked_add(rhs.total_micros())
-                .expect("overflow when adding durations"),
-        )
+        let micros = self.micros.saturating_add(rhs.micros);
+        Self { micros }
     }
 }
 
@@ -115,11 +112,8 @@ impl ops::Sub<Duration> for Instant {
     type Output = Self;
 
     fn sub(self, rhs: Duration) -> Self {
-        Self::from_micros(
-            self.total_micros()
-                .checked_sub(rhs.total_micros())
-                .expect("underflow when subtracting durations"),
-        )
+        let micros = self.micros.saturating_sub(rhs.micros);
+        Self { micros }
     }
 }
 
@@ -134,7 +128,8 @@ impl ops::Sub<Self> for Instant {
     type Output = Duration;
 
     fn sub(self, rhs: Self) -> Duration {
-        Duration::from_micros(self.total_micros().abs_diff(rhs.total_micros()))
+        let micros = self.micros.abs_diff(rhs.micros);
+        Duration { micros }
     }
 }
 
@@ -165,9 +160,7 @@ impl Duration {
     #[inline]
     /// Create a new `Duration` from a number of milliseconds.
     pub const fn from_millis(millis: u64) -> Self {
-        let micros = millis
-            .checked_mul(MICROS_PER_MILLI)
-            .expect("millis overflowed");
+        let micros = millis.saturating_mul(MICROS_PER_MILLI);
         Self::from_micros(micros)
     }
     #[must_use]
@@ -175,7 +168,7 @@ impl Duration {
     #[inline]
     /// Create a new `Duration` from a number of seconds.
     pub const fn from_secs(secs: u64) -> Self {
-        let micros = secs.checked_mul(MICROS_PER_SEC).expect("secs overflowed");
+        let micros = secs.saturating_mul(MICROS_PER_SEC);
         Self::from_micros(micros)
     }
 
@@ -225,11 +218,8 @@ impl ops::Add<Self> for Duration {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        Self::from_micros(
-            self.total_micros()
-                .checked_add(rhs.total_micros())
-                .expect("overflow when adding durations"),
-        )
+        let micros = self.micros.saturating_add(rhs.micros);
+        Self { micros }
     }
 }
 
@@ -244,11 +234,8 @@ impl ops::Sub<Self> for Duration {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        Self::from_micros(
-            self.total_micros()
-                .checked_sub(rhs.total_micros())
-                .expect("underflow when subtracting durations"),
-        )
+        let micros = self.micros.saturating_sub(rhs.micros);
+        Self { micros }
     }
 }
 
@@ -263,11 +250,8 @@ impl<T: Into<u64>> ops::Mul<T> for Duration {
     type Output = Self;
 
     fn mul(self, rhs: T) -> Self {
-        Self::from_micros(
-            self.micros
-                .checked_mul(rhs.into())
-                .expect("overflow when multiplying durations"),
-        )
+        let micros = self.micros.saturating_mul(rhs.into());
+        Self { micros }
     }
 }
 
@@ -282,11 +266,8 @@ impl<T: Into<u64>> ops::Div<T> for Duration {
     type Output = Self;
 
     fn div(self, rhs: T) -> Self {
-        Self::from_micros(
-            self.micros
-                .checked_div(rhs.into())
-                .expect("division by zero when dividing durations"),
-        )
+        let micros = self.micros / rhs.into();
+        Self { micros }
     }
 }
 
@@ -389,14 +370,14 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "overflow when adding durations")]
     fn test_duration_overflow() {
-        let _ = Duration::MAX + Duration::from_millis(1);
+        let overflow = Duration::MAX + Duration::from_millis(1);
+        assert_eq!(overflow, Duration::MAX);
     }
     #[test]
-    #[should_panic(expected = "underflow when subtracting durations")]
     fn test_duration_underflow() {
-        let _ = Duration::from_millis(0) - Duration::from_millis(1);
+        let underflow = Duration::ZERO - Duration::from_millis(1);
+        assert_eq!(underflow, Duration::ZERO);
     }
 
     #[test]

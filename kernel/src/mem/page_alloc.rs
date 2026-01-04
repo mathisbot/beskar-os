@@ -31,10 +31,9 @@ impl<const N: usize> PageAllocator<N> {
     }
 
     pub fn allocate_pages<S: MemSize>(&mut self, count: u64) -> Option<PageRangeInclusive<S>> {
-        let start_vaddr = self.vranges.allocate(S::SIZE * count, S::SIZE)?;
+        let start_vaddr = self.vranges.allocate(S::SIZE * count, S::ALIGNMENT)?;
 
-        let first_page =
-            Page::containing_address(VirtAddr::new_extend(u64::try_from(start_vaddr).unwrap()));
+        let first_page = Page::containing_address(VirtAddr::new_extend(start_vaddr));
 
         Some(Page::range_inclusive(first_page, first_page + (count - 1)))
     }
@@ -45,18 +44,16 @@ impl<const N: usize> PageAllocator<N> {
         count: u64,
     ) -> Option<(Page<M4KiB>, PageRangeInclusive<M4KiB>, Page<M4KiB>)> {
         let size = M4KiB::SIZE * (count + 2);
-        let alignment = M4KiB::SIZE;
+        let alignment = M4KiB::ALIGNMENT;
 
-        let start_vaddr =
-            VirtAddr::new_extend(u64::try_from(self.vranges.allocate(size, alignment)?).unwrap());
+        let start_vaddr = self.vranges.allocate(size, alignment)?;
+        let start_vaddr = VirtAddr::new_extend(start_vaddr);
 
         let guard_page_start = Page::<M4KiB>::containing_address(start_vaddr);
-
         let usable_pages = Page::range_inclusive(
             Page::<M4KiB>::containing_address(start_vaddr + M4KiB::SIZE),
             Page::<M4KiB>::containing_address(start_vaddr + M4KiB::SIZE * count),
         );
-
         let guard_page_end =
             Page::<M4KiB>::containing_address(start_vaddr + M4KiB::SIZE * (count + 1));
 

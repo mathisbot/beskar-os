@@ -147,6 +147,7 @@ impl LocalApic {
             address_space::with_kernel_pt(|page_table| {
                 page_table
                     .map(page, frame, apic_flags, &mut *frame_allocator)
+                    .expect("Failed to map LAPIC frame")
                     .flush();
             });
         });
@@ -453,6 +454,7 @@ impl IoApic {
                 // The frame is reserved by the UEFI, so it is already allocated.
                 page_table
                     .map(page, frame, apic_flags, frame_allocator)
+                    .expect("Failed to map IOAPIC frame")
                     .flush();
             });
         });
@@ -559,7 +561,7 @@ impl IoApic {
     /// Returns the ID of the IO APIC.
     ///
     /// This ID is NOT valid until the IO APIC has been initialized.
-    pub fn id(&self) -> u8 {
+    pub fn _id(&self) -> u8 {
         let id = self.read_reg(IoApicReg::Id);
         u8::try_from((id >> 24) & 0xF).unwrap()
     }
@@ -572,7 +574,7 @@ impl IoApic {
     }
 
     #[must_use]
-    pub fn version(&self) -> u8 {
+    pub fn _version(&self) -> u8 {
         let ver = self.read_reg(IoApicReg::Version);
         u8::try_from(ver & 0xFF).unwrap()
     }
@@ -584,7 +586,7 @@ impl IoApic {
     }
 
     #[must_use]
-    pub fn arbitration_id(&self) -> u8 {
+    pub fn _arbitration_id(&self) -> u8 {
         let arb = self.read_reg(IoApicReg::Arbitration);
         u8::try_from((arb >> 24) & 0xF).unwrap()
     }

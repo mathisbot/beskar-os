@@ -1,5 +1,6 @@
 use crate::screen::with_screen;
 use beskar_core::video::{PixelComponents, writer::FramebufferWriter};
+#[cfg(debug_assertions)]
 use beskar_hal::port::serial::com::{ComNumber, SerialCom};
 use core::{
     fmt::Write,

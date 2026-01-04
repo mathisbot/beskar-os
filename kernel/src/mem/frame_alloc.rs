@@ -51,12 +51,11 @@ impl FrameAllocator {
     /// Allocate a frame anywhere in memory
     pub fn alloc<S: MemSize>(&mut self) -> Option<Frame<S>> {
         let size = S::SIZE;
-        let alignment = S::SIZE;
+        let alignment = S::ALIGNMENT;
 
         let addr = self.memory_ranges.allocate(size, alignment)?;
-        let paddr = PhysAddr::new_truncate(u64::try_from(addr).unwrap());
-        let frame = Frame::containing_address(paddr);
-        Some(frame)
+        let paddr = PhysAddr::new_truncate(addr);
+        Some(paddr.frame())
     }
 
     #[must_use]
@@ -71,9 +70,8 @@ impl FrameAllocator {
         let addr = self
             .memory_ranges
             .allocate_req(size, alignment, req_ranges)?;
-        let paddr = PhysAddr::new_truncate(u64::try_from(addr).unwrap());
-        let frame = Frame::containing_address(paddr);
-        Some(frame)
+        let paddr = PhysAddr::new_truncate(addr);
+        Some(paddr.frame())
     }
 
     /// Free a frame

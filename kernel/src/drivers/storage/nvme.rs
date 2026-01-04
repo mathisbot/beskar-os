@@ -78,7 +78,8 @@ impl NvmeControllers {
         let flags = Flags::MMIO_SUITABLE;
 
         let doorbell_stride = {
-            let physical_mapping = PhysicalMapping::<M4KiB>::new(paddr, size_of::<u64>(), flags);
+            let physical_mapping =
+                PhysicalMapping::<M4KiB>::new(paddr, size_of::<u64>(), flags).unwrap();
             let cap_ptr = NonNull::new(
                 physical_mapping
                     .translate(paddr)
@@ -94,7 +95,8 @@ impl NvmeControllers {
             paddr,
             0x1000 + 2 * (MAX_QUEUES + 1) * doorbell_stride,
             flags,
-        );
+        )
+        .unwrap();
         let registers_base = physical_mapping.translate(paddr).unwrap();
 
         let asq_doorbell = Volatile::new(
@@ -180,7 +182,8 @@ impl NvmeControllers {
                 frame.start_address(),
                 size_of::<queue::admin::IdentifyController>(),
                 Flags::PRESENT | Flags::NO_EXECUTE | Flags::CACHE_DISABLED,
-            );
+            )
+            .unwrap();
             let vaddr = pmap.translate(frame.start_address()).unwrap();
             let ptr = vaddr.as_ptr::<queue::admin::IdentifyController>();
             // Wait for command completion

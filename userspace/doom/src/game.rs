@@ -44,8 +44,8 @@ extern "C" fn print(s: *const c_char) {
 extern "C" fn print(_s: *const c_char) {}
 
 extern "C" fn malloc(size: i32) -> *mut c_void {
+    // `alloc` states the layout size must be non-zero.
     if size == 0 {
-        // `alloc` states the layout size must be non-zero.
         return core::ptr::dangling_mut();
     }
 
@@ -54,6 +54,13 @@ extern "C" fn malloc(size: i32) -> *mut c_void {
         core::alloc::Layout::from_size_align(size, core::mem::align_of::<*const ()>()).unwrap();
 
     let ptr = unsafe { alloc::alloc::alloc(layout) };
+
+    assert!(
+        !ptr.is_null(),
+        "malloc failed: out of memory (requested {} bytes)",
+        size
+    );
+
     ptr.cast()
 }
 
@@ -149,27 +156,25 @@ extern "C" fn seek(handle: *const c_void, offset: i32, whence: DoomSeekT) -> i32
 
     match whence {
         DoomSeekT::Set => {
-            WAD_POS.store(usize::try_from(offset).unwrap(), Ordering::Relaxed);
+            let Ok(offset) = usize::try_from(offset) else {
+                return -1;
+            };
+            WAD_POS.store(offset, Ordering::Relaxed);
             0
         }
         DoomSeekT::Cur => {
-            let res = WAD_POS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |pos| {
-                Some(
-                    usize::try_from(
-                        isize::try_from(pos).unwrap() + isize::try_from(offset).unwrap(),
-                    )
-                    .unwrap(),
-                )
-            });
-            match res {
-                Ok(_) => 0,
-                Err(_) => -1,
+            let current_pos = WAD_POS.load(Ordering::Relaxed) as isize;
+            let new_pos = current_pos.saturating_add(offset as isize);
+            if new_pos < 0 || new_pos as usize > WAD.len() {
+                return -1;
             }
+            WAD_POS.store(new_pos as usize, Ordering::Relaxed);
+            0
         }
         DoomSeekT::End => {
-            let end = isize::try_from(WAD.len()).unwrap();
-            let pos = (end + isize::try_from(offset).unwrap()).clamp(0, end);
-            WAD_POS.store(usize::try_from(pos).unwrap(), Ordering::Relaxed);
+            let end = WAD.len() as isize;
+            let pos = (end + (offset as isize)).clamp(0, end);
+            WAD_POS.store(pos as usize, Ordering::Relaxed);
             0
         }
     }

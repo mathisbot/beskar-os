@@ -65,6 +65,7 @@ pub fn start_up_aps(core_count: usize) {
                     Flags::PRESENT | Flags::WRITABLE,
                     &mut *frame_allocator,
                 )
+                .expect("Failed to map AP trampoline code")
                 .flush();
         });
     });
@@ -156,25 +157,12 @@ fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
 
 #[must_use]
 fn allocate_stack(nb_pages: u64) -> VirtAddr {
-    let stack_pages = address_space::with_kernel_pgalloc(|page_allocator| {
-        page_allocator.allocate_pages::<M4KiB>(nb_pages).unwrap()
-    });
-
-    frame_alloc::with_frame_allocator(|frame_allocator| {
-        address_space::with_kernel_pt(|page_table| {
-            for page in stack_pages {
-                let frame = frame_allocator.alloc::<M4KiB>().unwrap();
-                page_table
-                    .map(
-                        page,
-                        frame,
-                        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
-                        frame_allocator,
-                    )
-                    .flush();
-            }
-        });
-    });
+    let stack_pages = address_space::get_kernel_address_space()
+        .alloc_map::<M4KiB>(
+            usize::try_from(nb_pages * M4KiB::SIZE).unwrap(),
+            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+        )
+        .expect("Failed to allocate stack");
 
     (stack_pages.end().start_address() + (M4KiB::SIZE - 1)).aligned_down(Alignment::Align16)
 }

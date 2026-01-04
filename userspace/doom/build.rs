@@ -9,8 +9,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(filename) = entry.file_name().to_str()
             && filename.ends_with(".c")
         {
-            println!("cargo::rerun-if-changed={}", filename);
-            c_files.push(srcd.join(filename));
+            let filepath = srcd.join(filename);
+            println!("cargo::rerun-if-changed={}", filepath.display());
+            c_files.push(filepath);
         }
     }
 

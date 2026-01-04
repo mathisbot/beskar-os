@@ -8,7 +8,9 @@ use beskar_hal::{
     paging::page_table::{Entries, Flags, PageTable},
     registers::{Cr3, Efer},
 };
-use bootloader_api::{KERNEL_AS_BASE, KERNEL_POOL_BASE, KERNEL_PT_START_ENTRY, KernelInfo};
+use bootloader_api::{
+    KERNEL_AS_BASE, KERNEL_POOL_BASE, KERNEL_PT_START_ENTRY, KernelInfo, USER_PT_END_ENTRY,
+};
 use hyperdrive::{locks::mcs::McsLock, once::Once};
 
 static KERNEL_ADDRESS_SPACE: Once<AddressSpace> = Once::uninit();
@@ -99,6 +101,7 @@ impl AddressSpace {
                         Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
                         frame_allocator,
                     )
+                    .expect("Failed to allocate new PML4 frame")
                     .flush();
             });
             frame
@@ -135,7 +138,7 @@ impl AddressSpace {
         // Create a new process page allocator with 256 PLM4 index free (128TiB)
         let pgalloc = {
             let start_page = Page::<M4KiB>::from_p4p3p2p1(0, 0, 0, 1);
-            let end_page = Page::<M4KiB>::from_p4p3p2p1(KERNEL_PT_START_ENTRY - 1, 511, 511, 511);
+            let end_page = Page::<M4KiB>::from_p4p3p2p1(USER_PT_END_ENTRY, 511, 511, 511);
 
             let start_vaddr = start_page.start_address();
             let end_vaddr = end_page.start_address() + (M4KiB::SIZE - 1);
@@ -212,16 +215,43 @@ impl AddressSpace {
         let page_range = self.with_pgalloc(|pgalloc| pgalloc.allocate_pages(pages))?;
 
         frame_alloc::with_frame_allocator(|frame_allocator| {
-            for page in page_range {
-                let frame = frame_allocator.alloc()?;
-                self.with_page_table(|page_table| {
+            self.with_page_table(|page_table| {
+                for page in page_range {
+                    let frame = frame_allocator.alloc()?;
                     page_table
                         .map(page, frame, flags | Flags::PRESENT, frame_allocator)
+                        .ok()?
                         .flush();
-                });
-            }
-            Some(())
+                }
+                Some(())
+            })
         })?;
+
+        Some(page_range)
+    }
+
+    #[must_use]
+    /// Allocate and map a zeroed memory region of the given size with the given flags.
+    ///
+    /// Note that it acquires locks on the process-specific page allocator, then on both the system-wide frame allocator and
+    /// the process-specific page allocator.
+    pub fn alloc_map_zeroed<S: MemSize>(
+        &self,
+        size: usize,
+        flags: Flags,
+    ) -> Option<PageRangeInclusive<S>>
+    where
+        PageTable<'static>: Mapper<S, beskar_hal::paging::page_table::Flags>,
+    {
+        let page_range = self.alloc_map::<S>(size, flags)?;
+
+        unsafe {
+            page_range
+                .start()
+                .start_address()
+                .as_mut_ptr::<u8>()
+                .write_bytes(0, size);
+        }
 
         Some(page_range)
     }
@@ -242,7 +272,7 @@ impl AddressSpace {
         frame_alloc::with_frame_allocator(|frame_allocator| {
             self.with_page_table(|page_table| {
                 for page in page_range {
-                    if let Some((frame, flush)) = page_table.unmap(page) {
+                    if let Ok((frame, flush)) = page_table.unmap(page) {
                         flush.flush();
                         frame_allocator.free(frame);
                     }

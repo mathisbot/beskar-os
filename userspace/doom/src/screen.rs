@@ -38,24 +38,24 @@ fn with_screen<R, F: FnOnce(&mut FrameBuffer) -> R>(f: F) -> R {
 }
 
 /// Draw the Doom framebuffer to the screen
-///
-/// # Panics
-///
-/// Panics if flushing to the screen fails.
 pub fn draw() {
     let fb_start = unsafe { doom_get_framebuffer(CHANNELS.try_into().unwrap()) };
-    let fb =
-        unsafe { core::slice::from_raw_parts(fb_start, SCREENWIDTH * SCREENHEIGHT * CHANNELS) };
+    let fb_raw = core::ptr::slice_from_raw_parts(fb_start, SCREENWIDTH * SCREENHEIGHT * CHANNELS);
+
+    let Some(fb) = (unsafe { fb_raw.as_ref() }) else {
+        beskar_lib::println!("Warning: Doom framebuffer is not initialized");
+        return;
+    };
 
     let stride = usize::from(screen_info().stride());
+    let bpp = usize::from(screen_info().bytes_per_pixel());
+    let stride_bytes = stride * bpp;
     with_screen(|screen| {
         let mut buffer_mut = screen.buffer_mut();
         for row in fb.chunks_exact(SCREENWIDTH * CHANNELS) {
             buffer_mut[..SCREENWIDTH * CHANNELS].copy_from_slice(row);
-            buffer_mut = &mut buffer_mut[stride * CHANNELS..];
+            buffer_mut = &mut buffer_mut[stride_bytes..];
         }
-        screen
-            .flush(Some(&(0..u16::try_from(SCREENHEIGHT).unwrap())))
-            .unwrap();
+        let _ = screen.flush(Some(&(0..u16::try_from(SCREENHEIGHT).unwrap())));
     });
 }

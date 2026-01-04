@@ -77,7 +77,7 @@ macro_rules! read_reg {
             fn new(paddr: PhysAddr, $($field_name: $field_type),*) -> Self {
                 let flags = ::beskar_hal::paging::page_table::Flags::MMIO_SUITABLE;
 
-                let physical_mapping = PhysicalMapping::new(paddr, size_of::<u64>(), flags);
+                let physical_mapping = PhysicalMapping::new(paddr, size_of::<u64>(), flags).unwrap();
                 let vaddr = physical_mapping.translate(paddr).unwrap();
                 Self {
                     vaddr,
@@ -121,7 +121,7 @@ impl GeneralCapabilities {
         let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
         let physical_mapping =
-            PhysicalMapping::<M4KiB>::new(paddr, core::mem::size_of::<u64>(), flags);
+            PhysicalMapping::<M4KiB>::new(paddr, core::mem::size_of::<u64>(), flags).unwrap();
         let vaddr = physical_mapping.translate(paddr).unwrap();
         Self(unsafe { vaddr.as_ptr::<u64>().read() })
     }
