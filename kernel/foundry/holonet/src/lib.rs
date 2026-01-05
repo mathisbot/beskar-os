@@ -12,9 +12,27 @@ pub mod l4;
 mod utils;
 
 pub trait Nic {
+    /// Get the MAC address of this network interface.
     fn mac_address(&self) -> crate::l2::ethernet::MacAddress;
+
+    /// Poll for an incoming frame. Returns a reference to the frame data if available.
+    /// The caller must call `consume_frame()` after processing the frame to release the buffer.
+    /// Calling `poll_frame()` multiple times without calling `consume_frame()` will return
+    /// the same frame.
+    ///
+    /// # Safety considerations
+    ///
+    /// This method takes `&self` to allow reading without exclusive access. However, the buffer
+    /// must not be modified until `consume_frame()` is called. The driver is responsible for
+    /// ensuring hardware doesn't write to the current buffer.
     fn poll_frame(&self) -> Option<&[u8]>;
-    fn send_frame(&self, frame: &[u8]);
+
+    /// Consume the current frame and advance to the next one.
+    /// This must be called after processing a frame obtained from `poll_frame()`.
+    fn consume_frame(&mut self);
+
+    /// Send a frame on the network.
+    fn send_frame(&mut self, frame: &[u8]);
 }
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
