@@ -93,6 +93,7 @@ pub enum IdentifyTarget {
 pub struct AdminSubmissionEntry(SubmissionEntry);
 
 impl AdminSubmissionEntry {
+    #[must_use]
     pub fn new_identify(target: IdentifyTarget, buffer: Frame) -> Self {
         let mut entry = SubmissionEntry::zero_with_opcode(Command::Identify as u8);
 
@@ -108,6 +109,12 @@ impl AdminSubmissionEntry {
         entry.command_specific[0] = dword10;
 
         Self(entry)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn command_id(&self) -> u16 {
+        self.0.command_id().as_u16()
     }
 }
 
@@ -268,4 +275,32 @@ impl IdentifyController {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdminCompletionEntry(CompletionEntry);
+
+impl AdminCompletionEntry {
+    #[must_use]
+    #[inline]
+    pub const fn has_finished(self) -> bool {
+        self.0.has_finished()
+    }
+
+    #[must_use]
+    #[inline]
+    /// Check if the command was successful
+    ///
+    /// This value only has meaning if `has_finished` returns true.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the command has not finished.
+    pub const fn is_success(self) -> bool {
+        self.0.is_success()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn command_id(self) -> u16 {
+        self.0.command_id().as_u16()
+    }
+}

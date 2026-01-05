@@ -31,8 +31,7 @@ impl KeyboardManager {
     #[inline]
     pub fn push_event(&self, event: KeyEvent) {
         let push_res = self.event_queue.try_push(event);
-        #[cfg(debug_assertions)]
-        if push_res.is_err() {
+        if cfg!(debug_assertions) && push_res.is_err() {
             // FIXME: Override old events instead of dropping new ones.
             video::debug!("Keyboard event queue is full, dropping event: {:?}", event);
         }

@@ -40,9 +40,7 @@ pub(crate) unsafe fn init_heap(start: *mut u8, size: usize) {
 ///
 /// Returns an error if the memory cannot be mapped.
 pub fn mmap(size: u64, alignment: Option<NonZeroU64>) -> MemoryResult<NonNull<u8>> {
-    if let Some(a) = alignment
-        && !a.get().is_power_of_two()
-    {
+    if alignment.is_some_and(|a| !a.get().is_power_of_two()) {
         return Err(MemoryError::new(MemoryErrorKind::InvalidAlignment));
     }
 

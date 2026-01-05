@@ -239,8 +239,8 @@ impl E1000e<'_> {
         self.write_reg(Self::RCTL, rctl_value);
 
         assert!(txdesc_paddr.as_u64().trailing_zeros() >= 4);
-        let tx_hi = u32::try_from(rxdesc_paddr.as_u64() >> 32).unwrap();
-        let tx_lo = u32::try_from(rxdesc_paddr.as_u64() & u64::from(u32::MAX)).unwrap();
+        let tx_hi = u32::try_from(txdesc_paddr.as_u64() >> 32).unwrap();
+        let tx_lo = u32::try_from(txdesc_paddr.as_u64() & u64::from(u32::MAX)).unwrap();
 
         self.write_reg(Self::TDBAL0, tx_lo);
         self.write_reg(Self::TDBAH0, tx_hi);

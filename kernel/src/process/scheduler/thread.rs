@@ -9,7 +9,9 @@ use beskar_core::arch::{
     Alignment, VirtAddr,
     paging::{CacheFlush, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
 };
-use beskar_hal::{instructions::STACK_DEBUG_INSTR, paging::page_table::Flags};
+#[cfg(debug_assertions)]
+use beskar_hal::instructions::STACK_DEBUG_INSTR;
+use beskar_hal::paging::page_table::Flags;
 use core::{
     mem::offset_of,
     pin::Pin,

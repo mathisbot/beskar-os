@@ -68,9 +68,14 @@ macro_rules! entry_point {
 #[doc(hidden)]
 pub fn __init() {
     call_once!({
-        let res = mem::mmap(mem::HEAP_SIZE, None).expect("Memory mapping failed");
-        unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };
+        // Heap
+        {
+            let heap_size = mem::HEAP_SIZE;
+            let res = mem::mmap(heap_size, None).expect("Memory mapping failed");
+            unsafe { mem::init_heap(res.as_ptr(), heap_size.try_into().unwrap()) };
+        }
 
+        // Time
         time::init();
     });
 }

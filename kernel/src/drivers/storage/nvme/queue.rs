@@ -128,8 +128,6 @@ impl CompletionQueue {
             return None;
         }
 
-        assert!(entry.is_success());
-
         self.flush();
 
         self.0.head = self.0.head.wrapping_add(1) % self.0.size;
@@ -172,6 +170,12 @@ impl SubmissionEntry {
             command_specific: [0; 6],
         }
     }
+
+    #[must_use]
+    #[inline]
+    pub fn command_id(&self) -> CommandIdentifier {
+        self.dword0.id()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,8 +205,8 @@ impl CommandDwordZero {
 
     #[must_use]
     #[inline]
-    pub fn id(self) -> u16 {
-        u16::try_from(self.0 >> 16).unwrap()
+    pub fn id(self) -> CommandIdentifier {
+        CommandIdentifier(u16::try_from(self.0 >> 16).unwrap())
     }
 }
 
@@ -242,6 +246,12 @@ impl CompletionEntry {
     pub const fn is_success(self) -> bool {
         assert!(self.has_finished());
         self.status & (u16::MAX - 1) == 0
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn command_id(self) -> CommandIdentifier {
+        self.cid
     }
 }
 

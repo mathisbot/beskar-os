@@ -288,10 +288,9 @@ impl<const N: usize> MemoryRanges<N> {
                 continue;
             }
 
-            // let range_size = range.end - range.start;
-            let range_size = end - aligned_start;
-            if best_fit.is_none_or(|(_, _, best_size)| range_size < best_size) {
-                best_fit = Some((aligned_start, end, range_size));
+            let waste = alignment_offset + (range.end - end);
+            if best_fit.is_none_or(|(_, _, best_size)| waste < best_size) {
+                best_fit = Some((aligned_start, end, waste));
             }
         }
 
@@ -306,16 +305,16 @@ impl<const N: usize> MemoryRanges<N> {
     pub fn allocate_req<const M: usize>(
         &mut self,
         size: u64,
-        alignment: u64,
+        alignment: Alignment,
         req_ranges: &MemoryRanges<M>,
     ) -> Option<u64> {
         // Validate inputs
-        if size == 0 || !alignment.is_power_of_two() {
+        if size == 0 {
             return None;
         }
 
-        let alignment_mask = alignment - 1;
-        let mut best_fit: Option<(u64, u64, u64, u64)> = None;
+        let alignment_mask = alignment.mask();
+        let mut best_fit: Option<(u64, u64, u64)> = None;
 
         for range in &self.ranges[..self.used] {
             for req_range in &req_ranges.ranges[..req_ranges.used] {
@@ -329,31 +328,28 @@ impl<const N: usize> MemoryRanges<N> {
 
                 // Calculate aligned start within overlap
                 let offset = overlap_start & alignment_mask;
-                let alignment_offset = if offset == 0 { 0 } else { alignment - offset };
+                let alignment_offset = (alignment.as_u64() - offset) & alignment_mask;
                 let aligned_start = match overlap_start.checked_add(alignment_offset) {
                     Some(a) if a <= overlap_end => a,
                     _ => continue,
                 };
 
                 // Check if allocation fits
-                let end = match aligned_start
-                    .checked_add(size)
-                    .and_then(|e| e.checked_sub(1))
-                {
+                let end = match aligned_start.checked_add(size - 1) {
                     Some(e) if e <= overlap_end => e,
                     _ => continue,
                 };
 
-                let alloc_size = end - aligned_start;
-                if best_fit.is_none_or(|(_, _, prev_size, _)| alloc_size < prev_size) {
-                    best_fit = Some((aligned_start, end, alloc_size, aligned_start));
+                let waste = alignment_offset + (range.end - end);
+                if best_fit.is_none_or(|(_, _, best_size)| waste < best_size) {
+                    best_fit = Some((aligned_start, end, waste));
                 }
             }
         }
 
-        best_fit.map(|(start, end, _, addr)| {
+        best_fit.map(|(start, end, _)| {
             self.remove(MemoryRange::new(start, end));
-            addr
+            start
         })
     }
 
@@ -494,7 +490,7 @@ mod tests {
         req_ranges.insert(MemoryRange::new(500, 600));
 
         // Allocate in required range
-        let addr = ranges.allocate_req(50, 8, &req_ranges);
+        let addr = ranges.allocate_req(50, Alignment::Align8, &req_ranges);
         assert!(addr.is_some());
         let addr = addr.unwrap();
         assert!(addr >= 100 && addr <= 200 || addr >= 500 && addr <= 600);

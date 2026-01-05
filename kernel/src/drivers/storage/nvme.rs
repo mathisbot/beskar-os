@@ -174,6 +174,7 @@ impl NvmeControllers {
             queue::admin::IdentifyTarget::Controller,
             frame,
         );
+        let identify_cmd_id = identify_cmd.command_id();
 
         self.asq.push(&identify_cmd);
 
@@ -190,9 +191,14 @@ impl NvmeControllers {
             // Completion also triggers an interrupt!
             // TODO: On interrupt, dequeue the completion queue into another Rustier queue/tree
             // intended to be browsed by command identifier
-            while self.acq.pop().is_none() {
+            let res = loop {
+                if let Some(v) = self.acq.pop() {
+                    break v;
+                }
                 core::hint::spin_loop();
-            }
+            };
+            assert!(res.is_success());
+            assert!(res.command_id() == identify_cmd_id);
             unsafe { ptr.read() }
         };
 

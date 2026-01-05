@@ -65,7 +65,7 @@ impl FrameAllocator {
         req_ranges: &MemoryRanges<M>,
     ) -> Option<Frame<S>> {
         let size = S::SIZE;
-        let alignment = S::SIZE;
+        let alignment = S::ALIGNMENT;
 
         let addr = self
             .memory_ranges
