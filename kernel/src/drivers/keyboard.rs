@@ -1,12 +1,14 @@
 use beskar_core::drivers::keyboard::KeyEvent;
+use driver_api::DriverResult;
 use hyperdrive::{once::Once, queues::mpmc::MpmcQueue};
 
 const QUEUE_SIZE: usize = 25;
 
 static KEYBOARD_MANAGER: Once<KeyboardManager> = Once::uninit();
 
-pub fn init() {
+pub fn init() -> DriverResult<()> {
     KEYBOARD_MANAGER.call_once(KeyboardManager::new);
+    Ok(())
 }
 
 pub struct KeyboardManager {

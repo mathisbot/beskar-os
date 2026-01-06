@@ -41,8 +41,6 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::Open => SyscallReturnValue::ValueI(sc_open(args)),
         Syscall::Close => SyscallReturnValue::Code(sc_close(args)),
         Syscall::Sleep => SyscallReturnValue::Code(sc_sleep(args)),
-
-        Syscall::Invalid => SyscallReturnValue::Code(SyscallExitCode::Failure),
     }
 }
 

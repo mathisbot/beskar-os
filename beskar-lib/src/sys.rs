@@ -16,7 +16,7 @@ pub fn sc_open(path: *const u8, len: u64) -> i64 {
 #[inline]
 pub fn sc_close(handle: i64) -> SyscallExitCode {
     let res = syscalls::syscall_1(Syscall::Close, handle.cast_unsigned());
-    SyscallExitCode::from(res)
+    SyscallExitCode::try_from(res).unwrap()
 }
 
 #[inline]
@@ -52,5 +52,5 @@ pub fn sc_mmap(size: u64, alignment: u64) -> *mut u8 {
 #[inline]
 pub fn sc_sleep(ms: u64) -> SyscallExitCode {
     let res = syscalls::syscall_1(Syscall::Sleep, ms);
-    SyscallExitCode::from(res)
+    SyscallExitCode::try_from(res).unwrap()
 }

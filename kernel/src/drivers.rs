@@ -17,7 +17,7 @@ pub extern "C" fn init() -> ! {
 
     // TODO: Start each driver's process when needed
 
-    keyboard::init();
+    let _ = keyboard::init();
 
     #[cfg(target_arch = "x86_64")]
     let _ = ps2::init();

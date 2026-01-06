@@ -2,7 +2,7 @@ use crate::{
     locals,
     syscall::{Arguments, syscall},
 };
-use beskar_core::syscall::Syscall;
+use beskar_core::syscall::{Syscall, SyscallExitCode, SyscallReturnValue};
 use beskar_hal::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors};
 
 #[derive(Debug, Clone, Copy)]
@@ -100,7 +100,12 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
         six: regs.r9,
     };
 
-    let res = syscall(Syscall::from(regs.rax), &args);
+    let ssn = Syscall::try_from(regs.rax);
+
+    let res = match ssn {
+        Ok(ssn) => syscall(Syscall::from(ssn), &args),
+        Err(_) => SyscallReturnValue::Code(SyscallExitCode::InvalidSyscallNumber),
+    };
 
     // Store result
     regs.rax = res.as_u64();
