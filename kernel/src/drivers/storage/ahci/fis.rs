@@ -58,7 +58,7 @@ impl FisH2D {
     pub const fn new() -> Self {
         Self {
             fis_type: FisType::RegisterHostToDevice as u8,
-            pmport_c: 0x80,  // Command flag
+            pmport_c: 0x80, // Command flag
             command: 0,
             feature_l: 0,
             lba0: 0,
@@ -136,7 +136,7 @@ pub struct FisD2H {
 impl FisD2H {
     /// Check if this FIS represents an error
     pub fn is_error(&self) -> bool {
-        (self.status & 0x01) != 0  // ERR bit
+        (self.status & 0x01) != 0 // ERR bit
     }
 
     /// Get the error bits
