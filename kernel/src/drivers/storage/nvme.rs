@@ -395,7 +395,7 @@ impl NvmeControllers {
 }
 
 extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    video::info!("NVMe INTERRUPT on core {}", locals!().core_id());
+    video::debug!("NVMe INTERRUPT on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 

@@ -1,4 +1,3 @@
-// FIXME: <https://wiki.osdev.org/AHCI#Determining_what_mode_the_controller_is_in>
 use crate::mem::page_alloc::pmap::PhysicalMapping;
 use ::pci::{Bar, Device};
 use beskar_core::{
@@ -7,8 +6,27 @@ use beskar_core::{
 };
 use beskar_hal::paging::page_table::Flags;
 
+mod command;
+mod fis;
+pub use fis::{AtaCommand, FisD2H, FisH2D, FisType};
+mod port;
+use port::AhciPort;
+mod registers;
+use registers::AhciRegisters;
+
+/// Timeout for controller operations (in iterations)
+const CONTROLLER_TIMEOUT: usize = 100_000_000;
+
+/// AHCI Global Host Control Register
+const GHC_OFFSET: u32 = 0x04;
+/// AHCI version register
+const VS_OFFSET: u32 = 0x00;
+/// Number of ports register
+const PI_OFFSET: u32 = 0x0C;
+/// Controller capabilities register
+const CAP_OFFSET: u32 = 0x00;
+
 pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
-    // TODO: Support for multiple AHCI controllers?
     let Some(controller) = ahci_controllers.first() else {
         return Err(DriverError::Absent);
     };
@@ -16,159 +34,101 @@ pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
     let Some(Bar::Memory(bar)) =
         crate::drivers::pci::with_pci_handler(|handler| handler.read_bar(controller, 5))
     else {
-        unreachable!();
+        return Err(DriverError::Absent);
     };
 
     let ahci_paddr = bar.base_address();
-
     let flags = Flags::MMIO_SUITABLE;
-    let pmap = PhysicalMapping::<M4KiB>::new(ahci_paddr, 64, flags).unwrap();
+    let pmap =
+        PhysicalMapping::<M4KiB>::new(ahci_paddr, 256, flags).map_err(|_| DriverError::Unknown)?;
 
-    let ahci_base = pmap.translate(ahci_paddr).unwrap();
+    let ahci_base = pmap.translate(ahci_paddr).ok_or(DriverError::Unknown)?;
 
-    let _ahci = Ahci {
-        base: ahci_base,
-        pmap,
-    };
+    let mut ahci = Ahci::new(ahci_base, pmap)?;
+    ahci.initialize()?;
 
-    // TODO: Implement AHCI initialization
-
-    video::debug!("AHCI controller found");
+    video::info!("AHCI controller initialized successfully");
 
     Ok(())
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(u8)]
-enum FisType {
-    RegisterHostToDevice = 0x27,
-    RegisterDeviceToHost = 0x34,
-    DmaActivate = 0x39,
-    DmaSetup = 0x41,
-    Data = 0x46,
-    Bist = 0x58,
-    PioSetup = 0x5F,
-    SetDeviceBits = 0xA1,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(u8)]
-enum AtaCommand {
-    IdentifyDevice = 0xEC,
-    ReadSector = 0x20,
-    WriteSector = 0x30,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(C, packed)]
-struct FisH2D {
-    fis_type: FisType, // Must be FisType::RegisterHostToDevice
-    /// Bits 0-3: Port multiplier
-    /// Bits 4-6: Reserved
-    /// Bit 7: 1-Command 0-Control
-    pmport_c: u8,
-    command: AtaCommand,
-    feature_l: u8,
-    lba0: u8,
-    lba1: u8,
-    lba2: u8,
-    device: u8,
-    lba3: u8,
-    lba4: u8,
-    lba5: u8,
-    feature_h: u8,
-    count_l: u8,
-    count_h: u8,
-    icc: u8,
-    control: u8,
-    _reserved: [u8; 4],
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(C, packed)]
-struct FisD2H {
-    fis_type: FisType, // Must be FisType::RegisterDeviceToHost
-    /// Bits 0-3: Port multiplier
-    /// Bits 4-5: Reserved
-    /// Bit 6: Interrupt
-    /// Bit 7: Reserved
-    pmport: u8,
-    status: u8,
-    error: u8,
-    lba0: u8,
-    lba1: u8,
-    lba2: u8,
-    device: u8,
-    lba3: u8,
-    lba4: u8,
-    lba5: u8,
-    _reserved1: u8,
-    count_l: u8,
-    count_h: u8,
-    _reserved2: [u8; 6],
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(C, packed)]
-struct DataFis {
-    fis_type: FisType, // Must be FisType::Data
-    /// Bits 0-3: Port multiplier
-    /// Bits 4-7: Reserved
-    pmport: u8,
-    _reserved: [u8; 2],
-    /// Data, variable length
-    data: [u8; 1],
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(C, packed)]
-struct PioSetup {
-    fis_type: FisType, // Must be FisType::PioSetup
-    /// Bits 0-3: Port multiplier
-    /// Bits 4: Reserved
-    /// Bit 5: Data transfer direction (1-D2H, 0-H2D)
-    /// Bit 6: Interrupt
-    /// Bit 7: Reserved
-    pmport: u8,
-    status: u8,
-    error: u8,
-    lba0: u8,
-    lba1: u8,
-    lba2: u8,
-    device: u8,
-    lba3: u8,
-    lba4: u8,
-    lba5: u8,
-    _reserved1: u8,
-    count_l: u8,
-    count_h: u8,
-    _reserved2: u8,
-    e_status: u8,
-    transfer_count: u16,
-    _reserved3: [u8; 2],
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(C, packed)]
-struct DmaSetup {
-    fis_type: FisType, // Must be FisType::DmaSetup
-    /// Bits 0-3: Port multiplier
-    /// Bits 4: Reserved
-    /// Bit 5: Data transfer direction (1-D2H, 0-H2D)
-    /// Bit 6: Interrupt
-    /// Bit 7: Auto-activate
-    pmport: u8,
-    _reserved1: [u8; 2],
-    dma_buffer_id: u64,
-    _reserved2: [u8; 4],
-    /// First 2 bits must be 0
-    dma_buffer_offset: u32,
-    /// First bit must be 0
-    transfer_count: u32,
-    _reserved3: [u8; 4],
-}
-
+/// AHCI controller instance
 pub struct Ahci {
     base: VirtAddr,
     pmap: PhysicalMapping,
+    /// Number of ports supported by this controller
+    port_count: u32,
+}
+
+impl Ahci {
+    /// Create a new AHCI controller instance
+    fn new(base: VirtAddr, pmap: PhysicalMapping) -> DriverResult<Self> {
+        let regs = unsafe { AhciRegisters::from_base(base) };
+
+        let version = regs.version();
+        let capabilities = regs.capabilities();
+        let port_count = (capabilities.np() + 1) as u32;
+
+        video::debug!("AHCI version: {}.{}", version >> 16, version & 0xFFFF);
+        video::debug!("AHCI supports {} ports", port_count);
+
+        Ok(Self {
+            base,
+            pmap,
+            port_count,
+        })
+    }
+
+    /// Initialize the AHCI controller
+    fn initialize(&mut self) -> DriverResult<()> {
+        let regs = unsafe { AhciRegisters::from_base(self.base) };
+
+        // Enable AHCI mode (set AE bit in GHC)
+        let ghc = regs.ghc();
+        regs.set_ghc(ghc | 0x80000000);
+
+        // Wait for AHCI mode to be enabled
+        let mut timeout = CONTROLLER_TIMEOUT;
+        while (regs.ghc() & 0x80000000) == 0 && timeout > 0 {
+            timeout -= 1;
+        }
+        if timeout == 0 {
+            video::warn!("AHCI mode enable timeout");
+            return Err(DriverError::Unknown);
+        }
+
+        // Enable interrupts (set IE bit in GHC)
+        let ghc = regs.ghc();
+        regs.set_ghc(ghc | 0x00000002);
+
+        // Detect and initialize ports
+        self.probe_ports()?;
+
+        Ok(())
+    }
+
+    /// Probe all AHCI ports and initialize any attached drives
+    fn probe_ports(&self) -> DriverResult<()> {
+        let regs = unsafe { AhciRegisters::from_base(self.base) };
+        let ports_implemented = regs.ports_implemented();
+
+        for port_idx in 0..self.port_count {
+            // Check if this port is implemented
+            if (ports_implemented & (1 << port_idx)) == 0 {
+                continue;
+            }
+
+            let port_offset = 0x100 + (u64::from(port_idx) * 0x80);
+            let port_addr = self.base + port_offset;
+            let mut port = AhciPort::new(port_addr, port_idx)?;
+
+            // Check if a device is present
+            if port.is_device_present()? {
+                port.initialize()?;
+                video::debug!("AHCI port {} initialized with device", port_idx);
+            }
+        }
+
+        Ok(())
+    }
 }
