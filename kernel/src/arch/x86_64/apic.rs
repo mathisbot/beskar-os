@@ -10,7 +10,7 @@ use crate::{
 use acpi::sdt::madt::Lint;
 use beskar_core::arch::{
     PhysAddr,
-    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _},
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
 };
 use beskar_hal::{
     paging::page_table::Flags,
@@ -22,7 +22,10 @@ use core::{
     ptr::NonNull,
     sync::atomic::{AtomicU8, Ordering},
 };
-use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
+use hyperdrive::{
+    once::Once,
+    ptrs::volatile::{ReadWrite, Volatile, WriteOnly},
+};
 use timer::LapicTimer;
 
 pub mod ipi;
@@ -33,6 +36,13 @@ pub const MS_PER_INTERRUPT: u32 = 30;
 
 /// LAPIC timer divider
 const TIMER_DIVIDER: timer::Divider = timer::Divider::Eight;
+
+/// Global LAPIC MMIO base mapping shared across all cores.
+///
+/// We map the LAPIC frame once at a fixed virtual address and reuse it,
+/// avoiding per-core mappings that can differ and cause page faults if a
+/// thread migrates between cores between obtaining the pointer and using it.
+static LAPIC_MMIO_BASE: Once<Page> = Once::uninit();
 
 #[must_use]
 pub fn apic_id() -> u8 {
@@ -137,20 +147,23 @@ impl LocalApic {
 
         let apic_flags = Flags::MMIO_SUITABLE;
 
-        let page = process::current()
-            .address_space()
-            .with_pgalloc(|page_allocator| {
-                page_allocator.allocate_pages::<M4KiB>(1).unwrap().start()
+        LAPIC_MMIO_BASE.call_once(|| {
+            let page = process::current()
+                .address_space()
+                .with_pgalloc(|page_allocator| {
+                    page_allocator.allocate_pages::<M4KiB>(1).unwrap().start()
+                });
+            frame_alloc::with_frame_allocator(|frame_allocator| {
+                address_space::with_kernel_pt(|page_table| {
+                    page_table
+                        .map(page, frame, apic_flags, &mut *frame_allocator)
+                        .expect("Failed to map LAPIC frame")
+                        .flush();
+                });
             });
-
-        frame_alloc::with_frame_allocator(|frame_allocator| {
-            address_space::with_kernel_pt(|page_table| {
-                page_table
-                    .map(page, frame, apic_flags, &mut *frame_allocator)
-                    .expect("Failed to map LAPIC frame")
-                    .flush();
-            });
+            page
         });
+        let page = *LAPIC_MMIO_BASE.get().unwrap();
 
         let acpi_id = ACPI
             .get()
