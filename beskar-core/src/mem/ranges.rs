@@ -56,6 +56,13 @@ impl MemoryRange {
 
     #[must_use]
     #[inline]
+    /// Returns true if the range contains the other range.
+    pub const fn contains(&self, other: &Self) -> bool {
+        self.start <= other.start && self.end >= other.end
+    }
+
+    #[must_use]
+    #[inline]
     pub const fn start(&self) -> u64 {
         self.start
     }
@@ -183,76 +190,6 @@ impl<const N: usize> MemoryRanges<N> {
         self.create(range);
     }
 
-    /// Only removes the specified range if it is present in the set or if it is a subset of an existing range.
-    ///
-    /// Returns the outer range that was removed, if any.
-    pub fn try_remove(&mut self, range: MemoryRange) -> Option<MemoryRange> {
-        for i in 0..self.used {
-            let current = self.ranges[i];
-
-            // Exact match, remove it
-            if range == current {
-                self.delete(i);
-                return Some(current);
-            }
-
-            // Check if it's a subset
-            if !range.is_inside(&current) {
-                continue;
-            }
-
-            // Subset found, split or trim
-            if range.start == current.start {
-                // current.end > current.start = range.start because of the `range == current` check
-                self.ranges[i].start = range.end + 1;
-            } else if range.end == current.end {
-                // current.start < current.end = range.end because of the `range == current` check
-                self.ranges[i].end = range.start - 1;
-            } else {
-                // Both comments above apply here
-                self.ranges[i].end = range.start - 1;
-                self.create(MemoryRange::new(range.end.saturating_add(1), current.end));
-            }
-            return Some(current);
-        }
-
-        None
-    }
-
-    /// Anihilates the specified range from the set, trimming other ranges if necessary.
-    pub fn remove(&mut self, range: MemoryRange) {
-        let mut i = 0;
-        while i < self.used {
-            let current = &mut self.ranges[i];
-
-            if range.overlaps(current).is_none() {
-                i += 1;
-                continue;
-            }
-
-            if current.is_inside(&range) {
-                self.delete(i);
-                break;
-            }
-
-            // Same statements as in `try_remove`
-            if range.start <= current.start {
-                current.start = range.end + 1;
-            } else if range.end >= current.end {
-                current.end = range.start - 1;
-            } else {
-                // `range` is strictly inside of `current`
-                let old_end = current.end;
-                current.end = range.start - 1;
-
-                // Insert the second part
-                self.create(MemoryRange::new(range.end.saturating_add(1), old_end));
-                break;
-            }
-            i += 1;
-        }
-    }
-
     #[must_use]
     #[inline]
     pub fn sum(&self) -> u64 {
@@ -260,6 +197,27 @@ impl<const N: usize> MemoryRanges<N> {
             .iter()
             .map(|range| range.end - range.start + 1)
             .sum::<u64>()
+    }
+
+    fn trim_remove(&mut self, index: usize, trim_range: &MemoryRange) {
+        let range = &mut self.ranges[index];
+        debug_assert!(range.contains(trim_range));
+
+        if trim_range.start <= range.start && trim_range.end >= range.end {
+            // Trim range covers entire range, delete it
+            self.delete(index);
+        } else if trim_range.start <= range.start {
+            // Trim range covers beginning of range
+            range.start = trim_range.end + 1;
+        } else if trim_range.end >= range.end {
+            // Trim range covers end of range
+            range.end = trim_range.start - 1;
+        } else {
+            // Trim range is in the middle, split the range
+            let old_end = range.end;
+            range.end = trim_range.start - 1;
+            self.create(MemoryRange::new(trim_range.end + 1, old_end));
+        }
     }
 
     #[must_use]
@@ -270,9 +228,9 @@ impl<const N: usize> MemoryRanges<N> {
         }
 
         let alignment_mask = alignment.mask();
-        let mut best_fit: Option<(u64, u64, u64)> = None;
+        let mut best_fit: Option<(usize, u64, u64, u64)> = None;
 
-        for range in self.entries() {
+        for (index, range) in self.entries().iter().enumerate() {
             // Calculate aligned start address
             let offset = range.start & alignment_mask;
             let alignment_offset = (alignment.as_u64() - offset) & alignment_mask;
@@ -289,15 +247,17 @@ impl<const N: usize> MemoryRanges<N> {
             }
 
             let waste = alignment_offset + (range.end - end);
-            if best_fit.is_none_or(|(_, _, best_size)| waste < best_size) {
-                best_fit = Some((aligned_start, end, waste));
+            if best_fit.is_none_or(|(_, _, _, best_waste)| waste < best_waste) {
+                best_fit = Some((index, aligned_start, end, waste));
             }
         }
 
-        best_fit.map(|(start, end, _)| {
-            self.remove(MemoryRange::new(start, end));
-            start
-        })
+        if let Some((index, start, end, _)) = best_fit {
+            self.trim_remove(index, &MemoryRange::new(start, end));
+            Some(start)
+        } else {
+            None
+        }
     }
 
     #[must_use]
@@ -314,9 +274,9 @@ impl<const N: usize> MemoryRanges<N> {
         }
 
         let alignment_mask = alignment.mask();
-        let mut best_fit: Option<(u64, u64, u64)> = None;
+        let mut best_fit: Option<(usize, u64, u64, u64)> = None;
 
-        for range in &self.ranges[..self.used] {
+        for (index, range) in self.ranges[..self.used].iter().enumerate() {
             for req_range in &req_ranges.ranges[..req_ranges.used] {
                 // Calculate overlap
                 let overlap_start = range.start.max(req_range.start);
@@ -341,16 +301,18 @@ impl<const N: usize> MemoryRanges<N> {
                 };
 
                 let waste = alignment_offset + (range.end - end);
-                if best_fit.is_none_or(|(_, _, best_size)| waste < best_size) {
-                    best_fit = Some((aligned_start, end, waste));
+                if best_fit.is_none_or(|(_, _, _, best_waste)| waste < best_waste) {
+                    best_fit = Some((index, aligned_start, end, waste));
                 }
             }
         }
 
-        best_fit.map(|(start, end, _)| {
-            self.remove(MemoryRange::new(start, end));
-            start
-        })
+        if let Some((index, start, end, _)) = best_fit {
+            self.trim_remove(index, &MemoryRange::new(start, end));
+            Some(start)
+        } else {
+            None
+        }
     }
 
     #[must_use]
@@ -423,44 +385,6 @@ mod tests {
         // Non-adjacent range
         ranges.insert(MemoryRange::new(30, 40));
         assert_eq!(ranges.len(), 2);
-    }
-
-    #[test]
-    fn test_memory_ranges_remove() {
-        let mut ranges = MemoryRanges::<10>::new();
-        ranges.insert(MemoryRange::new(0, 100));
-
-        // Remove from middle (split)
-        ranges.remove(MemoryRange::new(40, 60));
-        assert_eq!(ranges.len(), 2);
-
-        // Remove from start
-        ranges.remove(MemoryRange::new(0, 10));
-
-        // Remove from end
-        ranges.remove(MemoryRange::new(90, 100));
-    }
-
-    #[test]
-    fn test_memory_ranges_try_remove() {
-        let mut ranges = MemoryRanges::<10>::new();
-        ranges.insert(MemoryRange::new(0, 100));
-
-        // Remove exact range
-        let removed = ranges.try_remove(MemoryRange::new(0, 100));
-        assert_eq!(removed, Some(MemoryRange::new(0, 100)));
-        assert_eq!(ranges.len(), 0);
-
-        ranges.insert(MemoryRange::new(0, 100));
-
-        // Remove subset
-        let removed = ranges.try_remove(MemoryRange::new(40, 60));
-        assert_eq!(removed, Some(MemoryRange::new(0, 100)));
-        assert_eq!(ranges.len(), 2);
-
-        // Try to remove non-existent
-        let removed = ranges.try_remove(MemoryRange::new(200, 300));
-        assert_eq!(removed, None);
     }
 
     #[test]
