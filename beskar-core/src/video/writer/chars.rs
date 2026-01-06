@@ -7,7 +7,7 @@ const CHAR_HEIGHT_INTERNAL: RasterHeight = RasterHeight::Size20;
 pub const CHAR_HEIGHT: u16 = CHAR_HEIGHT_INTERNAL.val() as _;
 #[expect(clippy::cast_possible_truncation, reason = "No truncation here")]
 pub const CHAR_WIDTH: u16 = get_raster_width(FontWeight::Regular, CHAR_HEIGHT_INTERNAL) as _;
-const BACKUP_CHAR: char = '�';
+const BACKUP_CHAR: char = '?';
 
 #[must_use]
 #[inline]

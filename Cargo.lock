@@ -18,7 +18,6 @@ dependencies = [
  "beskar-core",
  "beskar-lib",
  "hyperdrive",
- "noto-sans-mono-bitmap",
 ]
 
 [[package]]
