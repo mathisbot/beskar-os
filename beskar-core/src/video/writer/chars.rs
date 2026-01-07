@@ -9,31 +9,13 @@ pub const CHAR_HEIGHT: u16 = CHAR_HEIGHT_INTERNAL.val() as _;
 pub const CHAR_WIDTH: u16 = get_raster_width(FontWeight::Regular, CHAR_HEIGHT_INTERNAL) as _;
 const BACKUP_CHAR: char = '?';
 
+const BACKUP_CHAR_RASTER: RasterizedChar =
+    get_raster(BACKUP_CHAR, FontWeight::Regular, CHAR_HEIGHT_INTERNAL).unwrap();
+
 #[must_use]
 #[inline]
 /// Returns the raster of the given char,
 /// backing up to a default char if the given char is not available.
 pub fn get_raster_backed(c: char) -> RasterizedChar {
-    get_raster(c, FontWeight::Regular, CHAR_HEIGHT_INTERNAL).unwrap_or_else(|| unsafe {
-        get_raster(BACKUP_CHAR, FontWeight::Regular, CHAR_HEIGHT_INTERNAL).unwrap_unchecked()
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_raster_backup_char() {
-        assert!(get_raster(BACKUP_CHAR, FontWeight::Regular, CHAR_HEIGHT_INTERNAL).is_some());
-    }
-
-    #[test]
-    fn test_get_raster_backed() {
-        for c in '\0'..='~' {
-            let _ = get_raster_backed(c);
-        }
-        let _ = get_raster_backed('中');
-        let _ = get_raster_backed('\u{10FFFF}');
-    }
+    get_raster(c, FontWeight::Regular, CHAR_HEIGHT_INTERNAL).unwrap_or(BACKUP_CHAR_RASTER)
 }
