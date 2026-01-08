@@ -198,25 +198,15 @@ impl Entry {
 
     #[must_use]
     #[inline]
-    /// # Safety
-    ///
-    /// Caller must ensure this is called on a valid entry pointer within
-    /// a recursive page table structure. The returned address may not be valid
-    /// if the entry is not present or is a large page.
-    unsafe fn next_unchecked(raw: VirtAddr) -> VirtAddr {
-        // Convert the entry offset within the page to an index (divide by entry size = 8)
-        let raw_offset_as_idx = u64::from(raw.page_offset()) >> 3;
-        // Shift the address left by 9 bits (multiply by 512) and clear page offset
-        let raw_shifted_without_offset = (raw.as_u64() & !0xFFF) << 9;
-        // Combine to get the next table's virtual address
-        let next_raw = raw_shifted_without_offset | (raw_offset_as_idx << 12);
+    const fn next_unchecked(raw: VirtAddr) -> VirtAddr {
+        let next_raw = raw.as_u64() << 9;
         VirtAddr::new_extend(next_raw)
     }
 
     pub fn next<S: MemSize>(&self) -> Result<&Entries, MappingError<S>> {
         if self.is_present() && !self.is_large() {
             let va = VirtAddr::from_ptr(self);
-            let next_raw = unsafe { Self::next_unchecked(va) };
+            let next_raw = Self::next_unchecked(va);
             let entries = unsafe { &*(next_raw.as_ptr()) };
             Ok(entries)
         } else if self.is_present() && self.is_large() {
@@ -229,7 +219,7 @@ impl Entry {
     pub fn next_mut<S: MemSize>(&mut self) -> Result<&mut Entries, MappingError<S>> {
         if self.is_present() && !self.is_large() {
             let va = VirtAddr::from_ptr(self);
-            let next_raw = unsafe { Self::next_unchecked(va) };
+            let next_raw = Self::next_unchecked(va);
             let entries = unsafe { &mut *(next_raw.as_mut_ptr()) };
             Ok(entries)
         } else if self.is_present() && self.is_large() {
