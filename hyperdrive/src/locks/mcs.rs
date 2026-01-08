@@ -790,4 +790,33 @@ mod tests {
         w.join().unwrap();
         r.join().unwrap();
     }
+
+    #[test]
+    /// Test node reuse: same node used for multiple lock acquisitions.
+    fn test_mcs_node_reuse() {
+        let lock = TestMcsLock::new(0);
+        let mut node = McsNode::new();
+
+        // First lock/unlock cycle
+        {
+            let mut guard = lock.lock(&mut node);
+            *guard = 1;
+        }
+
+        // Second lock/unlock cycle with same node
+        {
+            let mut guard = lock.lock(&mut node);
+            assert_eq!(*guard, 1);
+            *guard = 2;
+        }
+
+        // Third lock/unlock cycle
+        {
+            let mut guard = lock.lock(&mut node);
+            assert_eq!(*guard, 2);
+            *guard = 3;
+        }
+
+        assert_eq!(lock.into_inner(), 3);
+    }
 }

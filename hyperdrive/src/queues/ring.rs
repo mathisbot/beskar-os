@@ -322,4 +322,90 @@ mod tests {
 
         drop(ring);
     }
+
+    #[test]
+    /// Test that len() is correct with wrap-around.
+    fn test_ring_len_wraparound() {
+        let mut ring = Ring::<5, usize>::new();
+
+        // Push 4 items (SIZE-1)
+        ring.push(1);
+        ring.push(2);
+        ring.push(3);
+        ring.push(4);
+        assert_eq!(ring.len(), 4);
+        assert!(ring.is_full());
+
+        // Pop 2
+        assert_eq!(ring.pop(), Some(1));
+        assert_eq!(ring.pop(), Some(2));
+        assert_eq!(ring.len(), 2);
+
+        // Push 2 more (causing wrap-around)
+        ring.push(5);
+        ring.push(6);
+        assert_eq!(ring.len(), 4);
+        assert!(ring.is_full());
+
+        // Pop all
+        assert_eq!(ring.pop(), Some(3));
+        assert_eq!(ring.pop(), Some(4));
+        assert_eq!(ring.pop(), Some(5));
+        assert_eq!(ring.pop(), Some(6));
+        assert_eq!(ring.len(), 0);
+        assert!(ring.is_empty());
+    }
+
+    #[test]
+    /// Test interleaved push/pop operations.
+    fn test_ring_interleaved() {
+        let mut ring = Ring::<6, u32>::new();
+
+        ring.push(1);
+        ring.push(2);
+        assert_eq!(ring.len(), 2);
+
+        assert_eq!(ring.pop(), Some(1));
+        assert_eq!(ring.len(), 1);
+
+        ring.push(3);
+        ring.push(4);
+        assert_eq!(ring.len(), 3);
+
+        assert_eq!(ring.pop(), Some(2));
+        assert_eq!(ring.pop(), Some(3));
+        assert_eq!(ring.len(), 1);
+
+        ring.push(5);
+        ring.push(6);
+        ring.push(7);
+        ring.push(8);
+        assert!(ring.is_full());
+        assert_eq!(ring.len(), 5); // SIZE - 1
+
+        assert_eq!(ring.pop(), Some(4));
+        assert_eq!(ring.pop(), Some(5));
+        assert_eq!(ring.pop(), Some(6));
+        assert_eq!(ring.pop(), Some(7));
+        assert_eq!(ring.pop(), Some(8));
+        assert_eq!(ring.pop(), None);
+        assert!(ring.is_empty());
+    }
+
+    #[test]
+    /// Test with ZST (zero-sized types).
+    fn test_ring_zst() {
+        let mut ring = Ring::<10, ()>::new();
+
+        for _ in 0..9 {
+            ring.push(());
+        }
+        assert_eq!(ring.len(), 9);
+        assert!(ring.is_full());
+
+        for _ in 0..9 {
+            assert_eq!(ring.pop(), Some(()));
+        }
+        assert!(ring.is_empty());
+    }
 }
