@@ -29,8 +29,6 @@
 //!     next: Option<NonNull<Element>>,
 //! }
 //!
-//! impl Unpin for Element {}
-//!
 //! impl Queueable for Element {
 //!     type Handle = Pin<Box<Self>>;
 //!
@@ -74,8 +72,6 @@
 //! #     value: u8,
 //! #     next: Option<NonNull<Element>>,
 //! # }
-//! #
-//! # impl Unpin for Element {}
 //! #
 //! # impl Queueable for Element {
 //! #     type Handle = Pin<Box<Self>>;
@@ -141,8 +137,6 @@ pub trait Queueable: Sized {
 pub struct Link<T> {
     /// The next element in the queue.
     next: AtomicPtr<T>,
-    /// A phantom field to pin the link.
-    _pin: core::marker::PhantomPinned,
 }
 
 impl<T> Default for Link<T> {
@@ -158,7 +152,6 @@ impl<T> Link<T> {
     pub const fn new() -> Self {
         Self {
             next: AtomicPtr::new(ptr::null_mut()),
-            _pin: core::marker::PhantomPinned,
         }
     }
 }
@@ -177,8 +170,15 @@ pub struct MpscQueue<T: Queueable> {
     _marker: core::marker::PhantomData<T>,
 }
 
-unsafe impl<T: Queueable> Send for MpscQueue<T> {}
-unsafe impl<T: Queueable> Sync for MpscQueue<T> {}
+// SAFETY: MpscQueue can be sent between threads if T can be sent.
+// The queue transfers ownership of T through pointers, so T must be Send.
+unsafe impl<T: Queueable + Send> Send for MpscQueue<T> {}
+// SAFETY: MpscQueue can be shared between threads (via &MpscQueue) if:
+// - T is Send (elements can be transferred between threads)
+// - T::Handle is Send (dequeue() returns T::Handle which may be sent to another thread)
+// The queue uses atomic operations for synchronization, allowing multiple producers
+// and a single consumer to safely access the queue concurrently.
+unsafe impl<T: Queueable + Send> Sync for MpscQueue<T> where T::Handle: Send {}
 
 /// The result of a dequeue operation.
 pub enum DequeueResult<T: Queueable> {
@@ -263,7 +263,7 @@ impl<T: Queueable> MpscQueue<T> {
     unsafe fn enqueue_ptr(&self, ptr: NonNull<T>) {
         unsafe { T::get_link(ptr).as_ref() }
             .next
-            .store(ptr::null_mut(), Ordering::Relaxed);
+            .store(ptr::null_mut(), Ordering::Release);
 
         let prev = self.head.swap(ptr.as_ptr(), Ordering::AcqRel);
 
@@ -302,10 +302,10 @@ impl<T: Queueable> MpscQueue<T> {
     ///
     /// The caller must make sure that the queue is not being dequeued by another thread.
     unsafe fn dequeue_impl(&self) -> Option<T::Handle> {
-        let mut tail_node = unsafe { NonNull::new_unchecked(self.tail.load(Ordering::Relaxed)) };
+        let mut tail_node = unsafe { NonNull::new_unchecked(self.tail.load(Ordering::Acquire)) };
         let mut next = unsafe { T::get_link(tail_node).as_ref() }
             .next
-            .load(Ordering::Relaxed);
+            .load(Ordering::Acquire);
 
         // If node is the stub, dequeue it and use the next one
         if tail_node == self.stub {
@@ -315,7 +315,7 @@ impl<T: Queueable> MpscQueue<T> {
             tail_node = next_node;
             next = unsafe { T::get_link(tail_node).as_ref() }
                 .next
-                .load(Ordering::Relaxed);
+                .load(Ordering::Acquire);
         }
 
         // If there is a next node, simply cycle the queue
@@ -333,7 +333,7 @@ impl<T: Queueable> MpscQueue<T> {
         // We need to wait for it (should be rare).
         let next_link = unsafe { T::get_link(tail_node).as_ref() };
         let next = loop {
-            let next = next_link.next.load(Ordering::Relaxed);
+            let next = next_link.next.load(Ordering::Acquire);
             if !next.is_null() {
                 break next;
             }
@@ -347,7 +347,7 @@ impl<T: Queueable> MpscQueue<T> {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        let Some(tail_node) = NonNull::new(self.tail.load(Ordering::Relaxed)) else {
+        let Some(tail_node) = NonNull::new(self.tail.load(Ordering::Acquire)) else {
             return true;
         };
         let next = unsafe { T::get_link(tail_node).as_ref() }
@@ -397,9 +397,6 @@ mod tests {
         value: u8,
         next: Option<NonNull<Element>>,
     }
-
-    impl Unpin for Element {}
-    impl Unpin for OtherElement {}
 
     impl Queueable for Element {
         type Handle = Pin<Box<Self>>;

@@ -157,7 +157,9 @@ impl Scheduler {
                     // Note: there may be data races here, but we do not care.
                     USELESS.as_ptr()
                 } else {
-                    old_thread.last_stack_ptr_mut()
+                    // Safety: context switching uses a `mov` instruction to write to the old stack pointer,
+                    // which is atomic by nature.
+                    unsafe { old_thread.last_stack_ptr_mut() }
                 };
                 let new_stack = thread.last_stack_ptr();
 

@@ -16,7 +16,7 @@ use core::{
     mem::offset_of,
     pin::Pin,
     ptr::NonNull,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicPtr, AtomicU64, Ordering},
 };
 use hyperdrive::{
     once::Once,
@@ -65,7 +65,7 @@ pub struct Thread {
     /// Used to keep ownership of the stacks when needed.
     stack: Option<ThreadStacks>,
     /// Keeps track of where the stack pointer is.
-    last_stack_ptr: *mut u8,
+    last_stack_ptr: AtomicPtr<u8>,
     /// Thread Local Storage
     tls: Once<Tls>,
     /// Thread statistics for scheduling
@@ -74,8 +74,6 @@ pub struct Thread {
     /// Link to the next thread in the queue.
     link: Link<Self>,
 }
-
-impl Unpin for Thread {}
 
 impl PartialEq for Thread {
     fn eq(&self, other: &Self) -> bool {
@@ -123,7 +121,7 @@ impl Thread {
             state: ThreadState::Running,
             stack: None,
             // Will be overwritten before being used.
-            last_stack_ptr: core::ptr::null_mut(),
+            last_stack_ptr: AtomicPtr::new(core::ptr::null_mut()),
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
@@ -149,7 +147,7 @@ impl Thread {
             priority,
             state: ThreadState::Ready,
             stack: Some(ThreadStacks::new(stack)),
-            last_stack_ptr: stack_ptr,
+            last_stack_ptr: AtomicPtr::new(stack_ptr),
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
@@ -199,7 +197,7 @@ impl Thread {
             priority: Priority::Low,
             state: ThreadState::Ready,
             stack: None,
-            last_stack_ptr: core::ptr::null_mut(),
+            last_stack_ptr: AtomicPtr::new(core::ptr::null_mut()),
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
@@ -255,15 +253,19 @@ impl Thread {
     #[must_use]
     #[inline]
     /// Returns the value of the last stack pointer.
-    pub const fn last_stack_ptr(&self) -> *const u8 {
-        self.last_stack_ptr
+    pub fn last_stack_ptr(&self) -> *const u8 {
+        self.last_stack_ptr.load(Ordering::Acquire)
     }
 
     #[must_use]
     #[inline]
     /// Returns a mutable pointer to the last stack pointer.
-    pub const fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
-        &raw mut self.last_stack_ptr
+    ///
+    /// # Safety
+    ///
+    /// The caller must use atomic operations to read/write the pointer.
+    pub unsafe fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
+        self.last_stack_ptr.as_ptr()
     }
 
     #[must_use]
