@@ -10,7 +10,7 @@ mod registers;
 
 use self::{
     descriptors::{RxDescriptor, TxDescriptor},
-    registers::{CtrlFlags, RctlFlags, Registers, TctlFlags},
+    registers::{CtrlFlags, IntFlags, RctlFlags, Registers, TctlFlags},
 };
 use super::Nic;
 use crate::{drivers::pci::MsiHelper, locals, mem::page_alloc::pmap::PhysicalMapping, process};
@@ -130,7 +130,10 @@ impl E1000e<'_> {
             unreachable!("No MSI or MSI-X capability found for the network controller.");
         }
 
-        self.write_reg(Registers::IMS, 1); // RXDW
+        self.write_reg(
+            Registers::IMS,
+            IntFlags::RXT0 | IntFlags::RXDMT0 | IntFlags::TXDW | IntFlags::LSC,
+        );
     }
 
     fn configure_descriptors(
@@ -236,7 +239,30 @@ impl E1000e<'_> {
 }
 
 extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    video::info!("NIC INTERRUPT on core {}", locals!().core_id());
+    E1000E.with_locked(|e1000e| {
+        // Read and acknowledge interrupt cause
+        let icr = e1000e.read_reg(Registers::ICR);
+
+        if icr & IntFlags::RXT0 != 0 || icr & IntFlags::RXDMT0 != 0 {
+            // TODO: Packet received (notify network stack)
+        }
+
+        if icr & IntFlags::TXDW != 0 {
+            // TODO: Transmit done
+        }
+
+        if icr & IntFlags::LSC != 0 {
+            // Link status changed
+            let status = e1000e.read_reg(Registers::STATUS);
+            let link_up = (status & 0x02) != 0;
+            if link_up {
+                video::debug!("Network link is up");
+            } else {
+                video::debug!("Network link is down");
+            }
+        }
+    });
+
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 

@@ -9,7 +9,7 @@ use thiserror::Error;
 pub mod l2;
 pub mod l3;
 pub mod l4;
-mod utils;
+pub mod utils;
 
 pub trait Nic {
     /// Get the MAC address of this network interface.

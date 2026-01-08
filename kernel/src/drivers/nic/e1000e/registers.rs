@@ -12,6 +12,8 @@ impl Registers {
     pub const CTRLEXT: usize = 0x00018;
 
     // Interrupt registers
+    pub const ICR: usize = 0x000C0; // Interrupt Cause Read
+    pub const ICS: usize = 0x000C8; // Interrupt Cause Set
     pub const IMS: usize = 0x000D0; // Interrupt Mask Set
     pub const IMC: usize = 0x000D8; // Interrupt Mask Clear
 
@@ -130,4 +132,24 @@ pub struct CtrlFlags;
 impl CtrlFlags {
     /// Device Reset
     pub const RST: u32 = 1 << 26;
+}
+
+/// Interrupt Cause flags
+pub struct IntFlags;
+
+impl IntFlags {
+    /// Transmit Descriptor Written Back
+    pub const TXDW: u32 = 1 << 0;
+    /// Transmit Queue Empty
+    pub const TXQE: u32 = 1 << 1;
+    /// Link Status Change
+    pub const LSC: u32 = 1 << 2;
+    /// Receive Sequence Error
+    pub const RXSEQ: u32 = 1 << 3;
+    /// Receive Descriptor Minimum Threshold Reached
+    pub const RXDMT0: u32 = 1 << 4;
+    /// Receiver Overrun
+    pub const RXO: u32 = 1 << 6;
+    /// Receive Timer Interrupt
+    pub const RXT0: u32 = 1 << 7;
 }
