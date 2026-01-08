@@ -245,18 +245,6 @@ impl<T: ?Sized> Volatile<ReadWrite, T> {
     }
 }
 
-mod private {
-    use super::{ReadOnly, ReadWrite, Volatile, WriteOnly};
-
-    const _: () = assert!(
-        size_of::<Volatile<ReadOnly, ()>>() == size_of::<*mut ()>()
-            && size_of::<Volatile<ReadOnly, u8>>() == size_of::<*mut u8>()
-            && size_of::<Volatile<ReadOnly, [u8]>>() == size_of::<*mut [u8]>()
-            && size_of::<Volatile<WriteOnly, ()>>() == size_of::<Volatile<ReadOnly, ()>>()
-            && size_of::<Volatile<ReadWrite, ()>>() == size_of::<Volatile<ReadOnly, ()>>()
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

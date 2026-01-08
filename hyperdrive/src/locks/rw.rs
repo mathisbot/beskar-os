@@ -6,6 +6,14 @@
 //! The structure accept a generic type `T` that is the type of the data protected by the lock.
 //! The second generic type `B` is the back-off strategy used by the lock.
 //!
+//! ## Starvation-Resistance
+//!
+//! This implementation prioritizes writers to prevent writer starvation. When a writer arrives:
+//! 1. It acquires the writer flag first (preventing new readers)
+//! 2. Then waits for existing readers to finish
+//!
+//! This prevents the classic scenario where continuous readers starve a writer.
+//!
 //! ## Examples
 //!
 //! Reads only:

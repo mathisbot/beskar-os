@@ -239,7 +239,7 @@ impl<T> Once<T> {
                 State::Uninitialized,
                 State::Initializing,
                 Ordering::Acquire,
-                Ordering::Relaxed,
+                Ordering::Acquire,
             )
             .is_ok()
         {

@@ -80,9 +80,12 @@ impl<const SIZE: usize, T> Ring<SIZE, T> {
     ///
     /// # Panics
     ///
-    /// This function panics if the `SIZE` is 0.
+    /// This function panics if the `SIZE` is 0 at compile time.
     pub const fn new() -> Self {
-        assert!(SIZE > 0, "Ring buffer size must be greater than 0");
+        const {
+            assert!(SIZE > 0, "Ring buffer size must be greater than 0");
+        }
+
         Self {
             buffer: [const { MaybeUninit::uninit() }; SIZE],
             read_index: 0,
