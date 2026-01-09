@@ -199,7 +199,11 @@ impl<T: ?Sized, R: RelaxStrategy> McsLock<T, R> {
             }
         }
 
-        McsGuard { lock: self, node }
+        McsGuard {
+            lock: self,
+            node: ptr::from_ref(node),
+            _phantom: PhantomData,
+        }
     }
 
     #[must_use]
@@ -221,7 +225,11 @@ impl<T: ?Sized, R: RelaxStrategy> McsLock<T, R> {
             .compare_exchange(ptr::null_mut(), node, Ordering::Acquire, Ordering::Relaxed)
             .ok()?;
 
-        Some(McsGuard { lock: self, node })
+        Some(McsGuard {
+            lock: self,
+            node: ptr::from_ref(node),
+            _phantom: PhantomData,
+        })
     }
 
     #[inline]
@@ -281,7 +289,8 @@ impl McsNode {
 /// RAII guard for MCS lock.
 pub struct McsGuard<'node, 'lock, T: ?Sized, R: RelaxStrategy = Spin> {
     lock: &'lock McsLock<T, R>,
-    node: &'node McsNode,
+    node: *const McsNode,
+    _phantom: PhantomData<&'node McsNode>,
 }
 
 impl<T: ?Sized, R: RelaxStrategy> Deref for McsGuard<'_, '_, T, R> {
@@ -300,13 +309,16 @@ impl<T: ?Sized, R: RelaxStrategy> DerefMut for McsGuard<'_, '_, T, R> {
 
 impl<T: ?Sized, R: RelaxStrategy> Drop for McsGuard<'_, '_, T, R> {
     fn drop(&mut self) {
+        // Safety: node pointer is always valid for the duration of the guard
+        let node = unsafe { &*self.node };
+
         // Check if the node is the back of the queue
-        if self.node.next().is_none() {
+        if node.next().is_none() {
             if self
                 .lock
                 .tail
                 .compare_exchange(
-                    ptr::from_ref(self.node).cast_mut(),
+                    self.node.cast_mut(),
                     ptr::null_mut(),
                     Ordering::Release,
                     Ordering::Relaxed,
@@ -319,13 +331,13 @@ impl<T: ?Sized, R: RelaxStrategy> Drop for McsGuard<'_, '_, T, R> {
             // If setting the tail to null fails, it means a new node is being added.
             // In such a case, wait until it is completely added.
             // As this operation should be very fast, we can afford to spin here.
-            while self.node.next().is_none() {
+            while node.next().is_none() {
                 core::hint::spin_loop();
             }
         }
 
         // Unlock the next node
-        unsafe { self.node.next().unwrap().as_ref() }
+        unsafe { node.next().unwrap().as_ref() }
             .locked
             .store(false, Ordering::Release);
     }
