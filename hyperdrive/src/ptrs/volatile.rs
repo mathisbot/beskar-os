@@ -41,7 +41,7 @@
 //!
 //! As access rights are checked at compile time, the following code will not compile:
 //!
-//! ```rust,compile_fail
+//! ```rust,compile_fail,E0432
 //! # use hyperdrive::volatile::{Volatile, ReadOnly};
 //! # use core::ptr::NonNull;
 //! #
@@ -60,6 +60,10 @@ pub trait Access: Sealed {}
 pub trait ReadAccess: Access {}
 pub trait WriteAccess: Access {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoAccess;
+impl Sealed for NoAccess {}
+impl Access for NoAccess {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadOnly;
 impl Sealed for ReadOnly {}
@@ -135,7 +139,7 @@ impl<A: Access, T: ?Sized> Volatile<A, T> {
     ///
     /// Units of `offset` are in terms of `T`. To add bytes, use `byte_add`.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// See `core::ptr::add` for safety requirements.
     pub const unsafe fn add(&self, offset: usize) -> Self
@@ -154,7 +158,7 @@ impl<A: Access, T: ?Sized> Volatile<A, T> {
     ///
     /// Units of `offset` are in terms of bytes. To add in units of `T`, use `add`.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// See `core::ptr::byte_add` for safety requirements.
     pub const unsafe fn byte_add(&self, offset: usize) -> Self {
@@ -168,23 +172,9 @@ impl<A: Access, T: ?Sized> Volatile<A, T> {
 impl<A: ReadAccess, T: ?Sized> Volatile<A, T> {
     #[must_use]
     #[inline]
-    /// Creates a new volatile pointer from a reference.
-    pub const fn from_ref(ptr: &T) -> Volatile<ReadOnly, T> {
-        Self::new_read_only(NonNull::from_ref(ptr))
-    }
-
-    #[must_use]
-    #[inline]
-    /// Creates a new read-only volatile pointer.
-    pub const fn new_read_only(ptr: NonNull<T>) -> Volatile<ReadOnly, T> {
-        Self::new(ptr).change_access()
-    }
-
-    #[must_use]
-    #[inline]
     /// Reads the value.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The inner pointer must be valid.
     pub unsafe fn read(&self) -> T
@@ -195,21 +185,39 @@ impl<A: ReadAccess, T: ?Sized> Volatile<A, T> {
     }
 }
 
+impl<T: ?Sized> Volatile<ReadOnly, T> {
+    #[must_use]
+    #[inline]
+    /// Creates a new volatile pointer from a reference.
+    pub const fn from_ref(ptr: &T) -> Self {
+        Self::new_read_only(NonNull::from_ref(ptr))
+    }
+
+    #[must_use]
+    #[inline]
+    /// Creates a new read-only volatile pointer.
+    pub const fn new_read_only(ptr: NonNull<T>) -> Self {
+        Self::new(ptr).change_access()
+    }
+}
+
 impl<A: WriteAccess, T> Volatile<A, T> {
     #[inline]
     /// Writes the value.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The inner pointer must be valid.
     pub unsafe fn write(&self, value: T) {
         unsafe { self.ptr.write_volatile(value) };
     }
+}
 
+impl<T: ?Sized> Volatile<WriteOnly, T> {
     #[must_use]
     #[inline]
     /// Creates a new write-only volatile pointer.
-    pub const fn new_write_only(ptr: NonNull<T>) -> Volatile<WriteOnly, T> {
+    pub const fn new_write_only(ptr: NonNull<T>) -> Self {
         Self::new(ptr).change_access()
     }
 }
@@ -218,7 +226,7 @@ impl<A: ReadAccess + WriteAccess, T> Volatile<A, T> {
     #[inline]
     /// Updates the value.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The inner pointer must be valid.
     pub unsafe fn update(&self, f: impl FnOnce(T) -> T) {
@@ -226,30 +234,35 @@ impl<A: ReadAccess + WriteAccess, T> Volatile<A, T> {
         let new = f(old);
         unsafe { self.ptr.write_volatile(new) };
     }
+}
 
+impl<T: ?Sized> Volatile<ReadWrite, T> {
     #[must_use]
     #[inline]
     /// Creates a new read-write volatile pointer.
-    pub const fn new_read_write(ptr: NonNull<T>) -> Volatile<ReadWrite, T> {
+    pub const fn new_read_write(ptr: NonNull<T>) -> Self {
         Self::new(ptr).change_access()
     }
-}
-
-mod private {
-    use super::{ReadOnly, ReadWrite, Volatile, WriteOnly};
-
-    const _: () = assert!(
-        size_of::<Volatile<ReadOnly, ()>>() == size_of::<*mut ()>()
-            && size_of::<Volatile<ReadOnly, u8>>() == size_of::<*mut u8>()
-            && size_of::<Volatile<ReadOnly, [u8]>>() == size_of::<*mut [u8]>()
-            && size_of::<Volatile<WriteOnly, ()>>() == size_of::<Volatile<ReadOnly, ()>>()
-            && size_of::<Volatile<ReadWrite, ()>>() == size_of::<Volatile<ReadOnly, ()>>()
-    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_volatile() {
+        let mut array = [0, 1, 2];
+        let ptr = NonNull::new(array.as_mut_ptr()).unwrap();
+        let volatile = Volatile::new_read_write(ptr);
+        assert_eq!(unsafe { volatile.read() }, 0);
+        unsafe { volatile.write(42) };
+        assert_eq!(unsafe { volatile.read() }, 42);
+        assert_eq!(array[0], 42);
+
+        let read_only = volatile.change_access::<ReadOnly>();
+        let ro_u32 = read_only.cast::<u32>();
+        assert_eq!(unsafe { ro_u32.read() }, 42);
+    }
 
     #[test]
     fn test_volatile_accesses() {

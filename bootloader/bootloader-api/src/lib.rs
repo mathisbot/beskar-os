@@ -162,3 +162,30 @@ impl RamdiskInfo {
         self.size
     }
 }
+
+/// Kernel space starting page table entry.
+pub const KERNEL_PT_START_ENTRY: u16 = 256;
+/// User space last page table entry.
+pub const USER_PT_END_ENTRY: u16 = KERNEL_PT_START_ENTRY - 1;
+/// Kernel space starting page table entry.
+pub const KERNEL_PT_RECURSIVE_INDEX: u16 = 256;
+/// Kernel higher half base virtual address.
+pub const KERNEL_AS_BASE: VirtAddr = VirtAddr::new_extend(256 << 39);
+
+/// Kernel image base virtual address.
+pub const KERNEL_IMAGE_BASE: VirtAddr = VirtAddr::new_extend(257 << 39);
+
+/// Ramdisk base virtual address.
+pub const RAMDISK_BASE: VirtAddr = VirtAddr::new_extend(258 << 39);
+
+/// Kernel stack base virtual address.
+pub const KERNEL_STACK_BASE: VirtAddr = VirtAddr::new_extend(259 << 39);
+/// Boot information base virtual address.
+pub const BOOT_INFO_BASE: VirtAddr = VirtAddr::new_extend((259 << 39) | (256 << 21));
+/// Framebuffer base virtual address.
+pub const FRAMEBUFFER_BASE: VirtAddr = VirtAddr::new_extend((259 << 39) | (257 << 21));
+
+/// Kernel pool base virtual address.
+///
+/// It ranges from `KERNEL_POOL_BASE` to the end of the virtual address space.
+pub const KERNEL_POOL_BASE: VirtAddr = VirtAddr::new_extend(260 << 39);

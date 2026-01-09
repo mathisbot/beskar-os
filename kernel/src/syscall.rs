@@ -2,7 +2,7 @@ use crate::process;
 use beskar_core::{
     arch::{
         VirtAddr,
-        paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize},
+        paging::{M4KiB, MemSize},
     },
     syscall::{Syscall, SyscallExitCode, SyscallReturnValue},
 };
@@ -13,6 +13,7 @@ pub fn init() {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[expect(dead_code, reason = "Some fields may not be used yet")]
 pub struct Arguments {
     pub one: u64,
     pub two: u64,
@@ -20,6 +21,14 @@ pub struct Arguments {
     pub four: u64,
     pub five: u64,
     pub six: u64,
+}
+
+/// Validate that a memory range is owned by the current process
+/// and is located within its user-space address space.
+#[must_use]
+#[inline]
+pub fn probe(start: VirtAddr, end: VirtAddr) -> bool {
+    process::current().address_space().is_addr_owned(start, end)
 }
 
 #[must_use]
@@ -32,8 +41,6 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::Open => SyscallReturnValue::ValueI(sc_open(args)),
         Syscall::Close => SyscallReturnValue::Code(sc_close(args)),
         Syscall::Sleep => SyscallReturnValue::Code(sc_sleep(args)),
-
-        Syscall::Invalid => SyscallReturnValue::Code(SyscallExitCode::Failure),
     }
 }
 
@@ -68,40 +75,12 @@ fn sc_mmap(args: &Arguments) -> u64 {
         return 0;
     }
 
-    let Some(page_range) = process::current()
-        .address_space()
-        .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(len.div_ceil(M4KiB::SIZE)))
-    else {
+    let Some(page_range) = process::current().address_space().alloc_map::<M4KiB>(
+        usize::try_from(len).unwrap(),
+        Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE,
+    ) else {
         return 0;
     };
-
-    let success = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-        process::current().address_space().with_page_table(|kpt| {
-            for page in page_range {
-                let Some(frame) = fralloc.alloc() else {
-                    return false;
-                };
-                kpt.map(
-                    page,
-                    frame,
-                    Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE,
-                    fralloc,
-                )
-                .flush();
-            }
-            true
-        })
-    });
-    if !success {
-        return 0;
-    }
-
-    debug_assert!(process::current().address_space().is_addr_owned(
-        page_range.start().start_address(),
-        page_range.end().start_address() + (len - 1),
-    ));
-
-    // FIXME: Should the area be zeroed?
 
     page_range.start().start_address().as_u64()
 }
@@ -121,10 +100,7 @@ fn sc_read(args: &Arguments) -> i64 {
     let buffer_start = VirtAddr::try_new(args.two).unwrap_or_default();
     let buffer_len = args.three;
 
-    if !process::current()
-        .address_space()
-        .is_addr_owned(buffer_start, buffer_start + buffer_len)
-    {
+    if !probe(buffer_start, buffer_start + buffer_len) {
         return -1;
     }
 
@@ -155,10 +131,7 @@ fn sc_write(args: &Arguments) -> i64 {
     let buffer_start = VirtAddr::try_new(args.two).unwrap_or_default();
     let buffer_len = args.three;
 
-    if !process::current()
-        .address_space()
-        .is_addr_owned(buffer_start, buffer_start + buffer_len)
-    {
+    if !probe(buffer_start, buffer_start + buffer_len) {
         return -1;
     }
 
@@ -182,10 +155,7 @@ fn sc_open(args: &Arguments) -> i64 {
     let path_start = VirtAddr::try_new(args.one).unwrap_or_default();
     let path_len = args.two;
 
-    if !process::current()
-        .address_space()
-        .is_addr_owned(path_start, path_start + path_len)
-    {
+    if !probe(path_start, path_start + path_len) {
         return Handle::INVALID.id();
     }
 

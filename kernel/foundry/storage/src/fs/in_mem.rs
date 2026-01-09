@@ -101,15 +101,9 @@ impl<'a> InMemoryFS<'a> {
                     return Err(InMemoryFSError::BufferTooSmall);
                 }
 
-                let raw_header = unsafe {
-                    // SAFETY: We made sure that the buffer is large enough.
-                    data[cursor..]
-                        .as_ptr()
-                        .try_cast_aligned::<RawHeader>()
-                        .unwrap()
-                        .as_ref()
-                        .unwrap()
-                };
+                // SAFETY: We made sure that the buffer is large enough.
+                let raw_header = unsafe { &*data[cursor..].as_ptr().cast::<RawHeader>() };
+                cursor += size_of::<RawHeader>();
 
                 if raw_header.size().saturating_add(cursor) > data.len() {
                     return Err(InMemoryFSError::InvalidHeaderSize);
@@ -120,7 +114,7 @@ impl<'a> InMemoryFS<'a> {
 
                 infos.push(FileInfo::new(raw_header, cursor));
 
-                cursor += size_of::<RawHeader>() + raw_header.size();
+                cursor += raw_header.size();
             }
         }
 
@@ -185,6 +179,26 @@ impl FileSystem for InMemoryFS<'_> {
     ) -> super::FileResult<usize> {
         // InMemoryFS does not support writing to files
         Err(super::FileError::UnsupportedOperation)
+    }
+
+    fn metadata(&mut self, path: super::Path) -> super::FileResult<super::FileMetadata> {
+        let Some(file) = self.infos.iter().find(|file| file.name() == path.as_str()) else {
+            return Err(super::FileError::NotFound);
+        };
+
+        Ok(super::FileMetadata::new(file.size(), super::FileType::File))
+    }
+
+    fn read_dir(&mut self, path: super::Path) -> super::FileResult<Vec<super::PathBuf>> {
+        if path.as_str() != "/" {
+            return Err(super::FileError::NotFound);
+        }
+
+        Ok(self
+            .infos
+            .iter()
+            .map(|file| super::PathBuf::new(file.name()))
+            .collect())
     }
 }
 

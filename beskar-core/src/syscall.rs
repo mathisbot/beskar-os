@@ -1,6 +1,6 @@
-use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u64)]
 pub enum Syscall {
     /// Exit syscall.
@@ -49,24 +49,17 @@ pub enum Syscall {
     ///
     /// The first argument is the time to sleep in milliseconds.
     Sleep = 6,
-    /// Invalid syscall.
-    ///
-    /// Any syscall that is not recognized.
-    #[num_enum(default)]
-    Invalid = u64::MAX,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u64)]
 pub enum SyscallExitCode {
     /// The syscall succeeded
     Success = 0,
     /// The syscall failed
     Failure = 1,
-
-    /// Any other (invalid) exit code.
-    #[num_enum(default)]
-    Other,
+    /// The syscall number was invalid
+    InvalidSyscallNumber = 2,
 }
 
 impl SyscallExitCode {
@@ -74,7 +67,7 @@ impl SyscallExitCode {
     #[inline]
     /// Unwraps the syscall exit code, panicking if it is a failure.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if the syscall exit code is not a success.
     pub fn unwrap(self) {
@@ -110,4 +103,22 @@ impl SyscallReturnValue {
 pub enum ExitCode {
     Success = 0,
     Failure = 1,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_syscall_exit_code_unwrap() {
+        SyscallExitCode::Success.unwrap();
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Called unwrap on a syscall exit code that was not successful: Failure"
+    )]
+    fn test_syscall_exit_code_unwrap_failure() {
+        SyscallExitCode::Failure.unwrap();
+    }
 }

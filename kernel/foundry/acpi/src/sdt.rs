@@ -28,7 +28,7 @@ pub struct SdtHeader {
 
 /// System Descriptor Table (SDT) trait.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// The implementor must ensure that the memory is mapped and readable, as well as making sure
 /// the underlying data is indeed a potentially valid SDT.
@@ -247,7 +247,7 @@ impl Signature {
 
 /// Map a whole SDT.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// The provided physical address must point to a potentially valid SDT.
 unsafe fn map<M: PhysicalMapper<M4KiB>>(phys_addr: PhysAddr) -> M {
@@ -373,6 +373,12 @@ impl From<RawGenericAddress> for GenericAddress {
     }
 }
 
+impl From<GenericAddress> for RawGenericAddress {
+    fn from(address: GenericAddress) -> Self {
+        address.as_raw()
+    }
+}
+
 impl GenericAddress {
     #[must_use]
     #[inline]
@@ -408,7 +414,7 @@ impl GenericAddress {
     #[inline]
     /// Adds an offset to the address.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The new address must be valid.
     pub const unsafe fn add(&self, offset: u64) -> Self {

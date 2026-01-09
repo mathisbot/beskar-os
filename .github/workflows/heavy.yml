@@ -60,6 +60,7 @@ jobs:
         run: |
           cargo test --package beskar-core
           cargo test --package beskar-hal --all-targets
+          cargo test --package heaperion
           cargo test --package holonet
           cargo test --package storage
           cargo test --package video
@@ -88,6 +89,7 @@ jobs:
           cargo clippy --package beskar-lib -- -D warnings
           cargo clippy --package bootloader -- -D warnings
           cargo clippy --package bootloader-api -- -D warnings
+          cargo clippy --package heaperion -- -D warnings
           cargo clippy --package holonet -- -D warnings
           cargo clippy --package video -- -D warnings
           cargo clippy --package bashkar -- -D warnings

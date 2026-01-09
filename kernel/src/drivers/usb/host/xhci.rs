@@ -79,7 +79,7 @@ impl Xhci {
 
         // At first, we only map enough memory to read the capabilities register
         let physical_mapping =
-            PhysicalMapping::<M4KiB>::new(paddr, CapabilitiesRegisters::MIN_LENGTH, flags);
+            PhysicalMapping::<M4KiB>::new(paddr, CapabilitiesRegisters::MIN_LENGTH, flags).unwrap();
         let vaddr = physical_mapping.translate(paddr).unwrap();
 
         let cap = CapabilitiesRegisters::new(vaddr);
@@ -93,7 +93,7 @@ impl Xhci {
 
         // We can now map more memory to access the rest of the registers
         let total_length = dboff + size_of::<u32>() * usize::from(max_slots); // DB registers are at the end of the memory
-        let physical_mapping = PhysicalMapping::new(paddr, total_length, flags);
+        let physical_mapping = PhysicalMapping::new(paddr, total_length, flags).unwrap();
 
         let reg_base_vaddr = physical_mapping.translate(paddr).unwrap();
 
@@ -153,7 +153,7 @@ impl Xhci {
         });
         let flags = Flags::MMIO_SUITABLE | Flags::WRITABLE;
         let dcbaa_mapping =
-            PhysicalMapping::<M4KiB>::new(dcbaa_frame.start_address(), dcbaa_size, flags);
+            PhysicalMapping::<M4KiB>::new(dcbaa_frame.start_address(), dcbaa_size, flags).unwrap();
         let dcbaa_phys_addr = dcbaa_mapping.start_frame().start_address();
         let dcbaa_virt_addr = dcbaa_mapping.translate(dcbaa_phys_addr).unwrap();
 

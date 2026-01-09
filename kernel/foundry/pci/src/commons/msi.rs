@@ -79,10 +79,10 @@ impl<H: MsiHelper> Msi<H> {
 pub struct MsiCapability {
     base: PciAddress,
     /// Number of messages that the device is capable of generating
-    multiple_message_capable: u8,
+    _multiple_message_capable: u8,
     qword_addressing: bool,
-    pvm_capable: bool,
-    extended_message_capable: bool,
+    _pvm_capable: bool,
+    _extended_message_capable: bool,
 }
 
 impl MsiCapability {
@@ -97,10 +97,10 @@ impl MsiCapability {
 
         Some(Self {
             base: c.pci_addr(),
-            multiple_message_capable: msg_control.multiple_message_capable(),
+            _multiple_message_capable: msg_control.multiple_message_capable(),
             qword_addressing: msg_control.qword_addressing(),
-            pvm_capable: msg_control.pvm_capable(),
-            extended_message_capable: msg_control.extended_message_capable(),
+            _pvm_capable: msg_control.pvm_capable(),
+            _extended_message_capable: msg_control.extended_message_capable(),
         })
     }
 }

@@ -97,6 +97,7 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [ ] GPT
     - [ ] FS
         - [X] Device files
+        - [X] Ramfs
         - [X] FAT12/16/32
         - [ ] ext2
         - [ ] ext4
@@ -104,5 +105,4 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
 - Video
     - [x] Character rendering
     - [x] Logging
-    - [ ] GUI
     - [ ] GPU drivers (🤠)

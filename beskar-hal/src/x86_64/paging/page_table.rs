@@ -3,12 +3,13 @@
 //! This only supports recursive page tables, as it is the only type of page table
 //! that is used in the kernel (for now at least).
 
-use core::ops::{Index, IndexMut};
-
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
-    paging::{Frame, FrameAllocator, M1GiB, M2MiB, M4KiB, Mapper, MemSize, Page, Translator},
+    paging::{
+        Frame, FrameAllocator, M1GiB, M2MiB, M4KiB, Mapper, MappingError, MemSize, Page, Translator,
+    },
 };
+use core::ops::{Index, IndexMut};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Flags(u64);
@@ -33,10 +34,16 @@ impl Flags {
     /// A set of flags that are used to mark the parent entries in the page table.
     /// The flags are present and writable.
     ///
-    /// ## Warning
+    /// # Warning
     ///
     /// If any child page is USER ACCESSIBLE, then the parent page must also be USER ACCESSIBLE.
     const PARENT: Self = Self(1 | (1 << 1));
+
+    #[must_use]
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
 
     #[must_use]
     #[inline]
@@ -46,8 +53,8 @@ impl Flags {
 
     #[must_use]
     #[inline]
-    pub fn contains(self, other: Self) -> bool {
-        (self & other) == other
+    pub const fn contains(self, other: Self) -> bool {
+        other.without(self).is_empty()
     }
 
     #[must_use]
@@ -77,13 +84,24 @@ impl core::ops::BitOr for Flags {
         Self(self.0 | rhs.0)
     }
 }
-
 impl core::ops::BitAnd for Flags {
     type Output = Self;
 
     #[inline]
     fn bitand(self, rhs: Self) -> Self::Output {
         Self(self.0 & rhs.0)
+    }
+}
+impl core::ops::BitOrAssign for Flags {
+    #[inline]
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+impl core::ops::BitAndAssign for Flags {
+    #[inline]
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
     }
 }
 
@@ -94,6 +112,11 @@ impl beskar_core::arch::paging::Flags for Flags {}
 pub struct Entry(u64);
 
 impl Entry {
+    const FLAGS_MASK: u64 = Flags::ALL.0;
+    const FRAME_MASK: u64 = 0x000F_FFFF_FFFF_F000;
+
+    pub const EMPTY: Self = Self(0);
+
     #[must_use]
     #[inline]
     pub const fn as_u64(self) -> u64 {
@@ -103,21 +126,19 @@ impl Entry {
     #[must_use]
     #[inline]
     pub const fn flags(self) -> Flags {
-        Flags(self.0 & Flags::ALL.0)
+        Flags(self.0 & Self::FLAGS_MASK)
     }
 
     #[must_use]
     #[inline]
     pub const fn addr(self) -> PhysAddr {
-        PhysAddr::new(self.0 & 0x000f_ffff_ffff_f000)
+        unsafe { PhysAddr::new_unchecked(self.0 & Self::FRAME_MASK) }
     }
 
     #[must_use]
     #[inline]
-    pub fn frame_start(self) -> Option<PhysAddr> {
-        assert!(!self.flags().contains(Flags::HUGE_PAGE), "Huge page");
-
-        if self.flags().contains(Flags::PRESENT) {
+    pub const fn present_addr(self) -> Option<PhysAddr> {
+        if self.is_present() {
             Some(self.addr())
         } else {
             None
@@ -126,12 +147,22 @@ impl Entry {
 
     #[inline]
     pub const fn set(&mut self, addr: PhysAddr, flags: Flags) {
-        self.0 = addr.as_u64() | flags.0;
+        debug_assert!(
+            addr.as_u64() & !Self::FRAME_MASK == 0,
+            "Physical address must be at least 4KiB aligned"
+        );
+        self.0 = (addr.as_u64() & Self::FRAME_MASK) | flags.0;
     }
 
     #[inline]
-    /// ORs the flags with the current flags.
-    pub const fn update_flags(&mut self, flags: Flags) {
+    /// Sets the flags, replacing the current flags while preserving the address.
+    pub const fn set_flags(&mut self, flags: Flags) {
+        self.0 = (self.0 & Self::FRAME_MASK) | (flags.0 & Self::FLAGS_MASK);
+    }
+
+    #[inline]
+    /// Adds flags to the current flags (bitwise OR).
+    pub const fn add_flags(&mut self, flags: Flags) {
         self.0 |= flags.0;
     }
 
@@ -139,6 +170,63 @@ impl Entry {
     #[inline]
     pub const fn is_null(self) -> bool {
         self.0 == 0
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_present(self) -> bool {
+        self.flags().contains(Flags::PRESENT)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_large(self) -> bool {
+        self.flags().contains(Flags::HUGE_PAGE)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_user_accessible(self) -> bool {
+        self.flags().contains(Flags::USER_ACCESSIBLE)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_writable(self) -> bool {
+        self.flags().contains(Flags::WRITABLE)
+    }
+
+    #[must_use]
+    #[inline]
+    const fn next_unchecked(raw: VirtAddr) -> VirtAddr {
+        let next_raw = raw.as_u64() << 9;
+        VirtAddr::new_extend(next_raw)
+    }
+
+    pub fn next<S: MemSize>(&self) -> Result<&Entries, MappingError<S>> {
+        if self.is_present() && !self.is_large() {
+            let va = VirtAddr::from_ptr(self);
+            let next_raw = Self::next_unchecked(va);
+            let entries = unsafe { &*(next_raw.as_ptr()) };
+            Ok(entries)
+        } else if self.is_present() && self.is_large() {
+            Err(MappingError::UnexpectedLargePage)
+        } else {
+            Err(MappingError::NotMapped)
+        }
+    }
+
+    pub fn next_mut<S: MemSize>(&mut self) -> Result<&mut Entries, MappingError<S>> {
+        if self.is_present() && !self.is_large() {
+            let va = VirtAddr::from_ptr(self);
+            let next_raw = Self::next_unchecked(va);
+            let entries = unsafe { &mut *(next_raw.as_mut_ptr()) };
+            Ok(entries)
+        } else if self.is_present() && self.is_large() {
+            Err(MappingError::UnexpectedLargePage)
+        } else {
+            Err(MappingError::NotMapped)
+        }
     }
 }
 
@@ -149,15 +237,17 @@ pub struct Entries([Entry; 512]);
 impl Default for Entries {
     #[inline]
     fn default() -> Self {
-        Self([Entry(0); 512])
+        Self::EMPTY
     }
 }
 
 impl Entries {
+    pub const EMPTY: Self = Self([Entry(0); 512]);
+
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
-        Self([Entry(0); 512])
+        Self::EMPTY
     }
 
     #[inline]
@@ -172,7 +262,7 @@ impl Entries {
 
     #[inline]
     pub fn clear(&mut self) {
-        self.0.iter_mut().for_each(|entry| *entry = Entry(0));
+        self.0.fill(Entry::EMPTY);
     }
 }
 
@@ -184,45 +274,36 @@ impl Index<usize> for Entries {
         &self.0[index]
     }
 }
-
 impl IndexMut<usize> for Entries {
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.0[index]
     }
 }
+impl Index<u16> for Entries {
+    type Output = Entry;
+
+    #[inline]
+    fn index(&self, index: u16) -> &Self::Output {
+        &self.0[usize::from(index)]
+    }
+}
+impl IndexMut<u16> for Entries {
+    #[inline]
+    fn index_mut(&mut self, index: u16) -> &mut Self::Output {
+        &mut self.0[usize::from(index)]
+    }
+}
 
 pub struct PageTable<'t> {
     entries: &'t mut Entries,
-    recursive_index: u16,
 }
 
 impl<'t> PageTable<'t> {
     #[must_use]
     #[inline]
-    pub fn new(entries: &'t mut Entries) -> Self {
-        let page =
-            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(entries.0.as_ptr())).unwrap();
-        let l4_index = page.p4_index();
-
-        if page.p3_index() != l4_index || page.p2_index() != l4_index || page.p1_index() != l4_index
-        {
-            unimplemented!("Non-recursive page table");
-        }
-
-        Self {
-            entries,
-            recursive_index: l4_index,
-        }
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn new_from_index(entries: &'t mut Entries, recursive_index: u16) -> Self {
-        Self {
-            entries,
-            recursive_index,
-        }
+    pub const fn new(entries: &'t mut Entries) -> Self {
+        Self { entries }
     }
 
     #[must_use]
@@ -237,42 +318,34 @@ impl<'t> PageTable<'t> {
         self.entries
     }
 
-    #[must_use]
-    #[inline]
-    pub const fn recursive_index(&self) -> u16 {
-        self.recursive_index
-    }
-
-    unsafe fn create_next_level<'a, A: FrameAllocator<M4KiB>>(
+    fn next_or_create<'a, S: MemSize, A: FrameAllocator<M4KiB>>(
         entry: &'a mut Entry,
-        next_table: Page,
         insert_flags: Flags,
         allocator: &mut A,
-    ) -> &'a mut Entries {
-        let mut existed = true;
-
-        if entry.is_null() {
-            existed = false;
-
-            let frame = allocator.allocate_frame().unwrap();
-            entry.set(frame.start_address(), insert_flags);
-        } else {
-            entry.update_flags(insert_flags);
+    ) -> Result<&'a mut Entries, MappingError<S>> {
+        if insert_flags.contains(Flags::HUGE_PAGE) {
+            return Err(MappingError::UnexpectedLargePage);
         }
 
-        assert_eq!(
-            entry.flags() & Flags::HUGE_PAGE,
-            Flags::EMPTY,
-            "Cannot create huge page"
-        );
-
-        let entries_ptr = next_table.start_address().as_mut_ptr::<Entries>();
-        let entries = unsafe { &mut *entries_ptr };
-        if !existed {
-            entries.clear();
+        if entry.is_present() {
+            // If entry exists, ensure parent flags are at least as permissive
+            // We need to add any missing flags (especially USER_ACCESSIBLE)
+            entry.add_flags(insert_flags);
+            return entry.next_mut();
         }
 
-        entries
+        // Allocate new frame for the next table level
+        let frame = allocator
+            .allocate_frame()
+            .ok_or(MappingError::FrameAllocationFailed)?;
+
+        entry.set(frame.start_address(), insert_flags | Flags::PRESENT);
+
+        // Get the newly created table and zero it
+        let entries = entry.next_mut()?;
+        entries.clear();
+
+        Ok(entries)
     }
 }
 
@@ -292,41 +365,6 @@ impl IndexMut<usize> for PageTable<'_> {
     }
 }
 
-#[must_use]
-fn get_p3<S: MemSize>(page: Page<S>, recursive_index: u16) -> Page {
-    let ri = u64::from(recursive_index);
-    let p4_idx = u64::from(page.p4_index());
-    let vaddr = VirtAddr::new_extend((ri << 39) | (ri << 30) | (ri << 21) | (p4_idx << 12));
-    Page::containing_address(vaddr)
-}
-
-#[must_use]
-fn get_p2_2mib(page: Page<M2MiB>, recursive_index: u16) -> Page {
-    let ri = u64::from(recursive_index);
-    let p4_idx = u64::from(page.p4_index());
-    let p3_idx = u64::from(page.p3_index());
-    let vaddr = VirtAddr::new_extend((ri << 39) | (ri << 30) | (p4_idx << 21) | (p3_idx << 12));
-    Page::containing_address(vaddr)
-}
-#[must_use]
-fn get_p2_4kib(page: Page<M4KiB>, recursive_index: u16) -> Page {
-    let ri = u64::from(recursive_index);
-    let p4_idx = u64::from(page.p4_index());
-    let p3_idx = u64::from(page.p3_index());
-    let vaddr = VirtAddr::new_extend((ri << 39) | (ri << 30) | (p4_idx << 21) | (p3_idx << 12));
-    Page::containing_address(vaddr)
-}
-
-#[must_use]
-fn get_p1(page: Page<M4KiB>, recursive_index: u16) -> Page {
-    let ri = u64::from(recursive_index);
-    let p4_idx = u64::from(page.p4_index());
-    let p3_idx = u64::from(page.p3_index());
-    let p2_idx = u64::from(page.p2_index());
-    let vaddr = VirtAddr::new_extend((ri << 39) | (p4_idx << 30) | (p3_idx << 21) | (p2_idx << 12));
-    Page::containing_address(vaddr)
-}
-
 impl Mapper<M4KiB, Flags> for PageTable<'_> {
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
@@ -334,177 +372,95 @@ impl Mapper<M4KiB, Flags> for PageTable<'_> {
         frame: Frame<M4KiB>,
         flags: Flags,
         fralloc: &mut A,
-    ) -> impl beskar_core::arch::paging::CacheFlush<M4KiB> {
-        let ri = self.recursive_index;
+    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M4KiB>, MappingError<M4KiB>> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
             Flags::PARENT
         };
 
-        let p3_page = get_p3(page, ri);
-        let p3 = unsafe {
-            Self::create_next_level(
-                &mut self[usize::from(page.p4_index())],
-                p3_page,
-                parent_flags,
-                fralloc,
-            )
-        };
+        let p4_entry = &mut self[usize::from(page.p4_index())];
+        let p3 = Self::next_or_create(p4_entry, parent_flags, fralloc)?;
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
+        let p2 = Self::next_or_create(p3_entry, parent_flags, fralloc)?;
+        let p2_entry = &mut p2[usize::from(page.p2_index())];
+        let p1 = Self::next_or_create(p2_entry, parent_flags, fralloc)?;
+        let p1_entry = &mut p1[usize::from(page.p1_index())];
 
-        let p2_page = get_p2_4kib(page, ri);
-        let p2 = unsafe {
-            Self::create_next_level(
-                &mut p3[usize::from(page.p3_index())],
-                p2_page,
-                parent_flags,
-                fralloc,
-            )
-        };
+        if !p1_entry.is_null() {
+            return Err(MappingError::AlreadyMapped(Frame::containing_address(
+                p1_entry.addr(),
+            )));
+        }
 
-        let p1_page = get_p1(page, ri);
-        let p1 = unsafe {
-            Self::create_next_level(
-                &mut p2[usize::from(page.p2_index())],
-                p1_page,
-                parent_flags,
-                fralloc,
-            )
-        };
-
-        assert!(
-            p1[usize::from(page.p1_index())].is_null(),
-            "Page {:#x} already mapped to {:#x}",
-            page.start_address().as_u64(),
-            p1[usize::from(page.p1_index())].addr().as_u64()
+        p1_entry.set(
+            frame.start_address(),
+            flags.union(Flags::PRESENT).without(Flags::HUGE_PAGE),
         );
-        p1[usize::from(page.p1_index())].set(frame.start_address(), flags);
 
-        super::TlbFlush::new(page)
+        Ok(super::TlbFlush::new(page))
     }
 
     fn unmap(
         &mut self,
         page: Page<M4KiB>,
-    ) -> Option<(
-        Frame<M4KiB>,
-        impl beskar_core::arch::paging::CacheFlush<M4KiB>,
-    )> {
-        let p4_entry = &self[usize::from(page.p4_index())];
-        p4_entry.frame_start()?;
-
-        let p3 = unsafe {
-            &*get_p3(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
-        let p3_entry = &p3[usize::from(page.p3_index())];
-        p3_entry.frame_start()?;
-
-        let p2 = unsafe {
-            &*get_p2_4kib(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
-        let p2_entry = &p2[usize::from(page.p2_index())];
-        p2_entry.frame_start()?;
-
-        let p1 = unsafe {
-            &mut *get_p1(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+    ) -> Result<
+        (
+            Frame<M4KiB>,
+            impl beskar_core::arch::paging::CacheFlush<M4KiB>,
+        ),
+        MappingError<M4KiB>,
+    > {
+        let p4_entry = &mut self[usize::from(page.p4_index())];
+        let p3 = p4_entry.next_mut()?;
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
+        let p2 = p3_entry.next_mut()?;
+        let p2_entry = &mut p2[usize::from(page.p2_index())];
+        let p1 = p2_entry.next_mut()?;
         let p1_entry = &mut p1[usize::from(page.p1_index())];
-        let frame = Frame::from_start_address(p1_entry.frame_start()?).unwrap();
 
-        p1_entry.set(PhysAddr::new(0), Flags::EMPTY);
+        let frame =
+            Frame::containing_address(p1_entry.present_addr().ok_or(MappingError::NotMapped)?);
 
-        Some((frame, super::TlbFlush::new(page)))
+        p1_entry.set(PhysAddr::ZERO, Flags::EMPTY);
+
+        Ok((frame, super::TlbFlush::new(page)))
     }
 
     fn update_flags(
         &mut self,
         page: Page<M4KiB>,
         flags: Flags,
-    ) -> Option<impl beskar_core::arch::paging::CacheFlush<M4KiB>> {
-        let p4_entry = &self[usize::from(page.p4_index())];
-        if p4_entry.is_null() {
-            return None;
-        }
-
-        let p3 = unsafe {
-            &mut *get_p3(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M4KiB>, MappingError<M4KiB>> {
+        let p4_entry = &mut self[usize::from(page.p4_index())];
+        let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
-        if p3_entry.is_null() {
-            return None;
-        }
-
-        let p2 = unsafe {
-            &mut *get_p2_4kib(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+        let p2 = p3_entry.next_mut()?;
         let p2_entry = &mut p2[usize::from(page.p2_index())];
-        if p2_entry.is_null() {
-            return None;
-        }
-
-        let p1 = unsafe {
-            &mut *get_p1(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+        let p1 = p2_entry.next_mut()?;
         let p1_entry = &mut p1[usize::from(page.p1_index())];
-        if p1_entry.is_null() {
-            return None;
+
+        if !p1_entry.is_present() {
+            return Err(MappingError::NotMapped);
         }
 
-        let addr = p1_entry.addr();
-        p1_entry.set(addr, flags);
+        p1_entry.set_flags(flags);
 
-        Some(super::TlbFlush::new(page))
+        Ok(super::TlbFlush::new(page))
     }
 
     fn translate(&self, page: Page<M4KiB>) -> Option<(Frame<M4KiB>, Flags)> {
         let p4_entry = &self[usize::from(page.p4_index())];
-        if p4_entry.is_null() {
-            return None;
-        }
-        let p3 = unsafe {
-            &*get_p3(page, self.recursive_index)
-                .start_address()
-                .as_ptr::<Entries>()
-        };
+        let p3 = p4_entry.next::<M4KiB>().ok()?;
         let p3_entry = &p3[usize::from(page.p3_index())];
-        if p3_entry.is_null() {
-            return None;
-        }
-        let p2 = unsafe {
-            &*get_p2_4kib(page, self.recursive_index)
-                .start_address()
-                .as_ptr::<Entries>()
-        };
+        let p2 = p3_entry.next::<M4KiB>().ok()?;
         let p2_entry = &p2[usize::from(page.p2_index())];
-        if p2_entry.is_null() {
-            return None;
-        }
-        let p1 = unsafe {
-            &*get_p1(page, self.recursive_index)
-                .start_address()
-                .as_ptr::<Entries>()
-        };
+        let p1 = p2_entry.next::<M4KiB>().ok()?;
         let p1_entry = &p1[usize::from(page.p1_index())];
-        if p1_entry.is_null() {
-            None
-        } else {
-            Some((
-                Frame::from_start_address(p1_entry.addr()).unwrap(),
-                p1_entry.flags(),
-            ))
-        }
+
+        p1_entry
+            .is_present()
+            .then(|| (Frame::containing_address(p1_entry.addr()), p1_entry.flags()))
     }
 }
 
@@ -515,147 +471,94 @@ impl Mapper<M2MiB, Flags> for PageTable<'_> {
         frame: Frame<M2MiB>,
         flags: Flags,
         fralloc: &mut A,
-    ) -> impl beskar_core::arch::paging::CacheFlush<M2MiB> {
-        let ri = self.recursive_index;
+    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M2MiB>, MappingError<M2MiB>> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
             Flags::PARENT
         };
 
-        let p3_page = get_p3(page, ri);
-        let p3 = unsafe {
-            Self::create_next_level(
-                &mut self[usize::from(page.p4_index())],
-                p3_page,
-                parent_flags,
-                fralloc,
-            )
-        };
+        let p4_entry = &mut self[usize::from(page.p4_index())];
+        let p3 = Self::next_or_create(p4_entry, parent_flags, fralloc)?;
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
+        let p2 = Self::next_or_create(p3_entry, parent_flags, fralloc)?;
+        let p2_entry = &mut p2[usize::from(page.p2_index())];
 
-        let p2_page = get_p2_2mib(page, ri);
-        let p2 = unsafe {
-            Self::create_next_level(
-                &mut p3[usize::from(page.p3_index())],
-                p2_page,
-                parent_flags,
-                fralloc,
-            )
-        };
+        if !p2_entry.is_null() {
+            return Err(MappingError::AlreadyMapped(Frame::containing_address(
+                p2_entry.addr(),
+            )));
+        }
 
-        assert!(
-            p2[usize::from(page.p2_index())].is_null(),
-            "Page {:#x} already mapped to {:#x}",
-            page.start_address().as_u64(),
-            p2[usize::from(page.p2_index())].addr().as_u64()
+        p2_entry.set(
+            frame.start_address(),
+            flags.union(Flags::PRESENT).union(Flags::HUGE_PAGE),
         );
-        p2[usize::from(page.p2_index())].set(frame.start_address(), Flags::HUGE_PAGE | flags);
 
-        super::TlbFlush::new(page)
+        Ok(super::TlbFlush::new(page))
     }
 
     fn unmap(
         &mut self,
         page: Page<M2MiB>,
-    ) -> Option<(
-        Frame<M2MiB>,
-        impl beskar_core::arch::paging::CacheFlush<M2MiB>,
-    )> {
-        let p4_entry = &self[usize::from(page.p4_index())];
-        p4_entry.frame_start()?;
-
-        let p3 = unsafe {
-            &mut *get_p3(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+    ) -> Result<
+        (
+            Frame<M2MiB>,
+            impl beskar_core::arch::paging::CacheFlush<M2MiB>,
+        ),
+        MappingError<M2MiB>,
+    > {
+        let p4_entry = &mut self[usize::from(page.p4_index())];
+        let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
-        p3_entry.frame_start()?;
-
-        let p2 = unsafe {
-            &mut *get_p2_2mib(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+        let p2 = p3_entry.next_mut()?;
         let p2_entry = &mut p2[usize::from(page.p2_index())];
-        let flags = p2_entry.flags();
 
-        if !flags.contains(Flags::PRESENT) {
-            return None;
+        let frame =
+            Frame::containing_address(p2_entry.present_addr().ok_or(MappingError::NotMapped)?);
+
+        if !p2_entry.flags().contains(Flags::HUGE_PAGE) {
+            return Err(MappingError::UnexpectedNotLargePage);
         }
-        assert!(flags.contains(Flags::HUGE_PAGE), "Not a huge page");
 
-        let frame = Frame::from_start_address(p2_entry.addr()).unwrap();
+        p2_entry.set(PhysAddr::ZERO, Flags::EMPTY);
 
-        p2_entry.set(PhysAddr::new(0), Flags::EMPTY);
-
-        Some((frame, super::TlbFlush::new(page)))
+        Ok((frame, super::TlbFlush::new(page)))
     }
 
     fn update_flags(
         &mut self,
         page: Page<M2MiB>,
         flags: Flags,
-    ) -> Option<impl beskar_core::arch::paging::CacheFlush<M2MiB>> {
-        let p4_entry = &self[usize::from(page.p4_index())];
-        if p4_entry.is_null() {
-            return None;
-        }
-
-        let p3 = unsafe {
-            &mut *get_p3(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M2MiB>, MappingError<M2MiB>> {
+        let p4_entry = &mut self[usize::from(page.p4_index())];
+        let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
-        if p3_entry.is_null() {
-            return None;
-        }
-
-        let p2 = unsafe {
-            &mut *get_p2_2mib(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+        let p2 = p3_entry.next_mut()?;
         let p2_entry = &mut p2[usize::from(page.p2_index())];
-        if p2_entry.is_null() {
-            return None;
+
+        if !p2_entry.is_present() {
+            return Err(MappingError::NotMapped);
+        }
+        if !p2_entry.is_large() {
+            return Err(MappingError::UnexpectedNotLargePage);
         }
 
-        let addr = p2_entry.addr();
-        p2_entry.set(addr, flags | Flags::HUGE_PAGE);
+        p2_entry.set_flags(flags);
 
-        Some(super::TlbFlush::new(page))
+        Ok(super::TlbFlush::new(page))
     }
 
     fn translate(&self, page: Page<M2MiB>) -> Option<(Frame<M2MiB>, Flags)> {
         let p4_entry = &self[usize::from(page.p4_index())];
-        if p4_entry.is_null() {
-            return None;
-        }
-        let p3 = unsafe {
-            &*get_p3(page, self.recursive_index)
-                .start_address()
-                .as_ptr::<Entries>()
-        };
+        let p3 = p4_entry.next::<M4KiB>().ok()?;
         let p3_entry = &p3[usize::from(page.p3_index())];
-        if p3_entry.is_null() {
-            return None;
-        }
-        let p2 = unsafe {
-            &*get_p2_2mib(page, self.recursive_index)
-                .start_address()
-                .as_ptr::<Entries>()
-        };
+        let p2 = p3_entry.next::<M4KiB>().ok()?;
         let p2_entry = &p2[usize::from(page.p2_index())];
-        if p2_entry.is_null() {
-            None
-        } else {
-            Some((
-                Frame::from_start_address(p2_entry.addr()).unwrap(),
-                p2_entry.flags(),
-            ))
-        }
+
+        p2_entry
+            .is_present()
+            .then(|| (Frame::containing_address(p2_entry.addr()), p2_entry.flags()))
     }
 }
 
@@ -666,107 +569,86 @@ impl Mapper<M1GiB, Flags> for PageTable<'_> {
         frame: Frame<M1GiB>,
         flags: Flags,
         fralloc: &mut A,
-    ) -> impl beskar_core::arch::paging::CacheFlush<M1GiB> {
+    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M1GiB>, MappingError<M1GiB>> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
             Flags::PARENT
         };
 
-        let p3_page = get_p3(page, self.recursive_index);
-        let p3 = unsafe {
-            Self::create_next_level(
-                &mut self[usize::from(page.p4_index())],
-                p3_page,
-                parent_flags,
-                fralloc,
-            )
-        };
+        let p4_entry = &mut self[usize::from(page.p4_index())];
+        let p3 = Self::next_or_create(p4_entry, parent_flags, fralloc)?;
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
 
-        assert!(
-            p3[usize::from(page.p3_index())].is_null(),
-            "Page already mapped"
+        if !p3_entry.is_null() {
+            return Err(MappingError::AlreadyMapped(Frame::containing_address(
+                p3_entry.addr(),
+            )));
+        }
+
+        p3_entry.set(
+            frame.start_address(),
+            flags.union(Flags::PRESENT).union(Flags::HUGE_PAGE),
         );
-        p3[usize::from(page.p3_index())].set(frame.start_address(), Flags::HUGE_PAGE | flags);
 
-        super::TlbFlush::new(page)
+        Ok(super::TlbFlush::new(page))
     }
 
     fn unmap(
         &mut self,
         page: Page<M1GiB>,
-    ) -> Option<(
-        Frame<M1GiB>,
-        impl beskar_core::arch::paging::CacheFlush<M1GiB>,
-    )> {
-        let p4_entry = &self[usize::from(page.p4_index())];
-        p4_entry.frame_start()?;
-
-        let p3 = unsafe {
-            &mut *get_p3(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+    ) -> Result<
+        (
+            Frame<M1GiB>,
+            impl beskar_core::arch::paging::CacheFlush<M1GiB>,
+        ),
+        MappingError<M1GiB>,
+    > {
+        let p4_entry = &mut self[usize::from(page.p4_index())];
+        let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
-        let flags = p3_entry.flags();
 
-        if !flags.contains(Flags::PRESENT) {
-            return None;
+        let frame =
+            Frame::containing_address(p3_entry.present_addr().ok_or(MappingError::NotMapped)?);
+
+        if !p3_entry.flags().contains(Flags::HUGE_PAGE) {
+            return Err(MappingError::UnexpectedNotLargePage);
         }
-        assert!(flags.contains(Flags::HUGE_PAGE), "Not a huge page");
 
-        let frame = Frame::from_start_address(p3_entry.addr()).unwrap();
+        p3_entry.set(PhysAddr::ZERO, Flags::EMPTY);
 
-        p3_entry.set(PhysAddr::new(0), Flags::EMPTY);
-
-        Some((frame, super::TlbFlush::new(page)))
+        Ok((frame, super::TlbFlush::new(page)))
     }
 
     fn update_flags(
         &mut self,
         page: Page<M1GiB>,
         flags: Flags,
-    ) -> Option<impl beskar_core::arch::paging::CacheFlush<M1GiB>> {
-        let p4_entry = &self[usize::from(page.p4_index())];
-        if p4_entry.is_null() {
-            return None;
-        }
-
-        let p3 = unsafe {
-            &mut *get_p3(page, self.recursive_index)
-                .start_address()
-                .as_mut_ptr::<Entries>()
-        };
+    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M1GiB>, MappingError<M1GiB>> {
+        let p4_entry = &mut self[usize::from(page.p4_index())];
+        let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
-        if p3_entry.is_null() {
-            return None;
+
+        if !p3_entry.is_present() {
+            return Err(MappingError::NotMapped);
+        }
+        if !p3_entry.is_large() {
+            return Err(MappingError::UnexpectedNotLargePage);
         }
 
-        let addr = p3_entry.addr();
-        p3_entry.set(addr, flags | Flags::HUGE_PAGE);
+        p3_entry.set_flags(flags);
 
-        Some(super::TlbFlush::new(page))
+        Ok(super::TlbFlush::new(page))
     }
 
     fn translate(&self, page: Page<M1GiB>) -> Option<(Frame<M1GiB>, Flags)> {
         let p4_entry = &self[usize::from(page.p4_index())];
-        if p4_entry.is_null() {
-            return None;
-        }
-        let p3 = unsafe {
-            &*get_p3(page, self.recursive_index)
-                .start_address()
-                .as_ptr::<Entries>()
-        };
+        let p3 = p4_entry.next::<M4KiB>().ok()?;
         let p3_entry = &p3[usize::from(page.p3_index())];
-        if p3_entry.is_null() {
-            None
-        } else {
-            Some((
-                Frame::from_start_address(p3_entry.addr()).unwrap(),
-                p3_entry.flags(),
-            ))
-        }
+
+        p3_entry
+            .is_present()
+            .then(|| (Frame::containing_address(p3_entry.addr()), p3_entry.flags()))
     }
 }
 
@@ -774,57 +656,31 @@ impl Translator<Flags> for PageTable<'_> {
     fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, Flags)> {
         // Here, we need to be careful, as the address can be in any size
         // of page. We need to check for it in every level of the page table.
-        let page = Page::containing_address(addr);
-
         let p4_entry = &self[usize::from(addr.p4_index())];
-        if p4_entry.is_null() {
-            return None;
-        }
-        let p3 = unsafe {
-            &*get_p3(page, self.recursive_index)
-                .start_address()
-                .as_ptr::<Entries>()
-        };
+        let p3 = p4_entry.next::<M4KiB>().ok()?;
         let p3_entry = &p3[usize::from(addr.p3_index())];
-        if p3_entry.is_null() {
-            return None;
-        }
-        if p3_entry.flags() & Flags::HUGE_PAGE != Flags::EMPTY {
+        if p3_entry.is_present() && p3_entry.is_large() {
             return Some((
-                PhysAddr::new(p3_entry.addr().as_u64() + addr.as_u64() % M1GiB::SIZE),
+                PhysAddr::new_truncate(p3_entry.addr().as_u64() + addr.as_u64() % M1GiB::SIZE),
                 p3_entry.flags(),
             ));
         }
-
-        let p2 = unsafe {
-            &*get_p2_4kib(page, self.recursive_index)
-                .start_address()
-                .as_ptr::<Entries>()
-        };
-
+        let p2 = p3_entry.next::<M4KiB>().ok()?;
         let p2_entry = &p2[usize::from(addr.p2_index())];
-        if p2_entry.is_null() {
-            return None;
-        }
-        if p2_entry.flags() & Flags::HUGE_PAGE != Flags::EMPTY {
+        if p2_entry.is_present() && p2_entry.is_large() {
             return Some((
-                PhysAddr::new(p2_entry.addr().as_u64() + addr.as_u64() % M2MiB::SIZE),
+                PhysAddr::new_truncate(p2_entry.addr().as_u64() + addr.as_u64() % M2MiB::SIZE),
                 p2_entry.flags(),
             ));
         }
-
-        let p1 = unsafe {
-            &*get_p1(page, self.recursive_index)
-                .start_address()
-                .as_ptr::<Entries>()
-        };
+        let p1 = p2_entry.next::<M4KiB>().ok()?;
         let p1_entry = &p1[usize::from(addr.p1_index())];
-        if p1_entry.is_null() {
+        if !p1_entry.is_present() {
             return None;
         }
 
         Some((
-            PhysAddr::new(p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE),
+            PhysAddr::new_truncate(p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE),
             p1_entry.flags(),
         ))
     }
@@ -859,7 +715,7 @@ impl<'t> OffsetPageTable<'t> {
     ///
     /// As this function isn't aware of the page size, it doesn't check for huge pages.
     fn next_table(offset: VirtAddr, entry: &Entry) -> Option<&Entries> {
-        if !entry.flags().contains(Flags::PRESENT) {
+        if !entry.is_present() || entry.is_large() {
             return None;
         }
         let pt_vaddr = offset + entry.addr().as_u64();
@@ -873,7 +729,7 @@ impl<'t> OffsetPageTable<'t> {
     ///
     /// As this function isn't aware of the page size, it doesn't check for huge pages.
     fn next_table_mut(offset: VirtAddr, entry: &mut Entry) -> Option<&mut Entries> {
-        if !entry.flags().contains(Flags::PRESENT) {
+        if !entry.is_present() || entry.is_large() {
             return None;
         }
         let pt_vaddr = offset + entry.addr().as_u64();
@@ -881,34 +737,34 @@ impl<'t> OffsetPageTable<'t> {
         Some(unsafe { &mut *pt_ptr })
     }
 
-    fn create_next_table<'a, A: FrameAllocator<M4KiB>>(
+    fn next_or_create<'a, S: MemSize, A: FrameAllocator<M4KiB>>(
         offset: VirtAddr,
         entry: &'a mut Entry,
         insert_flags: Flags,
         allocator: &mut A,
-    ) -> &'a mut Entries {
-        let mut existed = true;
-
-        if entry.is_null() {
-            existed = false;
-
-            let frame = allocator.allocate_frame().unwrap();
-            entry.set(frame.start_address(), insert_flags);
-        } else {
-            entry.update_flags(insert_flags);
+    ) -> Result<&'a mut Entries, MappingError<S>> {
+        if insert_flags.contains(Flags::HUGE_PAGE) {
+            return Err(MappingError::UnexpectedLargePage);
         }
 
-        assert_eq!(
-            entry.flags() & Flags::HUGE_PAGE,
-            Flags::EMPTY,
-            "Cannot create huge page"
-        );
-        let next_table = Self::next_table_mut(offset, entry).unwrap();
-        if !existed {
-            next_table.clear();
+        if entry.is_present() {
+            // If entry exists, ensure parent flags are at least as permissive
+            entry.add_flags(insert_flags);
+            return Self::next_table_mut(offset, entry).ok_or(MappingError::NotMapped);
         }
 
-        next_table
+        // Allocate new frame for the next table level
+        let frame = allocator
+            .allocate_frame()
+            .ok_or(MappingError::FrameAllocationFailed)?;
+
+        entry.set(frame.start_address(), insert_flags | Flags::PRESENT);
+
+        // Get the newly created table and zero it
+        let next_table = Self::next_table_mut(offset, entry).ok_or(MappingError::NotMapped)?;
+        next_table.clear();
+
+        Ok(next_table)
     }
 }
 
@@ -919,215 +775,95 @@ impl Mapper<M4KiB, Flags> for OffsetPageTable<'_> {
         frame: Frame<M4KiB>,
         flags: Flags,
         allocator: &mut A,
-    ) -> impl beskar_core::arch::paging::CacheFlush<M4KiB> {
+    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M4KiB>, MappingError<M4KiB>> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
             Flags::PARENT
         };
 
-        assert!(
-            !self.entries[usize::from(page.p4_index())]
-                .flags()
-                .contains(Flags::HUGE_PAGE)
-        );
-        let p3 = Self::create_next_table(
-            self.offset,
-            &mut self.entries[usize::from(page.p4_index())],
-            parent_flags,
-            allocator,
-        );
-        assert!(
-            !p3[usize::from(page.p3_index())]
-                .flags()
-                .contains(Flags::HUGE_PAGE)
-        );
-        let p2 = Self::create_next_table(
-            self.offset,
-            &mut p3[usize::from(page.p3_index())],
-            parent_flags,
-            allocator,
-        );
-        assert!(
-            !p2[usize::from(page.p2_index())]
-                .flags()
-                .contains(Flags::HUGE_PAGE)
-        );
-        let p1 = Self::create_next_table(
-            self.offset,
-            &mut p2[usize::from(page.p2_index())],
-            parent_flags,
-            allocator,
-        );
-
+        let p4_entry = &mut self.entries[usize::from(page.p4_index())];
+        let p3 = Self::next_or_create(self.offset, p4_entry, parent_flags, allocator)?;
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
+        let p2 = Self::next_or_create(self.offset, p3_entry, parent_flags, allocator)?;
+        let p2_entry = &mut p2[usize::from(page.p2_index())];
+        let p1 = Self::next_or_create(self.offset, p2_entry, parent_flags, allocator)?;
         let p1_entry = &mut p1[usize::from(page.p1_index())];
-        assert!(p1_entry.is_null(), "Page already mapped");
-        assert!(!flags.contains(Flags::HUGE_PAGE), "Huge page");
-        p1_entry.set(frame.start_address(), flags);
 
-        super::TlbFlush::new(page)
+        if !p1_entry.is_null() {
+            return Err(MappingError::AlreadyMapped(Frame::containing_address(
+                p1_entry.addr(),
+            )));
+        }
+
+        p1_entry.set(
+            frame.start_address(),
+            flags.union(Flags::PRESENT).without(Flags::HUGE_PAGE),
+        );
+
+        Ok(super::TlbFlush::new(page))
     }
 
     fn translate(&self, page: Page<M4KiB>) -> Option<(Frame<M4KiB>, Flags)> {
-        let p4 = &self.entries;
-        if p4[usize::from(page.p4_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return None;
-        }
-        let p3 = Self::next_table(self.offset, &p4[usize::from(page.p4_index())])?;
-        if p3[usize::from(page.p3_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return None;
-        }
-        let p2 = Self::next_table(self.offset, &p3[usize::from(page.p3_index())])?;
-        if p2[usize::from(page.p2_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return None;
-        }
-        let p1 = Self::next_table(self.offset, &p2[usize::from(page.p2_index())])?;
-
+        let p4_entry = &self.entries()[usize::from(page.p4_index())];
+        let p3 = Self::next_table(self.offset, p4_entry)?;
+        let p3_entry = &p3[usize::from(page.p3_index())];
+        let p2 = Self::next_table(self.offset, p3_entry)?;
+        let p2_entry = &p2[usize::from(page.p2_index())];
+        let p1 = Self::next_table(self.offset, p2_entry)?;
         let p1_entry = &p1[usize::from(page.p1_index())];
-        assert!(!p1_entry.flags().contains(Flags::HUGE_PAGE));
-        if !p1_entry.flags().contains(Flags::PRESENT) {
-            return None;
-        }
-        let frame = Frame::from_start_address(p1_entry.addr()).unwrap();
-        Some((frame, p1_entry.flags()))
+
+        p1_entry
+            .is_present()
+            .then(|| (Frame::containing_address(p1_entry.addr()), p1_entry.flags()))
     }
 
     fn unmap(
         &mut self,
         page: Page<M4KiB>,
-    ) -> Option<(
-        Frame<M4KiB>,
-        impl beskar_core::arch::paging::CacheFlush<M4KiB>,
-    )> {
-        if self.entries[usize::from(page.p4_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return None;
-        }
-        let p3 =
-            Self::next_table_mut(self.offset, &mut self.entries[usize::from(page.p4_index())])?;
-        if p3[usize::from(page.p3_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return None;
-        }
-        let p2 = Self::next_table_mut(self.offset, &mut p3[usize::from(page.p3_index())])?;
-        if p2[usize::from(page.p2_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return None;
-        }
-        let p1 = Self::next_table_mut(self.offset, &mut p2[usize::from(page.p2_index())])?;
-
+    ) -> Result<
+        (
+            Frame<M4KiB>,
+            impl beskar_core::arch::paging::CacheFlush<M4KiB>,
+        ),
+        MappingError<M4KiB>,
+    > {
+        let p4_entry = &mut self.entries[usize::from(page.p4_index())];
+        let p3 = Self::next_table_mut(self.offset, p4_entry).ok_or(MappingError::NotMapped)?;
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
+        let p2 = Self::next_table_mut(self.offset, p3_entry).ok_or(MappingError::NotMapped)?;
+        let p2_entry = &mut p2[usize::from(page.p2_index())];
+        let p1 = Self::next_table_mut(self.offset, p2_entry).ok_or(MappingError::NotMapped)?;
         let p1_entry = &mut p1[usize::from(page.p1_index())];
-        assert!(!p1_entry.flags().contains(Flags::HUGE_PAGE));
-        if p1_entry.is_null() {
-            return None;
-        }
 
-        let frame = Frame::from_start_address(p1_entry.addr()).unwrap();
-        p1_entry.set(PhysAddr::new(0), Flags::EMPTY);
+        let frame =
+            Frame::containing_address(p1_entry.present_addr().ok_or(MappingError::NotMapped)?);
 
-        Some((frame, super::TlbFlush::new(page)))
+        p1_entry.set(PhysAddr::ZERO, Flags::EMPTY);
+
+        Ok((frame, super::TlbFlush::new(page)))
     }
 
     fn update_flags(
         &mut self,
         page: Page<M4KiB>,
         flags: Flags,
-    ) -> Option<impl beskar_core::arch::paging::CacheFlush<M4KiB>> {
-        if self.entries[usize::from(page.p4_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return None;
-        }
-        let p3 =
-            Self::next_table_mut(self.offset, &mut self.entries[usize::from(page.p4_index())])?;
-        if p3[usize::from(page.p3_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return None;
-        }
-        let p2 = Self::next_table_mut(self.offset, &mut p3[usize::from(page.p3_index())])?;
-        if p2[usize::from(page.p2_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return None;
-        }
-        let p1 = Self::next_table_mut(self.offset, &mut p2[usize::from(page.p2_index())])?;
-
+    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M4KiB>, MappingError<M4KiB>> {
+        let p4_entry = &mut self.entries[usize::from(page.p4_index())];
+        let p3 = Self::next_table_mut(self.offset, p4_entry).ok_or(MappingError::NotMapped)?;
+        let p3_entry = &mut p3[usize::from(page.p3_index())];
+        let p2 = Self::next_table_mut(self.offset, p3_entry).ok_or(MappingError::NotMapped)?;
+        let p2_entry = &mut p2[usize::from(page.p2_index())];
+        let p1 = Self::next_table_mut(self.offset, p2_entry).ok_or(MappingError::NotMapped)?;
         let p1_entry = &mut p1[usize::from(page.p1_index())];
-        assert!(!p1_entry.flags().contains(Flags::HUGE_PAGE));
-        if p1_entry.is_null() {
-            return None;
+
+        if !p1_entry.is_present() {
+            return Err(MappingError::NotMapped);
         }
 
-        let addr = p1_entry.addr();
-        p1_entry.set(addr, flags);
+        p1_entry.set_flags(flags);
 
-        Some(super::TlbFlush::new(page))
-    }
-}
-
-impl Translator<Flags> for OffsetPageTable<'_> {
-    fn translate_addr(&self, addr: VirtAddr) -> Option<(PhysAddr, Flags)> {
-        let p4 = &self.entries;
-        assert!(
-            !p4[usize::from(addr.p4_index())]
-                .flags()
-                .contains(Flags::HUGE_PAGE)
-        );
-        let p3 = Self::next_table(self.offset, &p4[usize::from(addr.p4_index())])?;
-        if p3[usize::from(addr.p3_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return Some((
-                PhysAddr::new(
-                    p3[usize::from(addr.p3_index())].addr().as_u64() + addr.as_u64() % M1GiB::SIZE,
-                ),
-                p3[usize::from(addr.p3_index())].flags(),
-            ));
-        }
-        let p2 = Self::next_table(self.offset, &p3[usize::from(addr.p3_index())])?;
-        if p2[usize::from(addr.p2_index())]
-            .flags()
-            .contains(Flags::HUGE_PAGE)
-        {
-            return Some((
-                PhysAddr::new(
-                    p2[usize::from(addr.p2_index())].addr().as_u64() + addr.as_u64() % M2MiB::SIZE,
-                ),
-                p2[usize::from(addr.p2_index())].flags(),
-            ));
-        }
-        let p1 = Self::next_table(self.offset, &p2[usize::from(addr.p2_index())])?;
-
-        let p1_entry = &p1[usize::from(addr.p1_index())];
-        assert!(!p1_entry.flags().contains(Flags::HUGE_PAGE));
-        if !p1_entry.flags().contains(Flags::PRESENT) {
-            return None;
-        }
-
-        Some((
-            PhysAddr::new(p1_entry.addr().as_u64() + addr.as_u64() % M4KiB::SIZE),
-            p1_entry.flags(),
-        ))
+        Ok(super::TlbFlush::new(page))
     }
 }
 
@@ -1157,7 +893,7 @@ mod tests {
     #[test]
     fn test_entry_operations() {
         let mut entry = Entry::default();
-        let addr = PhysAddr::new(0x2000);
+        let addr = PhysAddr::new_truncate(0x2000);
         let flags = Flags::PRESENT | Flags::WRITABLE;
 
         entry.set(addr, flags);
@@ -1165,20 +901,106 @@ mod tests {
         assert!(entry.flags().contains(Flags::PRESENT));
         assert!(entry.flags().contains(Flags::WRITABLE));
 
-        entry.update_flags(Flags::USER_ACCESSIBLE);
+        entry.add_flags(Flags::USER_ACCESSIBLE);
         assert!(entry.flags().contains(Flags::USER_ACCESSIBLE));
+        assert!(entry.flags().contains(Flags::PRESENT));
+        assert!(entry.flags().contains(Flags::WRITABLE));
+
+        // Test set_flags replaces flags
+        entry.set_flags(Flags::PRESENT | Flags::NO_EXECUTE);
+        assert!(entry.flags().contains(Flags::PRESENT));
+        assert!(entry.flags().contains(Flags::NO_EXECUTE));
+        assert!(!entry.flags().contains(Flags::WRITABLE));
+        assert!(!entry.flags().contains(Flags::USER_ACCESSIBLE));
     }
 
     #[test]
     fn test_entries_clear() {
         let mut entries = Entries::default();
-        entries[0].set(PhysAddr::new(0x1000), Flags::PRESENT);
-        entries[1].set(PhysAddr::new(0x2000), Flags::WRITABLE);
+        entries[0_usize].set(PhysAddr::new_truncate(0x1000), Flags::PRESENT);
+        entries[1_usize].set(PhysAddr::new_truncate(0x2000), Flags::WRITABLE);
 
         entries.clear();
         for entry in entries.iter_entries() {
             assert!(entry.is_null());
         }
+    }
+
+    #[test]
+    fn test_flags_bitor_assign() {
+        let mut flags = Flags::PRESENT;
+        flags |= Flags::WRITABLE;
+        assert!(flags.contains(Flags::PRESENT));
+        assert!(flags.contains(Flags::WRITABLE));
+    }
+
+    #[test]
+    fn test_flags_bitand_assign() {
+        let mut flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
+        flags &= Flags::PRESENT | Flags::WRITABLE;
+        assert!(flags.contains(Flags::PRESENT));
+        assert!(flags.contains(Flags::WRITABLE));
+        assert!(!flags.contains(Flags::USER_ACCESSIBLE));
+    }
+
+    #[test]
+    fn test_entry_set_flags_replaces() {
+        let mut entry = Entry::default();
+        let addr = PhysAddr::new_truncate(0x1000);
+
+        entry.set(
+            addr,
+            Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE,
+        );
+        assert!(entry.flags().contains(Flags::WRITABLE));
+        assert!(entry.flags().contains(Flags::USER_ACCESSIBLE));
+
+        // set_flags should REPLACE flags, not OR them
+        entry.set_flags(Flags::PRESENT | Flags::NO_EXECUTE);
+        assert!(entry.flags().contains(Flags::PRESENT));
+        assert!(entry.flags().contains(Flags::NO_EXECUTE));
+        assert!(!entry.flags().contains(Flags::WRITABLE));
+        assert!(!entry.flags().contains(Flags::USER_ACCESSIBLE));
+
+        // Verify address is preserved
+        assert_eq!(entry.addr(), addr);
+    }
+
+    #[test]
+    fn test_entry_add_flags_accumulates() {
+        let mut entry = Entry::default();
+        let addr = PhysAddr::new_truncate(0x2000);
+
+        entry.set(addr, Flags::PRESENT);
+        entry.add_flags(Flags::WRITABLE);
+        assert!(entry.flags().contains(Flags::PRESENT));
+        assert!(entry.flags().contains(Flags::WRITABLE));
+
+        entry.add_flags(Flags::USER_ACCESSIBLE);
+        assert!(entry.flags().contains(Flags::PRESENT));
+        assert!(entry.flags().contains(Flags::WRITABLE));
+        assert!(entry.flags().contains(Flags::USER_ACCESSIBLE));
+
+        // Verify address is preserved
+        assert_eq!(entry.addr(), addr);
+    }
+
+    #[test]
+    fn test_entry_helper_methods() {
+        let mut entry = Entry::default();
+        entry.set(
+            PhysAddr::new_truncate(0x1000),
+            Flags::PRESENT | Flags::USER_ACCESSIBLE | Flags::WRITABLE,
+        );
+
+        assert!(entry.is_present());
+        assert!(entry.is_user_accessible());
+        assert!(entry.is_writable());
+        assert!(!entry.is_large());
+
+        entry.set_flags(Flags::PRESENT | Flags::HUGE_PAGE);
+        assert!(entry.is_large());
+        assert!(!entry.is_writable());
     }
 
     // TODO: How to test page tables?

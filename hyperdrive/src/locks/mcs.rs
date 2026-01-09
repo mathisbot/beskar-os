@@ -11,23 +11,6 @@
 //! These structure accept a generic type `T` that is the type of the data protected by the lock.
 //! The second generic type `B` is the back-off strategy used by the lock.
 //!
-//! Note that rustc currently requires that you at least specify either the back-off strategy
-//! (and will infer the type of `T`) or the type of `T` (and will use the default `Spin`
-//! back-off strategy).
-//!
-//! ```rust
-//! # use hyperdrive::locks::mcs::{McsLock, McsNode};
-//! # use hyperdrive::locks::Spin;
-//! #
-//! let lock = McsLock::<u32>::new(0); // `Spin` is used
-//! let lock = McsLock::<_, Spin>::new(0); // `T` is inferred
-//! ```
-//!
-//! ```rust,compile_fail
-//! # use hyperdrive::locks::mcs::{MUMcsLock, McsNode};
-//! let lock = McsLock::new(0_u32);
-//! ```
-//!
 //! ### `McsLock`
 //!
 //! To access the content of the lock, use the `with_locked` method.
@@ -113,7 +96,7 @@
 //! assert!(current_value.is_none());
 //! ```
 
-use super::{BackOff, Spin};
+use super::{RelaxStrategy, Spin};
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
@@ -123,23 +106,20 @@ use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 #[derive(Default)]
 /// Mellor-Crummey and Scott lock.
-pub struct McsLock<T, B: BackOff = Spin> {
+pub struct McsLock<T: ?Sized, R: RelaxStrategy = Spin> {
     /// Tail of the queue.
     tail: AtomicPtr<McsNode>,
+    /// Back-off strategy.
+    _back_off: PhantomData<R>,
     /// Data protected by the lock.
     data: UnsafeCell<T>,
-    /// Back-off strategy.
-    _back_off: PhantomData<B>,
 }
 
 // Safety:
 // Mellor-Crummey and Scott lock is a synchronization primitive.
-#[expect(
-    clippy::non_send_fields_in_send_ty,
-    reason = "Synchronization primitive"
-)]
-unsafe impl<T, B: BackOff> Send for McsLock<T, B> {}
-unsafe impl<T, B: BackOff> Sync for McsLock<T, B> {}
+#[expect(clippy::non_send_fields_in_send_ty, reason = "FIXME")]
+unsafe impl<T: ?Sized, R: RelaxStrategy> Send for McsLock<T, R> {}
+unsafe impl<T: ?Sized, R: RelaxStrategy> Sync for McsLock<T, R> {}
 
 /// Node for MCS lock.
 ///
@@ -153,7 +133,7 @@ pub struct McsNode {
     /// Whether the node is locked (has access to the locked data).
     locked: AtomicBool,
     /// Next node in the queue.
-    next: AtomicPtr<McsNode>,
+    next: AtomicPtr<Self>,
 }
 
 impl McsNode {
@@ -176,7 +156,7 @@ impl McsNode {
     }
 }
 
-impl<T, B: BackOff> McsLock<T, B> {
+impl<T, R: RelaxStrategy> McsLock<T, R> {
     #[must_use]
     #[inline]
     /// Creates a new MCS lock.
@@ -189,11 +169,20 @@ impl<T, B: BackOff> McsLock<T, B> {
     }
 
     #[must_use]
+    #[inline]
+    /// Consume the lock and returns the inner data.
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+}
+
+impl<T: ?Sized, R: RelaxStrategy> McsLock<T, R> {
+    #[must_use]
     /// Locks the MCS lock and returns a guard.
     ///
     /// For single operations, prefer `with_locked`.
     /// This function allows for a more fine-grained control over the duration of the lock.
-    pub fn lock<'s, 'node>(&'s self, node: &'node mut McsNode) -> McsGuard<'node, 's, T, B> {
+    pub fn lock<'s, 'node>(&'s self, node: &'node mut McsNode) -> McsGuard<'node, 's, T, R> {
         // Assert the node is ready to be used
         node.locked.store(true, Ordering::Relaxed);
         node.set_next(ptr::null_mut());
@@ -206,11 +195,15 @@ impl<T, B: BackOff> McsLock<T, B> {
 
             // Wait until the node is at the front of the queue
             while node.is_locked() {
-                B::back_off();
+                R::relax();
             }
         }
 
-        McsGuard { lock: self, node }
+        McsGuard {
+            lock: self,
+            node: ptr::from_ref(node),
+            _phantom: PhantomData,
+        }
     }
 
     #[must_use]
@@ -222,7 +215,7 @@ impl<T, B: BackOff> McsLock<T, B> {
     pub fn try_lock<'s, 'node>(
         &'s self,
         node: &'node mut McsNode,
-    ) -> Option<McsGuard<'node, 's, T, B>> {
+    ) -> Option<McsGuard<'node, 's, T, R>> {
         // Assert the node is ready to be used
         node.set_next(ptr::null_mut());
         // Note: we do not care about `locked` here as this field will never be accessed
@@ -232,14 +225,18 @@ impl<T, B: BackOff> McsLock<T, B> {
             .compare_exchange(ptr::null_mut(), node, Ordering::Acquire, Ordering::Relaxed)
             .ok()?;
 
-        Some(McsGuard { lock: self, node })
+        Some(McsGuard {
+            lock: self,
+            node: ptr::from_ref(node),
+            _phantom: PhantomData,
+        })
     }
 
     #[inline]
     /// Locks the lock and calls the closure with the guard.
-    pub fn with_locked<F, R>(&self, f: F) -> R
+    pub fn with_locked<F, U>(&self, f: F) -> U
     where
-        F: FnOnce(&mut T) -> R,
+        F: FnOnce(&mut T) -> U,
     {
         let mut node = McsNode::new();
         let mut guard = self.lock(&mut node);
@@ -248,9 +245,9 @@ impl<T, B: BackOff> McsLock<T, B> {
 
     #[inline]
     /// Locks the lock and calls the closure with the guard.
-    pub fn try_with_locked<F, R>(&self, f: F) -> Option<R>
+    pub fn try_with_locked<F, U>(&self, f: F) -> Option<U>
     where
-        F: FnOnce(&mut T) -> R,
+        F: FnOnce(&mut T) -> U,
     {
         let mut node = McsNode::new();
         let mut guard = self.try_lock(&mut node)?;
@@ -262,18 +259,11 @@ impl<T, B: BackOff> McsLock<T, B> {
     #[expect(clippy::mut_from_ref, reason = "Force lock")]
     /// Force access to the data.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// Caller is responsible for ensuring there are no data races.
     pub unsafe fn force_lock(&self) -> &mut T {
         unsafe { &mut *self.data.get() }
-    }
-
-    #[must_use]
-    #[inline]
-    /// Consume the lock and returns the inner data.
-    pub fn into_inner(self) -> T {
-        self.data.into_inner()
     }
 }
 
@@ -297,12 +287,13 @@ impl McsNode {
 }
 
 /// RAII guard for MCS lock.
-pub struct McsGuard<'node, 'lock, T, B: BackOff = Spin> {
-    lock: &'lock McsLock<T, B>,
-    node: &'node McsNode,
+pub struct McsGuard<'node, 'lock, T: ?Sized, R: RelaxStrategy = Spin> {
+    lock: &'lock McsLock<T, R>,
+    node: *const McsNode,
+    _phantom: PhantomData<&'node McsNode>,
 }
 
-impl<T, B: BackOff> Deref for McsGuard<'_, '_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> Deref for McsGuard<'_, '_, T, R> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -310,21 +301,24 @@ impl<T, B: BackOff> Deref for McsGuard<'_, '_, T, B> {
     }
 }
 
-impl<T, B: BackOff> DerefMut for McsGuard<'_, '_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> DerefMut for McsGuard<'_, '_, T, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
     }
 }
 
-impl<T, B: BackOff> Drop for McsGuard<'_, '_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> Drop for McsGuard<'_, '_, T, R> {
     fn drop(&mut self) {
+        // Safety: node pointer is always valid for the duration of the guard
+        let node = unsafe { &*self.node };
+
         // Check if the node is the back of the queue
-        if self.node.next().is_none() {
+        if node.next().is_none() {
             if self
                 .lock
                 .tail
                 .compare_exchange(
-                    ptr::from_ref(self.node).cast_mut(),
+                    self.node.cast_mut(),
                     ptr::null_mut(),
                     Ordering::Release,
                     Ordering::Relaxed,
@@ -337,13 +331,13 @@ impl<T, B: BackOff> Drop for McsGuard<'_, '_, T, B> {
             // If setting the tail to null fails, it means a new node is being added.
             // In such a case, wait until it is completely added.
             // As this operation should be very fast, we can afford to spin here.
-            while self.node.next().is_none() {
+            while node.next().is_none() {
                 core::hint::spin_loop();
             }
         }
 
         // Unlock the next node
-        unsafe { self.node.next().unwrap().as_ref() }
+        unsafe { node.next().unwrap().as_ref() }
             .locked
             .store(false, Ordering::Release);
     }
@@ -352,14 +346,14 @@ impl<T, B: BackOff> Drop for McsGuard<'_, '_, T, B> {
 /// Maybe Uninit MCS Lock.
 ///
 /// This is a wrapper around a MCS lock that allows to lock a `MaybeUninit` value.
-pub struct MUMcsLock<T, B: BackOff = Spin> {
-    inner_lock: McsLock<MaybeUninit<T>, B>,
+pub struct MUMcsLock<T, R: RelaxStrategy = Spin> {
+    inner_lock: McsLock<MaybeUninit<T>, R>,
     is_init: AtomicBool,
 }
 
 // `MaybeUninit<T>` doesn't drop `T` when it goes out of scope.
 // So we have to manually drop the value when the lock is dropped.
-impl<T, B: BackOff> Drop for MUMcsLock<T, B> {
+impl<T, R: RelaxStrategy> Drop for MUMcsLock<T, R> {
     fn drop(&mut self) {
         if self.is_initialized() {
             unsafe { self.inner_lock.data.get_mut().assume_init_drop() };
@@ -367,13 +361,13 @@ impl<T, B: BackOff> Drop for MUMcsLock<T, B> {
     }
 }
 
-impl<T, B: BackOff> Default for MUMcsLock<T, B> {
+impl<T, R: RelaxStrategy> Default for MUMcsLock<T, R> {
     fn default() -> Self {
         Self::uninit()
     }
 }
 
-impl<T, B: BackOff> MUMcsLock<T, B> {
+impl<T, R: RelaxStrategy> MUMcsLock<T, R> {
     #[must_use]
     #[inline]
     /// Creates a new uninitialized `MUMcsLock`.
@@ -412,10 +406,10 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     #[inline]
     /// Locks the lock and returns a guard.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if the lock is not initialized.
-    pub fn lock<'s, 'node>(&'s self, node: &'node mut McsNode) -> MUMcsGuard<'node, 's, T, B> {
+    pub fn lock<'s, 'node>(&'s self, node: &'node mut McsNode) -> MUMcsGuard<'node, 's, T, R> {
         // Panicking before locking the inner lock so that it doesn't poison the lock
         assert!(self.is_initialized(), "MUMcsLock not initialized");
 
@@ -432,7 +426,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     pub fn try_lock<'s, 'node>(
         &'s self,
         node: &'node mut McsNode,
-    ) -> Option<MUMcsGuard<'node, 's, T, B>> {
+    ) -> Option<MUMcsGuard<'node, 's, T, R>> {
         if !self.is_initialized() {
             return None;
         }
@@ -451,7 +445,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     pub fn lock_if_init<'s, 'node>(
         &'s self,
         node: &'node mut McsNode,
-    ) -> Option<MUMcsGuard<'node, 's, T, B>> {
+    ) -> Option<MUMcsGuard<'node, 's, T, R>> {
         self.is_initialized().then(move || self.lock(node))
     }
 
@@ -459,9 +453,9 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     /// Locks the lock and calls the closure with the guard.
     ///
     /// Panics if the lock is not initialized.
-    pub fn with_locked<F, R>(&self, f: F) -> R
+    pub fn with_locked<F, U>(&self, f: F) -> U
     where
-        F: FnOnce(&mut T) -> R,
+        F: FnOnce(&mut T) -> U,
     {
         let mut node = McsNode::new();
         let mut guard = self.lock(&mut node);
@@ -471,9 +465,9 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     #[inline]
     /// Try to lock the lock and call the closure with the guard if the lock
     /// is initialized.
-    pub fn with_locked_if_init<F, R>(&self, f: F) -> Option<R>
+    pub fn with_locked_if_init<F, U>(&self, f: F) -> Option<U>
     where
-        F: FnOnce(&mut T) -> R,
+        F: FnOnce(&mut T) -> U,
     {
         let mut node = McsNode::new();
         self.lock_if_init(&mut node).map(|mut guard| f(&mut guard))
@@ -482,9 +476,9 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     #[inline]
     /// Try to lock the lock and call the closure with the guard if the lock
     /// is initialized.
-    pub fn try_with_locked<F, R>(&self, f: F) -> Option<R>
+    pub fn try_with_locked<F, U>(&self, f: F) -> Option<U>
     where
-        F: FnOnce(&mut T) -> R,
+        F: FnOnce(&mut T) -> U,
     {
         let mut node = McsNode::new();
         self.try_lock(&mut node).map(|mut guard| f(&mut guard))
@@ -495,7 +489,7 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
     #[expect(clippy::mut_from_ref, reason = "Force lock")]
     /// Force access to the data.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// Inner lock must be initialized.
     /// Caller is responsible for ensuring there are no data races.
@@ -520,11 +514,11 @@ impl<T, B: BackOff> MUMcsLock<T, B> {
 }
 
 /// RAII guard for `MUMcsLock` lock.
-pub struct MUMcsGuard<'node, 'lock, T, B: BackOff = Spin> {
-    inner_guard: McsGuard<'node, 'lock, MaybeUninit<T>, B>,
+pub struct MUMcsGuard<'node, 'lock, T, R: RelaxStrategy = Spin> {
+    inner_guard: McsGuard<'node, 'lock, MaybeUninit<T>, R>,
 }
 
-impl<T, B: BackOff> Deref for MUMcsGuard<'_, '_, T, B> {
+impl<T, R: RelaxStrategy> Deref for MUMcsGuard<'_, '_, T, R> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -533,7 +527,7 @@ impl<T, B: BackOff> Deref for MUMcsGuard<'_, '_, T, B> {
     }
 }
 
-impl<T, B: BackOff> DerefMut for MUMcsGuard<'_, '_, T, B> {
+impl<T, R: RelaxStrategy> DerefMut for MUMcsGuard<'_, '_, T, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // Safety: The lock is initialized if the guard exists.
         unsafe { self.inner_guard.assume_init_mut() }
@@ -557,6 +551,9 @@ mod tests {
         let mut guard = lock.lock(&mut node);
         *guard = 42;
         assert_eq!(*guard, 42);
+        drop(guard);
+
+        assert_eq!(lock.into_inner(), 42);
     }
 
     #[test]
@@ -589,12 +586,15 @@ mod tests {
         let mut node = McsNode::new();
 
         let guard = lock.lock(&mut node);
-        let failed_guard = lock.try_with_locked(|value| {
+        let failed_guard = lock.try_with_locked(|_v| unreachable!());
+        assert!(failed_guard.is_none());
+        drop(guard);
+
+        let res = lock.try_with_locked(|value| {
             *value = 42;
             *value
         });
-        assert!(failed_guard.is_none());
-        drop(guard);
+        assert_eq!(res, Some(42));
     }
 
     #[test]
@@ -619,6 +619,16 @@ mod tests {
         let mut guard = lock.lock(&mut node);
         *guard = 0;
         assert_eq!(*guard, 0);
+    }
+
+    #[test]
+    fn test_mumcs_lock_single_init() {
+        let lock = TestMUMcsLock::uninit();
+
+        lock.init(42);
+        lock.init(0);
+
+        assert_eq!(lock.into_inner(), Some(42));
     }
 
     #[test]
@@ -683,10 +693,7 @@ mod tests {
     fn test_mumcs_lock_with_locked_if_init() {
         let lock = TestMUMcsLock::uninit();
 
-        let res = lock.with_locked_if_init(|value| {
-            *value = 0;
-            *value
-        });
+        let res = lock.with_locked_if_init(|_v| unreachable!());
         assert!(res.is_none());
 
         lock.init(42);
@@ -702,20 +709,14 @@ mod tests {
     fn test_mumcs_lock_try_with_locked() {
         let lock = TestMUMcsLock::uninit();
 
-        let res = lock.try_with_locked(|value| {
-            *value = 0;
-            *value
-        });
+        let res = lock.try_with_locked(|_v| unreachable!());
         assert!(res.is_none());
 
         lock.init(42);
 
         let mut node = McsNode::new();
         let guard = lock.try_lock(&mut node);
-        let res = lock.try_with_locked(|value| {
-            *value = 0;
-            *value
-        });
+        let res = lock.try_with_locked(|_v| unreachable!());
         assert!(guard.is_some());
         assert!(res.is_none());
     }
@@ -731,9 +732,12 @@ mod tests {
     #[test]
     #[cfg(miri)]
     fn test_mumcs_into_inner() {
+        let lock = TestMUMcsLock::<()>::uninit();
+        assert!(lock.into_inner().is_none());
+
         let lock = TestMUMcsLock::uninit();
         lock.init(Box::new(42));
-        let _boxed = lock.into_inner().unwrap();
+        assert!(lock.into_inner().is_some());
     }
 
     #[test]
@@ -797,5 +801,34 @@ mod tests {
 
         w.join().unwrap();
         r.join().unwrap();
+    }
+
+    #[test]
+    /// Test node reuse: same node used for multiple lock acquisitions.
+    fn test_mcs_node_reuse() {
+        let lock = TestMcsLock::new(0);
+        let mut node = McsNode::new();
+
+        // First lock/unlock cycle
+        {
+            let mut guard = lock.lock(&mut node);
+            *guard = 1;
+        }
+
+        // Second lock/unlock cycle with same node
+        {
+            let mut guard = lock.lock(&mut node);
+            assert_eq!(*guard, 1);
+            *guard = 2;
+        }
+
+        // Third lock/unlock cycle
+        {
+            let mut guard = lock.lock(&mut node);
+            assert_eq!(*guard, 2);
+            *guard = 3;
+        }
+
+        assert_eq!(lock.into_inner(), 3);
     }
 }

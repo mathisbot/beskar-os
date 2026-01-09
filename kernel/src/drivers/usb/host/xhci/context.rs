@@ -52,7 +52,7 @@ impl DeviceContextBaseAddressArray {
         if addr == 0 {
             None
         } else {
-            Some(PhysAddr::new(addr))
+            Some(PhysAddr::new_truncate(addr))
         }
     }
 
@@ -262,7 +262,7 @@ impl EndpointContext {
         let hi = u64::from(self.tr_dequeue_pointer_hi) << 32;
         let ptr = (hi | lo) & !0xF;
         let dcs = (lo & 0x1) != 0;
-        (PhysAddr::new(ptr), dcs)
+        (PhysAddr::new_truncate(ptr), dcs)
     }
 
     #[inline]

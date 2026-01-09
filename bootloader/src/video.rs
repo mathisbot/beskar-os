@@ -38,7 +38,7 @@ impl PhysicalFrameBuffer {
 
     #[must_use]
     pub const fn start_addr_as_virtual(&self) -> VirtAddr {
-        VirtAddr::new(self.start_addr.as_u64())
+        VirtAddr::new_extend(self.start_addr.as_u64())
     }
 
     #[must_use]
@@ -57,7 +57,7 @@ impl PhysicalFrameBuffer {
     #[inline]
     /// Converts the physical framebuffer to a (virtual) framebuffer.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The provided framebuffer must only be used to transfer the framebuffer to the kernel.
     pub const unsafe fn to_framebuffer(&self, vaddr: VirtAddr) -> FrameBuffer {

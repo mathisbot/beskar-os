@@ -24,14 +24,14 @@ pub trait BlockDevice {
     ///
     /// The `offset` parameter specifies the block offset from the start of the device.
     ///
-    /// ## Errors
+    /// # Errors
     ///
     /// This function returns an error if the read operation failed
     /// or if `dst.len()` isn't a multiple or `Self::BLOCK_SIZE`.
     fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), BlockDeviceError>;
     /// Write blocks to the device from the given buffer.
     ///
-    /// ## Errors
+    /// # Errors
     ///
     /// This function returns an error if the write operation failed
     /// or if `src.len()` isn't a multiple or `Self::BLOCK_SIZE`.
@@ -49,13 +49,13 @@ pub trait KernelDevice {
     ///
     /// The `offset` parameter specifies the block offset from the start of the device.
     ///
-    /// ## Errors
+    /// # Errors
     ///
     /// This function returns an error if the read operation failed
     fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), BlockDeviceError>;
     /// Write blocks to the device from the given buffer.
     ///
-    /// ## Errors
+    /// # Errors
     ///
     /// This function returns an error if the write operation failed
     fn write(&mut self, src: &[u8], offset: usize) -> Result<(), BlockDeviceError>;

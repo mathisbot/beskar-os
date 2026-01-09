@@ -64,7 +64,7 @@ impl Handle {
     }
 }
 
-type Mounts = BTreeMap<PathBuf, RwLock<Box<dyn FileSystem>>>;
+type Mounts = BTreeMap<PathBuf, RwLock<Box<dyn FileSystem + Send + Sync>>>;
 type OpenFiles = BTreeMap<Handle, OpenFileInfo>;
 
 #[derive(Default)]
@@ -92,12 +92,12 @@ impl<H: VfsHelper> Vfs<H> {
     }
 
     /// Mounts a filesystem at the given path.
-    pub fn mount(&self, path: PathBuf, fs: Box<dyn FileSystem>) {
+    pub fn mount(&self, path: PathBuf, fs: Box<dyn FileSystem + Send + Sync>) {
         self.mounts.write().insert(path, RwLock::new(fs));
     }
 
     /// Unmounts the filesystem at the given path.
-    pub fn unmount(&self, path: &str) -> FileResult<Box<dyn FileSystem>> {
+    pub fn unmount(&self, path: &str) -> FileResult<Box<dyn FileSystem + Send + Sync>> {
         self.mounts
             .write()
             .remove(path)
@@ -153,21 +153,39 @@ impl<H: VfsHelper> Vfs<H> {
     fn path_to_fs<T>(
         &self,
         path: Path,
-        f: impl FnOnce(&mut dyn FileSystem, Path) -> FileResult<T>,
+        f: impl FnOnce(&mut (dyn FileSystem + Send + Sync), Path) -> FileResult<T>,
     ) -> FileResult<T> {
         let mounts = self.mounts.read();
 
-        let mut best_match: Option<(Path, _)> = None;
+        let mut best_match: Option<(&RwLock<Box<dyn FileSystem + Send + Sync>>, usize)> = None;
+        let mut best_len = 0;
+
+        let path_str = path.as_str();
+
         for (mount_path, fs) in mounts.iter() {
-            if path.starts_with(mount_path.as_path().as_str())
-                && best_match
-                    .is_none_or(|(best_path, _)| mount_path.as_path().len() > best_path.len())
+            let mount_len = mount_path.as_path().len();
+            if mount_len <= best_len {
+                continue;
+            }
+
+            // Check if path starts with mount point
+            if path_str.len() >= mount_len
+                && &path_str[..mount_len] == mount_path.as_path().as_str()
             {
-                best_match = Some((mount_path.as_path(), fs));
+                // Ensure we match at path boundaries to avoid partial matches
+                // e.g., /dev should not match /device
+                if mount_len == path_str.len()
+                    || path_str.as_bytes().get(mount_len) == Some(&b'/')
+                    || mount_path.as_path().as_str().ends_with('/')
+                {
+                    best_match = Some((fs, mount_len));
+                    best_len = mount_len;
+                }
             }
         }
-        let (mount_path, fs) = best_match.ok_or(FileError::InvalidPath)?;
-        let rel_path = Path::from(&path[mount_path.len()..]);
+
+        let (fs, mount_len) = best_match.ok_or(FileError::InvalidPath)?;
+        let rel_path = Path::from(&path_str[mount_len..]);
         f(&mut **fs.write(), rel_path)
     }
 
@@ -237,5 +255,13 @@ impl<H: VfsHelper> Vfs<H> {
         self.path_to_fs(path.as_path(), |fs, rel_path| {
             fs.write(rel_path, buffer, offset)
         })
+    }
+
+    pub fn metadata(&self, path: Path) -> FileResult<crate::fs::FileMetadata> {
+        self.path_to_fs(path, |fs, rel_path| fs.metadata(rel_path))
+    }
+
+    pub fn read_dir(&self, path: Path) -> FileResult<alloc::vec::Vec<PathBuf>> {
+        self.path_to_fs(path, |fs, rel_path| fs.read_dir(rel_path))
     }
 }

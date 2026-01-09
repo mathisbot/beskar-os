@@ -1,9 +1,6 @@
 use crate::arch::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts};
 use alloc::boxed::Box;
-use core::{
-    ptr::NonNull,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use hyperdrive::{
     locks::mcs::{MUMcsLock, McsLock},
     once::Once,
@@ -12,24 +9,22 @@ use hyperdrive::{
 /// Distributes core IDs
 static CORE_ID: AtomicUsize = AtomicUsize::new(0);
 
-// FIXME: Find a way to support an arbitrary number of cores (using a `Vec` makes it harder
-// to correctly initialize without data races)
 /// This array holds the core locals for each core, so that it is accessible from any core.
-static ALL_CORE_LOCALS: [Once<NonNull<CoreLocalsInfo>>; 256] = [const { Once::uninit() }; 256];
+static ALL_CORE_LOCALS: [Once<&'static CoreLocalsInfo>; 256] = [const { Once::uninit() }; 256];
 
 pub fn init() {
     let core_id = CORE_ID.fetch_add(1, Ordering::Relaxed);
     let apic_id = crate::arch::apic::apic_id();
 
-    let mut core_locals = Box::new(CoreLocalsInfo {
+    let core_locals = Box::new(CoreLocalsInfo {
         core_id,
         apic_id,
         ..CoreLocalsInfo::empty()
     });
+    let core_locals = Box::leak(core_locals);
 
-    ALL_CORE_LOCALS[core_id].call_once(|| NonNull::from_mut(core_locals.as_mut()));
-
-    crate::arch::locals::store_locals(Box::leak(core_locals));
+    ALL_CORE_LOCALS[core_id].call_once(|| core_locals);
+    crate::arch::locals::store_locals(core_locals);
 }
 
 #[must_use]
@@ -103,10 +98,7 @@ impl CoreLocalsInfo {
 #[inline]
 /// Returns a specific core local info
 pub fn get_specific_core_locals(core_id: usize) -> Option<&'static CoreLocalsInfo> {
-    ALL_CORE_LOCALS[core_id]
-        .get()
-        .copied()
-        .map(|ptr| unsafe { ptr.as_ref() })
+    ALL_CORE_LOCALS[core_id].get().copied()
 }
 
 #[must_use]

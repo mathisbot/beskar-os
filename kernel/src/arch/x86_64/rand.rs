@@ -1,5 +1,4 @@
 use super::cpuid;
-use core::mem::MaybeUninit;
 use hyperdrive::once::Once;
 use thiserror::Error;
 
@@ -25,33 +24,6 @@ fn rdrand(dst: &mut u64) -> Result<(), RandError> {
         }
     }
     Err(RandError::RdrandFailed)
-}
-
-/// Generates a random instance of the given type, filling its bytes with RDRAND
-///
-/// # Safety
-///
-/// Every random sequence of bits must be a valid instance of the given type
-///
-/// # Errors
-///
-/// Returns `RandError::RdrandNotSupported` if RDRAND is not supported
-/// and `RandError::RdrandFailed` if RDRAND fails to generate random data.
-pub unsafe fn rand<T: Sized>() -> Result<T, RandError> {
-    let mut res = MaybeUninit::<T>::uninit();
-
-    // Safety:
-    // `MaybeUninit` guarantees that the layout is the same as `T`
-    // so that the memory is valid for writes.
-    let slice =
-        unsafe { core::slice::from_raw_parts_mut(res.as_mut_ptr().cast::<u8>(), size_of::<T>()) };
-
-    rand_bytes(slice)?;
-
-    // Safety:
-    // We just initialized the value and because of the function's safety guards,
-    // the result is a valid instance of the given type
-    Ok(unsafe { res.assume_init() })
 }
 
 /// Generates random bytes using RDRAND

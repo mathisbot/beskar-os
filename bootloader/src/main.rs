@@ -28,7 +28,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
 
         // Stall for a significant amount of time to allow the user to read the message
         if boot_service_active {
-            boot::stall(5_000_000);
+            boot::stall(core::time::Duration::from_secs(10));
         } else {
             let mut x = 0_u64;
             for i in 0..100_000_000 {

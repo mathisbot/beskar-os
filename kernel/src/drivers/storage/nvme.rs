@@ -3,6 +3,7 @@
 //! (NVM Express Base Specification Revision 2.1) as well as
 //! <https://nvmexpress.org/wp-content/uploads/NVM-Express-PCI-Express-Transport-Specification-Revision-1.1-2024.08.05-Ratified.pdf>
 //! (NVMe over PCIe Transport Specification Revision 1.1).
+#![expect(clippy::too_long_first_doc_paragraph, reason = "Link references")]
 
 use crate::{
     drivers::pci::MsiHelper,
@@ -23,7 +24,8 @@ use hyperdrive::{
     locks::mcs::MUMcsLock,
     ptrs::volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
 };
-use queue::admin::{AdminCompletionQueue, AdminSubmissionQueue};
+use queue::admin::{AdminCompletionQueue, AdminSubmissionEntry, AdminSubmissionQueue};
+use queue::io::{IoCompletionQueue, IoSubmissionQueue};
 
 mod queue;
 
@@ -57,6 +59,10 @@ pub struct NvmeControllers {
     msix: MsiX<PhysicalMapping<M4KiB>, MsiHelper>,
     acq: AdminCompletionQueue,
     asq: AdminSubmissionQueue,
+    /// IO Completion Queue (QID 1)
+    io_cq: Option<IoCompletionQueue>,
+    /// IO Submission Queue (QID 1)
+    io_sq: Option<IoSubmissionQueue>,
     /// Maximum data transfer size in bytes
     max_transfer_sz: u64,
     _pmap: PhysicalMapping,
@@ -69,7 +75,8 @@ impl NvmeControllers {
                 (handler.read_bar(dev, 0), MsiX::new(handler, dev))
             })
         else {
-            panic!("NVMe controller either have no memory BAR or no MSI-X capability");
+            video::error!("NVMe controller has no memory BAR or no MSI-X capability");
+            return Err(DriverError::Absent);
         };
 
         let paddr = bar.base_address();
@@ -77,7 +84,8 @@ impl NvmeControllers {
         let flags = Flags::MMIO_SUITABLE;
 
         let doorbell_stride = {
-            let physical_mapping = PhysicalMapping::<M4KiB>::new(paddr, size_of::<u64>(), flags);
+            let physical_mapping =
+                PhysicalMapping::<M4KiB>::new(paddr, size_of::<u64>(), flags).unwrap();
             let cap_ptr = NonNull::new(
                 physical_mapping
                     .translate(paddr)
@@ -93,16 +101,17 @@ impl NvmeControllers {
             paddr,
             0x1000 + 2 * (MAX_QUEUES + 1) * doorbell_stride,
             flags,
-        );
+        )
+        .unwrap();
         let registers_base = physical_mapping.translate(paddr).unwrap();
 
         let asq_doorbell = Volatile::new(
-            NonNull::new(unsafe { registers_base.as_mut_ptr::<u16>().byte_add(0x1000) }).unwrap(),
+            NonNull::new(unsafe { registers_base.as_mut_ptr::<u32>().byte_add(0x1000) }).unwrap(),
         );
         let acq_doorbell = Volatile::new(
             NonNull::new(unsafe {
                 registers_base
-                    .as_mut_ptr::<u16>()
+                    .as_mut_ptr::<u32>()
                     .byte_add(0x1000 + doorbell_stride)
             })
             .unwrap(),
@@ -115,6 +124,8 @@ impl NvmeControllers {
             msix,
             acq: completion_queue,
             asq: submission_queue,
+            io_cq: None,
+            io_sq: None,
             max_transfer_sz: 0,
             _pmap: physical_mapping,
         })
@@ -136,10 +147,14 @@ impl NvmeControllers {
         if self.capabilities().mpsmin() > u32::try_from(M4KiB::SIZE).unwrap() {
             return Err(DriverError::Invalid);
         }
+        if self.capabilities().mpsmax() < u32::try_from(M4KiB::SIZE).unwrap() {
+            return Err(DriverError::Invalid);
+        }
         self.cc().set_mps(M4KiB::SIZE.try_into().unwrap());
 
         let css = self.capabilities().css();
-        if css & 1 == 1 && css & (1 << 6) == 0 {
+        if css & 1 != 0 {
+            // NVM command set supported; select it
             self.cc().set_css(0);
         } else {
             return Err(DriverError::Invalid);
@@ -148,8 +163,9 @@ impl NvmeControllers {
         self.set_asq(self.asq.paddr());
         self.set_acq(self.acq.paddr());
 
-        let max_sz = u16::try_from(M4KiB::SIZE / 64).unwrap() - 1; // 0-based
-        self.set_aqa(max_sz, max_sz);
+        let asqs = u16::try_from(M4KiB::SIZE / 64).unwrap() - 1; // 0-based
+        let acqs = u16::try_from(M4KiB::SIZE / 16).unwrap() - 1; // 0-based
+        self.set_aqa(acqs, asqs);
 
         self.cc().set_iosqes(64);
         self.cc().set_iocqes(16);
@@ -171,6 +187,7 @@ impl NvmeControllers {
             queue::admin::IdentifyTarget::Controller,
             frame,
         );
+        let identify_cmd_id = identify_cmd.command_id();
 
         self.asq.push(&identify_cmd);
 
@@ -179,17 +196,29 @@ impl NvmeControllers {
                 frame.start_address(),
                 size_of::<queue::admin::IdentifyController>(),
                 Flags::PRESENT | Flags::NO_EXECUTE | Flags::CACHE_DISABLED,
-            );
+            )
+            .unwrap();
             let vaddr = pmap.translate(frame.start_address()).unwrap();
             let ptr = vaddr.as_ptr::<queue::admin::IdentifyController>();
             // Wait for command completion
-            // Completion also triggers an interrupt!
             // TODO: On interrupt, dequeue the completion queue into another Rustier queue/tree
             // intended to be browsed by command identifier
-            while self.acq.pop().is_none() {
+            let res = loop {
+                if let Some(v) = self.acq.pop()
+                    && v.command_id() == identify_cmd_id
+                {
+                    break v;
+                }
                 core::hint::spin_loop();
+            };
+            if !res.is_success() {
+                video::error!(
+                    "Identify Controller command failed: status={:04x}",
+                    res.status_code()
+                );
+                return Err(DriverError::Unknown);
             }
-            unsafe { ptr.read_volatile() }
+            unsafe { ptr.read() }
         };
 
         self.max_transfer_sz =
@@ -202,13 +231,92 @@ impl NvmeControllers {
 
         // --- Part Three: I/O queues creation ---
 
-        // TODO: Configure I/O queues
+        let dstrd = self.capabilities().dstrd();
+        let io_sq_doorbell = Volatile::new(
+            NonNull::new(unsafe {
+                self.registers_base
+                    .as_mut_ptr::<u8>()
+                    .byte_add(0x1000 + 2 * dstrd)
+                    .cast::<u32>()
+            })
+            .unwrap(),
+        );
+        let io_cq_doorbell = Volatile::new(
+            NonNull::new(unsafe {
+                self.registers_base
+                    .as_mut_ptr::<u8>()
+                    .byte_add(0x1000 + 3 * dstrd)
+                    .cast::<u32>()
+            })
+            .unwrap(),
+        );
+
+        let io_cq = IoCompletionQueue::new(io_cq_doorbell)?;
+        let io_sq = IoSubmissionQueue::new(io_sq_doorbell)?;
+
+        // Respect MQES limit (value is 0-based in CAP, so +1 entries)
+        let max_entries = u16::try_from(self.capabilities().mqes())
+            .unwrap()
+            .saturating_add(1);
+        let cq_entries = core::cmp::min(io_cq.entries(), max_entries).saturating_sub(1);
+        let sq_entries = core::cmp::min(io_sq.entries(), max_entries).saturating_sub(1);
+
+        // Create IO Completion Queue (QID 1), interrupt enabled on vector 0
+        let create_cq =
+            AdminSubmissionEntry::new_create_io_cq(1, cq_entries, io_cq.paddr(), 0, true);
+        let create_cq_id = create_cq.command_id();
+        self.asq.push(&create_cq);
+        let res_cq = loop {
+            if let Some(v) = self.acq.pop()
+                && v.command_id() == create_cq_id
+            {
+                break v;
+            }
+            core::hint::spin_loop();
+        };
+        if !res_cq.is_success() {
+            video::error!(
+                "Create IO CQ command failed: status={:04x}",
+                res_cq.status_code()
+            );
+            return Err(DriverError::Unknown);
+        }
+
+        // Create IO Submission Queue (QID 1) targeting CQID 1, priority 0
+        let create_sq = AdminSubmissionEntry::new_create_io_sq(1, sq_entries, io_sq.paddr(), 1, 0);
+        let create_sq_id = create_sq.command_id();
+        self.asq.push(&create_sq);
+        let res_sq = loop {
+            if let Some(v) = self.acq.pop()
+                && v.command_id() == create_sq_id
+            {
+                break v;
+            }
+            core::hint::spin_loop();
+        };
+        if !res_sq.is_success() {
+            video::error!(
+                "Create IO SQ command failed: status={:04x}",
+                res_sq.status_code()
+            );
+            return Err(DriverError::Unknown);
+        }
+
+        self.io_cq = Some(io_cq);
+        self.io_sq = Some(io_sq);
+
+        video::debug!(
+            "NVMe IO queues created: SQ entries={}, CQ entries={}",
+            sq_entries,
+            cq_entries
+        );
 
         Ok(())
     }
 
     pub fn shutdown(&mut self) {
-        // TODO: Delete IO queues
+        // TODO: Delete IO queues via admin delete commands
+        // TODO: Wait for all pending IO commands to complete
         self.cc().disable();
         while self.csts().ready() {
             core::hint::spin_loop();
@@ -287,7 +395,7 @@ impl NvmeControllers {
 }
 
 extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    video::info!("NVMe INTERRUPT on core {}", locals!().core_id());
+    video::debug!("NVMe INTERRUPT on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
@@ -336,7 +444,7 @@ impl Capabilities {
     /// Bit 1: Vendor Specific
     /// Bits 2-7: Always 0
     pub fn ams(&self) -> u8 {
-        u8::try_from((self.read() & (1 << 17)) & 0b11).unwrap()
+        u8::try_from((self.read() >> 17) & 0b11).unwrap()
     }
 
     #[must_use]
@@ -375,7 +483,7 @@ impl Capabilities {
     /// Bit 6: IO command set
     /// Bit 7: No IO command set
     pub fn css(&self) -> u8 {
-        u8::try_from((self.read() >> 37) & 0xF).unwrap()
+        u8::try_from((self.read() >> 37) & 0xFF).unwrap()
     }
 
     #[must_use]
@@ -394,7 +502,7 @@ impl Capabilities {
     /// 0b10: Domain scope
     /// 0b11: NVM subsystem scope
     pub fn cps(&self) -> u8 {
-        u8::try_from((self.read() & (1 << 46)) & 0b11).unwrap()
+        u8::try_from((self.read() >> 46) & 0b11).unwrap()
     }
 
     #[must_use]

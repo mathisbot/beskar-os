@@ -219,6 +219,13 @@ impl<T: AsRef<[u8]>> Packet<T> {
         let data = self.buffer.as_ref();
         &data[TARGET_PROTOCOL_ADDR_RANGE(self.hardware_len(), self.protocol_len())]
     }
+
+    #[must_use]
+    #[inline]
+    /// Return the length of an ARP packet buffer for Ethernet/IPv4.
+    pub const fn buffer_len() -> usize {
+        const { TARGET_PROTOCOL_ADDR_RANGE(6, 4).end }
+    }
 }
 
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {

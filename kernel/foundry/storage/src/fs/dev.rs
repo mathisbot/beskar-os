@@ -4,7 +4,7 @@ use alloc::{boxed::Box, vec::Vec};
 
 struct DeviceFile {
     path: super::PathBuf,
-    device: Box<dyn KernelDevice>,
+    device: Box<dyn KernelDevice + Send + Sync>,
 }
 
 #[derive(Default)]
@@ -25,13 +25,20 @@ impl DeviceFS {
 
     #[inline]
     /// Adds a new device to the file system.
-    pub fn add_device(&mut self, path: super::PathBuf, device: Box<dyn KernelDevice>) {
+    pub fn add_device(
+        &mut self,
+        path: super::PathBuf,
+        device: Box<dyn KernelDevice + Send + Sync>,
+    ) {
         self.devices.push(DeviceFile { path, device });
     }
 
     #[inline]
     /// Removes a device from the file system.
-    pub fn remove_device(&mut self, path: super::Path) -> Option<Box<dyn KernelDevice>> {
+    pub fn remove_device(
+        &mut self,
+        path: super::Path,
+    ) -> Option<Box<dyn KernelDevice + Send + Sync>> {
         self.devices
             .iter()
             .position(|device| device.path.as_path() == path)
@@ -107,5 +114,24 @@ impl FileSystem for DeviceFS {
             }
         }
         Err(super::FileError::NotFound)
+    }
+
+    fn metadata(&mut self, path: super::Path) -> super::FileResult<super::FileMetadata> {
+        for device in &mut self.devices {
+            if device.path.as_path() == path {
+                return Ok(super::FileMetadata {
+                    size: 0,
+                    file_type: super::FileType::File,
+                });
+            }
+        }
+        Err(super::FileError::NotFound)
+    }
+
+    fn read_dir(&mut self, path: super::Path) -> super::FileResult<Vec<super::PathBuf>> {
+        if path.0 != "/" {
+            return Err(super::FileError::NotFound);
+        }
+        Ok(self.devices.iter().map(|d| d.path.clone()).collect())
     }
 }

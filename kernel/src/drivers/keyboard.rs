@@ -1,12 +1,14 @@
 use beskar_core::drivers::keyboard::KeyEvent;
+use driver_api::DriverResult;
 use hyperdrive::{once::Once, queues::mpmc::MpmcQueue};
 
 const QUEUE_SIZE: usize = 25;
 
 static KEYBOARD_MANAGER: Once<KeyboardManager> = Once::uninit();
 
-pub fn init() {
+pub fn init() -> DriverResult<()> {
     KEYBOARD_MANAGER.call_once(KeyboardManager::new);
+    Ok(())
 }
 
 pub struct KeyboardManager {
@@ -31,8 +33,7 @@ impl KeyboardManager {
     #[inline]
     pub fn push_event(&self, event: KeyEvent) {
         let push_res = self.event_queue.try_push(event);
-        #[cfg(debug_assertions)]
-        if push_res.is_err() {
+        if cfg!(debug_assertions) && push_res.is_err() {
             // FIXME: Override old events instead of dropping new ones.
             video::debug!("Keyboard event queue is full, dropping event: {:?}", event);
         }

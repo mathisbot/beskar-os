@@ -5,6 +5,7 @@ use beskar_hal::{
     instructions::int_enable,
     registers::{CS, Cr0, Cr2},
     structures::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
+    userspace::Ring,
 };
 use core::{
     cell::UnsafeCell,
@@ -24,7 +25,11 @@ pub fn init() {
     idt.debug.set_handler_fn(debug_handler, cs);
     idt.non_maskable_interrupt
         .set_handler_fn(non_maskable_interrupt_handler, cs);
-    idt.breakpoint.set_handler_fn(breakpoint_handler, cs);
+    unsafe {
+        idt.breakpoint
+            .set_handler_fn_unchecked(VirtAddr::from_ptr(breakpoint_handler as *const ()), cs);
+    }
+    idt.breakpoint.set_dpl(Ring::User);
     idt.overflow.set_handler_fn(overflow_handler, cs);
     idt.bound_range_exceeded
         .set_handler_fn(bound_range_exceeded_handler, cs);
@@ -159,7 +164,6 @@ macro_rules! info_isr {
 
 panic_isr!(divide_error_handler);
 info_isr!(debug_handler);
-info_isr!(breakpoint_handler);
 panic_isr!(overflow_handler);
 panic_isr!(bound_range_exceeded_handler);
 panic_isr!(invalid_opcode_handler);
@@ -175,6 +179,118 @@ panic_isr!(hv_injection_handler);
 panic_isr_with_errcode!(vmm_communication_handler);
 panic_isr_with_errcode!(security_exception_handler);
 
+#[unsafe(naked)]
+unsafe extern "C" fn breakpoint_handler() {
+    core::arch::naked_asm!(
+        // Save registers
+        "push rax",
+        "push rcx",
+        "push rdx",
+        "push rbx",
+        "push rbp",
+        "push rsi",
+        "push rdi",
+        "push r8",
+        "push r9",
+        "push r10",
+        "push r11",
+        "push r12",
+        "push r13",
+        "push r14",
+        "push r15",
+
+        // rdx = &ThreadRegisters
+        "mov rsi, rsp",
+        // rsi = &InterruptStackFrame
+        "lea rdi, [rsp + {size}]",
+
+        // Align stack (rsp % 16 == 8 before call)
+        "sub rsp, 8",
+        "call {f}",
+        "add rsp, 8",
+
+        // Restore registers
+        "pop r15",
+        "pop r14",
+        "pop r13",
+        "pop r12",
+        "pop r11",
+        "pop r10",
+        "pop r9",
+        "pop r8",
+        "pop rdi",
+        "pop rsi",
+        "pop rbp",
+        "pop rbx",
+        "pop rdx",
+        "pop rcx",
+        "pop rax",
+
+        "iretq",
+
+        size = const size_of::<ThreadRegisters>(),
+        f = sym breakpoint_handler_impl,
+    );
+}
+
+extern "C" fn breakpoint_handler_impl(
+    stack_frame: &InterruptStackFrame,
+    registers: &ThreadRegisters,
+) {
+    video::debug!(
+        "Breakpoint reached in Thread {} ({:?})\n{:#?}",
+        crate::process::scheduler::current_thread_id().as_u64(),
+        stack_frame.instruction_pointer().as_ptr::<()>(),
+        registers,
+    );
+}
+
+#[repr(C)]
+/// Registers that are relevant for the thread context.
+pub struct ThreadRegisters {
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
+    r11: u64,
+    r10: u64,
+    r9: u64,
+    r8: u64,
+    rdi: u64,
+    rsi: u64,
+    rbp: u64,
+    rbx: u64,
+    rdx: u64,
+    rcx: u64,
+    rax: u64,
+}
+
+impl core::fmt::Debug for ThreadRegisters {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ThreadRegisters")
+            .field("rax", &format_args!("{:#018x}", self.rax))
+            .field("rcx", &format_args!("{:#018x}", self.rcx))
+            .field("rdx", &format_args!("{:#018x}", self.rdx))
+            .field("rbx", &format_args!("{:#018x}", self.rbx))
+            .field("rbp", &format_args!("{:#018x}", self.rbp))
+            .field("rsi", &format_args!("{:#018x}", self.rsi))
+            .field("rdi", &format_args!("{:#018x}", self.rdi))
+            .field("r8 ", &format_args!("{:#018x}", self.r8))
+            .field("r9 ", &format_args!("{:#018x}", self.r9))
+            .field("r10", &format_args!("{:#018x}", self.r10))
+            .field("r11", &format_args!("{:#018x}", self.r11))
+            .field("r12", &format_args!("{:#018x}", self.r12))
+            .field("r13", &format_args!("{:#018x}", self.r13))
+            .field("r14", &format_args!("{:#018x}", self.r14))
+            .field("r15", &format_args!("{:#018x}", self.r15))
+            .finish()
+    }
+}
+
+#[expect(
+    unreachable_code,
+    reason = "FPU/SIMD state saving/restoring is not implemented yet"
+)]
 extern "x86-interrupt" fn device_not_available_handler(_stack_frame: InterruptStackFrame) {
     let cr0 = Cr0::read();
     if cr0 & Cr0::TASK_SWITCHED != 0 {
@@ -214,6 +330,7 @@ pub fn new_irq(
     /// IDT index counter.
     ///
     /// It skips the first 32 entries, which are reserved for exceptions.
+    // TODO: Per-core IRQ counters
     static IDX: AtomicU8 = AtomicU8::new(32);
 
     let core_id = core.unwrap_or_else(|| locals!().core_id());
@@ -233,3 +350,6 @@ pub fn new_irq(
 
     (idx, core_id)
 }
+
+// Safety: access to the IDT is synchronized by an atomic index counter
+unsafe impl Sync for Interrupts {}

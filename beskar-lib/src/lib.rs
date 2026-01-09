@@ -5,38 +5,44 @@
 
 extern crate alloc;
 
-use beskar_core::syscall::{Syscall, SyscallExitCode};
-pub use beskar_core::{syscall::ExitCode, time::Duration};
-use hyperdrive::once::Once;
+pub use beskar_core::syscall::ExitCode;
+use beskar_core::{syscall::SyscallExitCode, time::Duration};
+use hyperdrive::call_once;
 
 mod arch;
+pub mod error;
+use error::{SyscallError, SyscallResult};
 pub mod io;
 pub mod mem;
+pub mod prelude;
 pub mod rand;
+mod sys;
 pub mod time;
 
 #[panic_handler]
 fn panic(info: &::core::panic::PanicInfo) -> ! {
     println!("Panic occurred: {}", info);
-    exit(ExitCode::Failure);
+    sys::sc_exit(ExitCode::Failure);
 }
 
-#[inline]
+#[cold]
 /// Exit the program with the given exit code.
 pub fn exit(code: ExitCode) -> ! {
-    let _ = arch::syscalls::syscall_1(Syscall::Exit, code as u64);
-    unsafe { ::core::hint::unreachable_unchecked() }
+    sys::sc_exit(code)
 }
 
 #[inline]
 /// Sleep for **at least** the given duration.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the syscall fails (should never happen).
-pub fn sleep(duration: Duration) {
-    let res = arch::syscalls::syscall_1(Syscall::Sleep, duration.total_millis());
-    SyscallExitCode::from(res).unwrap();
+/// Returns an error if the syscall fails.
+pub fn sleep(duration: Duration) -> SyscallResult<()> {
+    let code = sys::sc_sleep(duration.total_millis());
+    match code {
+        SyscallExitCode::Success => Ok(()),
+        _ => Err(SyscallError::new(-1)),
+    }
 }
 
 #[macro_export]
@@ -61,12 +67,15 @@ macro_rules! entry_point {
 /// Initialize the standard library.
 #[doc(hidden)]
 pub fn __init() {
-    static CALL_ONCE: Once<()> = Once::uninit();
+    call_once!({
+        // Heap
+        {
+            let heap_size = mem::HEAP_SIZE;
+            let res = mem::mmap(heap_size, None).expect("Memory mapping failed");
+            unsafe { mem::init_heap(res.as_ptr(), heap_size.try_into().unwrap()) };
+        }
 
-    CALL_ONCE.call_once(|| {
-        let res = mem::mmap(mem::HEAP_SIZE, None);
-        unsafe { mem::init_heap(res.as_ptr(), mem::HEAP_SIZE.try_into().unwrap()) };
-
+        // Time
         time::init();
     });
 }

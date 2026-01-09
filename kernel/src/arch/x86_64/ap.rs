@@ -4,7 +4,7 @@ use crate::{
     mem::{address_space, frame_alloc},
 };
 use beskar_core::arch::{
-    PhysAddr, VirtAddr,
+    Alignment, PhysAddr, VirtAddr,
     paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
 };
 use beskar_hal::{
@@ -51,10 +51,10 @@ pub fn start_up_aps(core_count: usize) {
     // Identity-map AP trampoline code, as paging isn't enabled on APs yet.
     // Everything should still be accessible with the same address when paging is enabled.
 
-    let payload_paddr = PhysAddr::new(AP_TRAMPOLINE_PADDR);
-    let frame = Frame::<M4KiB>::from_start_address(payload_paddr).unwrap();
-    let payload_vaddr = VirtAddr::new(AP_TRAMPOLINE_PADDR);
-    let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
+    let payload_paddr = PhysAddr::new_truncate(AP_TRAMPOLINE_PADDR);
+    let frame = Frame::<M4KiB>::containing_address(payload_paddr);
+    let payload_vaddr = VirtAddr::new_extend(AP_TRAMPOLINE_PADDR);
+    let page = Page::<M4KiB>::containing_address(payload_vaddr);
 
     frame_alloc::with_frame_allocator(|frame_allocator| {
         address_space::with_kernel_pt(|page_table| {
@@ -65,6 +65,7 @@ pub fn start_up_aps(core_count: usize) {
                     Flags::PRESENT | Flags::WRITABLE,
                     &mut *frame_allocator,
                 )
+                .expect("Failed to map AP trampoline code")
                 .flush();
         });
     });
@@ -84,7 +85,7 @@ pub fn start_up_aps(core_count: usize) {
     write_sipi(
         payload_vaddr,
         0,
-        u64::try_from(crate::boot::kap_entry as usize).unwrap(),
+        u64::try_from(crate::boot::kap_entry as *const () as usize).unwrap(),
     );
 
     // Pointer to the address of the top of the stack
@@ -138,7 +139,7 @@ pub fn start_up_aps(core_count: usize) {
         });
     });
     address_space::with_kernel_pgalloc(|page_allocator| {
-        let page = Page::<M4KiB>::from_start_address(payload_vaddr).unwrap();
+        let page = Page::<M4KiB>::containing_address(payload_vaddr);
         page_allocator.free_pages(Page::range_inclusive(page, page));
     });
 
@@ -156,27 +157,14 @@ fn write_sipi(payload_vaddr: VirtAddr, offset_count: u64, value: u64) {
 
 #[must_use]
 fn allocate_stack(nb_pages: u64) -> VirtAddr {
-    let stack_pages = address_space::with_kernel_pgalloc(|page_allocator| {
-        page_allocator.allocate_pages::<M4KiB>(nb_pages).unwrap()
-    });
+    let stack_pages = address_space::get_kernel_address_space()
+        .alloc_map::<M4KiB>(
+            usize::try_from(nb_pages * M4KiB::SIZE).unwrap(),
+            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+        )
+        .expect("Failed to allocate stack");
 
-    frame_alloc::with_frame_allocator(|frame_allocator| {
-        address_space::with_kernel_pt(|page_table| {
-            for page in stack_pages {
-                let frame = frame_allocator.alloc::<M4KiB>().unwrap();
-                page_table
-                    .map(
-                        page,
-                        frame,
-                        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
-                        frame_allocator,
-                    )
-                    .flush();
-            }
-        });
-    });
-
-    (stack_pages.end().start_address() + (M4KiB::SIZE - 1)).align_down(16_u64)
+    (stack_pages.end().start_address() + (M4KiB::SIZE - 1)).aligned_down(Alignment::Align16)
 }
 
 pub unsafe fn load_ap_regs() {

@@ -10,7 +10,7 @@ use crate::{
 use acpi::sdt::madt::Lint;
 use beskar_core::arch::{
     PhysAddr,
-    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _},
+    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
 };
 use beskar_hal::{
     paging::page_table::Flags,
@@ -22,11 +22,27 @@ use core::{
     ptr::NonNull,
     sync::atomic::{AtomicU8, Ordering},
 };
-use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
+use hyperdrive::{
+    once::Once,
+    ptrs::volatile::{ReadWrite, Volatile, WriteOnly},
+};
 use timer::LapicTimer;
 
 pub mod ipi;
 pub mod timer;
+
+/// Amount of milliseconds per LAPIC timer interrupt
+pub const MS_PER_INTERRUPT: u32 = 30;
+
+/// LAPIC timer divider
+const TIMER_DIVIDER: timer::Divider = timer::Divider::Eight;
+
+/// Global LAPIC MMIO base mapping shared across all cores.
+///
+/// We map the LAPIC frame once at a fixed virtual address and reuse it,
+/// avoiding per-core mappings that can differ and cause page faults if a
+/// thread migrates between cores between obtaining the pointer and using it.
+static LAPIC_MMIO_BASE: Once<Page> = Once::uninit();
 
 #[must_use]
 pub fn apic_id() -> u8 {
@@ -61,7 +77,15 @@ pub fn init_lapic() {
 
     let mut lapic = LocalApic::from_paddr(lapic_paddr);
 
-    lapic.timer().calibrate();
+    let timer = lapic.timer();
+    timer.calibrate();
+
+    let ticks_per_ms = timer.rate_mhz().unwrap().get() * 1_000 / TIMER_DIVIDER.as_u32();
+    let ticks = MS_PER_INTERRUPT * ticks_per_ms;
+    timer.set(timer::Mode::Periodic(timer::ModeConfiguration::new(
+        TIMER_DIVIDER,
+        ticks,
+    )));
 
     locals!().lapic().init(lapic);
 }
@@ -80,7 +104,7 @@ pub fn init_ioapic() {
 
 /// Enables/disables interrupts.
 ///
-/// ## Panics
+/// # Panics
 ///
 /// This function will panic if the APIC is not enabled.
 fn enable_disable_interrupts(enable: bool) {
@@ -114,28 +138,32 @@ impl LocalApic {
 
         assert!((base >> 11) & 1 == 1, "APIC not enabled");
 
-        PhysAddr::new(base & 0xF_FFFF_F000)
+        PhysAddr::new_truncate(base & 0xF_FFFF_F000)
     }
 
     #[must_use]
     pub fn from_paddr(paddr: PhysAddr) -> Self {
-        let frame = Frame::<M4KiB>::from_start_address(paddr).unwrap();
+        let frame = Frame::<M4KiB>::containing_address(paddr);
 
         let apic_flags = Flags::MMIO_SUITABLE;
 
-        let page = process::current()
-            .address_space()
-            .with_pgalloc(|page_allocator| {
-                page_allocator.allocate_pages::<M4KiB>(1).unwrap().start()
+        LAPIC_MMIO_BASE.call_once(|| {
+            let page = process::current()
+                .address_space()
+                .with_pgalloc(|page_allocator| {
+                    page_allocator.allocate_pages::<M4KiB>(1).unwrap().start()
+                });
+            frame_alloc::with_frame_allocator(|frame_allocator| {
+                address_space::with_kernel_pt(|page_table| {
+                    page_table
+                        .map(page, frame, apic_flags, &mut *frame_allocator)
+                        .expect("Failed to map LAPIC frame")
+                        .flush();
+                });
             });
-
-        frame_alloc::with_frame_allocator(|frame_allocator| {
-            address_space::with_kernel_pt(|page_table| {
-                page_table
-                    .map(page, frame, apic_flags, &mut *frame_allocator)
-                    .flush();
-            });
+            page
         });
+        let page = *LAPIC_MMIO_BASE.get().unwrap();
 
         let acpi_id = ACPI
             .get()
@@ -160,16 +188,15 @@ impl LocalApic {
                 }
 
                 let triggermode: u32 = match nmi.flags().trigger_mode() {
-                    acpi::sdt::madt::TriggerMode::Edge => 0,
-                    acpi::sdt::madt::TriggerMode::Level => 1,
+                    acpi::sdt::madt::TriggerMode::Edge
                     // Apparently bus default is edge
-                    acpi::sdt::madt::TriggerMode::BusDefault => 0,
+                    | acpi::sdt::madt::TriggerMode::BusDefault => 0,
+                    acpi::sdt::madt::TriggerMode::Level => 1,
                 };
                 let polarity: u32 = match nmi.flags().polarity() {
-                    acpi::sdt::madt::Polarity::High => 0,
-                    acpi::sdt::madt::Polarity::Low => 1,
                     // Apparently bus default is high
-                    acpi::sdt::madt::Polarity::BusDefault => 0,
+                    acpi::sdt::madt::Polarity::High | acpi::sdt::madt::Polarity::BusDefault => 0,
+                    acpi::sdt::madt::Polarity::Low => 1,
                 };
 
                 let (irq, _) =
@@ -231,7 +258,7 @@ impl LocalApic {
     ///
     /// This step is mandatory to allow the LAPIC to signal other pending interrupts.
     ///
-    /// ## Notes
+    /// # Notes
     ///
     /// It is safe to call this function in threaded environments, even if the LAPIC is
     /// currently locked.
@@ -264,7 +291,7 @@ extern "x86-interrupt" fn local_nmi_handler(_stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    let rescheduling_result = crate::process::scheduler::reschedule();
+    let rescheduling_result = crate::process::scheduler::scheduler_tick();
 
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 
@@ -326,6 +353,7 @@ pub struct IoApic {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code, reason = "Some registers may not be used yet")]
 enum IoApicReg {
     Id,
     Version,
@@ -355,6 +383,7 @@ impl IoApicReg {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code, reason = "Some destinations may not be used yet")]
 pub enum Destination {
     /// Physical destination
     ///
@@ -383,6 +412,7 @@ pub enum PinPolarity {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code, reason = "Some delivery modes may not be used yet")]
 pub enum DeliveryMode {
     Fixed = 0b000,
     LowestPriority = 0b001,
@@ -437,6 +467,7 @@ impl IoApic {
                 // The frame is reserved by the UEFI, so it is already allocated.
                 page_table
                     .map(page, frame, apic_flags, frame_allocator)
+                    .expect("Failed to map IOAPIC frame")
                     .flush();
             });
         });
@@ -488,14 +519,15 @@ impl IoApic {
                     DeliveryMode::Fixed
                 },
                 trigger_mode: match flags.trigger_mode() {
-                    acpi::sdt::madt::TriggerMode::Edge => TriggerMode::Edge,
+                    acpi::sdt::madt::TriggerMode::Edge
+                    | acpi::sdt::madt::TriggerMode::BusDefault => TriggerMode::Edge,
                     acpi::sdt::madt::TriggerMode::Level => TriggerMode::Level,
-                    acpi::sdt::madt::TriggerMode::BusDefault => TriggerMode::Edge,
                 },
                 pin_polarity: match flags.polarity() {
-                    acpi::sdt::madt::Polarity::High => PinPolarity::High,
+                    acpi::sdt::madt::Polarity::High | acpi::sdt::madt::Polarity::BusDefault => {
+                        PinPolarity::High
+                    }
                     acpi::sdt::madt::Polarity::Low => PinPolarity::Low,
-                    acpi::sdt::madt::Polarity::BusDefault => PinPolarity::High,
                 },
                 remote_irr: false,
                 int_vec: irq,
@@ -542,7 +574,7 @@ impl IoApic {
     /// Returns the ID of the IO APIC.
     ///
     /// This ID is NOT valid until the IO APIC has been initialized.
-    pub fn id(&self) -> u8 {
+    pub fn _id(&self) -> u8 {
         let id = self.read_reg(IoApicReg::Id);
         u8::try_from((id >> 24) & 0xF).unwrap()
     }
@@ -555,7 +587,7 @@ impl IoApic {
     }
 
     #[must_use]
-    pub fn version(&self) -> u8 {
+    pub fn _version(&self) -> u8 {
         let ver = self.read_reg(IoApicReg::Version);
         u8::try_from(ver & 0xFF).unwrap()
     }
@@ -567,7 +599,7 @@ impl IoApic {
     }
 
     #[must_use]
-    pub fn arbitration_id(&self) -> u8 {
+    pub fn _arbitration_id(&self) -> u8 {
         let arb = self.read_reg(IoApicReg::Arbitration);
         u8::try_from((arb >> 24) & 0xF).unwrap()
     }

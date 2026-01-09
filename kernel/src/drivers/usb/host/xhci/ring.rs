@@ -55,7 +55,8 @@ impl<T: RingElement + Sized> Ring<T> {
             ring_frame.start_address(),
             usize::from(capacity) * size_of::<Trb>(),
             flags,
-        );
+        )
+        .unwrap();
 
         let vaddr = physical_mapping
             .translate(ring_frame.start_address())
@@ -293,7 +294,7 @@ impl EventRing {
         )
         .unwrap();
         let segment_table_mapping =
-            PhysicalMapping::<M4KiB>::new(frame.start_address(), table_size, flags);
+            PhysicalMapping::<M4KiB>::new(frame.start_address(), table_size, flags).unwrap();
 
         let virt_addr = segment_table_mapping
             .translate(frame.start_address())

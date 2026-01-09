@@ -12,7 +12,7 @@ pub struct AdminCompletionQueue(CompletionQueue);
 
 impl AdminCompletionQueue {
     #[inline]
-    pub fn new(doorbell: Volatile<ReadWrite, u16>) -> DriverResult<Self> {
+    pub fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
         Ok(Self(CompletionQueue::new(doorbell)?))
     }
 
@@ -32,7 +32,7 @@ pub struct AdminSubmissionQueue(SubmissionQueue);
 
 impl AdminSubmissionQueue {
     #[inline]
-    pub fn new(doorbell: Volatile<ReadWrite, u16>) -> DriverResult<Self> {
+    pub fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
         Ok(Self(SubmissionQueue::new(doorbell)?))
     }
 
@@ -93,6 +93,7 @@ pub enum IdentifyTarget {
 pub struct AdminSubmissionEntry(SubmissionEntry);
 
 impl AdminSubmissionEntry {
+    #[must_use]
     pub fn new_identify(target: IdentifyTarget, buffer: Frame) -> Self {
         let mut entry = SubmissionEntry::zero_with_opcode(Command::Identify as u8);
 
@@ -108,6 +109,49 @@ impl AdminSubmissionEntry {
         entry.command_specific[0] = dword10;
 
         Self(entry)
+    }
+
+    #[must_use]
+    pub fn new_create_io_cq(
+        qid: u16,
+        entries: u16,
+        base: PhysAddr,
+        iv: u16,
+        enable_interrupts: bool,
+    ) -> Self {
+        let mut entry = SubmissionEntry::zero_with_opcode(Command::CreateIOCompletionQueue as u8);
+        // PRP points to the base of the completion queue
+        entry.data_ptr[0] = base.as_u64() as _;
+        let dword10 = (u32::from(entries) << 16) | u32::from(qid);
+        let ien_bit = if enable_interrupts { 1u32 << 1 } else { 0 };
+        let dword11 = (u32::from(iv) << 16) | ien_bit | 1; // PC=1 (physically contiguous)
+        entry.command_specific[0] = dword10;
+        entry.command_specific[1] = dword11;
+        Self(entry)
+    }
+
+    #[must_use]
+    pub fn new_create_io_sq(
+        qid: u16,
+        entries: u16,
+        base: PhysAddr,
+        cqid: u16,
+        priority: u8,
+    ) -> Self {
+        let mut entry = SubmissionEntry::zero_with_opcode(Command::CreateIOSubmissionQueue as u8);
+        // PRP points to the base of the submission queue
+        entry.data_ptr[0] = base.as_u64() as _;
+        let dword10 = (u32::from(entries) << 16) | u32::from(qid);
+        let dword11 = (u32::from(cqid) << 16) | (u32::from(priority & 0b11) << 1) | 1; // PC=1
+        entry.command_specific[0] = dword10;
+        entry.command_specific[1] = dword11;
+        Self(entry)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn command_id(&self) -> u16 {
+        self.0.command_id().as_u16()
     }
 }
 
@@ -127,7 +171,7 @@ pub struct IdentifyController {
     /// The value is in commands and is reported as a power of two (2^n)
     rab: u8,
     ieee_oui: [u8; 3],
-    /// ## Warning
+    /// # Warning
     ///
     /// Optional field.
     cmpion: u8,
@@ -147,7 +191,7 @@ pub struct IdentifyController {
     /// This value is a bitflag.
     /// Refer to the specification p.323
     controller_attr: u32,
-    /// ## Warning
+    /// # Warning
     ///
     /// Optional field.
     rrls: u16,
@@ -268,4 +312,39 @@ impl IdentifyController {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdminCompletionEntry(CompletionEntry);
+
+impl AdminCompletionEntry {
+    #[must_use]
+    #[inline]
+    pub const fn has_finished(self) -> bool {
+        self.0.has_finished()
+    }
+
+    #[must_use]
+    #[inline]
+    /// Check if the command was successful
+    ///
+    /// This value only has meaning if `has_finished` returns true.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the command has not finished.
+    pub const fn is_success(self) -> bool {
+        self.0.is_success()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn command_id(self) -> u16 {
+        self.0.command_id().as_u16()
+    }
+
+    #[must_use]
+    #[inline]
+    /// Get the status code (bits 1-15, bit 0 is phase bit)
+    pub fn status_code(self) -> u16 {
+        self.0.status_code()
+    }
+}

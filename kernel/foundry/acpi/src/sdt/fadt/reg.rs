@@ -1,11 +1,12 @@
+#![expect(dead_code, unreachable_code, reason = "Incomplete implementation")]
 use crate::sdt::{AccessSize, AddressSpace, GenericAddress};
 use beskar_core::static_assert;
 
 #[derive(Debug, Clone, Copy)]
 /// The PM1 Control Register contain the fixed hardware feature control bits.
 /// These bits can be split between two registers:
-/// - PM1a Control Register
-/// - PM1b Control Register
+/// - `PM1a` Control Register
+/// - `PM1b` Control Register
 ///
 /// The values for these pointers to the register space are found in the FADT.
 /// Accesses to PM1 Control Registers are done through Byte/Word accesses.
@@ -20,13 +21,13 @@ pub struct Pm1ControlRegister {
 pub struct Pm1ControlValue {
     /// The raw value
     ///
-    /// Bit 0: SCI_EN - Should be preserved
-    /// Bit 1: BM_RLD - Bus Master Request pull C3 (sleep) CPUs to C0 (wake)
-    /// Bit 2: GBL_RLS - Indicate a release of the global lock
+    /// Bit 0: `SCI_EN` - Should be preserved
+    /// Bit 1: `BM_RLD` - Bus Master Request pull C3 (sleep) CPUs to C0 (wake)
+    /// Bit 2: `GBL_RLS` - Indicate a release of the global lock
     /// Bits 3-8: Reserved
     /// Bit 9: Ignored
-    /// Bits 10-12: SLP_TYPx - Sleep Type
-    /// Bit 13: SLP_EN - Sleep Enable
+    /// Bits 10-12: `SLP_TYPx` - Sleep Type
+    /// Bit 13: `SLP_EN` - Sleep Enable
     /// Bits 14-15: Reserved
     raw: u16,
 }

@@ -2,7 +2,6 @@
 use super::{super::PhysAddr, M4KiB, MemSize};
 use core::marker::PhantomData;
 use core::ops::{Add, Sub};
-use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// A physical memory frame.
@@ -11,30 +10,12 @@ pub struct Frame<S: MemSize = M4KiB> {
     size: PhantomData<S>,
 }
 
-#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
-pub enum FrameError {
-    #[error("Unaligned address")]
-    UnalignedAddress,
-}
-
 impl<S: MemSize> Frame<S> {
-    #[inline]
-    pub const fn from_start_address(address: PhysAddr) -> Result<Self, FrameError> {
-        // Check that the address is correctly aligned.
-        if address.as_u64() != address.align_down(S::SIZE).as_u64() {
-            return Err(FrameError::UnalignedAddress);
-        }
-        Ok(Self {
-            start_address: address,
-            size: PhantomData,
-        })
-    }
-
     #[must_use]
     #[inline]
     pub const fn containing_address(address: PhysAddr) -> Self {
         Self {
-            start_address: address.align_down(S::SIZE),
+            start_address: address.aligned_down(S::ALIGNMENT),
             size: PhantomData,
         }
     }
@@ -43,6 +24,12 @@ impl<S: MemSize> Frame<S> {
     #[inline]
     pub const fn start_address(self) -> PhysAddr {
         self.start_address
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn end_address(self) -> PhysAddr {
+        self.start_address + (S::SIZE - 1)
     }
 
     #[must_use]
@@ -124,6 +111,20 @@ impl<S: MemSize> FrameRangeInclusive<S> {
     pub fn size(&self) -> u64 {
         S::SIZE * self.len()
     }
+
+    #[must_use]
+    #[inline]
+    /// Checks if the given frame is within this range.
+    pub fn contains(&self, frame: Frame<S>) -> bool {
+        frame >= self.start && frame <= self.end
+    }
+
+    #[must_use]
+    #[inline]
+    /// Checks if this range overlaps with another range.
+    pub fn overlaps(&self, other: &Self) -> bool {
+        !(self.end < other.start || self.start > other.end)
+    }
 }
 
 impl<S: MemSize> IntoIterator for FrameRangeInclusive<S> {
@@ -157,6 +158,12 @@ impl<S: MemSize> Iterator for FrameIterator<S> {
         } else {
             None
         }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let exact_len = self.len();
+        (exact_len, Some(exact_len))
     }
 }
 
@@ -201,25 +208,19 @@ mod tests {
 
     #[test]
     fn test_f() {
-        let frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1000)).unwrap();
+        let frame = Frame::<M4KiB>::containing_address(PhysAddr::new_truncate(0x1000));
         assert_eq!(frame.size(), M4KiB::SIZE);
-        assert_eq!(frame.start_address(), PhysAddr::new(0x1000));
+        assert_eq!(frame.start_address(), PhysAddr::new_truncate(0x1000));
 
-        let same_frame = Frame::<M4KiB>::containing_address(PhysAddr::new(0x1FFF));
+        let same_frame = Frame::<M4KiB>::containing_address(PhysAddr::new_truncate(0x1FFF));
         assert_eq!(same_frame, frame);
     }
 
     #[test]
-    fn test_f_unaligned() {
-        let unaligned_frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1001));
-        assert!(unaligned_frame == Err(FrameError::UnalignedAddress));
-    }
-
-    #[test]
     fn test_f_op() {
-        let frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x2000)).unwrap();
-        let next_frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x3000)).unwrap();
-        let previous_frame = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1000)).unwrap();
+        let frame = Frame::<M4KiB>::containing_address(PhysAddr::new_truncate(0x2000));
+        let next_frame = Frame::<M4KiB>::containing_address(PhysAddr::new_truncate(0x3000));
+        let previous_frame = Frame::<M4KiB>::containing_address(PhysAddr::new_truncate(0x1000));
 
         assert_eq!(frame + 1, next_frame);
         assert_eq!(frame - 1, previous_frame);
@@ -228,8 +229,8 @@ mod tests {
 
     #[test]
     fn test_f_range() {
-        let start = Frame::<M4KiB>::from_start_address(PhysAddr::new(0x1000)).unwrap();
-        let end = Frame::<M4KiB>::containing_address(PhysAddr::new(0x2FFF));
+        let start = Frame::<M4KiB>::containing_address(PhysAddr::new_truncate(0x1000));
+        let end = Frame::<M4KiB>::containing_address(PhysAddr::new_truncate(0x2FFF));
         let range = Frame::range_inclusive(start, end);
         assert_eq!(range.len(), 2);
         assert_eq!(range.size(), 2 * M4KiB::SIZE);

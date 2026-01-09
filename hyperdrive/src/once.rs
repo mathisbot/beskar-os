@@ -43,12 +43,34 @@
 //! perform_once();
 //! ```
 //!
+//! which can be written more concisely using the `call_once!` macro:
+//!
+//! ```rust
+//! # use hyperdrive::once::call_once;
+//! #
+//! // This could be called on many threads,
+//! // but the operation will only be performed once.
+//! call_once!({
+//!     // Perform the operation
+//! });
+//! ```
+//!
 //! Note that, in this case, if every thread calls the function `perform_once` at the same time,
 //! non-executing threads won't block on the operation.
 //! If you want to ensure the operation is complete before proceeding, use `Once::get`.
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU8, Ordering};
+
+#[macro_export]
+/// A macro to simplify the usage of `Once` for one-time calls.
+macro_rules! call_once {
+    ($x:expr) => {{
+        static CALL_ONCE: $crate::once::Once<()> = $crate::once::Once::uninit();
+        CALL_ONCE.call_once(|| $x);
+    }};
+}
+pub use call_once;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Possible states of the `Once` structure.
@@ -163,12 +185,8 @@ pub struct Once<T> {
 // Safety:
 // `Once` only provides an immutable reference to the value when initialized.
 // On initialization, we manually make sure there are no data races.
-#[expect(
-    clippy::non_send_fields_in_send_ty,
-    reason = "Synchronization primitive"
-)]
-unsafe impl<T> Send for Once<T> {}
-unsafe impl<T> Sync for Once<T> {}
+unsafe impl<T: Send> Send for Once<T> {}
+unsafe impl<T: Send + Sync> Sync for Once<T> {}
 
 impl<T> Once<T> {
     #[must_use]
@@ -221,7 +239,7 @@ impl<T> Once<T> {
                 State::Uninitialized,
                 State::Initializing,
                 Ordering::Acquire,
-                Ordering::Relaxed,
+                Ordering::Acquire,
             )
             .is_ok()
         {
@@ -290,16 +308,21 @@ impl<T> Drop for Once<T> {
     }
 }
 
-/// A guard structure that marks the inner `Once` as poisoned when dropped.
-struct PoisonGuard<'a, T>(&'a Once<T>);
-
-impl<T> PoisonGuard<'_, T> {
+impl<T> Poisonable for Once<T> {
     #[inline]
-    /// Mark the inner `Once` as poisoned.
-    fn poison_once(&self) {
-        self.0.state.store(State::Poisoned, Ordering::Release);
+    fn poison(&self) {
+        self.state.store(State::Poisoned, Ordering::Release);
     }
+}
 
+trait Poisonable {
+    fn poison(&self);
+}
+
+/// A guard structure that marks the inner value as poisoned when dropped.
+struct PoisonGuard<'a, P: Poisonable>(&'a P);
+
+impl<P: Poisonable> PoisonGuard<'_, P> {
     #[inline]
     /// Call this function when initialization is successful.
     const fn init_success(self) {
@@ -309,17 +332,14 @@ impl<T> PoisonGuard<'_, T> {
 
     #[must_use]
     #[inline]
-    /// Safely call the given initializer function and return the initialized value.
+    /// Safely call the given function and return the initialized value.
     ///
     /// On success, the behavior is transparent.
     /// On failure, the given `Once` is marked as poisoned.
-    pub fn guard_call<F>(once: &Once<T>, initializer: F) -> T
-    where
-        F: FnOnce() -> T,
-    {
-        let poison_guard = PoisonGuard(once);
+    pub fn guard_call<T, F: FnOnce() -> T>(poisonable: &P, f: F) -> T {
+        let poison_guard = PoisonGuard(poisonable);
 
-        let initialized_value = initializer();
+        let initialized_value = f();
 
         poison_guard.init_success();
 
@@ -327,10 +347,10 @@ impl<T> PoisonGuard<'_, T> {
     }
 }
 
-impl<T> Drop for PoisonGuard<'_, T> {
+impl<P: Poisonable> Drop for PoisonGuard<'_, P> {
     #[inline]
     fn drop(&mut self) {
-        self.poison_once();
+        self.0.poison();
     }
 }
 
@@ -354,7 +374,7 @@ mod test {
     }
 
     #[test]
-    fn test_init() {
+    fn test_once_init() {
         let once = Once::from_init(42);
         assert!(once.is_initialized());
         once.call_once(|| panic!("This should not be called"));
@@ -379,7 +399,7 @@ mod test {
     }
 
     #[test]
-    fn test_concurrent() {
+    fn test_once_concurrent() {
         let once = Arc::new(Once::uninit());
         once.call_once(|| 42);
 
@@ -410,7 +430,7 @@ mod test {
     }
 
     #[test]
-    fn test_poison() {
+    fn test_once_poison() {
         let once = Arc::new(Once::uninit());
 
         let handle_that_panics = {
@@ -429,7 +449,7 @@ mod test {
 
     #[test]
     #[should_panic(expected = "Once is poisoned, cannot get value")]
-    fn test_poison_get() {
+    fn test_once_poison_get() {
         let once = Arc::new(Once::uninit());
 
         let handle_that_panics = {
@@ -445,5 +465,18 @@ mod test {
         // Poisoning the `Once` should not leave the value in an `Initializing` state.
         // This call should finish (panic) immediately (instead of infinite loop).
         let _ = once.get();
+    }
+
+    #[test]
+    fn test_call_once() {
+        static COUNTER: AtomicU8 = AtomicU8::new(0);
+
+        for _ in 0..5 {
+            call_once!({
+                COUNTER.fetch_add(1, Ordering::Relaxed);
+            });
+        }
+
+        assert_eq!(COUNTER.load(Ordering::Relaxed), 1);
     }
 }

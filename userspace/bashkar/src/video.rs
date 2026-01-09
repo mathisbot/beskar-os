@@ -41,7 +41,10 @@ fn draw_logo_image() {
             buffer_mut[row_start..row_end].copy_from_slice(row);
         }
 
-        screen.flush(None);
-        // screen.flush(Some(0..assets::banner::BANNER_HEIGHT.try_into().unwrap()));
+        screen
+            .flush(Some(
+                &(0..assets::banner::BANNER_HEIGHT.try_into().unwrap()),
+            ))
+            .unwrap();
     });
 }

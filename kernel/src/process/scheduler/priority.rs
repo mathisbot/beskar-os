@@ -1,41 +1,14 @@
 //! Manages the priority of processes.
 //!
 //! This helps the scheduler to decide which process to run next.
-
+use super::thread::Thread;
+use crate::process::Process;
+use alloc::{boxed::Box, sync::Arc};
 use core::{
     pin::Pin,
-    sync::atomic::{AtomicU8, AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
 };
-
-use alloc::{boxed::Box, sync::Arc};
 use hyperdrive::queues::mpsc::MpscQueue;
-
-use crate::process::Process;
-
-use super::thread::Thread;
-
-#[derive(Debug)]
-pub struct AtomicPriority(AtomicU8);
-
-impl AtomicPriority {
-    #[must_use]
-    pub const fn new(priority: Priority) -> Self {
-        Self(AtomicU8::new(priority as u8))
-    }
-
-    #[must_use]
-    pub fn load(&self, order: Ordering) -> Priority {
-        self.0.load(order).try_into().unwrap()
-    }
-
-    pub fn store(&self, priority: Priority, order: Ordering) {
-        self.0.store(priority.into(), order);
-    }
-
-    pub fn swap(&self, priority: Priority, order: Ordering) -> Priority {
-        self.0.swap(priority.into(), order).try_into().unwrap()
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {
@@ -61,6 +34,7 @@ impl TryFrom<u8> for Priority {
 }
 
 impl From<Priority> for u8 {
+    #[inline]
     fn from(priority: Priority) -> Self {
         priority as Self
     }
@@ -68,7 +42,7 @@ impl From<Priority> for u8 {
 
 /// A trait for managing thread queues.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// The `next` function must not allocate memory, acquire locks, ...
 /// because it will be used by interrupt handlers.
@@ -104,6 +78,7 @@ impl RoundRobinQueues {
     }
 
     /// Cycle through the priorities.
+    #[inline]
     fn cycle_priority(&self) -> Priority {
         let current = self.current.fetch_add(1, Ordering::Relaxed);
         self.cycle[current % self.cycle.len()]

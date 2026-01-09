@@ -4,9 +4,9 @@ use alloc::{
     sync::Arc,
 };
 use beskar_hal::process::Kind;
-use binary::LoadedBinary;
 use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use hyperdrive::{once::Once, ptrs::view::ViewRef};
+use storage::fs::{Path, PathBuf};
 
 pub mod binary;
 pub mod scheduler;
@@ -20,7 +20,7 @@ pub fn init() {
             pid: ProcessId::new(),
             address_space: ViewRef::new_borrow(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
-            binary_data: None,
+            binary: None,
         })
     });
 
@@ -83,19 +83,19 @@ pub struct Process {
     pid: ProcessId,
     address_space: ViewRef<'static, AddressSpace>,
     kind: Kind,
-    binary_data: Option<BinaryData<'static>>,
+    binary: Option<PathBuf>,
 }
 
 impl Process {
     #[must_use]
     #[inline]
-    pub fn new(name: &str, kind: Kind, binary: Option<binary::Binary<'static>>) -> Self {
+    pub fn new(name: &str, kind: Kind, binary: Option<PathBuf>) -> Self {
         Self {
-            name: name.to_string(),
+            name: String::from(name),
             pid: ProcessId::new(),
             address_space: ViewRef::new_owned(AddressSpace::new()),
             kind,
-            binary_data: binary.map(BinaryData::new),
+            binary,
         }
     }
 
@@ -123,58 +123,16 @@ impl Process {
         self.kind
     }
 
-    /// Loads the process binary into memory and returns its entry point.
-    /// If the binary is already loaded, the only thing this function does is returning the entry point.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there is no binary data associated with the process.
-    fn load_binary(&self) -> LoadedBinary {
-        let binary_data = self.binary_data.as_ref().unwrap();
-        binary_data.load();
-        *binary_data.loaded.get().unwrap()
+    #[must_use]
+    #[inline]
+    pub fn binary(&self) -> Option<Path<'_>> {
+        self.binary.as_ref().map(PathBuf::as_path)
     }
 }
 
 impl Drop for Process {
     fn drop(&mut self) {
-        video::debug!(
-            "Process \"{}\" (PID: {}) is being dropped",
-            self.name,
-            self.pid.as_u64()
-        );
         crate::storage::vfs().close_all_from_process(self.pid.as_u64());
-    }
-}
-
-struct BinaryData<'a> {
-    input: binary::Binary<'a>,
-    loaded: Once<binary::LoadedBinary>,
-}
-
-impl<'a> BinaryData<'a> {
-    #[must_use]
-    #[inline]
-    /// Creates a new binary data.
-    ///
-    /// Calling this function does **not** load the binary into memory,
-    /// it only tells the process that its binary exists and can be loaded.
-    pub const fn new(input: binary::Binary<'a>) -> Self {
-        Self {
-            input,
-            loaded: Once::uninit(),
-        }
-    }
-
-    /// Loads the binary into memory.
-    ///
-    /// More precisely, the input binary will be loaded into the address space of the **current** process.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the binary is invalid.
-    pub fn load(&self) {
-        self.loaded.call_once(|| self.input.load().unwrap());
     }
 }
 
@@ -200,11 +158,12 @@ impl Pcid {
     #[must_use]
     #[inline]
     pub fn new() -> Self {
+        const MAX_PCID: u16 = 1 << 12;
         static PCID_COUNTER: AtomicU16 = AtomicU16::new(0);
 
         let raw: u16 = PCID_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-        if raw > 4095 {
+        if raw >= MAX_PCID {
             todo!("PCID recycling");
         }
 
@@ -214,7 +173,6 @@ impl Pcid {
     #[must_use]
     #[inline]
     pub const fn as_u16(&self) -> u16 {
-        debug_assert!(self.0 <= 4095, "PCID out of bounds");
         self.0
     }
 }

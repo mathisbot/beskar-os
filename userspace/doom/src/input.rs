@@ -1,4 +1,5 @@
-use beskar_lib::io::keyboard::{KeyCode, KeyState};
+use beskar_lib::io::keyboard::{KeyCode, KeyEvent, KeyState, KeyboardReader};
+use hyperdrive::{locks::ticket::TicketLock, once::Once};
 
 #[link(name = "puredoom", kind = "static")]
 unsafe extern "C" {
@@ -163,8 +164,23 @@ impl From<KeyCode> for DoomKeyT {
     }
 }
 
+#[must_use]
+#[inline]
+/// # Panics
+///
+/// This function panics if opening the keyboard file fails (only once).
+fn poll_keyboard() -> Option<KeyEvent> {
+    static KEYBOARD_READER: Once<TicketLock<KeyboardReader>> = Once::uninit();
+
+    KEYBOARD_READER.call_once(|| TicketLock::new(KeyboardReader::new().unwrap()));
+    let mut reader = KEYBOARD_READER.get().unwrap().lock();
+
+    reader.next_event().unwrap_or(None)
+}
+
+/// Polls the keyboard and redistributes events to Doom.
 pub fn poll_inputs() {
-    while let Some(event) = beskar_lib::io::keyboard::poll_keyboard() {
+    while let Some(event) = poll_keyboard() {
         let doom_key = DoomKeyT::from(event.key());
         match event.pressed() {
             KeyState::Pressed => unsafe { doom_key_down(doom_key) },

@@ -8,11 +8,7 @@ license = "MIT"
 repository = "https://github.com/mathisbot/beskar-os/"
 
 [workspace]
-members = [
-    "bootloader",
-    "kernel",
-    "userspace/*"
-]
+members = ["bootloader", "kernel", "userspace/*"]
 
 [workspace.dependencies]
 beskar-core = { path = "beskar-core" }
@@ -20,8 +16,7 @@ beskar-hal = { path = "beskar-hal" }
 beskar-lib = { path = "beskar-lib" }
 bootloader-api = { path = "bootloader/bootloader-api" }
 hyperdrive = { path = "hyperdrive" }
-thiserror = { version = "2.0.12", default-features = false }
-xmas-elf = "0.10.0"
+thiserror = { version = "2.0.17", default-features = false }
 
 [build-dependencies]
 bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }

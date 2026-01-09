@@ -27,9 +27,9 @@ pub struct Hpet {
     /// Main Counter Value register.
     main_counter_value: MainCounterValue,
     /// Timers Configuration and Capabilities registers.
-    timers_config_cap: [Option<TimerConfigCap>; 32],
+    _timers_config_cap: [Option<TimerConfigCap>; 32],
     /// Timers Comparator Value registers.
-    timers_comp_value: [Option<TimerCompValue>; 32],
+    _timers_comp_value: [Option<TimerCompValue>; 32],
 }
 
 impl Hpet {
@@ -58,7 +58,7 @@ impl Hpet {
     }
 }
 
-macro_rules! read_write_reg {
+macro_rules! read_reg {
     ($name:ident { $($field_name:ident : $field_type:ty),* $(,)? }) => {
         #[derive(Debug)]
         /// HPET Read/Write register
@@ -77,7 +77,7 @@ macro_rules! read_write_reg {
             fn new(paddr: PhysAddr, $($field_name: $field_type),*) -> Self {
                 let flags = ::beskar_hal::paging::page_table::Flags::MMIO_SUITABLE;
 
-                let physical_mapping = PhysicalMapping::new(paddr, size_of::<u64>(), flags);
+                let physical_mapping = PhysicalMapping::new(paddr, size_of::<u64>(), flags).unwrap();
                 let vaddr = physical_mapping.translate(paddr).unwrap();
                 Self {
                     vaddr,
@@ -92,7 +92,15 @@ macro_rules! read_write_reg {
             const fn read(&self) -> u64 {
                 unsafe { self.vaddr.as_ptr::<u64>().read() }
             }
+        }
+    };
+}
 
+macro_rules! read_write_reg {
+    ($name:ident { $($field_name:ident : $field_type:ty),* $(,)? }) => {
+        read_reg!($name { $($field_name : $field_type),* });
+
+        impl $name {
             /// Use only to write to the register
             const fn as_mut(&mut self) -> &mut u64 {
                 unsafe { &mut *self.vaddr.as_mut_ptr::<u64>() }
@@ -113,7 +121,7 @@ impl GeneralCapabilities {
         let flags = Flags::PRESENT | Flags::NO_EXECUTE;
 
         let physical_mapping =
-            PhysicalMapping::<M4KiB>::new(paddr, core::mem::size_of::<u64>(), flags);
+            PhysicalMapping::<M4KiB>::new(paddr, core::mem::size_of::<u64>(), flags).unwrap();
         let vaddr = physical_mapping.translate(paddr).unwrap();
         Self(unsafe { vaddr.as_ptr::<u64>().read() })
     }
@@ -200,7 +208,7 @@ impl GeneralInterruptStatus {
     #[inline]
     /// Reads the interrupt status of the timer.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The caller ensure the timer is valid.
     pub const fn get_tn_int_status(&self, timer: u8) -> bool {
@@ -211,7 +219,7 @@ impl GeneralInterruptStatus {
     #[inline]
     /// Clears the interrupt status of the timer.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// The caller ensure the timer is valid.
     pub const unsafe fn clear_tn_int_status(&mut self, timer: u8) {
@@ -226,7 +234,7 @@ impl GeneralInterruptStatus {
     }
 }
 
-read_write_reg!(MainCounterValue { count_cap: bool });
+read_reg!(MainCounterValue { count_cap: bool });
 
 impl MainCounterValue {
     #[must_use]
@@ -245,7 +253,7 @@ read_write_reg!(TimerConfigCap { timer: u8 });
 impl TimerConfigCap {
     #[must_use]
     #[inline]
-    /// ## WARNING
+    /// # WARNING
     ///
     /// According the `OSDev` wiki, this field can be little bit misleading :
     ///
@@ -431,33 +439,35 @@ pub fn init() -> DriverResult<()> {
 
     assert_eq!(
         hpet_info.base_address().address_space(),
-        ::acpi::sdt::AddressSpace::SystemMemory
+        acpi::sdt::AddressSpace::SystemMemory
     );
 
     // TODO: Only one mapping for the whole HPET block
     // see section 2.3.1 of the spec
 
-    let general_capabilities =
-        GeneralCapabilities::new(PhysAddr::new(hpet_info.general_capabilities().address()));
+    let general_capabilities = GeneralCapabilities::new(PhysAddr::new_truncate(
+        hpet_info.general_capabilities().address(),
+    ));
     general_capabilities.validate(hpet_info);
     video::debug!("HPET period: {} ps", general_capabilities.period() / 1_000);
     if !hpet_info.count_size_capable() {
         video::warn!("HPET count size not capable");
     }
 
-    let mut general_configuration =
-        GeneralConfiguration::new(PhysAddr::new(hpet_info.general_configuration().address()));
+    let mut general_configuration = GeneralConfiguration::new(PhysAddr::new_truncate(
+        hpet_info.general_configuration().address(),
+    ));
     general_configuration.validate();
     general_configuration.set_enable_cnf(false);
 
     let general_interrupt_status = GeneralInterruptStatus::new(
-        PhysAddr::new(hpet_info.general_interrupt_status().address()),
+        PhysAddr::new_truncate(hpet_info.general_interrupt_status().address()),
         general_capabilities.num_timers(),
     );
     general_interrupt_status.validate();
 
     let main_counter_value = MainCounterValue::new(
-        PhysAddr::new(hpet_info.main_counter_value().address()),
+        PhysAddr::new_truncate(hpet_info.main_counter_value().address()),
         general_capabilities.count_size_capable(),
     );
     main_counter_value.validate();
@@ -466,7 +476,7 @@ pub fn init() -> DriverResult<()> {
     let mut timers_comp_value = [const { None }; 32];
     for i in 0..general_capabilities.num_timers() {
         let timer_config_cap: TimerConfigCap = TimerConfigCap::new(
-            PhysAddr::new(hpet_info.timer_n_configuration(i).address()),
+            PhysAddr::new_truncate(hpet_info.timer_n_configuration(i).address()),
             i,
         );
         timer_config_cap.validate();
@@ -475,7 +485,7 @@ pub fn init() -> DriverResult<()> {
         timers_config_cap[usize::from(i)] = Some(timer_config_cap);
 
         let timer_comp_value = TimerCompValue::new(
-            PhysAddr::new(hpet_info.timer_n_comparator_value(i).address()),
+            PhysAddr::new_truncate(hpet_info.timer_n_comparator_value(i).address()),
             size_cap,
         );
         timer_comp_value.validate();
@@ -496,8 +506,8 @@ pub fn init() -> DriverResult<()> {
         general_configuration,
         general_interrupt_status,
         main_counter_value,
-        timers_config_cap,
-        timers_comp_value,
+        _timers_config_cap: timers_config_cap,
+        _timers_comp_value: timers_comp_value,
     };
 
     HPET.init(hpet);

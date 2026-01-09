@@ -236,6 +236,7 @@ impl Ps2Controller {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(dead_code, reason = "Not all scancode sets are implemented yet")]
 enum ScancodeSet {
     Set1 = 1,
     Set2 = 2,
@@ -359,6 +360,8 @@ impl<'a> Ps2Keyboard<'a> {
         };
 
         let keycode = match (extended, scancode) {
+            (false, 0x01) => Some(KeyCode::Escape),
+
             (false, 0x1E) => Some(KeyCode::A),
             (false, 0x30) => Some(KeyCode::B),
             (false, 0x2E) => Some(KeyCode::C),
@@ -447,6 +450,8 @@ impl<'a> Ps2Keyboard<'a> {
             (false, 0x37) => Some(KeyCode::NumpadMul),
             // (false, 0x35) => Some(KeyCode::NumpadDiv),
             (false, 0x53) => Some(KeyCode::NumpadDot),
+
+            (true, 0x1D) => Some(KeyCode::CtrlRight),
 
             (true, 0x48) => Some(KeyCode::ArrowUp),
             (true, 0x50) => Some(KeyCode::ArrowDown),

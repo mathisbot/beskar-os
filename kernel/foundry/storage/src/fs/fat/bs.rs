@@ -1129,9 +1129,8 @@ impl BootParamBlock {
         }
 
         // Check root entries
-        if usize::from(self.root_entries()) * super::dirent::DIR_ENTRY_SIZE
-            % usize::from(self.bytes_per_sector())
-            != 0
+        if !(usize::from(self.root_entries()) * super::dirent::DIR_ENTRY_SIZE)
+            .is_multiple_of(usize::from(self.bytes_per_sector()))
         {
             return false;
         }
@@ -1208,9 +1207,8 @@ impl ExtendedBootParamBlock {
 
         // Check root entries
         if self.root_entries() != 0
-            || (usize::from(self.root_entries()) * super::dirent::DIR_ENTRY_SIZE
-                % usize::from(self.bytes_per_sector())
-                != 0)
+            || !(usize::from(self.root_entries()) * super::dirent::DIR_ENTRY_SIZE)
+                .is_multiple_of(usize::from(self.bytes_per_sector()))
         {
             return false;
         }

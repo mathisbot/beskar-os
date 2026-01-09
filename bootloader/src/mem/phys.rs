@@ -35,17 +35,17 @@ impl EarlyFrameAllocator {
     pub fn new(memory_map: MemoryMapOwned) -> Self {
         // Skip the lower 1 MiB of frames by convention.
         // This also skips `0x00` because Rust assumes that null references are not valid.
-        let frame = Frame::containing_address(PhysAddr::new(0x10_0000));
+        let frame = Frame::containing_address(PhysAddr::new_truncate(0x10_0000));
 
         let max = memory_map
             .entries()
-            .map(|r| PhysAddr::new(r.phys_start) + r.page_count * M4KiB::SIZE)
+            .map(|r| PhysAddr::new_truncate(r.phys_start) + r.page_count * M4KiB::SIZE)
             .max()
             .unwrap();
 
         // First 4 GiB of physical memory contain important info, such as ACPI tables.
         // Therefore, they should always be covered.
-        let max_physical_address = max.max(PhysAddr::new(0x1_0000_0000));
+        let max_physical_address = max.max(PhysAddr::new_truncate(0x1_0000_0000));
 
         Self {
             memory_map,
@@ -58,7 +58,7 @@ impl EarlyFrameAllocator {
 
     #[must_use]
     fn allocate_from_desc(&mut self, descriptor: &MemoryDescriptor) -> Option<Frame> {
-        let start_paddr = PhysAddr::new(descriptor.phys_start);
+        let start_paddr = PhysAddr::new_truncate(descriptor.phys_start);
         let end_paddr = start_paddr + descriptor.page_count * M4KiB::SIZE;
 
         let start_frame = Frame::containing_address(start_paddr);
@@ -115,8 +115,9 @@ impl EarlyFrameAllocator {
 
         let mut next_index = 0;
         for descriptor in self.memory_map.entries() {
-            let start = PhysAddr::new(descriptor.phys_start);
-            let end = PhysAddr::new(descriptor.phys_start) + descriptor.page_count * M4KiB::SIZE;
+            let start = PhysAddr::new_truncate(descriptor.phys_start);
+            let end =
+                PhysAddr::new_truncate(descriptor.phys_start) + descriptor.page_count * M4KiB::SIZE;
 
             let region = MemoryRange::new(start.as_u64(), end.as_u64().checked_sub(1).unwrap());
 

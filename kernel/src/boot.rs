@@ -15,14 +15,16 @@ use hyperdrive::once::Once;
 static KERNEL_MAIN: Once<fn() -> !> = Once::uninit();
 
 /// Static reference to the ramdisk information
-static RAMDISK: Once<Option<RamdiskInfo>> = Once::uninit();
+static RAMDISK: Once<RamdiskInfo> = Once::uninit();
 
 /// This function is the proper entry point called by the bootloader.
 ///
 /// It should only be the entry for the BSP.
 pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> ! {
     KERNEL_MAIN.call_once(|| kernel_main);
-    RAMDISK.call_once(|| boot_info.ramdisk_info);
+    if let Some(&ri) = boot_info.ramdisk_info() {
+        RAMDISK.call_once(|| ri);
+    }
 
     let core_count = boot_info.cpu_count;
 
@@ -65,14 +67,14 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         .gdt()
         .with_locked(|gdt| unsafe { gdt.init_load() });
 
+    time::init();
+    video::info!("Time subsystem initialized");
+
     process::init();
     video::info!("Process subsystem initialized");
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
     rsdp_paddr.map(drivers::acpi::init);
-
-    time::init();
-    video::info!("Time subsystem initialized");
 
     interrupts::init();
     video::info!("Interrupts initialized");
@@ -129,7 +131,7 @@ fn ap_init() {
 ///
 /// Panics if the ramdisk is not initialized.
 pub fn ramdisk() -> Option<&'static [u8]> {
-    RAMDISK.get().unwrap().map(|rd| unsafe {
+    RAMDISK.get().map(|rd| unsafe {
         core::slice::from_raw_parts(rd.vaddr().as_ptr(), rd.size().try_into().unwrap())
     })
 }

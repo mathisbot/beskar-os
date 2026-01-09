@@ -1,4 +1,4 @@
-use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 #[derive(Debug, Clone, Copy)]
 pub struct KeyEvent {
@@ -43,13 +43,13 @@ impl KeyEvent {
     #[must_use]
     #[inline]
     pub fn unpack_option(value: u64) -> Option<Self> {
-        let key = KeyCode::from(u8::try_from(value & 0xFF).ok()?);
+        let key = KeyCode::try_from(u8::try_from(value & 0xFF).ok()?).ok()?;
         let pressed = KeyState::try_from(u8::try_from((value >> 8) & 0xFF).unwrap()).ok()?;
         Some(Self { key, pressed })
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u8)]
 pub enum KeyCode {
     A,
@@ -163,9 +163,6 @@ pub enum KeyCode {
     Menu,
     WindowsLeft,
     WindowsRight,
-
-    #[num_enum(default)]
-    Unknown,
 }
 
 impl KeyCode {

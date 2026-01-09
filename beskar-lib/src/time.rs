@@ -1,4 +1,5 @@
-pub use beskar_core::time::{Duration, Instant, MILLIS_PER_SEC};
+use beskar_core::time::MILLIS_PER_SEC;
+pub use beskar_core::time::{Duration, Instant};
 use hyperdrive::once::Once;
 
 static STARTUP_TIME: Once<Instant> = Once::uninit();
@@ -9,7 +10,8 @@ fn read_time_raw() -> u64 {
     #[cfg(target_arch = "x86_64")]
     {
         static FREQ: Once<u64> = Once::uninit();
-        FREQ.call_once(crate::arch::time::get_tsc_frequency);
+        FREQ.call_once(|| crate::arch::time::get_tsc_frequency().unwrap());
+
         let freq = *FREQ.get().unwrap();
         let tsc = crate::arch::time::read_tsc_fenced();
         tsc * MILLIS_PER_SEC / freq

@@ -16,6 +16,7 @@ pub mod boot;
 pub mod drivers;
 pub mod locals;
 mod mem;
+pub mod network;
 pub mod process;
 pub mod storage;
 mod syscall;
@@ -28,7 +29,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     beskar_hal::instructions::int_disable();
 
     #[cfg(debug_assertions)]
-    video::error!("[PANIC] {panic_info}");
+    video::error!("[PANIC] {}", panic_info);
     #[cfg(not(debug_assertions))]
     video::error!("[PANIC] {}", panic_info.message());
 

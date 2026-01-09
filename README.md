@@ -40,7 +40,12 @@ You will find more information in their respective READMEs, especially in `kerne
 
 ## Usage
 
-You can easily use BeskarOS. However, keep in mind that it is currently in a very early stage where it only initializes and prints information.
+As a user, you can easily use BeskarOS.
+However, keep in mind that it is currently in a very early stage where it is only possible to use a basic shell as well as play doom.
+
+As a developper, you can also easily write programs running on BeskarOS.
+However, keep in mind that it is currently in a very early stage where only a few system calls and functionalities are supported.
+For example, usage of SIMD registers is currently a to-do.
 
 ### Building
 
@@ -69,7 +74,7 @@ Where:
 - `<x86_64-OVMF>` is the file `<QEMU>/share/edk2-x86_64-code.fd`. Please note that the OVMF file only comes preinstalled on Windows versions of QEMU. You may have to download them on Linux. You will find many tutorials online. It is currently the only way to allow QEMU to use UEFI.
 - `<NB_CORES>` must be 1 or more, but setting it to at least 2 is better.
 - `<RAM_SIZE>` is in MiB. It must be at least 64.
-- `<CPU_ARCH>` specifies the CPU architecture to emulate. QEMU's default amd64 CPU doesn't support some features that are mandatory. A good choice is `max` (Windows) or `host` (Linux), or even `qemu64,+pse,+msr,+apic,+rdrand,+xsave` for minimal features.
+- `<CPU_ARCH>` specifies the CPU architecture to emulate. QEMU's default amd64 CPU doesn't support some features that are mandatory. A good choice is `max` (Windows) or `host` (Linux).
 - `<ACCEL_BACKEND>` allows QEMU to use acceleration based on your OS. On Linux, you can set it to `kvm`, and to `whpx` on Windows (currently incompatible with OVMF files).
 
 Other useful parameters:
@@ -101,6 +106,21 @@ If the bootloader runs but the computer stalls right after (i.e. the screen gets
 
 In any other cases, the kernel **SHOULD** print explicit information on the screen about any problem it encounters.
 
+### Writing you own program
+
+To run your own program on the OS, convert your code in `no_std` and import `beskar-lib`.
+Use the `entry_point!` macro to define the entry point.
+
+For more information, read the documentation of `beskar-lib` and read examples in `userspace/`.
+
+Once your program compiled successfully for `x86_64-unknown-none`, add it as a binary dependency in `Cargo.toml` and update `USERSPACE_APPS` in `build.rs`.
+
+### Debugging
+
+Debugging isn't currently supported through debuggers.
+
+Debugging can be done using `beskar_lib::println!` which writes text on the screen and on the serial port (which is your host's console if you're using QEMU).
+
 ## Screenshots
 
 The following screenshots showcase the normal operating of the OS
@@ -128,9 +148,19 @@ When something goes unfortunately wrong, the faulty process gets killed. On unre
 
 ### Userspace
 
-For now, the only userspace program is a wanna-be shell. It shows the terrific BeskarOS banner.
+### Bashkar
+
+Bashkar is a wanna-be shell. It shows the terrific BeskarOS banner.
 
 ![Bashkar](docs/images/bashkar.webp)
+
+### DOOM
+
+You can play the great DOOM on BeskarOS! For more information, read [Doom](userspace/doom/README.md).
+
+Unfortunately, the resolution is currently fixed at a small 340x200.
+
+![DOOM](docs/images/doom.webp)
 
 ## Sources and inspirations
 

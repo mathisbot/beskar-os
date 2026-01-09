@@ -1,5 +1,6 @@
 use crate::screen::with_screen;
 use beskar_core::video::{PixelComponents, writer::FramebufferWriter};
+#[cfg(debug_assertions)]
 use beskar_hal::port::serial::com::{ComNumber, SerialCom};
 use core::{
     fmt::Write,
@@ -47,7 +48,6 @@ pub fn log(severity: Severity, args: core::fmt::Arguments) {
         serial.write_char(']').unwrap();
         serial.write_char(' ').unwrap();
         serial.write_fmt(args).unwrap();
-        serial.write_char('\n').unwrap();
     });
     if LOG_ON_SCREEN.load(Ordering::Acquire) {
         SCREEN_LOGGER.with_locked_if_init(|writer| {
@@ -58,7 +58,6 @@ pub fn log(severity: Severity, args: core::fmt::Arguments) {
             writer.write_char(']').unwrap();
             writer.write_char(' ').unwrap();
             writer.write_fmt(args).unwrap();
-            writer.write_char('\n').unwrap();
         });
     }
 }
@@ -95,30 +94,53 @@ impl Severity {
 
 #[macro_export]
 macro_rules! debug {
-    ($($arg:tt)*) => {
-        #[cfg(debug_assertions)]
-        $crate::log::log($crate::log::Severity::Debug, format_args!($($arg)*));
+    () => {
+        $crate::log::log($crate::log::Severity::Debug, format_args!("\n"));
+    };
+    ($fmt:expr) => {
+        $crate::log::log($crate::log::Severity::Debug, format_args!(concat!($fmt, "\n")));
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        $crate::log::log($crate::log::Severity::Debug, format_args!(concat!($fmt, "\n"), $($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! info {
-    ($($arg:tt)*) => {
-        $crate::log::log($crate::log::Severity::Info, format_args!($($arg)*));
+    () => {
+        $crate::log::log($crate::log::Severity::Info, format_args!("\n"));
+    };
+    ($fmt:expr) => {
+        $crate::log::log($crate::log::Severity::Info, format_args!(concat!($fmt, "\n")));
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        $crate::log::log($crate::log::Severity::Info, format_args!(concat!($fmt, "\n"), $($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! warn {
-    ($($arg:tt)*) => {
-        $crate::log::log($crate::log::Severity::Warn, format_args!($($arg)*));
+    () => {
+        $crate::log::log($crate::log::Severity::Warn, format_args!("\n"));
+    };
+    ($fmt:expr) => {
+        $crate::log::log($crate::log::Severity::Warn, format_args!(concat!($fmt, "\n")));
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        $crate::log::log($crate::log::Severity::Warn, format_args!(concat!($fmt, "\n"), $($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! error {
-    ($($arg:tt)*) => {
-        $crate::log::log($crate::log::Severity::Error, format_args!($($arg)*));
+    () => {
+        $crate::log::log($crate::log::Severity::Error, format_args!("\n"));
+    };
+    ($fmt:expr) => {
+        $crate::log::log($crate::log::Severity::Error, format_args!(concat!($fmt, "\n")));
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        $crate::log::log($crate::log::Severity::Error, format_args!(concat!($fmt, "\n"), $($arg)*));
     };
 }
 

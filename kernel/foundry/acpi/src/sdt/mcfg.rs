@@ -40,7 +40,7 @@ struct McfgHeader {
 }
 
 // See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt>
-impl<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> Mcfg<M> {
+impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Mcfg<M> {
     #[must_use]
     pub fn parse(&self) -> ParsedMcfg {
         let nb_cs = (usize::try_from(self.length()).unwrap() - size_of::<McfgHeader>())
@@ -108,9 +108,9 @@ impl ParsedConfigurationSpace {
     pub fn address_range(&self) -> RangeInclusive<PhysAddr> {
         // Minimum bus, device, function, and register numbers
         let start_paddr =
-            PhysAddr::new(self.offset + (u64::from(self.start_pci_bus_number()) << 20));
+            PhysAddr::new_truncate(self.offset + (u64::from(self.start_pci_bus_number()) << 20));
         // Maximum bus, device, function, and register numbers
-        let end_paddr = PhysAddr::new(
+        let end_paddr = PhysAddr::new_truncate(
             self.offset
                 + (u64::from(self.end_pci_bus_number()) << 20)
                 + (31 << 15)

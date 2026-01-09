@@ -70,7 +70,7 @@ impl From<u8> for PageProtection {
     }
 }
 
-impl<M: ::driver_api::PhysicalMapper<::beskar_core::arch::paging::M4KiB>> HpetTable<M> {
+impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> HpetTable<M> {
     #[must_use]
     pub fn parse(&self) -> ParsedHpetTable {
         assert_eq!(

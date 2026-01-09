@@ -3,7 +3,15 @@
 //! See <https://courses.cs.washington.edu/courses/cse451/16au/readings/e1000e.pdf>
 //! chapter 10  (p.286) (9 can also be useful) for more information.
 //!
-//! NB: All registers use host-endianess (LE), except for `ETherType` fiels, which use network-endianess (BE).
+//! NB: All registers use host-endianess (LE), except for `ETherType` fields, which use network-endianess (BE).
+
+mod descriptors;
+mod registers;
+
+use self::{
+    descriptors::{RxDescriptor, TxDescriptor},
+    registers::{CtrlFlags, IntFlags, RctlFlags, Registers, TctlFlags},
+};
 use super::Nic;
 use crate::{drivers::pci::MsiHelper, locals, mem::page_alloc::pmap::PhysicalMapping, process};
 use ::pci::Bar;
@@ -45,7 +53,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
 
     let flags = Flags::MMIO_SUITABLE;
     // Max size is 128 KiB
-    let pmap = PhysicalMapping::<M4KiB>::new(reg_paddr, 128 * 1024, flags);
+    let pmap = PhysicalMapping::<M4KiB>::new(reg_paddr, 128 * 1024, flags).unwrap();
     let reg_vaddr = pmap.translate(reg_paddr).unwrap();
 
     let (buffer_set, rxdesc_paddr, txdesc_paddr) = BufferSet::new(RX_BUFFERS, TX_BUFFERS);
@@ -57,8 +65,8 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
         base: Volatile::new(NonNull::new(reg_vaddr.as_mut_ptr()).unwrap()),
         _physical_mapping: pmap,
         buffer_set,
-        rx_curr: 0,
-        tx_curr: 0,
+        rx_curr: core::cell::Cell::new(0),
+        tx_curr: core::cell::Cell::new(0),
     };
     e1000e.init(rxdesc_paddr, txdesc_paddr, nb_rx, nb_tx);
 
@@ -77,94 +85,11 @@ pub struct E1000e<'a> {
     base: Volatile<ReadWrite, u32>,
     _physical_mapping: PhysicalMapping<M4KiB>,
     buffer_set: BufferSet<'a>,
-    rx_curr: usize,
-    tx_curr: usize,
+    rx_curr: core::cell::Cell<usize>,
+    tx_curr: core::cell::Cell<usize>,
 }
 
 impl E1000e<'_> {
-    const CTRL: usize = 0x00000; // and 0x00004
-    const STATUS: usize = 0x00008;
-    const EEC: usize = 0x00010;
-    const EERD: usize = 0x00014;
-    const CTRLEXT: usize = 0x00018;
-
-    // To enable an interrupt, write 0b1 to the corresponding bit in IMS.
-    const IMS: usize = 0x000D0;
-    // To disable an interrupt, write 0b1 to the corresponding bit in IMC.
-    const IMC: usize = 0x000D8;
-
-    const RCTL: usize = 0x00100;
-    const TCTL: usize = 0x00400;
-    const TIPG: usize = 0x00410;
-
-    const RDBAL0: usize = 0x02800;
-    const RDBAH0: usize = 0x02804;
-    const RDLEN: usize = 0x02808;
-    const RDH: usize = 0x02810;
-    const RDT: usize = 0x02818;
-
-    const TDBAL0: usize = 0x03800;
-    const TDBAH0: usize = 0x03804;
-    const TDLEN: usize = 0x03808;
-    const TDH: usize = 0x03810;
-    const TDT: usize = 0x03818;
-
-    const RAL0: usize = 0x05400;
-    const RAH0: usize = 0x05404;
-
-    // RCTL
-
-    /// Receiver Enable
-    const RCTL_EN: u32 = 1 << 1;
-    /// Store Bad Packets
-    const RCTL_SBP: u32 = 1 << 2;
-    /// Unicast Promiscuous Mode
-    const RCTL_UPE: u32 = 1 << 3;
-    /// Multicast Promiscuous Mode
-    const RCTL_MPE: u32 = 1 << 4;
-    /// Long Packet Enable
-    const RCTL_LPE: u32 = 1 << 5;
-    /// Loopback mode: Normal Operation (default)
-    const RCTL_LBM_PHY: u32 = 0b00 << 6;
-    /// Loopback mode: MAC Loopback (testing)
-    const RCTL_LBM_MAC: u32 = 0b10 << 6;
-    const RCTL_RDMTS_HALF: u32 = 0b00 << 8;
-    const RCTL_RDMTS_QUARTER: u32 = 0b01 << 8;
-    const RCTL_RDMTS_EIGHTH: u32 = 0b10 << 8;
-    const RCTL_MO_36: u32 = 0b00 << 12;
-    const RCTL_MO_35: u32 = 0b01 << 12;
-    const RCTL_MO_34: u32 = 0b10 << 12;
-    const RCTL_MO_32: u32 = 0b11 << 12;
-    const RCTL_BAM: u32 = 1 << 15;
-    const RCTL_BSIZE_256: u32 = (0b11 << 16);
-    const RCTL_BSIZE_512: u32 = (0b10 << 16);
-    const RCTL_BSIZE_1024: u32 = (0b01 << 16);
-    const RCTL_BSIZE_2048: u32 = (0b00 << 16);
-    const RCTL_BSIZE_4096: u32 = (0b11 << 16) | (0b1 << 25);
-    const RCTL_BSIZE_8192: u32 = (0b10 << 16) | (0b1 << 25);
-    const RCTL_BSIZE_16384: u32 = (0b01 << 16) | (0b1 << 25);
-    const RCTL_VFE: u32 = 1 << 18;
-    const RCTL_CFIEN: u32 = 1 << 19;
-    const RCTL_CFI: u32 = 1 << 20;
-    const RCTL_DPF: u32 = 1 << 22;
-    const RCTL_PMCF: u32 = 1 << 23;
-    const RCTL_SECRC: u32 = 1 << 26;
-
-    // TCTL
-
-    const TCTL_EN: u32 = 1 << 1;
-    const TCTL_PSP: u32 = 1 << 3;
-    const TCTL_CT_SHIFT: u32 = 4;
-    const TCTL_COLD_SHIFT: u32 = 12;
-    const TCTL_SWXOFF: u32 = 1 << 22;
-    const TCTL_RTLC: u32 = 1 << 24;
-    const TCTL_UNORTX: u32 = 1 << 25;
-    const TCTL_TXDMT_0: u32 = 0b00 << 26;
-    const TCTL_TXDMT_1: u32 = 0b01 << 26;
-    const TCTL_TXDMT_2: u32 = 0b10 << 26;
-    const TCTL_TXDMT_3: u32 = 0b11 << 26;
-    const TCTL_RR_NOTHRESH: u32 = 0b11 << 29;
-
     fn init(&mut self, rxdesc_paddr: PhysAddr, txdesc_paddr: PhysAddr, nb_rx: usize, nb_tx: usize) {
         // Software Initialization Sequence: p.77
         self.reset();
@@ -173,8 +98,8 @@ impl E1000e<'_> {
     }
 
     fn reset(&self) {
-        self.update_reg(Self::CTRL, |ctrl| ctrl | (1 << 26)); // Set RST bit
-        while self.read_reg(Self::CTRL) & (1 << 26) != 0 {
+        self.update_reg(Registers::CTRL, |ctrl| ctrl | CtrlFlags::RST);
+        while self.read_reg(Registers::CTRL) & CtrlFlags::RST != 0 {
             core::hint::spin_loop();
         }
     }
@@ -205,7 +130,10 @@ impl E1000e<'_> {
             unreachable!("No MSI or MSI-X capability found for the network controller.");
         }
 
-        self.write_reg(Self::IMS, 1); // RXDW
+        self.write_reg(
+            Registers::IMS,
+            IntFlags::RXT0 | IntFlags::RXDMT0 | IntFlags::TXDW | IntFlags::LSC,
+        );
     }
 
     fn configure_descriptors(
@@ -219,52 +147,52 @@ impl E1000e<'_> {
         let rx_hi = u32::try_from(rxdesc_paddr.as_u64() >> 32).unwrap();
         let rx_lo = u32::try_from(rxdesc_paddr.as_u64() & u64::from(u32::MAX)).unwrap();
 
-        self.write_reg(Self::RDBAL0, rx_lo);
-        self.write_reg(Self::RDBAH0, rx_hi);
+        self.write_reg(Registers::RDBAL0, rx_lo);
+        self.write_reg(Registers::RDBAH0, rx_hi);
         self.write_reg(
-            Self::RDLEN,
+            Registers::RDLEN,
             u32::try_from(nb_rx * size_of::<RxDescriptor>()).unwrap(),
         );
-        self.write_reg(Self::RDH, 0);
+        self.write_reg(Registers::RDH, 0);
         let rdt_val = u32::from(u16::try_from(nb_rx - 1).unwrap());
-        self.write_reg(Self::RDT, rdt_val);
-        self.rx_curr = 0;
-        let rctl_value = Self::RCTL_EN
-            | Self::RCTL_UPE
-            | Self::RCTL_MPE
-            | Self::RCTL_LBM_PHY
-            | Self::RCTL_RDMTS_HALF
-            | Self::RCTL_BAM
-            | Self::RCTL_BSIZE_4096;
-        self.write_reg(Self::RCTL, rctl_value);
+        self.write_reg(Registers::RDT, rdt_val);
+        self.rx_curr.set(0);
+        let rctl_value = RctlFlags::EN
+            | RctlFlags::UPE
+            | RctlFlags::MPE
+            | RctlFlags::LBM_PHY
+            | RctlFlags::RDMTS_HALF
+            | RctlFlags::BAM
+            | RctlFlags::BSIZE_4096;
+        self.write_reg(Registers::RCTL, rctl_value);
 
         assert!(txdesc_paddr.as_u64().trailing_zeros() >= 4);
-        let tx_hi = u32::try_from(rxdesc_paddr.as_u64() >> 32).unwrap();
-        let tx_lo = u32::try_from(rxdesc_paddr.as_u64() & u64::from(u32::MAX)).unwrap();
+        let tx_hi = u32::try_from(txdesc_paddr.as_u64() >> 32).unwrap();
+        let tx_lo = u32::try_from(txdesc_paddr.as_u64() & u64::from(u32::MAX)).unwrap();
 
-        self.write_reg(Self::TDBAL0, tx_lo);
-        self.write_reg(Self::TDBAH0, tx_hi);
+        self.write_reg(Registers::TDBAL0, tx_lo);
+        self.write_reg(Registers::TDBAH0, tx_hi);
         self.write_reg(
-            Self::TDLEN,
+            Registers::TDLEN,
             u32::try_from(nb_tx * size_of::<TxDescriptor>()).unwrap(),
         );
-        self.write_reg(Self::TDH, 0);
+        self.write_reg(Registers::TDH, 0);
         let tdt_val = u32::from(u16::try_from(nb_tx - 1).unwrap());
-        self.write_reg(Self::TDT, tdt_val);
-        self.tx_curr = 0;
-        let tctl_value = Self::TCTL_EN
-            | Self::TCTL_PSP
-            | (15 << Self::TCTL_CT_SHIFT)
-            | (63 << Self::TCTL_COLD_SHIFT)
-            | Self::TCTL_RR_NOTHRESH
-            | Self::TCTL_TXDMT_0;
-        self.write_reg(Self::TCTL, tctl_value);
-        self.write_reg(Self::TIPG, 0x0060_2006); // See Section 10.2.6.2 Note
+        self.write_reg(Registers::TDT, tdt_val);
+        self.tx_curr.set(0);
+        let tctl_value = TctlFlags::EN
+            | TctlFlags::PSP
+            | (15 << TctlFlags::CT_SHIFT)
+            | (63 << TctlFlags::COLD_SHIFT)
+            | TctlFlags::RR_NOTHRESH
+            | TctlFlags::TXDMT_0;
+        self.write_reg(Registers::TCTL, tctl_value);
+        self.write_reg(Registers::TIPG, 0x0060_2006); // See Section 10.2.6.2 Note
     }
 
     fn mac_address(&self) -> MacAddress {
-        let low = self.read_reg(Self::RAL0);
-        let high = self.read_reg(Self::RAH0);
+        let low = self.read_reg(Registers::RAL0);
+        let high = self.read_reg(Registers::RAH0);
 
         assert_eq!((high >> 16) & 0b11, 0, "MAC address is not DEST.");
         assert_eq!(high >> 31, 1, "MAC address is not valid.");
@@ -293,46 +221,113 @@ impl E1000e<'_> {
     {
         unsafe { self.base.byte_add(offset).update(f) };
     }
+
+    fn advance_rx(&mut self) {
+        let rx_idx = self.rx_curr.get();
+
+        // Reset the descriptor for reuse
+        let desc = self.buffer_set.rx_desc_mut(rx_idx);
+        desc.reset();
+
+        // Advance to next descriptor
+        let next = (rx_idx + 1) % RX_BUFFERS;
+        self.rx_curr.set(next);
+
+        // Update RDT register to notify hardware
+        self.write_reg(Registers::RDT, u32::try_from(next).unwrap());
+    }
 }
 
 extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    video::info!("NIC INTERRUPT on core {}", locals!().core_id());
+    E1000E.with_locked(|e1000e| {
+        // Read and acknowledge interrupt cause
+        let icr = e1000e.read_reg(Registers::ICR);
+
+        if icr & IntFlags::RXT0 != 0 || icr & IntFlags::RXDMT0 != 0 {
+            // TODO: Packet received (notify network stack)
+        }
+
+        if icr & IntFlags::TXDW != 0 {
+            // TODO: Transmit done
+        }
+
+        if icr & IntFlags::LSC != 0 {
+            // Link status changed
+            let status = e1000e.read_reg(Registers::STATUS);
+            let link_up = (status & 0x02) != 0;
+            if link_up {
+                video::debug!("Network link is up");
+            } else {
+                video::debug!("Network link is down");
+            }
+        }
+    });
+
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
 impl Nic for E1000e<'_> {
     fn poll_frame(&self) -> Option<&[u8]> {
-        todo!()
+        let rx_idx = self.rx_curr.get();
+        let desc = self.buffer_set.rx_desc(rx_idx);
+
+        if !desc.is_done() || !desc.is_end_of_packet() {
+            return None;
+        }
+
+        let packet_len = desc.packet_length() as usize;
+        if packet_len == 0 || packet_len > 4096 {
+            // Invalid packet length - will be skipped on consume_frame()
+            return None;
+        }
+
+        // Check for errors in the packet
+        if desc.has_errors() {
+            // Packet has errors - will be skipped on consume_frame()
+            return None;
+        }
+
+        Some(&self.buffer_set.rx_buf(rx_idx)[..packet_len])
     }
 
-    fn send_frame(&self, _frame: &[u8]) {
-        todo!()
+    fn consume_frame(&mut self) {
+        self.advance_rx();
+    }
+
+    fn send_frame(&mut self, frame: &[u8]) {
+        if frame.is_empty() || frame.len() > 4096 {
+            video::warn!("Invalid frame size: {}", frame.len());
+            return;
+        }
+
+        let tx_idx = self.tx_curr.get();
+
+        // Wait for a free TX descriptor
+        let desc = self.buffer_set.tx_desc(tx_idx);
+        if !desc.is_done() {
+            video::warn!("No free TX descriptor available");
+            return;
+        }
+
+        // Copy frame to TX buffer
+        let tx_buf = self.buffer_set.tx_buf_mut(tx_idx);
+        tx_buf[..frame.len()].copy_from_slice(frame);
+
+        // Prepare descriptor for transmission
+        let desc = self.buffer_set.tx_desc_mut(tx_idx);
+        desc.prepare_for_send(u16::try_from(frame.len()).unwrap());
+
+        // Advance to next descriptor
+        let next = (tx_idx + 1) % TX_BUFFERS;
+        self.tx_curr.set(next);
+
+        // Update TDT register to notify hardware
+        self.write_reg(Registers::TDT, u32::try_from(next).unwrap());
     }
 
     fn mac_address(&self) -> MacAddress {
         self.mac_address()
     }
-}
-
-#[repr(C, packed)]
-struct RxDescriptor {
-    buffer_addr: PhysAddr,
-    length: u16,
-    checksum: u16,
-    status: u8,
-    errors: u8,
-    special: u16,
-}
-
-#[repr(C, packed)]
-struct TxDescriptor {
-    buffer_addr: PhysAddr,
-    length: u16,
-    cso: u8,
-    cmd: u8,
-    status: u8,
-    css: u8,
-    special: u16,
 }
 
 struct BufferSet<'a> {
@@ -371,20 +366,30 @@ impl BufferSet<'_> {
                 .with_page_table(|page_table| {
                     page_table
                         .map(descriptor_page, frame, flags, fralloc)
+                        .unwrap()
                         .flush();
                 });
             frame
         });
+
+        // SAFETY: We just allocated and mapped this page. The memory is valid and properly aligned.
+        // The lifetime 'a is tied to BufferSet, ensuring these slices don't outlive the allocation.
         let rx_descriptors = unsafe {
-            core::slice::from_raw_parts_mut(descriptor_page.start_address().as_mut_ptr(), nb_rx)
+            core::slice::from_raw_parts_mut(
+                descriptor_page.start_address().as_mut_ptr::<RxDescriptor>(),
+                nb_rx,
+            )
         };
+
+        // SAFETY: Same page as rx_descriptors, offset by nb_rx descriptors.
+        // The size check at the beginning ensures this doesn't overflow the page.
         let tx_descriptors = unsafe {
             core::slice::from_raw_parts_mut(
                 descriptor_page
                     .start_address()
                     .as_mut_ptr::<RxDescriptor>()
                     .add(nb_rx)
-                    .cast(),
+                    .cast::<TxDescriptor>(),
                 nb_tx,
             )
         };
@@ -399,25 +404,21 @@ impl BufferSet<'_> {
                 process::current()
                     .address_space()
                     .with_page_table(|page_table| {
-                        page_table.map(page, frame, flags, fralloc).flush();
+                        page_table.map(page, frame, flags, fralloc).unwrap().flush();
                     });
                 frame
             });
 
+            // SAFETY: We just allocated and mapped this page. The memory is valid.
+            // The lifetime 'a ensures this slice doesn't outlive the BufferSet.
             rx_buffers.push(unsafe {
                 core::slice::from_raw_parts_mut(
                     page.start_address().as_mut_ptr(),
                     M4KiB::SIZE.try_into().unwrap(),
                 )
             });
-            rx_descriptors[i] = RxDescriptor {
-                buffer_addr: frame.start_address(),
-                length: u16::try_from(M4KiB::SIZE).unwrap(),
-                checksum: 0,
-                status: 0,
-                errors: 0,
-                special: 0,
-            };
+            rx_descriptors[i] =
+                RxDescriptor::new(frame.start_address(), u16::try_from(M4KiB::SIZE).unwrap());
         }
 
         for (i, page) in page_range.into_iter().skip(nb_rx).take(nb_tx).enumerate() {
@@ -426,26 +427,21 @@ impl BufferSet<'_> {
                 process::current()
                     .address_space()
                     .with_page_table(|page_table| {
-                        page_table.map(page, frame, flags, fralloc).flush();
+                        page_table.map(page, frame, flags, fralloc).unwrap().flush();
                     });
                 frame
             });
 
+            // SAFETY: We just allocated and mapped this page. The memory is valid.
+            // The lifetime 'a ensures this slice doesn't outlive the BufferSet.
             tx_buffers.push(unsafe {
                 core::slice::from_raw_parts_mut(
                     page.start_address().as_mut_ptr(),
                     M4KiB::SIZE.try_into().unwrap(),
                 )
             });
-            tx_descriptors[i] = TxDescriptor {
-                buffer_addr: frame.start_address(),
-                length: u16::try_from(M4KiB::SIZE).unwrap(),
-                cso: 0,
-                cmd: 0,
-                status: 1 << 0, // TSTA Descriptor Done
-                css: 0,
-                special: 0,
-            };
+            tx_descriptors[i] =
+                TxDescriptor::new(frame.start_address(), u16::try_from(M4KiB::SIZE).unwrap());
         }
 
         assert_eq!(rx_buffers.len(), nb_rx);
@@ -483,16 +479,26 @@ impl BufferSet<'_> {
 
     #[must_use]
     #[inline]
-    pub fn tx_buf(&mut self, index: usize) -> &mut [u8] {
+    pub fn rx_desc_mut(&mut self, index: usize) -> &mut RxDescriptor {
+        &mut self.rx_descriptors[index]
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn tx_desc_mut(&mut self, index: usize) -> &mut TxDescriptor {
+        &mut self.tx_descriptors[index]
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn tx_buf_mut(&mut self, index: usize) -> &mut [u8] {
         self.tx_buffers[index]
     }
 }
 
 impl Drop for BufferSet<'_> {
     fn drop(&mut self) {
-        let buffers_start_page =
-            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(self.rx_buffers[0].as_ptr()))
-                .unwrap();
+        let buffers_start_page = VirtAddr::from_ptr(self.rx_buffers[0].as_ptr()).page::<M4KiB>();
         let buffer_page_range = Page::range_inclusive(
             buffers_start_page,
             buffers_start_page
@@ -514,8 +520,7 @@ impl Drop for BufferSet<'_> {
             .with_pgalloc(|palloc| palloc.free_pages(buffer_page_range));
 
         let descriptors_page =
-            Page::<M4KiB>::from_start_address(VirtAddr::from_ptr(self.rx_descriptors.as_ptr()))
-                .unwrap();
+            Page::<M4KiB>::containing_address(VirtAddr::from_ptr(self.rx_descriptors.as_ptr()));
         let descriptors_frame = process::current().address_space().with_page_table(|pt| {
             let (frame, tlb) = pt.unmap(descriptors_page).unwrap();
             tlb.flush();

@@ -3,7 +3,7 @@ use beskar_hal::registers::{Cr0, Rflags};
 #[unsafe(naked)]
 /// Switches the current stack and CR3 to the ones provided.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// Interrupts must be disabled when calling this function.
 /// This function will re-enable interrupts before returning.

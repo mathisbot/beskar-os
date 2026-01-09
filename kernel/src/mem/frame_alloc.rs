@@ -10,11 +10,13 @@ use beskar_core::arch::{
     paging::{Frame, M4KiB, MemSize},
 };
 use beskar_core::mem::ranges::{MemoryRange, MemoryRanges};
-use hyperdrive::locks::mcs::MUMcsLock;
+use hyperdrive::locks::mcs::McsLock;
 
-const MAX_MEMORY_REGIONS: usize = 256;
+const MAX_MEMORY_REGIONS: usize = 4096;
 
-static KFRAME_ALLOC: MUMcsLock<FrameAllocator> = MUMcsLock::uninit();
+static KFRAME_ALLOC: McsLock<FrameAllocator> = McsLock::new(FrameAllocator {
+    memory_ranges: MemoryRanges::new(),
+});
 
 pub fn init(ranges: &[MemoryRange]) {
     assert!(!ranges.is_empty(), "No usable memory regions found");
@@ -25,21 +27,18 @@ pub fn init(ranges: &[MemoryRange]) {
         );
     }
 
-    let mut mranges = MemoryRanges::<MAX_MEMORY_REGIONS>::new();
-    ranges.iter().take(MAX_MEMORY_REGIONS).for_each(|r| {
-        mranges.insert(*r);
+    KFRAME_ALLOC.with_locked(|frallocator| {
+        ranges.iter().take(MAX_MEMORY_REGIONS).for_each(|r| {
+            frallocator.memory_ranges.insert(*r);
+        });
+        video::info!(
+            "Free memory: {} MiB",
+            frallocator.memory_ranges.sum() / 1_048_576
+        );
+
+        // Make sure physical frame for the AP trampoline code is reserved
+        reserve_tramp_frame(frallocator);
     });
-
-    video::info!("Free memory: {} MiB", mranges.sum() / 1_048_576);
-
-    let mut frallocator = FrameAllocator {
-        memory_ranges: mranges,
-    };
-
-    // Make sure physical frame for the AP trampoline code is reserved
-    reserve_tramp_frame(&mut frallocator);
-
-    KFRAME_ALLOC.init(frallocator);
 }
 
 pub struct FrameAllocator {
@@ -52,10 +51,11 @@ impl FrameAllocator {
     /// Allocate a frame anywhere in memory
     pub fn alloc<S: MemSize>(&mut self) -> Option<Frame<S>> {
         let size = S::SIZE;
-        let alignment = S::SIZE;
+        let alignment = S::ALIGNMENT;
 
         let addr = self.memory_ranges.allocate(size, alignment)?;
-        Some(Frame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
+        let paddr = PhysAddr::new_truncate(addr);
+        Some(paddr.frame())
     }
 
     #[must_use]
@@ -65,12 +65,13 @@ impl FrameAllocator {
         req_ranges: &MemoryRanges<M>,
     ) -> Option<Frame<S>> {
         let size = S::SIZE;
-        let alignment = S::SIZE;
+        let alignment = S::ALIGNMENT;
 
         let addr = self
             .memory_ranges
             .allocate_req(size, alignment, req_ranges)?;
-        Some(Frame::from_start_address(PhysAddr::new(u64::try_from(addr).unwrap())).unwrap())
+        let paddr = PhysAddr::new_truncate(addr);
+        Some(paddr.frame())
     }
 
     /// Free a frame

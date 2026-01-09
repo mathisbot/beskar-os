@@ -1,7 +1,6 @@
+use crate::drivers::{hpet, tsc};
 pub use beskar_core::time::{Duration, Instant};
 use core::sync::atomic::{AtomicBool, Ordering};
-
-use crate::drivers::{hpet, tsc};
 
 static HPET_AVAILABLE: AtomicBool = AtomicBool::new(false);
 static TSC_AVAILABLE: AtomicBool = AtomicBool::new(false);
@@ -24,8 +23,21 @@ pub fn wait(duration: Duration) {
         TscClock.wait(duration);
     } else if HPET_AVAILABLE.load(Ordering::Acquire) {
         HpetClock.wait(duration);
+    }
+}
+
+/// Returns the current instant (monotonic time).
+///
+/// If no high-precision timer is available, returns `Instant::MAX`.
+#[must_use]
+#[inline]
+pub fn now() -> Instant {
+    if TSC_AVAILABLE.load(Ordering::Acquire) {
+        TscClock.now()
+    } else if HPET_AVAILABLE.load(Ordering::Acquire) {
+        HpetClock.now()
     } else {
-        panic!("No timer available");
+        Instant::MAX
     }
 }
 

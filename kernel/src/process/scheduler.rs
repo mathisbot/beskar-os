@@ -6,17 +6,20 @@ use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
-use hyperdrive::{locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
+use hyperdrive::{call_once, locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
 use thread::{Thread, ThreadId};
 
-pub mod priority;
+mod priority;
+pub use priority::Priority;
 pub mod thread;
+
+static SCHEDULER_SWITCH: AtomicBool = AtomicBool::new(false);
 
 /// The time quantum for the scheduler, in milliseconds.
 ///
 /// According to the Internet, Windows uses 20-60ms, Linux uses 0.75-6ms.
-pub const SCHEDULER_QUANTUM_MS: u32 = 30;
+pub const SCHEDULER_QUANTUM_MS: u32 = crate::arch::apic::MS_PER_INTERRUPT;
 
 // It is backed by a Multiple Producer Single Consumer queue.
 // It would be a better choice to use a Multiple Producer Multiple Consumer queue,
@@ -31,12 +34,10 @@ static SLEEPING: McsLock<BTreeMap<ThreadId, Box<Thread>>> = McsLock::new(BTreeMa
 
 /// This function initializes the scheduler with the kernel thread.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// This function should only be called once, and only by the kernel, with the kernel thread.
 pub unsafe fn init(kernel_thread: thread::Thread) {
-    static SPAWN_GUARD_THREAD: Once<()> = Once::uninit();
-
     let kernel_process = kernel_thread.process();
 
     QUEUE.call_once(|| priority::RoundRobinQueues::new(kernel_process.clone()));
@@ -45,7 +46,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
     let scheduler = Scheduler::new(kernel_thread);
     locals!().scheduler().call_once(|| scheduler);
 
-    SPAWN_GUARD_THREAD.call_once(|| {
+    call_once!({
         let clean_thread = Thread::new(
             kernel_process,
             priority::Priority::Low,
@@ -55,6 +56,17 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
 
         spawn_thread(Box::new(clean_thread));
     });
+}
+
+#[must_use]
+#[inline]
+pub fn scheduler_tick() -> Option<ContextSwitch> {
+    // Wake threads that should wake up
+    // FIXME: Not every core should do this
+    // wake_sleeping_threads();
+
+    // Attempt to reschedule
+    crate::process::scheduler::reschedule()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -68,7 +80,7 @@ impl ContextSwitch {
     #[inline]
     /// Performs the context switch.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// See `kernel::arch::context::context_switch`.
     pub unsafe fn perform(&self) {
@@ -122,6 +134,8 @@ impl Scheduler {
     fn reschedule(&self) -> Option<ContextSwitch> {
         self.current
             .try_with_locked(|thread| {
+                thread.stats_mut().cpu_time_ms += u64::from(SCHEDULER_QUANTUM_MS);
+
                 // Swap the current thread with the next one.
                 let mut new_thread = Pin::into_inner(QUEUE.get().unwrap().next()?);
 
@@ -143,7 +157,9 @@ impl Scheduler {
                     // Note: there may be data races here, but we do not care.
                     USELESS.as_ptr()
                 } else {
-                    old_thread.last_stack_ptr_mut()
+                    // Safety: context switching uses a `mov` instruction to write to the old stack pointer,
+                    // which is atomic by nature.
+                    unsafe { old_thread.last_stack_ptr_mut() }
                 };
                 let new_stack = thread.last_stack_ptr();
 
@@ -215,11 +231,15 @@ extern "C" fn guard_thread() -> ! {
 ///
 /// If rescheduling happens (i.e. returned value is `Some`), interrupts are disabled.
 ///
-/// ## Warning
+/// # Warning
 ///
 /// This function does not perform the context switch.
-pub(crate) fn reschedule() -> Option<ContextSwitch> {
-    with_scheduler(Scheduler::reschedule)
+fn reschedule() -> Option<ContextSwitch> {
+    if SCHEDULER_SWITCH.load(Ordering::Acquire) {
+        with_scheduler(Scheduler::reschedule)
+    } else {
+        None
+    }
 }
 
 #[must_use]
@@ -262,32 +282,15 @@ pub fn spawn_thread(mut thread: Box<Thread>) {
 }
 
 /// Sets the scheduling of the scheduler.
-///
-/// What this function really does is enabling the timer interrupt.
 pub fn set_scheduling(enable: bool) {
-    use crate::arch::apic::timer;
-
-    locals!().lapic().with_locked_if_init(|lapic| {
-        const TIMER_DIVIDER: timer::Divider = timer::Divider::Eight;
-
-        let timer = lapic.timer();
-
-        let ticks_per_ms = timer.rate_mhz().unwrap().get() * 1_000 / TIMER_DIVIDER.as_u32();
-        let ticks = SCHEDULER_QUANTUM_MS * ticks_per_ms;
-
-        lapic.timer().set(if enable {
-            timer::Mode::Periodic(timer::ModeConfiguration::new(TIMER_DIVIDER, ticks))
-        } else {
-            timer::Mode::Inactive
-        });
-    });
+    SCHEDULER_SWITCH.store(enable, Ordering::Release);
 }
 
 /// Exits the current thread.
 ///
 /// This function will enable interrupts, otherwise the system would halt.
 ///
-/// ## Safety
+/// # Safety
 ///
 /// The context will be brutally switched without returning.
 /// If any locks are acquired, they will be poisoned.
@@ -326,9 +329,9 @@ pub fn is_scheduling_init() -> bool {
 /// A back-off stategy that yields the CPU.
 pub struct Yield;
 
-impl hyperdrive::locks::BackOff for Yield {
+impl hyperdrive::locks::RelaxStrategy for Yield {
     #[inline]
-    fn back_off() {
+    fn relax() {
         thread_yield();
     }
 }

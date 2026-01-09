@@ -1,5 +1,5 @@
 use crate::mem::page_alloc::pmap::PhysicalMapping;
-use ::acpi::Acpi;
+use acpi::Acpi;
 use beskar_core::arch::{PhysAddr, paging::M4KiB};
 use hyperdrive::once::Once;
 

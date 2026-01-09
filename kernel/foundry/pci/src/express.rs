@@ -165,7 +165,7 @@ impl<M: PhysicalMapper<M2MiB>> PciExpressHandler<M> {
         let reg = u64::from(address.register_offset);
 
         let paddr = offset + (bus << 20) + (dev << 15) + (func << 12) + reg;
-        PhysAddr::new(paddr)
+        PhysAddr::new_truncate(paddr)
     }
 }
 

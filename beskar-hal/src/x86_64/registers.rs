@@ -19,7 +19,7 @@ impl Cr0 {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid CR0 value.
     pub unsafe fn write(value: u64) {
@@ -29,7 +29,7 @@ impl Cr0 {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid CR0 flag.
     pub unsafe fn insert_flags(flag: u64) {
@@ -49,7 +49,7 @@ impl Cr2 {
         unsafe {
             core::arch::asm!("mov {}, cr2", out(reg) value, options(nomem, nostack, preserves_flags));
         }
-        VirtAddr::new(value)
+        unsafe { VirtAddr::new_unchecked(value) }
     }
 }
 
@@ -75,9 +75,8 @@ impl Cr3 {
     #[must_use]
     pub fn read() -> (Frame, u16) {
         let value = Self::read_raw();
-        let addr = PhysAddr::new(value & 0x_000f_ffff_ffff_f000);
-        let frame = Frame::containing_address(addr);
-        (frame, (value & 0xFFF) as u16)
+        let addr = unsafe { PhysAddr::new_unchecked(value & 0x_000f_ffff_ffff_f000) };
+        (addr.frame(), (value & 0xFFF) as u16)
     }
 
     #[inline]
@@ -103,6 +102,8 @@ impl Cr4 {
     pub const SMXE: u64 = 1 << 14;
     pub const FSGSBASE: u64 = 1 << 16;
     pub const PCIDE: u64 = 1 << 17;
+    pub const SMEP: u64 = 1 << 20;
+    pub const SMAP: u64 = 1 << 21;
 
     #[must_use]
     #[inline]
@@ -116,7 +117,7 @@ impl Cr4 {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid CR4 value.
     pub unsafe fn write(value: u64) {
@@ -126,7 +127,7 @@ impl Cr4 {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid CR4 flag.
     pub unsafe fn insert_flags(flag: u64) {
@@ -152,7 +153,7 @@ impl Efer {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid EFER value.
     pub unsafe fn write(value: u64) {
@@ -160,7 +161,7 @@ impl Efer {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid EFER flag.
     pub unsafe fn insert_flags(flag: u64) {
@@ -236,7 +237,7 @@ impl Star {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The values written must be valid STAR values.
     pub fn write(selectors: StarSelectors) {
@@ -286,7 +287,7 @@ impl Rflags {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid RFLAGS value.
     pub unsafe fn write(value: u64) {
@@ -296,7 +297,7 @@ impl Rflags {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid RFLAGS flag.
     pub unsafe fn insert_flags(flag: u64) {
@@ -318,7 +319,7 @@ impl SFMask {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid SFMASK value.
     pub unsafe fn write(value: u64) {
@@ -326,7 +327,7 @@ impl SFMask {
     }
 
     #[inline]
-    /// ## Safety
+    /// # Safety
     ///
     /// The value written must be a valid SFMASK flag.
     pub unsafe fn insert_flags(flag: u64) {
@@ -442,7 +443,7 @@ impl GS {
     #[inline]
     pub fn read_base() -> VirtAddr {
         let base = Self::MSR.read();
-        VirtAddr::new(base)
+        unsafe { VirtAddr::new_unchecked(base) }
     }
 
     #[inline]
@@ -460,7 +461,7 @@ impl FS {
     #[inline]
     pub fn read_base() -> VirtAddr {
         let base = Self::MSR.read();
-        VirtAddr::new(base)
+        unsafe { VirtAddr::new_unchecked(base) }
     }
 
     #[inline]

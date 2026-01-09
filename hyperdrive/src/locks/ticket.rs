@@ -6,23 +6,6 @@
 //! It is not suitable for high contention scenarios, but it is a good
 //! alternative to spin locks in low contention scenarios.
 //!
-//! Note that rustc currently requires that you at least specify either the back-off strategy
-//! (and will infer the type of `T`) or the type of `T` (and will use the default `Spin`
-//! back-off strategy).
-//!
-//! ```rust
-//! # use hyperdrive::locks::ticket::TicketLock;
-//! # use hyperdrive::locks::Spin;
-//! #
-//! let lock = TicketLock::<u32>::new(0); // `Spin` is used
-//! let lock = TicketLock::<_, Spin>::new(0); // `T` is inferred
-//! ```
-//!
-//! ```rust,compile_fail
-//! # use hyperdrive::locks::rw::RwLock;
-//! let lock = TicketLock::new(0);
-//! ```
-//!
 //! # Example
 //!
 //! ```rust
@@ -35,7 +18,7 @@
 //! assert_eq!(*guard, 42);
 //! ```
 
-use super::BackOff;
+use super::RelaxStrategy;
 use core::{
     cell::UnsafeCell,
     marker::PhantomData,
@@ -50,27 +33,23 @@ use core::{
 ///
 /// However, it is not suitable for high contention scenarios.
 /// In such cases, it is recommended to use MCS locks.
-pub struct TicketLock<T, B: BackOff = super::Spin> {
+pub struct TicketLock<T: ?Sized, R: RelaxStrategy = super::Spin> {
     /// The ticket number of the next thread to acquire the lock.
     next_ticket: AtomicU32,
     /// The ticket number of the current thread holding the lock.
     now_serving: AtomicU32,
+    /// The back-off strategy to use when the lock is contended.
+    _back_off: PhantomData<R>,
     /// The inner data protected by the lock.
     data: UnsafeCell<T>,
-    /// The back-off strategy to use when the lock is contended.
-    _back_off: PhantomData<B>,
 }
 
 // Safety:
 // Mellor-Crummey and Scott lock is a synchronization primitive.
-#[expect(
-    clippy::non_send_fields_in_send_ty,
-    reason = "Synchronization primitive"
-)]
-unsafe impl<T, B: BackOff> Send for TicketLock<T, B> {}
-unsafe impl<T, B: BackOff> Sync for TicketLock<T, B> {}
+unsafe impl<T: ?Sized + Send, R: RelaxStrategy> Send for TicketLock<T, R> {}
+unsafe impl<T: ?Sized + Send, R: RelaxStrategy> Sync for TicketLock<T, R> {}
 
-impl<T, B: BackOff> TicketLock<T, B> {
+impl<T, R: RelaxStrategy> TicketLock<T, R> {
     #[must_use]
     #[inline]
     /// Creates a new ticket lock.
@@ -84,14 +63,23 @@ impl<T, B: BackOff> TicketLock<T, B> {
     }
 
     #[must_use]
+    #[inline]
+    /// Consumes the lock and returns the inner data.
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+}
+
+impl<T: ?Sized, R: RelaxStrategy> TicketLock<T, R> {
+    #[must_use]
     /// Locks the ticket lock and returns a guard.
-    pub fn lock(&self) -> TicketGuard<'_, T, B> {
+    pub fn lock(&self) -> TicketGuard<'_, T, R> {
         // Get the ticket number for this thread.
         let ticket = self.next_ticket.fetch_add(1, Ordering::Acquire);
 
         // Wait until it's this thread's turn to acquire the lock.
         while self.now_serving.load(Ordering::Acquire) != ticket {
-            B::back_off();
+            R::relax();
         }
 
         TicketGuard { lock: self }
@@ -108,28 +96,21 @@ impl<T, B: BackOff> TicketLock<T, B> {
     pub unsafe fn force_lock(&self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
-
-    #[must_use]
-    #[inline]
-    /// Consumes the lock and returns the inner data.
-    pub fn into_inner(self) -> T {
-        self.data.into_inner()
-    }
 }
 
 /// RAII guard for the ticket lock.
-pub struct TicketGuard<'l, T, B: BackOff> {
-    lock: &'l TicketLock<T, B>,
+pub struct TicketGuard<'l, T: ?Sized, R: RelaxStrategy> {
+    lock: &'l TicketLock<T, R>,
 }
 
-impl<T, B: BackOff> Drop for TicketGuard<'_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> Drop for TicketGuard<'_, T, R> {
     #[inline]
     fn drop(&mut self) {
         self.lock.now_serving.fetch_add(1, Ordering::Release);
     }
 }
 
-impl<T, B: BackOff> Deref for TicketGuard<'_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> Deref for TicketGuard<'_, T, R> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -137,7 +118,7 @@ impl<T, B: BackOff> Deref for TicketGuard<'_, T, B> {
     }
 }
 
-impl<T, B: BackOff> DerefMut for TicketGuard<'_, T, B> {
+impl<T: ?Sized, R: RelaxStrategy> DerefMut for TicketGuard<'_, T, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
     }

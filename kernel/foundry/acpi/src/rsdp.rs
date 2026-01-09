@@ -85,10 +85,11 @@ impl<M: PhysicalMapper<M4KiB>> Rsdp<M> {
         };
 
         let mut sum: u8 = 0;
-        for i in 0..match rsdp.revision {
+        let checksum_len = match rsdp.revision {
             AcpiRevision::V1 => size_of::<Rsdp1>(),
             AcpiRevision::V2 => size_of::<Xsdp2>(),
-        } {
+        };
+        for i in 0..checksum_len {
             sum = sum.wrapping_add(unsafe { rsdp.start_vaddr.as_ptr::<u8>().add(i).read() });
         }
         assert_eq!(sum, 0, "RSDP checksum is invalid");
@@ -97,7 +98,7 @@ impl<M: PhysicalMapper<M4KiB>> Rsdp<M> {
     }
 
     pub fn rsdt_paddr(&self) -> PhysAddr {
-        PhysAddr::new(match self.revision {
+        PhysAddr::new_truncate(match self.revision {
             AcpiRevision::V1 => {
                 u64::from(unsafe { self.start_vaddr.as_ptr::<Rsdp1>().read().rsdt_addr })
             }

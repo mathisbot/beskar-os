@@ -100,7 +100,7 @@ impl Ipi {
 
     /// Sends the IPI using the specified ICR registers.
     ///
-    /// ## Safety
+    /// # Safety
     ///
     /// ICR pointers must be valid.
     pub(super) unsafe fn send(

@@ -16,6 +16,38 @@ pub struct InterruptStackFrame {
     _reserved2: [u8; 6],
 }
 
+impl InterruptStackFrame {
+    #[must_use]
+    #[inline]
+    pub const fn instruction_pointer(&self) -> VirtAddr {
+        self.instruction_pointer
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn code_segment(&self) -> u16 {
+        self.code_segment
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn cpu_flags(&self) -> u64 {
+        self.cpu_flags
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn stack_pointer(&self) -> VirtAddr {
+        self.stack_pointer
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn stack_segment(&self) -> u16 {
+        self.stack_segment
+    }
+}
+
 trait Sealed {}
 #[expect(private_bounds, reason = "Forbid impl `IdtFnPtr`")]
 pub trait IdtFnPtr: Sealed {
@@ -74,8 +106,18 @@ impl<T: IdtFnPtr> IdtEntry<T> {
         clippy::needless_pass_by_value,
         reason = "In practice, the value is 8 bytes long"
     )]
+    #[inline]
     pub fn set_handler_fn(&mut self, handler: T, cs: u16) {
-        let addr = handler.addr().as_u64();
+        unsafe {
+            self.set_handler_fn_unchecked(handler.addr(), cs);
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the provided handler address is valid.
+    pub unsafe fn set_handler_fn_unchecked(&mut self, handler: VirtAddr, cs: u16) {
+        let addr = handler.as_u64();
         self.ptr_low = u16::try_from(addr & 0xFFFF).unwrap();
         self.ptr_mid = u16::try_from((addr >> 16) & 0xFFFF).unwrap();
         self.ptr_high = u32::try_from((addr >> 32) & 0xFFFF_FFFF).unwrap();
@@ -107,6 +149,14 @@ impl<T: IdtFnPtr> IdtEntry<T> {
             | u64::from(self.ptr_low);
         // Safety: pointers are canonical virtual addresses.
         unsafe { VirtAddr::new_unchecked(addr) }
+    }
+
+    pub fn set_dpl(&mut self, dpl: Ring) {
+        const DPL_SHIFT: u16 = 13;
+        const DPL_MASK: u16 = 0b11 << DPL_SHIFT;
+
+        let dpl = u16::from(dpl.as_u8() & 0b11);
+        self.options = (self.options & !DPL_MASK) | (dpl << DPL_SHIFT);
     }
 }
 
@@ -705,12 +755,11 @@ impl TaskStateSegment {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
-        const NULL_VADDR: VirtAddr = VirtAddr::new(0);
         Self {
             _reserved1: 0,
-            privilege_stack_table: [NULL_VADDR; 3],
+            privilege_stack_table: [VirtAddr::ZERO; 3],
             _reserved2: 0,
-            interrupt_stack_table: [NULL_VADDR; 7],
+            interrupt_stack_table: [VirtAddr::ZERO; 7],
             _reserved3: [0; 10],
             #[expect(
                 clippy::cast_possible_truncation,
@@ -758,8 +807,8 @@ mod tests {
         let tss = TaskStateSegment::default();
         let pst = tss.privilege_stack_table;
         let ist = tss.interrupt_stack_table;
-        assert_eq!(pst, [VirtAddr::new(0); 3]);
-        assert_eq!(ist, [VirtAddr::new(0); 7]);
+        assert_eq!(pst, [VirtAddr::new_extend(0); 3]);
+        assert_eq!(ist, [VirtAddr::new_extend(0); 7]);
         assert_eq!(
             tss.iomap_base,
             u16::try_from(size_of::<TaskStateSegment>()).unwrap()

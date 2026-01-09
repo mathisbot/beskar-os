@@ -157,6 +157,7 @@ type BoxedDataReader<'a> =
 type RefDataReader<'a> = &'a mut dyn FnMut(Cluster, u32, &mut [u8]) -> FatResult<()>;
 type RefDataWriter<'a> = &'a mut dyn FnMut(Cluster, u32, &[u8]) -> FatResult<()>;
 
+#[expect(dead_code, reason = "Incomplete implementation")]
 pub struct FatFs<D: BlockDevice> {
     device: D,
     fat_type: FatType,
@@ -167,44 +168,55 @@ pub struct FatFs<D: BlockDevice> {
 }
 
 impl<D: BlockDevice> FileSystem for FatFs<D> {
-    fn close(&mut self, path: super::Path) -> super::FileResult<()> {
+    fn close(&mut self, _path: super::Path) -> super::FileResult<()> {
         // No-op for FAT
         Ok(())
     }
 
-    fn open(&mut self, path: super::Path) -> super::FileResult<()> {
+    fn open(&mut self, _path: super::Path) -> super::FileResult<()> {
         // No-op for FAT
         Ok(())
     }
 
-    fn create(&mut self, path: super::Path) -> super::FileResult<()> {
+    fn create(&mut self, _path: super::Path) -> super::FileResult<()> {
         todo!("Create file in FAT filesystem");
     }
 
-    fn delete(&mut self, path: super::Path) -> super::FileResult<()> {
+    fn delete(&mut self, _path: super::Path) -> super::FileResult<()> {
         todo!("Delete file in FAT filesystem");
     }
 
-    fn exists(&mut self, path: super::Path) -> super::FileResult<bool> {
+    fn exists(&mut self, _path: super::Path) -> super::FileResult<bool> {
         todo!("Check if file exists in FAT filesystem");
     }
 
     fn read(
         &mut self,
-        path: super::Path,
-        buffer: &mut [u8],
-        offset: usize,
+        _path: super::Path,
+        _buffer: &mut [u8],
+        _offset: usize,
     ) -> super::FileResult<usize> {
         todo!("Read file from FAT filesystem");
     }
 
     fn write(
         &mut self,
-        path: super::Path,
-        buffer: &[u8],
-        offset: usize,
+        _path: super::Path,
+        _buffer: &[u8],
+        _offset: usize,
     ) -> super::FileResult<usize> {
         todo!("Write file to FAT filesystem");
+    }
+
+    fn metadata(&mut self, _path: super::Path) -> super::FileResult<super::FileMetadata> {
+        todo!("Get file metadata from FAT filesystem");
+    }
+
+    fn read_dir(
+        &mut self,
+        _path: super::Path,
+    ) -> super::FileResult<alloc::vec::Vec<super::PathBuf>> {
+        todo!("Read directory from FAT filesystem");
     }
 }
 

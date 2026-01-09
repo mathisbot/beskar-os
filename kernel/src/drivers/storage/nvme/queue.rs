@@ -19,11 +19,11 @@ struct Queue<T> {
     size: u16,
     tail: u16,
     head: u16,
-    doorbell: Volatile<ReadWrite, u16>,
+    doorbell: Volatile<ReadWrite, u32>,
 }
 
 impl<T> Queue<T> {
-    fn new(doorbell: Volatile<ReadWrite, u16>) -> DriverResult<Self> {
+    fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
         let Some(frame) =
             frame_alloc::with_frame_allocator(frame_alloc::FrameAllocator::alloc::<M4KiB>)
         else {
@@ -35,13 +35,18 @@ impl<T> Queue<T> {
             frame.start_address(),
             frame.size().try_into().unwrap(),
             flags,
-        );
+        )
+        .unwrap();
         let base = pmap.translate(frame.start_address()).unwrap();
+
+        unsafe {
+            core::ptr::write_bytes(base.as_mut_ptr::<u8>(), 0, frame.size().try_into().unwrap());
+        }
 
         Ok(Self {
             base: Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap()),
             pmap,
-            size: u16::try_from(frame.size()).unwrap(),
+            size: u16::try_from(frame.size() / u64::try_from(size_of::<T>()).unwrap()).unwrap(),
             tail: 0,
             head: 0,
             doorbell,
@@ -60,7 +65,7 @@ struct SubmissionQueue(Queue<SubmissionEntry>);
 
 impl SubmissionQueue {
     #[inline]
-    pub fn new(doorbell: Volatile<ReadWrite, u16>) -> DriverResult<Self> {
+    pub fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
         Ok(Self(Queue::new(doorbell)?))
     }
 
@@ -72,13 +77,19 @@ impl SubmissionQueue {
 
     #[must_use]
     #[inline]
+    pub const fn entries(&self) -> u16 {
+        self.0.size
+    }
+
+    #[must_use]
+    #[inline]
     const fn is_full(&self) -> bool {
         self.0.tail.wrapping_add(1) % self.0.size == self.0.head
     }
 
     /// Push a new entry to the queue
     ///
-    /// ## Warning
+    /// # Warning
     ///
     /// The entries are not reported to the controller until `flush` is called.
     pub fn push(&mut self, entry: SubmissionEntry) {
@@ -97,7 +108,7 @@ impl SubmissionQueue {
 
     /// Report the entries to the controller
     fn flush(&mut self) {
-        unsafe { self.0.doorbell.write(self.0.tail) };
+        unsafe { self.0.doorbell.write(u32::from(self.0.tail)) };
     }
 }
 
@@ -105,7 +116,7 @@ struct CompletionQueue(Queue<CompletionEntry>);
 
 impl CompletionQueue {
     #[inline]
-    pub fn new(doorbell: Volatile<ReadWrite, u16>) -> DriverResult<Self> {
+    pub fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
         Ok(Self(Queue::new(doorbell)?))
     }
 
@@ -113,6 +124,12 @@ impl CompletionQueue {
     #[inline]
     pub const fn paddr(&self) -> PhysAddr {
         self.0.pmap.start_frame().start_address()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn entries(&self) -> u16 {
+        self.0.size
     }
 
     #[must_use]
@@ -127,18 +144,15 @@ impl CompletionQueue {
             return None;
         }
 
-        assert!(entry.is_success());
-
-        self.flush();
-
         self.0.head = self.0.head.wrapping_add(1) % self.0.size;
+        self.flush();
 
         Some(entry)
     }
 
     /// Tell the controller that the entries have been read
     fn flush(&mut self) {
-        unsafe { self.0.doorbell.write(self.0.head) };
+        unsafe { self.0.doorbell.write(u32::from(self.0.head)) };
     }
 }
 
@@ -171,6 +185,12 @@ impl SubmissionEntry {
             command_specific: [0; 6],
         }
     }
+
+    #[must_use]
+    #[inline]
+    pub fn command_id(&self) -> CommandIdentifier {
+        self.dword0.id()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,8 +220,8 @@ impl CommandDwordZero {
 
     #[must_use]
     #[inline]
-    pub fn id(self) -> u16 {
-        u16::try_from(self.0 >> 16).unwrap()
+    pub fn id(self) -> CommandIdentifier {
+        CommandIdentifier(u16::try_from(self.0 >> 16).unwrap())
     }
 }
 
@@ -235,12 +255,25 @@ impl CompletionEntry {
     ///
     /// This value only has meaning if `has_finished` returns true.
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// Panics if the command has not finished.
     pub const fn is_success(self) -> bool {
         assert!(self.has_finished());
         self.status & (u16::MAX - 1) == 0
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn command_id(self) -> CommandIdentifier {
+        self.cid
+    }
+
+    #[must_use]
+    #[inline]
+    /// Extract status code from bits 1-15 (bit 0 is phase bit)
+    pub const fn status_code(self) -> u16 {
+        (self.status >> 1) & 0x7FFF
     }
 }
 

@@ -1,4 +1,4 @@
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use thiserror::Error;
 
 pub mod dev;
@@ -78,6 +78,10 @@ pub trait FileSystem {
     ///
     /// This returns how many bytes were written.
     fn write(&mut self, path: Path, buffer: &[u8], offset: usize) -> FileResult<usize>;
+    /// Returns information about the file at the given path.
+    fn metadata(&mut self, path: Path) -> FileResult<FileMetadata>;
+    /// Returns every entry in the directory at the given path.
+    fn read_dir(&mut self, path: Path) -> FileResult<Vec<PathBuf>>;
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -105,6 +109,14 @@ impl PathBuf {
     #[inline]
     pub fn as_path(&self) -> Path<'_> {
         Path(&self.0)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn join(&self, path: &str) -> Self {
+        let mut new_path = self.0.clone();
+        new_path.push_str(path);
+        Self(new_path)
     }
 }
 
@@ -152,6 +164,38 @@ impl core::ops::Deref for Path<'_> {
     #[inline]
     fn deref(&self) -> &Self::Target {
         self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum FileType {
+    File,
+    Directory,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct FileMetadata {
+    size: usize,
+    file_type: FileType,
+}
+
+impl FileMetadata {
+    #[must_use]
+    #[inline]
+    pub const fn new(size: usize, file_type: FileType) -> Self {
+        Self { size, file_type }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn size(&self) -> usize {
+        self.size
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn file_type(&self) -> FileType {
+        self.file_type
     }
 }
 
