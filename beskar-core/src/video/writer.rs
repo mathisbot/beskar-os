@@ -31,6 +31,13 @@ impl FramebufferWriter {
 
     #[must_use]
     #[inline]
+    /// Returns the framebuffer layout used by this writer.
+    pub const fn info(&self) -> Info {
+        self.info
+    }
+
+    #[must_use]
+    #[inline]
     /// Returns the current x position of the writer.
     pub const fn x(&self) -> u16 {
         self.x
@@ -41,6 +48,13 @@ impl FramebufferWriter {
     /// Returns the current y position of the writer.
     pub const fn y(&self) -> u16 {
         self.y
+    }
+
+    #[inline]
+    /// Moves the cursor to an absolute pixel position without drawing.
+    pub const fn set_cursor(&mut self, x: u16, y: u16) {
+        self.x = x;
+        self.y = y;
     }
 
     #[inline]
@@ -81,6 +95,20 @@ impl FramebufferWriter {
         for c in s.chars() {
             self.write_char(buffer, c);
         }
+    }
+
+    #[inline]
+    /// Writes a string starting at the given pixel position.
+    pub fn write_str_at(&mut self, buffer: &mut [Pixel], x: u16, y: u16, s: &str) {
+        self.set_cursor(x, y);
+        self.write_str(buffer, s);
+    }
+
+    #[inline]
+    /// Writes a single character at the given pixel position.
+    pub fn write_char_at(&mut self, buffer: &mut [Pixel], x: u16, y: u16, c: char) {
+        self.set_cursor(x, y);
+        self.write_char(buffer, c);
     }
 
     /// Writes a single char to the framebuffer.

@@ -3,7 +3,6 @@
 # BeskarOS
 
 ![GitHub Repo stars](https://img.shields.io/github/stars/mathisbot/beskar-os?style=flat)
-![](https://tokei.rs/b1/github/mathisbot/beskar-os?category=code&style=flat)
 
 This repository contains the Beskar hobby OS: a very basic x86_64 hobby OS written in pure Rust that boots on UEFI 2 and has support for SMP.
 It is named after the alloy used to forge Mandalorian armors, which cannot rust.
@@ -31,6 +30,7 @@ I have many milestones ideas for the OS:
 
 - Bootloader: Custom UEFI 2 bootloader
 - Kernel: Modern 64-bit kernel with SMP support
+- Heaperion: Heap module
 - Hyperdrive: Bare metal utility module for the OS
 - Beskar Core: Structs and traits common to all modules
 - Beskar HAL: Hardware Abstraction Layer
@@ -52,22 +52,12 @@ For example, usage of SIMD registers is currently a to-do.
 The OS can be built using `cargo build [--release]`.
 The result of the building process lies inside the `efi_disk` directory.
 
-You can optimize the built files for your specific target CPU. To do so, add the following lines in `.cargo/cargo.toml` :
-
-```toml
-[build]
-rustflags = ["-C", "target-cpu=<CPU>"]
-```
-
-Replace `<CPU>` with any of the CPU listed by `rustc --print target-cpus`.
-A great choice for most of modern CPUs is `x86_64-v3` (`v4` if it is very modern), but it is best to set it to the exact architecture you have!
-
 ### Running on QEMU
 
 If you want to run the OS on a testing virtual machine on QEMU, you can do so by running the following command :
 
 ```powershell
-qemu-system-x86_64.exe -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -device qemu-xhci -M q35
+qemu-system-x86_64.exe -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -M q35
 ```
 
 Where:
@@ -80,6 +70,7 @@ Where:
 Other useful parameters:
 - `-nic user,model=e1000e`: Add a network card to the emulated computer.
 - `-device nvme,serial=<anything>`: Add a NVMe controller to the emulated computer.
+- `-device qemu-xhci`: Add an XHCI controller to the emulated computer.
 - `-device usb-kbd`: Add a USB keyboard (currently not recognized). This will disable QEMU's PS/2 emulated keyboard.
 - `-device virtio-vga -display <BACKEND>,gl=on`: If having a fixed 2560x1600 resolution bothers you, you can use a better-fitting framebuffer with these options. Replace `<BACKEND>` with either `sdl` or `gtk`.
 
@@ -121,13 +112,15 @@ Debugging isn't currently supported through debuggers.
 
 Debugging can be done using `beskar_lib::println!` which writes text on the screen and on the serial port (which is your host's console if you're using QEMU).
 
+The kernel also prints the whole state of the CPU when it receives a breakpoint exception (`int3`).
+
 ## Screenshots
 
 The following screenshots showcase the normal operating of the OS
 
 ### Bootloader
 
-Before trying anything, the bootloader checks the firmware version as well as available features. This early process is logged into COM1.
+Before trying anything, the [bootloader](bootloader/README.md) checks the firmware version as well as available features. This early process is logged into COM1.
 
 ![Bootloader COM1 output](docs/images/bootloader_serial.webp)
 
@@ -137,20 +130,16 @@ After video is enabled, the bootloader sets up a comfortable environment for the
 
 ### Kernel
 
-On startup, the kernel initializes itself with the help of information provided by the bootloader.
+On startup, the [kernel](kernel/README.md) initializes itself with the help of information provided by the bootloader.
 After initialization, it starts a process to initialize drivers as well as a user-space process for each binary in the ramdisk.
 
 ![Kernel Initialization](docs/images/kernel_boot.webp)
-
-When something goes unfortunately wrong, the faulty process gets killed. On unrecoverable kernel errors, the faulty core sends an NMI to other cores to stop further processing.
-
-![Kernel Panic](docs/images/kernel_panic.webp)
 
 ### Userspace
 
 ### Bashkar
 
-Bashkar is a wanna-be shell. It shows the terrific BeskarOS banner.
+[Bashkar](userspace/bashkar/README.md) is a wanna-be shell. It shows the terrific BeskarOS banner.
 
 ![Bashkar](docs/images/bashkar.webp)
 
@@ -167,3 +156,7 @@ Unfortunately, the resolution is currently fixed at a small 340x200.
 My warmest thanks to all the [OSDev](https://wiki.osdev.org/) contributors, without whom it would have been impossible to acquire all the information needed to write such code.
 
 Special thanks to Philipp Oppermann, for his [BlogOS ed.3](https://github.com/phil-opp/blog_os) series and for his [bootloader](https://github.com/rust-osdev/bootloader) crate, which enabled me to start from scratch with clear, easy-to-understand explanations.
+
+## Disclaimer
+
+While this project contains a few subtle references to the Star Wars universe for artistic purposes, it is an independent operating system and is not affiliated with or endorsed by Disney or Lucasfilm.

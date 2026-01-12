@@ -3,7 +3,7 @@ use crate::{
     io::{File, Read, Seek, SeekFrom, Write},
     mem,
 };
-use beskar_core::video::Info;
+use beskar_core::video::{Info, Pixel};
 use core::{
     mem::{MaybeUninit, align_of, size_of},
     num::NonZeroU64,
@@ -16,6 +16,13 @@ pub struct FrameBuffer {
     info: Info,
     fb_file: File,
     internal_fb: &'static mut [u8],
+}
+
+/// A borrowed view over the framebuffer memory.
+pub struct FrameView<'a> {
+    info: Info,
+    stride_bytes: usize,
+    bytes: &'a mut [u8],
 }
 
 impl FrameBuffer {
@@ -66,47 +73,151 @@ impl FrameBuffer {
         })
     }
 
+    #[must_use]
+    #[inline]
+    /// Returns the size in bytes of a single framebuffer row.
+    pub fn stride_bytes(&self) -> usize {
+        usize::from(self.info.stride()) * usize::from(self.info.bytes_per_pixel())
+    }
+
+    #[inline]
     #[expect(clippy::missing_panics_doc, reason = "Never panics")]
-    /// Flush a range of rows (or the whole buffer if `rows` is `None`) to the kernel framebuffer.
+    /// Flush a range of rows to the kernel framebuffer.
     ///
     /// # Errors
     ///
-    /// Returns an error if writing to the framebuffer device fails.
-    pub fn flush(&mut self, rows: Option<&Range<u16>>) -> IoResult<()> {
-        let stride = usize::from(self.info.stride());
-        let max_row = usize::from(self.info.height());
-        let bpp = usize::from(self.info.bytes_per_pixel());
+    /// Returns an error if the write operation fails.
+    pub fn flush_rows(&mut self, rows: Range<u16>) -> IoResult<()> {
+        let stride_bytes = self.stride_bytes();
 
-        let offset_in_screen = rows
-            .map_or(0, |r| usize::from(r.start) * stride)
-            .min(max_row * stride);
+        let start_row = usize::from(rows.start.min(self.info.height()));
+        let end_row = usize::from(rows.end.min(self.info.height()));
 
-        let offset = offset_in_screen * bpp;
+        if start_row >= end_row {
+            return Ok(());
+        }
 
-        let end = rows
-            .map_or_else(
-                || usize::try_from(self.info.size()).unwrap(),
-                |r| usize::from(r.end) * stride * bpp,
-            )
-            .min(max_row * stride * bpp);
+        let byte_start = start_row * stride_bytes;
+        let byte_end = end_row * stride_bytes;
 
         self.fb_file
-            .seek(SeekFrom::Start(u64::try_from(offset_in_screen).unwrap()))?;
-        self.fb_file.write_all(&self.internal_fb[offset..end])?;
+            .seek(SeekFrom::Start(u64::try_from(byte_start).unwrap()))?;
+        self.fb_file
+            .write_all(&self.internal_fb[byte_start..byte_end])?;
         Ok(())
     }
 
-    /// Mutable access to the internal buffer.
+    #[inline]
+    /// Flushes the entire framebuffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the write operation fails.
+    pub fn flush_all(&mut self) -> IoResult<()> {
+        self.flush_rows(0..self.info.height())
+    }
+
+    /// Mutable access to the raw backing buffer.
     #[must_use]
     #[inline]
     pub const fn buffer_mut(&mut self) -> &mut [u8] {
         self.internal_fb
     }
 
-    /// Returns a reference the stored `Info`.
+    /// Structured access to the framebuffer.
+    #[must_use]
+    #[inline]
+    pub fn view(&mut self) -> FrameView<'_> {
+        FrameView {
+            info: self.info,
+            stride_bytes: self.stride_bytes(),
+            bytes: self.internal_fb,
+        }
+    }
+
+    /// Returns a view starting at the given row (in pixels).
+    #[must_use]
+    #[inline]
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
+    pub fn view_from_row(&mut self, start_row: u16) -> FrameView<'_> {
+        let stride_bytes = self.stride_bytes();
+        let clamped_start = start_row.min(self.info.height());
+        let start_byte = usize::from(clamped_start) * stride_bytes;
+
+        let remaining_rows = self.info.height().saturating_sub(clamped_start);
+        let view_size = usize::from(remaining_rows) * stride_bytes;
+
+        FrameView {
+            info: Info::new(
+                view_size.try_into().unwrap(),
+                self.info.width(),
+                remaining_rows,
+                self.info.pixel_format(),
+                self.info.stride(),
+                self.info.bytes_per_pixel(),
+            ),
+            stride_bytes,
+            bytes: &mut self.internal_fb[start_byte..start_byte + view_size],
+        }
+    }
+
+    /// Returns layout information of the framebuffer.
     #[must_use]
     #[inline]
     pub const fn info(&self) -> &Info {
         &self.info
+    }
+}
+
+impl FrameView<'_> {
+    #[must_use]
+    #[inline]
+    pub const fn info(&self) -> Info {
+        self.info
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn bytes_mut(&mut self) -> &mut [u8] {
+        self.bytes
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn pixels_mut(&mut self) -> &mut [Pixel] {
+        let (prefix, pixels, suffix) = unsafe { self.bytes.align_to_mut::<Pixel>() };
+        debug_assert!(prefix.is_empty() && suffix.is_empty());
+        pixels
+    }
+
+    #[must_use]
+    #[inline]
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
+    pub fn sub_rows(&mut self, start_row: u16) -> FrameView<'_> {
+        let clamped_start = start_row.min(self.info.height());
+        let start_byte = usize::from(clamped_start) * self.stride_bytes;
+        let remaining_rows = self.info.height().saturating_sub(clamped_start);
+        let view_size = usize::from(remaining_rows) * self.stride_bytes;
+
+        FrameView {
+            info: Info::new(
+                view_size.try_into().unwrap(),
+                self.info.width(),
+                remaining_rows,
+                self.info.pixel_format(),
+                self.info.stride(),
+                self.info.bytes_per_pixel(),
+            ),
+            stride_bytes: self.stride_bytes,
+            bytes: &mut self.bytes[start_byte..start_byte + view_size],
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn rows_mut(&mut self, rows: Range<u16>) -> &mut [u8] {
+        let start = usize::from(rows.start.min(self.info.height())) * self.stride_bytes;
+        let end = usize::from(rows.end.min(self.info.height())) * self.stride_bytes;
+        &mut self.bytes[start..end]
     }
 }

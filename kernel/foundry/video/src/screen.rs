@@ -117,14 +117,17 @@ impl KernelDevice for ScreenDevice {
         }
 
         with_screen(|screen| {
-            if src.len() + offset > screen.info().size().try_into().unwrap() {
+            let pixel_offset = offset / size_of::<Pixel>();
+            let pixel_limit = usize::try_from(screen.info().size()).unwrap();
+
+            if pixel_offset + src.len() > pixel_limit {
                 return Err(BlockDeviceError::OutOfBounds);
             }
 
             let pixel_format = screen.info().pixel_format();
             let screen_buffer = screen.buffer_mut();
 
-            for (&pc, d) in src.iter().zip(screen_buffer[offset..].iter_mut()) {
+            for (&pc, d) in src.iter().zip(screen_buffer[pixel_offset..].iter_mut()) {
                 let pixel = Pixel::from_format(pixel_format, pc.0);
                 *d = pixel;
             }

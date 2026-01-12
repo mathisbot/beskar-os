@@ -12,9 +12,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ascii-ui"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+]
+
+[[package]]
 name = "bashkar"
 version = "0.1.0"
 dependencies = [
+ "ascii-ui",
  "beskar-core",
  "beskar-lib",
  "hyperdrive",

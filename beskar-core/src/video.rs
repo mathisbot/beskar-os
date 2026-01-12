@@ -133,6 +133,18 @@ impl Pixel {
 
     #[must_use]
     #[inline]
+    pub const fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn to_raw(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    #[inline]
     pub fn from_format(format: PixelFormat, components: PixelComponents) -> Self {
         match format {
             PixelFormat::Rgb => Self::new_rgb(components),
