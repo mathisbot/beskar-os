@@ -18,25 +18,25 @@ pub struct AhciPort {
 }
 
 impl AhciPort {
+    #[must_use]
+    #[inline]
     /// Create a new AHCI port instance
-    pub fn new(base: VirtAddr, port_id: u32) -> DriverResult<Self> {
+    pub const fn new(base: VirtAddr, port_id: u32) -> Self {
         let regs = unsafe { PortRegisters::from_base(base) };
-        Ok(Self { regs, port_id })
+        Self { regs, port_id }
     }
 
+    #[must_use]
+    #[inline]
     /// Check if a device is present on this port
-    pub fn is_device_present(&self) -> DriverResult<bool> {
+    pub fn is_device_present(&self) -> bool {
         let sata_status = self.regs.sata_status();
         let det = SataDet::from_bits(sata_status);
-
-        match det {
-            SataDet::DevicePresent | SataDet::DevicePresentComm => Ok(true),
-            _ => Ok(false),
-        }
+        matches!(det, SataDet::DevicePresent | SataDet::DevicePresentComm)
     }
 
     /// Initialize the AHCI port
-    pub fn initialize(&mut self) -> DriverResult<()> {
+    pub fn initialize(&self) -> DriverResult<()> {
         // Clear any pending errors
         let sata_error = self.regs.sata_error();
         if sata_error != 0 {
@@ -69,7 +69,7 @@ impl AhciPort {
         }
 
         // Enable port interrupts
-        self.regs.set_ie(0xFDC000FF);
+        self.regs.set_ie(0xFDC0_00FF);
 
         // Start command engine
         self.start_command_engine()?;
@@ -143,37 +143,48 @@ impl AhciPort {
         Ok(())
     }
 
+    #[must_use]
+    #[inline]
     /// Get the port ID
-    pub fn id(&self) -> u32 {
+    pub const fn id(&self) -> u32 {
         self.port_id
     }
 
+    #[must_use]
+    #[inline]
     /// Get SATA status
     pub fn sata_status(&self) -> u32 {
         self.regs.sata_status()
     }
 
+    #[must_use]
+    #[inline]
     /// Get device detection status
     pub fn device_detection(&self) -> SataDet {
         let sata_status = self.regs.sata_status();
         SataDet::from_bits(sata_status)
     }
 
+    #[must_use]
+    #[inline]
     /// Get task file data
     pub fn task_file_data(&self) -> u32 {
         self.regs.tfd()
     }
 
+    #[must_use]
+    #[inline]
     /// Check if port has errors
     pub fn is_error(&self) -> bool {
         let tfd = self.regs.tfd();
         (tfd & 0xFF) != 0 // Status register, error bits
     }
 
+    #[inline]
     /// Clear port errors
     pub fn clear_errors(&self) {
-        self.regs.set_sata_error(0xFFFFFFFF);
-        self.regs.set_is(0xFFFFFFFF);
+        self.regs.set_sata_error(u32::MAX);
+        self.regs.set_is(u32::MAX);
     }
 }
 
@@ -196,23 +207,29 @@ pub struct CommandHeader {
 }
 
 impl CommandHeader {
+    #[must_use]
+    #[inline]
     /// Get FIS length in DWORDs
-    pub fn fis_length(&self) -> u8 {
+    pub const fn fis_length(&self) -> u8 {
         (self.cmd_fis_len_flags & 0x1F) as u8
     }
 
+    #[inline]
     /// Set FIS length in DWORDs
-    pub fn set_fis_length(&mut self, len: u8) {
+    pub const fn set_fis_length(&mut self, len: u8) {
         self.cmd_fis_len_flags = (self.cmd_fis_len_flags & !0x1F) | (len as u16);
     }
 
+    #[must_use]
+    #[inline]
     /// Check if this is a write (host to device)
-    pub fn is_write(&self) -> bool {
+    pub const fn is_write(&self) -> bool {
         (self.cmd_fis_len_flags & (1 << 6)) != 0
     }
 
+    #[inline]
     /// Set write flag
-    pub fn set_write(&mut self, write: bool) {
+    pub const fn set_write(&mut self, write: bool) {
         if write {
             self.cmd_fis_len_flags |= 1 << 6;
         } else {
@@ -220,15 +237,18 @@ impl CommandHeader {
         }
     }
 
+    #[must_use]
+    #[inline]
     /// Get command table address (48-bit physical address)
-    pub fn ctba(&self) -> u64 {
+    pub const fn ctba(&self) -> u64 {
         ((self.ctba_high as u64) << 32) | (self.ctba_low as u64)
     }
 
+    #[inline]
     /// Set command table address
-    pub fn set_ctba(&mut self, addr: u64) {
-        self.ctba_low = (addr & 0xFFFFFFFF) as u32;
-        self.ctba_high = ((addr >> 32) & 0xFFFFFFFF) as u32;
+    pub const fn set_ctba(&mut self, addr: u64) {
+        self.ctba_low = (addr & 0xFFFF_FFFF) as u32;
+        self.ctba_high = ((addr >> 32) & 0xFFFF_FFFF) as u32;
     }
 }
 
@@ -260,42 +280,45 @@ pub struct PrdTableEntry {
 }
 
 impl PrdTableEntry {
+    #[must_use]
+    #[inline]
     /// Get data buffer address (48-bit physical address)
-    pub fn dba(&self) -> u64 {
+    pub const fn dba(&self) -> u64 {
         ((self.dba_high as u64) << 32) | (self.dba_low as u64)
     }
 
+    #[inline]
     /// Set data buffer address
     pub fn set_dba(&mut self, addr: u64) {
-        self.dba_low = (addr & 0xFFFFFFFF) as u32;
-        self.dba_high = ((addr >> 32) & 0xFFFFFFFF) as u32;
+        self.dba_low = u32::try_from(addr & 0xFFFF_FFFF).unwrap();
+        self.dba_high = u32::try_from((addr >> 32) & 0xFFFF_FFFF).unwrap();
     }
 
+    #[must_use]
+    #[inline]
     /// Get byte count
-    pub fn byte_count(&self) -> u32 {
-        let bc = self.dbc_ioc & 0x3FFFFF;
-        if bc == 0 { 0x400000 } else { bc }
+    pub const fn byte_count(&self) -> u32 {
+        let bc = self.dbc_ioc & 0x3F_FFFF;
+        if bc == 0 { 0x40_0000 } else { bc }
     }
 
+    #[inline]
     /// Set byte count
     pub fn set_byte_count(&mut self, count: u32) {
-        let count = if count > 0x400000 {
-            0x400000
-        } else if count == 0 {
-            0
-        } else {
-            count
-        };
-        self.dbc_ioc = (self.dbc_ioc & 0xFFC00000) | (count & 0x3FFFFF);
+        let count = count.min(0x40_0000);
+        self.dbc_ioc = (self.dbc_ioc & 0xFFC0_0000) | (count & 0x3F_FFFF);
     }
 
+    #[must_use]
+    #[inline]
     /// Check interrupt on completion flag
-    pub fn ioc(&self) -> bool {
+    pub const fn ioc(&self) -> bool {
         (self.dbc_ioc & (1 << 31)) != 0
     }
 
+    #[inline]
     /// Set interrupt on completion flag
-    pub fn set_ioc(&mut self, ioc: bool) {
+    pub const fn set_ioc(&mut self, ioc: bool) {
         if ioc {
             self.dbc_ioc |= 1 << 31;
         } else {

@@ -243,7 +243,7 @@ extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFra
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 
-pub fn handle_xhci_interrupt() {
+pub const fn handle_xhci_interrupt() {
     // with_xhci(|xhci| {
     //     // Check if we have an event ring
     //     let Some(event_ring) = &mut xhci.event_ring else {

@@ -139,17 +139,18 @@ impl Pm1ControlRegister {
                 let prev_value = self.read_pm1a();
                 let prev_masked = prev_value & !SLEEP_MASK;
 
-                let s5: u16 = todo!("Find _S5 from DSDT");
-                assert!(s5 <= 0b111, "_S5 is unexpectedly not 3-bit long");
+                todo!("Find _S5 from DSDT");
+                // let s5: u16 = todo!("Find _S5 from DSDT");
+                // assert!(s5 <= 0b111, "_S5 is unexpectedly not 3-bit long");
 
-                let new_value = prev_masked
-                    | (s5 << 10) // SLP_TYPx
-                    | (1 << 13); // SLP_EN
+                // let new_value = prev_masked
+                //     | (s5 << 10) // SLP_TYPx
+                //     | (1 << 13); // SLP_EN
 
-                // Perform the shutdown
-                self.write_pm1a(new_value);
+                // // Perform the shutdown
+                // self.write_pm1a(new_value);
 
-                unreachable!("System did not shutdown")
+                // unreachable!("System did not shutdown")
             }
             _ => {
                 todo!("Other sleep states")

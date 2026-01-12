@@ -344,7 +344,7 @@ impl AdminCompletionEntry {
     #[must_use]
     #[inline]
     /// Get the status code (bits 1-15, bit 0 is phase bit)
-    pub fn status_code(self) -> u16 {
+    pub const fn status_code(self) -> u16 {
         self.0.status_code()
     }
 }

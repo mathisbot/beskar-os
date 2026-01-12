@@ -80,8 +80,6 @@ jobs:
           targets: x86_64-unknown-none, x86_64-unknown-uefi
           components: clippy, rustfmt, llvm-tools-preview, rust-src
 
-      # The project isn't advanced enough to have clippy fail
-      # on warnings over the kernel.
       - name: Run Clippy
         run: |
           cargo clippy --package beskar-core -- -D warnings
@@ -93,10 +91,10 @@ jobs:
           cargo clippy --package holonet -- -D warnings
           cargo clippy --package video -- -D warnings
           cargo clippy --package bashkar -- -D warnings
-          cargo clippy --package acpi
-          cargo clippy --package pci
-          cargo clippy --package storage
-          cargo clippy --package kernel
+          cargo clippy --package acpi -- -D warnings
+          cargo clippy --package pci -- -D warnings
+          cargo clippy --package storage -- -D warnings
+          cargo clippy --package kernel -- -D warnings
 
       - name: Run Rustfmt
         run: cargo fmt --verbose --all -- --check

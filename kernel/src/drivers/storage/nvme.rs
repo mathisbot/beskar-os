@@ -131,6 +131,7 @@ impl NvmeControllers {
         })
     }
 
+    #[expect(clippy::too_many_lines)]
     pub fn init(&mut self) -> DriverResult<()> {
         // --- Part One: Controller Bare Initialization ---
 
@@ -235,18 +236,16 @@ impl NvmeControllers {
         let io_sq_doorbell = Volatile::new(
             NonNull::new(unsafe {
                 self.registers_base
-                    .as_mut_ptr::<u8>()
+                    .as_mut_ptr::<u32>()
                     .byte_add(0x1000 + 2 * dstrd)
-                    .cast::<u32>()
             })
             .unwrap(),
         );
         let io_cq_doorbell = Volatile::new(
             NonNull::new(unsafe {
                 self.registers_base
-                    .as_mut_ptr::<u8>()
+                    .as_mut_ptr::<u32>()
                     .byte_add(0x1000 + 3 * dstrd)
-                    .cast::<u32>()
             })
             .unwrap(),
         );
@@ -255,9 +254,7 @@ impl NvmeControllers {
         let io_sq = IoSubmissionQueue::new(io_sq_doorbell)?;
 
         // Respect MQES limit (value is 0-based in CAP, so +1 entries)
-        let max_entries = u16::try_from(self.capabilities().mqes())
-            .unwrap()
-            .saturating_add(1);
+        let max_entries = self.capabilities().mqes().saturating_add(1);
         let cq_entries = core::cmp::min(io_cq.entries(), max_entries).saturating_sub(1);
         let sq_entries = core::cmp::min(io_sq.entries(), max_entries).saturating_sub(1);
 

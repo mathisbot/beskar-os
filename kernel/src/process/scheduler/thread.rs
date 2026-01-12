@@ -264,7 +264,7 @@ impl Thread {
     /// # Safety
     ///
     /// The caller must use atomic operations to read/write the pointer.
-    pub unsafe fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
+    pub const unsafe fn last_stack_ptr_mut(&mut self) -> *mut *mut u8 {
         self.last_stack_ptr.as_ptr()
     }
 

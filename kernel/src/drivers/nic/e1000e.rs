@@ -97,14 +97,14 @@ impl E1000e<'_> {
         self.enable_int();
     }
 
-    fn reset(&self) {
+    fn reset(&mut self) {
         self.update_reg(Registers::CTRL, |ctrl| ctrl | CtrlFlags::RST);
         while self.read_reg(Registers::CTRL) & CtrlFlags::RST != 0 {
             core::hint::spin_loop();
         }
     }
 
-    fn enable_int(&self) {
+    fn enable_int(&mut self) {
         let msix = crate::drivers::pci::with_pci_handler(|handler| {
             pci::msix::MsiX::<PhysicalMapping<M4KiB>, MsiHelper>::new(handler, &self.pci_device)
         });
@@ -211,11 +211,11 @@ impl E1000e<'_> {
         unsafe { self.base.byte_add(offset).read() }
     }
 
-    fn write_reg(&self, offset: usize, value: u32) {
+    fn write_reg(&mut self, offset: usize, value: u32) {
         unsafe { self.base.byte_add(offset).write(value) };
     }
 
-    fn update_reg<F>(&self, offset: usize, f: F)
+    fn update_reg<F>(&mut self, offset: usize, f: F)
     where
         F: FnOnce(u32) -> u32,
     {
@@ -339,7 +339,6 @@ struct BufferSet<'a> {
 
 impl BufferSet<'_> {
     #[must_use]
-    #[expect(clippy::too_many_lines, reason = "Many buffers to allocate")]
     pub fn new(nb_rx: usize, nb_tx: usize) -> (Self, PhysAddr, PhysAddr) {
         assert!(
             nb_rx * size_of::<RxDescriptor>() + nb_tx * size_of::<TxDescriptor>()

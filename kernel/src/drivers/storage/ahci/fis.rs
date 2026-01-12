@@ -53,7 +53,15 @@ pub struct FisH2D {
     _reserved: [u8; 4],
 }
 
+impl Default for FisH2D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FisH2D {
+    #[must_use]
+    #[inline]
     /// Create a new Host-to-Device FIS
     pub const fn new() -> Self {
         Self {
@@ -78,7 +86,7 @@ impl FisH2D {
     }
 
     /// Set LBA (48-bit)
-    pub fn set_lba(&mut self, lba: u64) {
+    pub const fn set_lba(&mut self, lba: u64) {
         self.lba0 = (lba & 0xFF) as u8;
         self.lba1 = ((lba >> 8) & 0xFF) as u8;
         self.lba2 = ((lba >> 16) & 0xFF) as u8;
@@ -87,14 +95,16 @@ impl FisH2D {
         self.lba5 = ((lba >> 40) & 0xFF) as u8;
     }
 
+    #[inline]
     /// Set sector count (16-bit)
-    pub fn set_count(&mut self, count: u16) {
+    pub const fn set_count(&mut self, count: u16) {
         self.count_l = (count & 0xFF) as u8;
         self.count_h = ((count >> 8) & 0xFF) as u8;
     }
 
+    #[must_use]
     /// Get LBA
-    pub fn lba(&self) -> u64 {
+    pub const fn lba(&self) -> u64 {
         (self.lba0 as u64)
             | ((self.lba1 as u64) << 8)
             | ((self.lba2 as u64) << 16)
@@ -103,8 +113,10 @@ impl FisH2D {
             | ((self.lba5 as u64) << 40)
     }
 
+    #[must_use]
+    #[inline]
     /// Get sector count
-    pub fn count(&self) -> u16 {
+    pub const fn count(&self) -> u16 {
         (self.count_l as u16) | ((self.count_h as u16) << 8)
     }
 }
@@ -134,18 +146,24 @@ pub struct FisD2H {
 }
 
 impl FisD2H {
+    #[must_use]
+    #[inline]
     /// Check if this FIS represents an error
-    pub fn is_error(&self) -> bool {
+    pub const fn is_error(&self) -> bool {
         (self.status & 0x01) != 0 // ERR bit
     }
 
+    #[must_use]
+    #[inline]
     /// Get the error bits
-    pub fn error_bits(&self) -> u8 {
+    pub const fn error_bits(&self) -> u8 {
         self.error
     }
 
+    #[must_use]
+    #[inline]
     /// Get LBA
-    pub fn lba(&self) -> u64 {
+    pub const fn lba(&self) -> u64 {
         (self.lba0 as u64)
             | ((self.lba1 as u64) << 8)
             | ((self.lba2 as u64) << 16)
@@ -154,8 +172,10 @@ impl FisD2H {
             | ((self.lba5 as u64) << 40)
     }
 
+    #[must_use]
+    #[inline]
     /// Get sector count
-    pub fn count(&self) -> u16 {
+    pub const fn count(&self) -> u16 {
         (self.count_l as u16) | ((self.count_h as u16) << 8)
     }
 }
