@@ -1,18 +1,17 @@
-use core::num::NonZeroU8;
-
+use super::{CompletionEntry, CompletionQueue, SubmissionEntry, SubmissionQueue};
 use beskar_core::{
     arch::{PhysAddr, paging::Frame},
     drivers::DriverResult,
 };
-use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
-
-use super::{CompletionEntry, CompletionQueue, SubmissionEntry, SubmissionQueue};
+use core::num::NonZeroU8;
+use driver_shared::mmio::MmioRegister;
+use hyperdrive::ptrs::volatile::ReadWrite;
 
 pub struct AdminCompletionQueue(CompletionQueue);
 
 impl AdminCompletionQueue {
     #[inline]
-    pub fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
+    pub fn new(doorbell: MmioRegister<ReadWrite, u32>) -> DriverResult<Self> {
         Ok(Self(CompletionQueue::new(doorbell)?))
     }
 
@@ -32,7 +31,7 @@ pub struct AdminSubmissionQueue(SubmissionQueue);
 
 impl AdminSubmissionQueue {
     #[inline]
-    pub fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
+    pub fn new(doorbell: MmioRegister<ReadWrite, u32>) -> DriverResult<Self> {
         Ok(Self(SubmissionQueue::new(doorbell)?))
     }
 
@@ -105,7 +104,7 @@ impl AdminSubmissionEntry {
             }
             IdentifyTarget::NamespaceList => 0x02,
         };
-        entry.data_ptr[0] = buffer.start_address().as_u64() as _;
+        entry.data_ptr[0] = buffer.start_address();
         entry.command_specific[0] = dword10;
 
         Self(entry)
@@ -121,7 +120,7 @@ impl AdminSubmissionEntry {
     ) -> Self {
         let mut entry = SubmissionEntry::zero_with_opcode(Command::CreateIOCompletionQueue as u8);
         // PRP points to the base of the completion queue
-        entry.data_ptr[0] = base.as_u64() as _;
+        entry.data_ptr[0] = base;
         let dword10 = (u32::from(entries) << 16) | u32::from(qid);
         let ien_bit = if enable_interrupts { 1u32 << 1 } else { 0 };
         let dword11 = (u32::from(iv) << 16) | ien_bit | 1; // PC=1 (physically contiguous)
@@ -140,7 +139,7 @@ impl AdminSubmissionEntry {
     ) -> Self {
         let mut entry = SubmissionEntry::zero_with_opcode(Command::CreateIOSubmissionQueue as u8);
         // PRP points to the base of the submission queue
-        entry.data_ptr[0] = base.as_u64() as _;
+        entry.data_ptr[0] = base;
         let dword10 = (u32::from(entries) << 16) | u32::from(qid);
         let dword11 = (u32::from(cqid) << 16) | (u32::from(priority & 0b11) << 1) | 1; // PC=1
         entry.command_specific[0] = dword10;

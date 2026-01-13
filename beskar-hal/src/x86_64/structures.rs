@@ -94,7 +94,7 @@ impl<T: IdtFnPtr> IdtEntry<T> {
         Self {
             ptr_low: 0,
             options_cs: 0,
-            options: 0b1110_0000_0000, // 64-bit interrupt gate
+            options: GateType::Interrupt.to_raw() << 8,
             ptr_mid: 0,
             ptr_high: 0,
             _reserved: 0,
@@ -117,14 +117,16 @@ impl<T: IdtFnPtr> IdtEntry<T> {
     ///
     /// The caller must ensure that the provided handler address is valid.
     pub unsafe fn set_handler_fn_unchecked(&mut self, handler: VirtAddr, cs: u16) {
+        const OPTIONS_PRESENT: u16 = 1 << 15;
+        const OPTIONS_GATE_TYPE: u16 = GateType::Interrupt.to_raw() << 8; // Interrupt gate
+
         let addr = handler.as_u64();
         self.ptr_low = u16::try_from(addr & 0xFFFF).unwrap();
         self.ptr_mid = u16::try_from((addr >> 16) & 0xFFFF).unwrap();
         self.ptr_high = u32::try_from((addr >> 32) & 0xFFFF_FFFF).unwrap();
 
         self.options_cs = cs;
-        // 64-bit present interrupt gate
-        self.options = 0b1000_1110_0000_0000;
+        self.options = OPTIONS_PRESENT | OPTIONS_GATE_TYPE;
     }
 
     /// Set the stack index for this IDT entry.
@@ -157,6 +159,43 @@ impl<T: IdtFnPtr> IdtEntry<T> {
 
         let dpl = u16::from(dpl.as_u8() & 0b11);
         self.options = (self.options & !DPL_MASK) | (dpl << DPL_SHIFT);
+    }
+
+    pub const fn set_present(&mut self, present: bool) {
+        const PRESENT_BIT: u16 = 1 << 15;
+
+        if present {
+            self.options |= PRESENT_BIT;
+        } else {
+            self.options &= !PRESENT_BIT;
+        }
+    }
+
+    pub const fn set_gate_type(&mut self, gate_type: GateType) {
+        const GATE_TYPE_SHIFT: u16 = 8;
+        const GATE_TYPE_MASK: u16 = 0b1111 << GATE_TYPE_SHIFT;
+
+        let gate_type_bits = gate_type.to_raw() << GATE_TYPE_SHIFT;
+
+        self.options = (self.options & !GATE_TYPE_MASK) | gate_type_bits;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GateType {
+    Interrupt,
+    /// Trap gate is similar to interrupt gate, but it does not clear the IF flag.
+    Trap,
+}
+
+impl GateType {
+    #[must_use]
+    #[inline]
+    const fn to_raw(self) -> u16 {
+        match self {
+            Self::Interrupt => 0b1110,
+            Self::Trap => 0b1111,
+        }
     }
 }
 

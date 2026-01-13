@@ -1,18 +1,18 @@
-use core::ptr::NonNull;
-
 use beskar_core::arch::VirtAddr;
-use hyperdrive::ptrs::volatile::{Volatile, WriteOnly};
+use core::ptr::NonNull;
+use driver_shared::mmio::MmioRegister;
+use hyperdrive::ptrs::volatile::WriteOnly;
 
 #[derive(Clone, Copy)]
 pub struct DoorbellRegisters {
-    base: Volatile<WriteOnly, u32>,
+    base: MmioRegister<WriteOnly, u32>,
     max_ports: u8,
 }
 
 impl DoorbellRegisters {
     #[must_use]
     pub const fn new(base: VirtAddr, max_ports: u8) -> Self {
-        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap());
+        let base = MmioRegister::new(NonNull::new(base.as_mut_ptr()).unwrap());
         Self { base, max_ports }
     }
 
@@ -27,7 +27,7 @@ impl DoorbellRegisters {
 }
 
 pub struct DoorbellRegister {
-    base: Volatile<WriteOnly, u32>,
+    base: MmioRegister<WriteOnly, u32>,
 }
 
 impl DoorbellRegister {

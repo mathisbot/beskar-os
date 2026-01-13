@@ -4,7 +4,7 @@ use beskar_core::arch::VirtAddr;
 use beskar_hal::{
     instructions::int_enable,
     registers::{CS, Cr0, Cr2},
-    structures::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
+    structures::{GateType, InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
     userspace::Ring,
 };
 use core::{
@@ -29,6 +29,7 @@ pub fn init() {
         idt.breakpoint
             .set_handler_fn_unchecked(VirtAddr::from_ptr(breakpoint_handler as *const ()), cs);
     }
+    idt.breakpoint.set_gate_type(GateType::Trap);
     idt.breakpoint.set_dpl(Ring::User);
     idt.overflow.set_handler_fn(overflow_handler, cs);
     idt.bound_range_exceeded

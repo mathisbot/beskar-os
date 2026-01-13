@@ -64,8 +64,6 @@ pub struct Xhci {
     cmd_ring: Option<ring::CommandRing>,
     /// Event ring
     event_ring: Option<ring::EventRing>,
-    /// Device context base address array
-    dcbaa: Option<*mut context::DeviceContextBaseAddressArray>,
     /// Physical mapping for the controller registers
     _physical_mapping: PhysicalMapping,
 }
@@ -113,7 +111,6 @@ impl Xhci {
             db_regs,
             cmd_ring: None,
             event_ring: None,
-            dcbaa: None,
             _physical_mapping: physical_mapping,
         }
     }
@@ -158,17 +155,17 @@ impl Xhci {
         let dcbaa_virt_addr = dcbaa_mapping.translate(dcbaa_phys_addr).unwrap();
 
         // Create the DCBAA
-        let dcbaa_ptr = dcbaa_virt_addr.as_mut_ptr();
+        let dcbaa_ptr = dcbaa_virt_addr.as_mut_ptr::<context::DeviceContextBaseAddressArray>();
         unsafe {
-            *dcbaa_ptr = context::DeviceContextBaseAddressArray::new(
+            let dbcaa_value = context::DeviceContextBaseAddressArray::new(
                 core::slice::from_raw_parts_mut(
                     dcbaa_virt_addr.as_mut_ptr(),
                     usize::from(max_slots) + 1,
                 ),
                 usize::from(max_slots),
             );
+            dcbaa_ptr.write(dbcaa_value);
         }
-        self.dcbaa = Some(dcbaa_ptr);
 
         // Set the Device Context Base Address Array Pointer Register
         unsafe {

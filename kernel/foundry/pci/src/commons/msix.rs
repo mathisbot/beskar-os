@@ -9,7 +9,7 @@ use core::ptr::NonNull;
 use driver_api::PhysicalMapper;
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
-pub struct MsiX<M: PhysicalMapper<M4KiB>, H: MsiHelper> {
+pub struct MsiX<M: PhysicalMapper<M4KiB> + Send, H: MsiHelper> {
     capability: MsiXCapability,
     table: Volatile<ReadWrite, TableEntry>,
     _pba: Volatile<ReadWrite, u64>,
@@ -17,6 +17,8 @@ pub struct MsiX<M: PhysicalMapper<M4KiB>, H: MsiHelper> {
     _pmap_pba: M,
     _helper: PhantomData<H>,
 }
+
+unsafe impl<M: PhysicalMapper<M4KiB> + Send, H: MsiHelper> Send for MsiX<M, H> {}
 
 #[derive(Debug, Clone, Copy)]
 struct MsiXCapability {
@@ -48,7 +50,7 @@ struct MsiX070 {
     pba: u32,
 }
 
-impl<M: PhysicalMapper<M4KiB>, H: MsiHelper> MsiX<M, H> {
+impl<M: PhysicalMapper<M4KiB> + Send, H: MsiHelper> MsiX<M, H> {
     pub fn new(handler: &mut dyn PciHandler, device: &super::Device) -> Option<Self> {
         let msix_cap = MsiXCapability::find(handler, device)?;
 

@@ -1,23 +1,23 @@
-use core::ptr::NonNull;
-
 use beskar_core::{arch::VirtAddr, static_assert};
-use hyperdrive::ptrs::volatile::{ReadOnly, ReadWrite, Volatile};
+use core::ptr::NonNull;
+use driver_shared::mmio::MmioRegister;
+use hyperdrive::ptrs::volatile::{ReadOnly, ReadWrite};
 
 #[derive(Clone, Copy)]
 pub struct RuntimeRegisters {
-    microframe_idx: Volatile<ReadOnly, u32>,
+    microframe_idx: MmioRegister<ReadOnly, u32>,
     /// Interrupt registers base, offset by 0x20 from the RT base
-    ir_base: Volatile<ReadWrite, InterruptRegisterSetSnapshot>,
+    ir_base: MmioRegister<ReadWrite, InterruptRegisterSetSnapshot>,
 }
 
 impl RuntimeRegisters {
     #[must_use]
     #[inline]
     pub const fn new(base: VirtAddr) -> Self {
-        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap());
+        let base = MmioRegister::new(NonNull::new(base.as_mut_ptr()).unwrap());
         let ir_base = unsafe { base.add(0x20) }.cast();
         Self {
-            microframe_idx: base.change_access(),
+            microframe_idx: base.lower_access(),
             ir_base,
         }
     }
@@ -43,7 +43,7 @@ impl RuntimeRegisters {
 ///
 /// Offset by 0x20 from the RT base plus the index of the interrupter.
 pub struct InterruptRegisters {
-    base: Volatile<ReadWrite, InterruptRegisterSetSnapshot>,
+    base: MmioRegister<ReadWrite, InterruptRegisterSetSnapshot>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -94,7 +94,7 @@ static_assert!(size_of::<InterruptRegisterSetSnapshot>() == 32);
 impl InterruptRegisters {
     #[must_use]
     #[inline]
-    pub fn new(base: Volatile<ReadWrite, InterruptRegisterSetSnapshot>, index: u8) -> Self {
+    pub fn new(base: MmioRegister<ReadWrite, InterruptRegisterSetSnapshot>, index: u8) -> Self {
         Self {
             base: unsafe {
                 base.add(usize::from(index) * size_of::<InterruptRegisterSetSnapshot>())

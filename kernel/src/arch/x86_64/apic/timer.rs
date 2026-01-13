@@ -3,7 +3,8 @@
 //! instead of being a method of the Local APIC.
 
 use core::num::NonZeroU32;
-use hyperdrive::ptrs::volatile::{ReadWrite, Volatile, WriteOnly};
+use driver_shared::mmio::MmioRegister;
+use hyperdrive::ptrs::volatile::{ReadWrite, WriteOnly};
 
 const TIMER_DIVIDE_CONFIG_REG: usize = 0x3E0;
 const TIMER_INIT_COUNT_REG: usize = 0x380;
@@ -26,7 +27,7 @@ impl LapicTimer {
     }
 
     #[must_use]
-    pub const fn divider_config_reg(&mut self) -> Volatile<ReadWrite, u32> {
+    pub const fn divider_config_reg(&mut self) -> MmioRegister<ReadWrite, u32> {
         unsafe {
             self.configuration
                 .apic_base
@@ -35,13 +36,8 @@ impl LapicTimer {
     }
 
     #[must_use]
-    pub const fn init_count_reg(&mut self) -> Volatile<WriteOnly, u32> {
-        unsafe {
-            self.configuration
-                .apic_base
-                .byte_add(TIMER_INIT_COUNT_REG)
-                .change_access()
-        }
+    pub const fn init_count_reg(&mut self) -> MmioRegister<WriteOnly, u32> {
+        unsafe { self.configuration.apic_base.byte_add(TIMER_INIT_COUNT_REG) }.lower_access()
     }
 
     #[must_use]
@@ -55,7 +51,7 @@ impl LapicTimer {
     }
 
     #[must_use]
-    pub const fn vector_table_reg(&mut self) -> Volatile<ReadWrite, u32> {
+    pub const fn vector_table_reg(&mut self) -> MmioRegister<ReadWrite, u32> {
         unsafe {
             self.configuration
                 .apic_base
@@ -168,9 +164,8 @@ impl LapicTimer {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct Configuration {
-    apic_base: Volatile<ReadWrite, u32>,
+    apic_base: MmioRegister<ReadWrite, u32>,
     rate_mhz: u32,
     ivt: u8,
     mode: Mode,
@@ -178,7 +173,7 @@ pub struct Configuration {
 
 impl Configuration {
     #[must_use]
-    pub const fn new(apic_base: Volatile<ReadWrite, u32>, ivt: u8) -> Self {
+    pub const fn new(apic_base: MmioRegister<ReadWrite, u32>, ivt: u8) -> Self {
         Self {
             apic_base,
             rate_mhz: 0,

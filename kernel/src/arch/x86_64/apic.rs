@@ -22,6 +22,7 @@ use core::{
     ptr::NonNull,
     sync::atomic::{AtomicU8, Ordering},
 };
+use driver_shared::mmio::MmioRegister;
 use hyperdrive::{
     once::Once,
     ptrs::volatile::{ReadWrite, Volatile, WriteOnly},
@@ -124,7 +125,7 @@ fn enable_disable_interrupts(enable: bool) {
 }
 
 pub struct LocalApic {
-    base: Volatile<ReadWrite, u32>,
+    base: MmioRegister<ReadWrite, u32>,
     timer: LapicTimer,
     paddr: PhysAddr,
     acpi_id: u8,
@@ -226,7 +227,7 @@ impl LocalApic {
         *apic_spurious |= u32::from(0xFF_u8); // Set spurious handler index
         *apic_spurious |= 0x100; // Enable spurious interrupt
 
-        let base = Volatile::new(NonNull::new(base_ptr).unwrap());
+        let base = MmioRegister::new(NonNull::new(base_ptr).unwrap());
 
         let (irq, _) =
             super::interrupts::new_irq(timer_interrupt_handler, Some(locals!().core_id()));
@@ -240,8 +241,8 @@ impl LocalApic {
     }
 
     pub fn send_ipi(&self, ipi: &ipi::Ipi) {
-        let icr_low = unsafe { self.base.byte_add(0x300) };
-        let icr_high = unsafe { self.base.byte_add(0x310).change_access() };
+        let icr_low = unsafe { self.base.byte_add(0x300).as_volatile() };
+        let icr_high = unsafe { self.base.byte_add(0x310).lower_access().as_volatile() };
         // Safety:
         // The ICR registers are read/write and their addresses are valid.
         unsafe { ipi.send(icr_low, icr_high) };
@@ -268,7 +269,7 @@ impl LocalApic {
 
     #[must_use]
     #[inline]
-    pub const fn base(&self) -> Volatile<ReadWrite, u32> {
+    pub const fn base(&self) -> MmioRegister<ReadWrite, u32> {
         self.base
     }
 

@@ -25,11 +25,9 @@ use beskar_core::{
 };
 use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
 use core::ptr::NonNull;
+use driver_shared::mmio::MmioRegister;
 use holonet::l2::ethernet::MacAddress;
-use hyperdrive::{
-    locks::mcs::MUMcsLock,
-    ptrs::volatile::{ReadWrite, Volatile},
-};
+use hyperdrive::{locks::mcs::MUMcsLock, ptrs::volatile::ReadWrite};
 
 const RX_BUFFERS: usize = 32;
 const TX_BUFFERS: usize = 8;
@@ -62,7 +60,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
 
     let mut e1000e = E1000e {
         pci_device: network_controller,
-        base: Volatile::new(NonNull::new(reg_vaddr.as_mut_ptr()).unwrap()),
+        base: MmioRegister::new(NonNull::new(reg_vaddr.as_mut_ptr()).unwrap()),
         _physical_mapping: pmap,
         buffer_set,
         rx_curr: core::cell::Cell::new(0),
@@ -82,7 +80,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
 
 pub struct E1000e<'a> {
     pci_device: pci::Device,
-    base: Volatile<ReadWrite, u32>,
+    base: MmioRegister<ReadWrite, u32>,
     _physical_mapping: PhysicalMapping<M4KiB>,
     buffer_set: BufferSet<'a>,
     rx_curr: core::cell::Cell<usize>,

@@ -344,9 +344,10 @@ impl BuddyAllocator {
     }
 }
 
-// SAFETY: BuddyAllocator doesn't implement Send/Sync by default due to raw pointers,
-// but it's safe to send between threads as long as it's not used concurrently
+// SAFETY: Since the allocator manages a fixed memory region and doesn't share ownership,
+// it's safe to send between threads and share across thread boundaries.
 unsafe impl Send for BuddyAllocator {}
+unsafe impl Sync for BuddyAllocator {}
 
 #[cfg(test)]
 mod tests {

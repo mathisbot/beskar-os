@@ -1,14 +1,14 @@
-use core::ptr::NonNull;
-
 use beskar_core::arch::VirtAddr;
-use hyperdrive::ptrs::volatile::{ReadOnly, ReadWrite, Volatile};
+use core::ptr::NonNull;
+use driver_shared::mmio::MmioRegister;
+use hyperdrive::ptrs::volatile::{ReadOnly, ReadWrite};
 
 /// Port Register Set
 ///
 /// Each port has a set of registers that control its operation.
 #[derive(Clone, Copy)]
 pub struct PortRegistersSet {
-    base: Volatile<ReadWrite, u32>,
+    base: MmioRegister<ReadWrite, u32>,
     max_ports: u8,
 }
 
@@ -18,7 +18,7 @@ impl PortRegistersSet {
 
     #[must_use]
     pub const fn new(base: VirtAddr, max_ports: u8) -> Self {
-        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap());
+        let base = MmioRegister::new(NonNull::new(base.as_mut_ptr()).unwrap());
         Self { base, max_ports }
     }
 
@@ -70,14 +70,14 @@ pub enum PortSpeed {
 
 /// Port Status and Control Register
 pub struct PortRegisters {
-    base: Volatile<ReadWrite, u32>,
+    base: MmioRegister<ReadWrite, u32>,
 }
 
 impl PortRegisters {
     #[must_use]
     #[inline]
     /// Get the raw register at the specified offset
-    pub const fn reg_at_offset(&self, offset: PortRegOffset) -> Volatile<ReadWrite, u32> {
+    pub const fn reg_at_offset(&self, offset: PortRegOffset) -> MmioRegister<ReadWrite, u32> {
         unsafe { self.base.byte_add(offset as usize) }
     }
 
@@ -91,27 +91,27 @@ impl PortRegisters {
     #[must_use]
     #[inline]
     /// Get the Port Power Management Status and Control register
-    pub const fn port_pmsc(&self) -> Volatile<ReadWrite, u32> {
+    pub const fn port_pmsc(&self) -> MmioRegister<ReadWrite, u32> {
         self.reg_at_offset(PortRegOffset::Pmsc)
     }
 
     #[must_use]
     #[inline]
     /// Get the Port Link Info register
-    pub const fn port_li(&self) -> Volatile<ReadOnly, u32> {
-        self.reg_at_offset(PortRegOffset::LinkInfo).change_access()
+    pub const fn port_li(&self) -> MmioRegister<ReadOnly, u32> {
+        self.reg_at_offset(PortRegOffset::LinkInfo).lower_access()
     }
 
     #[must_use]
     #[inline]
     /// Get the Port Hardware LPM Control register
-    pub const fn port_hlpmc(&self) -> Volatile<ReadWrite, u32> {
+    pub const fn port_hlpmc(&self) -> MmioRegister<ReadWrite, u32> {
         self.reg_at_offset(PortRegOffset::Hlpmc)
     }
 }
 
 /// Port Status and Control Register
-pub struct PortStatusControl(Volatile<ReadWrite, u32>);
+pub struct PortStatusControl(MmioRegister<ReadWrite, u32>);
 
 impl PortStatusControl {
     // Port Status bits

@@ -20,6 +20,7 @@ use beskar_core::{
 };
 use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
 use core::ptr::NonNull;
+use driver_shared::mmio::MmioRegister;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
     ptrs::volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
@@ -105,10 +106,10 @@ impl NvmeControllers {
         .unwrap();
         let registers_base = physical_mapping.translate(paddr).unwrap();
 
-        let asq_doorbell = Volatile::new(
+        let asq_doorbell = MmioRegister::new(
             NonNull::new(unsafe { registers_base.as_mut_ptr::<u32>().byte_add(0x1000) }).unwrap(),
         );
-        let acq_doorbell = Volatile::new(
+        let acq_doorbell = MmioRegister::new(
             NonNull::new(unsafe {
                 registers_base
                     .as_mut_ptr::<u32>()
@@ -233,7 +234,7 @@ impl NvmeControllers {
         // --- Part Three: I/O queues creation ---
 
         let dstrd = self.capabilities().dstrd();
-        let io_sq_doorbell = Volatile::new(
+        let io_sq_doorbell = MmioRegister::new(
             NonNull::new(unsafe {
                 self.registers_base
                     .as_mut_ptr::<u32>()
@@ -241,7 +242,7 @@ impl NvmeControllers {
             })
             .unwrap(),
         );
-        let io_cq_doorbell = Volatile::new(
+        let io_cq_doorbell = MmioRegister::new(
             NonNull::new(unsafe {
                 self.registers_base
                     .as_mut_ptr::<u32>()

@@ -129,6 +129,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "driver-shared"
+version = "0.1.0"
+dependencies = [
+ "beskar-core",
+ "beskar-hal",
+ "driver-api",
+ "hyperdrive",
+]
+
+[[package]]
 name = "elf"
 version = "0.1.0"
 dependencies = [
@@ -166,6 +176,7 @@ dependencies = [
  "beskar-hal",
  "bootloader-api",
  "driver-api",
+ "driver-shared",
  "elf",
  "heaperion",
  "holonet",

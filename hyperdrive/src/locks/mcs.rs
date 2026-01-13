@@ -117,9 +117,8 @@ pub struct McsLock<T: ?Sized, R: RelaxStrategy = Spin> {
 
 // Safety:
 // Mellor-Crummey and Scott lock is a synchronization primitive.
-#[expect(clippy::non_send_fields_in_send_ty, reason = "FIXME")]
-unsafe impl<T: ?Sized, R: RelaxStrategy> Send for McsLock<T, R> {}
-unsafe impl<T: ?Sized, R: RelaxStrategy> Sync for McsLock<T, R> {}
+unsafe impl<T: ?Sized + Send, R: RelaxStrategy> Send for McsLock<T, R> {}
+unsafe impl<T: ?Sized + Send, R: RelaxStrategy> Sync for McsLock<T, R> {}
 
 /// Node for MCS lock.
 ///

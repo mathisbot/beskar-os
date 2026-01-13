@@ -176,6 +176,11 @@ impl Slab {
     }
 }
 
+// SAFETY: Since the slab manages a fixed memory region and doesn't share ownership,
+// it's safe to send between threads and share across thread boundaries.
+unsafe impl Send for Slab {}
+unsafe impl Sync for Slab {}
+
 /// Slab allocator for managing small, fixed-size allocations
 ///
 /// Maintains multiple slabs for different size classes, providing O(1)
