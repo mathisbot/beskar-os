@@ -14,7 +14,6 @@ use beskar_hal::instructions::STACK_DEBUG_INSTR;
 use beskar_hal::paging::page_table::Flags;
 use core::{
     mem::offset_of,
-    pin::Pin,
     ptr::NonNull,
     sync::atomic::{AtomicPtr, AtomicU64, Ordering},
 };
@@ -94,14 +93,14 @@ impl Ord for Thread {
 }
 
 impl Queueable for Thread {
-    type Handle = Pin<Box<Self>>;
+    type Handle = Box<Self>;
 
     unsafe fn capture(ptr: core::ptr::NonNull<Self>) -> Self::Handle {
-        unsafe { Pin::new(Box::from_raw(ptr.as_ptr())) }
+        unsafe { Box::from_raw(ptr.as_ptr()) }
     }
 
     fn release(r: Self::Handle) -> core::ptr::NonNull<Self> {
-        let ptr = Box::into_raw(Pin::into_inner(r));
+        let ptr = Box::into_raw(r);
         unsafe { core::ptr::NonNull::new_unchecked(ptr) }
     }
 

@@ -29,7 +29,6 @@ impl Instant {
         Self { micros }
     }
     #[must_use]
-    #[track_caller]
     #[inline]
     /// Create a new `Instant` from a number of milliseconds.
     pub const fn from_millis(millis: u64) -> Self {
@@ -37,7 +36,6 @@ impl Instant {
         Self::from_micros(micros)
     }
     #[must_use]
-    #[track_caller]
     #[inline]
     /// Create a new `Instant` from a number of seconds.
     pub const fn from_secs(secs: u64) -> Self {
@@ -156,7 +154,6 @@ impl Duration {
         Self { micros }
     }
     #[must_use]
-    #[track_caller]
     #[inline]
     /// Create a new `Duration` from a number of milliseconds.
     pub const fn from_millis(millis: u64) -> Self {
@@ -164,7 +161,6 @@ impl Duration {
         Self::from_micros(micros)
     }
     #[must_use]
-    #[track_caller]
     #[inline]
     /// Create a new `Duration` from a number of seconds.
     pub const fn from_secs(secs: u64) -> Self {

@@ -41,6 +41,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::Open => SyscallReturnValue::ValueI(sc_open(args)),
         Syscall::Close => SyscallReturnValue::Code(sc_close(args)),
         Syscall::Sleep => SyscallReturnValue::Code(sc_sleep(args)),
+        Syscall::WaitOnEvent => SyscallReturnValue::Code(sc_wait_on_event(args)),
     }
 }
 
@@ -195,8 +196,17 @@ fn sc_sleep(args: &Arguments) -> SyscallExitCode {
 
     let sleep_time = crate::time::Duration::from_millis(sleep_time_ms);
 
-    // FIXME: Put the thread to sleep
-    crate::time::wait(sleep_time);
+    crate::process::scheduler::sleep_for(sleep_time);
+
+    SyscallExitCode::Success
+}
+
+#[must_use]
+fn sc_wait_on_event(args: &Arguments) -> SyscallExitCode {
+    let handle_raw = args.one;
+    let handle = beskar_core::process::SleepHandle::from_raw(handle_raw);
+
+    crate::process::scheduler::sleep_on(handle);
 
     SyscallExitCode::Success
 }

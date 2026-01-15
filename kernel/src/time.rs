@@ -31,7 +31,7 @@ pub fn wait(duration: Duration) {
 /// If no high-precision timer is available, returns `Instant::MAX`.
 #[must_use]
 #[inline]
-pub fn _now() -> Instant {
+pub fn now() -> Instant {
     if TSC_AVAILABLE.load(Ordering::Acquire) {
         TscClock.now()
     } else if HPET_AVAILABLE.load(Ordering::Acquire) {

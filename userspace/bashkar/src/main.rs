@@ -1,11 +1,16 @@
 #![no_std]
 #![no_main]
-use beskar_lib::io::keyboard;
+use beskar_core::time::Duration;
+use beskar_lib::{io::keyboard, time::now};
 
 beskar_lib::entry_point!(main);
 
 fn main() {
+    const KEYBOARD_THRESHOLD: Duration = Duration::from_millis(300);
+
     bashkar::video::init();
+
+    let mut last_input_time = now();
 
     loop {
         if let Some(event) = keyboard::poll_keyboard() {
@@ -28,6 +33,10 @@ fn main() {
                     tty.display_prompt();
                 });
             }
+
+            last_input_time = now();
+        } else if now() - last_input_time >= KEYBOARD_THRESHOLD {
+            keyboard::wait_next_event();
         } else {
             core::hint::spin_loop();
         }

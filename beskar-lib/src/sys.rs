@@ -1,5 +1,8 @@
 use crate::arch::syscalls;
-use beskar_core::syscall::{ExitCode, Syscall, SyscallExitCode};
+use beskar_core::{
+    process::SleepHandle,
+    syscall::{ExitCode, Syscall, SyscallExitCode},
+};
 
 #[inline]
 pub fn sc_exit(code: ExitCode) -> ! {
@@ -52,5 +55,11 @@ pub fn sc_mmap(size: u64, alignment: u64) -> *mut u8 {
 #[inline]
 pub fn sc_sleep(ms: u64) -> SyscallExitCode {
     let res = syscalls::syscall_1(Syscall::Sleep, ms);
+    SyscallExitCode::try_from(res).unwrap()
+}
+
+#[inline]
+pub fn sc_wait_on_event(handle: SleepHandle) -> SyscallExitCode {
+    let res = syscalls::syscall_1(Syscall::WaitOnEvent, handle.raw());
     SyscallExitCode::try_from(res).unwrap()
 }

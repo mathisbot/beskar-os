@@ -11,7 +11,7 @@
 //! ### `Handle`
 //!
 //! The `Handle` type is the type that owns the data.
-//! Most of the time, it is `Pin<Box<Self>`.
+//! Most of the time, it is `Box<Self`.
 //!
 //! ### Example
 //!
@@ -30,15 +30,15 @@
 //! }
 //!
 //! impl Queueable for Element {
-//!     type Handle = Pin<Box<Self>>;
+//!     type Handle = Box<Self>;
 //!
 //!     fn release(r: Self::Handle) -> NonNull<Self> {
-//!         let ptr = Box::into_raw(Pin::into_inner(r));
+//!         let ptr = Box::into_raw(r);
 //!         unsafe { NonNull::new_unchecked(ptr) }
 //!     }
 //!     
 //!     unsafe fn capture(ptr: NonNull<Self>) -> Self::Handle {
-//!         Pin::new(unsafe { Box::from_raw(ptr.as_ptr()) })
+//!         unsafe { Box::from_raw(ptr.as_ptr()) }
 //!     }
 //!
 //!     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
@@ -74,15 +74,15 @@
 //! # }
 //! #
 //! # impl Queueable for Element {
-//! #     type Handle = Pin<Box<Self>>;
+//! #     type Handle = Box<Self>;
 //! #
 //! #     fn release(r: Self::Handle) -> NonNull<Self> {
-//! #         let ptr = Box::into_raw(Pin::into_inner(r));
+//! #         let ptr = Box::into_raw(r);
 //! #         unsafe { NonNull::new_unchecked(ptr) }
 //! #     }
 //! #     
 //! #     unsafe fn capture(ptr: NonNull<Self>) -> Self::Handle {
-//! #         Pin::new(unsafe { Box::from_raw(ptr.as_ptr()) })
+//! #         unsafe { Box::from_raw(ptr.as_ptr()) }
 //! #     }
 //! #
 //! #     unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
@@ -90,9 +90,9 @@
 //! #     }
 //! # }
 //! #
-//! let queue: MpscQueue<Element> = MpscQueue::new(Box::pin(Element { value: 0, next: None }));
+//! let queue: MpscQueue<Element> = MpscQueue::new(Box::new(Element { value: 0, next: None }));
 //!
-//! queue.enqueue(Box::pin(Element { value: 1, next: None }));
+//! queue.enqueue(Box::new(Element { value: 1, next: None }));
 //!
 //! let element = queue.dequeue().unwrap();
 //! assert_eq!(element.value, 1);
@@ -108,7 +108,7 @@ use core::{
 pub trait Queueable: Sized {
     /// `Handle` is the type that owns the data.
     ///
-    /// Usually, it is `Pin<Box<Self>>`.
+    /// Usually, it is `Box<Self>`.
     type Handle;
 
     /// Takes ownership of the handle and returns a pointer to it.
@@ -382,12 +382,12 @@ impl<T: Queueable> Drop for MpscQueue<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::mem::offset_of;
     use std::sync::{Arc, Barrier};
     use std::thread::spawn;
 
     extern crate alloc;
     use alloc::boxed::Box;
-    use core::{mem::offset_of, pin::Pin};
 
     struct Element {
         value: u8,
@@ -399,15 +399,15 @@ mod tests {
     }
 
     impl Queueable for Element {
-        type Handle = Pin<Box<Self>>;
+        type Handle = Box<Self>;
 
         fn release(r: Self::Handle) -> NonNull<Self> {
-            let ptr = Box::into_raw(Pin::into_inner(r));
+            let ptr = Box::into_raw(r);
             unsafe { NonNull::new_unchecked(ptr) }
         }
 
         unsafe fn capture(ptr: NonNull<Self>) -> Self::Handle {
-            Pin::new(unsafe { Box::from_raw(ptr.as_ptr()) })
+            unsafe { Box::from_raw(ptr.as_ptr()) }
         }
 
         unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
@@ -416,15 +416,15 @@ mod tests {
     }
 
     impl Queueable for OtherElement {
-        type Handle = Pin<Box<Self>>;
+        type Handle = Box<Self>;
 
         fn release(r: Self::Handle) -> NonNull<Self> {
-            let ptr = Box::into_raw(Pin::into_inner(r));
+            let ptr = Box::into_raw(r);
             unsafe { NonNull::new_unchecked(ptr) }
         }
 
         unsafe fn capture(ptr: NonNull<Self>) -> Self::Handle {
-            Pin::new(unsafe { Box::from_raw(ptr.as_ptr()) })
+            unsafe { Box::from_raw(ptr.as_ptr()) }
         }
 
         unsafe fn get_link(ptr: NonNull<Self>) -> NonNull<Link<Self>> {
@@ -434,17 +434,17 @@ mod tests {
 
     #[test]
     fn test_mpsc_queue() {
-        let queue: MpscQueue<Element> = MpscQueue::new(Box::pin(Element {
+        let queue: MpscQueue<Element> = MpscQueue::new(Box::new(Element {
             value: 0,
             next: Link::default(),
         }));
         assert!(queue.dequeue().is_none());
         assert!(queue.is_empty());
-        queue.enqueue(Box::pin(Element {
+        queue.enqueue(Box::new(Element {
             value: 1,
             next: Link::default(),
         }));
-        queue.enqueue(Box::pin(Element {
+        queue.enqueue(Box::new(Element {
             value: 2,
             next: Link::default(),
         }));
@@ -460,15 +460,15 @@ mod tests {
     #[test]
     /// Somewhat make sure that the layout of `Link<_>` is the same as `Option<NonNull<_>>`.
     fn test_mpsc_non_link_field() {
-        let queue: MpscQueue<OtherElement> = MpscQueue::new(Box::pin(OtherElement {
+        let queue: MpscQueue<OtherElement> = MpscQueue::new(Box::new(OtherElement {
             value: 0,
             next: None,
         }));
-        queue.enqueue(Box::pin(OtherElement {
+        queue.enqueue(Box::new(OtherElement {
             value: 1,
             next: None,
         }));
-        queue.enqueue(Box::pin(OtherElement {
+        queue.enqueue(Box::new(OtherElement {
             value: 2,
             next: None,
         }));
@@ -482,15 +482,15 @@ mod tests {
     #[test]
     #[cfg(miri)]
     fn test_mpsc_drop() {
-        let queue: MpscQueue<Element> = MpscQueue::new(Box::pin(Element {
+        let queue: MpscQueue<Element> = MpscQueue::new(Box::new(Element {
             value: 0,
             next: Link::default(),
         }));
-        queue.enqueue(Box::pin(Element {
+        queue.enqueue(Box::new(Element {
             value: 1,
             next: Link::default(),
         }));
-        queue.enqueue(Box::pin(Element {
+        queue.enqueue(Box::new(Element {
             value: 2,
             next: Link::default(),
         }));
@@ -500,7 +500,7 @@ mod tests {
     fn test_mpsc_concurent() {
         let num_threads = 10;
 
-        let queue = Arc::new(MpscQueue::<Element>::new(Box::pin(Element {
+        let queue = Arc::new(MpscQueue::<Element>::new(Box::new(Element {
             value: 0,
             next: Link::default(),
         })));
@@ -514,7 +514,7 @@ mod tests {
                 let barrier = barrier.clone();
                 move || {
                     barrier.wait();
-                    queue.enqueue(Box::pin(Element {
+                    queue.enqueue(Box::new(Element {
                         value: 42,
                         next: Link::default(),
                     }));
@@ -549,13 +549,13 @@ mod tests {
     fn test_mpsc_concurent_interlaced() {
         let num_threads = 2 * 5;
 
-        let queue = Arc::new(MpscQueue::<Element>::new(Box::pin(Element {
+        let queue = Arc::new(MpscQueue::<Element>::new(Box::new(Element {
             value: 0,
             next: Link::default(),
         })));
 
         for _ in 0..num_threads / 2 + 1 {
-            queue.enqueue(Box::pin(Element {
+            queue.enqueue(Box::new(Element {
                 value: 42,
                 next: Link::default(),
             }));
@@ -573,7 +573,7 @@ mod tests {
                     if i % 2 == 0 {
                         assert_eq!(queue.dequeue().unwrap().value, 42);
                     } else {
-                        queue.enqueue(Box::pin(Element {
+                        queue.enqueue(Box::new(Element {
                             value: 1,
                             next: Link::default(),
                         }));

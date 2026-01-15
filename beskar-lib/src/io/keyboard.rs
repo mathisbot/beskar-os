@@ -51,3 +51,14 @@ pub fn poll_keyboard() -> Option<KeyEvent> {
     let mut reader = KeyboardReader::new().ok()?;
     reader.next_event().ok()?
 }
+
+#[inline]
+/// Wait until the next keyboard event occurs.
+///
+/// Note that this function is allowed to spuriously return even if no keyboard event has
+/// occurred; in that case, simply call it again.
+pub fn wait_next_event() {
+    crate::sys::sc_wait_on_event(
+        beskar_core::process::SleepHandle::SLEEP_HANDLE_KEYBOARD_INTERRUPT,
+    );
+}

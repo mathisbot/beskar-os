@@ -49,6 +49,10 @@ pub enum Syscall {
     ///
     /// The first argument is the time to sleep in milliseconds.
     Sleep = 6,
+    /// Put the thread to sleep until a given event is signalled.
+    ///
+    /// The first argument is the sleep handle to wait on.
+    WaitOnEvent = 7,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
