@@ -264,6 +264,13 @@ impl<T: ?Sized, R: RelaxStrategy> McsLock<T, R> {
     pub unsafe fn force_lock(&self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
+
+    #[must_use]
+    #[inline]
+    /// Get a mutable reference to the data.
+    pub const fn get_mut(&mut self) -> &mut T {
+        self.data.get_mut()
+    }
 }
 
 impl Default for McsNode {
@@ -355,7 +362,7 @@ pub struct MUMcsLock<T, R: RelaxStrategy = Spin> {
 impl<T, R: RelaxStrategy> Drop for MUMcsLock<T, R> {
     fn drop(&mut self) {
         if self.is_initialized() {
-            unsafe { self.inner_lock.data.get_mut().assume_init_drop() };
+            unsafe { self.inner_lock.get_mut().assume_init_drop() };
         }
     }
 }
@@ -505,7 +512,18 @@ impl<T, R: RelaxStrategy> MUMcsLock<T, R> {
             // We cannot use `assume_init` as `inner_lock` is part of `self`.
             // Therefore, we need to `assume_init_read` the value, and "uninitialize"
             // the lock to avoid dropping the returned value.
-            Some(unsafe { self.inner_lock.data.get_mut().assume_init_read() })
+            Some(unsafe { self.inner_lock.get_mut().assume_init_read() })
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn get_mut(&mut self) -> Option<&mut T> {
+        if self.is_initialized() {
+            // Safety: The lock is initialized.
+            Some(unsafe { self.inner_lock.get_mut().assume_init_mut() })
         } else {
             None
         }

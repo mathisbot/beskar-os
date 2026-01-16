@@ -9,7 +9,7 @@ use crate::{
 };
 use acpi::sdt::madt::Lint;
 use beskar_core::arch::{
-    PhysAddr,
+    Alignment, PhysAddr,
     paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
 };
 use beskar_hal::{
@@ -183,17 +183,19 @@ impl LocalApic {
         let apic_lint0 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x350) };
         let apic_lint1 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x360) };
         if let Some(acpi) = ACPI.get() {
-            acpi.madt().local_nmis().iter().for_each(|nmi| {
-                if nmi.acpi_id() != 0xFF || nmi.acpi_id() != acpi_id {
-                    return;
-                }
+            let nmis = acpi
+                .madt()
+                .local_nmis()
+                .iter()
+                .filter(|nmi| nmi.acpi_id() == 0xFF || nmi.acpi_id() == acpi_id);
 
+            for nmi in nmis {
                 let triggermode: u32 = match nmi.flags().trigger_mode() {
-                    acpi::sdt::madt::TriggerMode::Edge
-                    // Apparently bus default is edge
-                    | acpi::sdt::madt::TriggerMode::BusDefault => 0,
-                    acpi::sdt::madt::TriggerMode::Level => 1,
-                };
+                        acpi::sdt::madt::TriggerMode::Edge
+                        // Apparently bus default is edge
+                        | acpi::sdt::madt::TriggerMode::BusDefault => 0,
+                        acpi::sdt::madt::TriggerMode::Level => 1,
+                    };
                 let polarity: u32 = match nmi.flags().polarity() {
                     // Apparently bus default is high
                     acpi::sdt::madt::Polarity::High | acpi::sdt::madt::Polarity::BusDefault => 0,
@@ -217,7 +219,7 @@ impl LocalApic {
                         *apic_lint1 = value;
                     }
                 }
-            });
+            }
         }
 
         // Register spurious interrupt handler
@@ -446,6 +448,11 @@ pub struct Redirection {
 impl IoApic {
     #[must_use]
     pub fn new(base: PhysAddr, gsi_base: u32) -> Self {
+        debug_assert!(
+            base.is_aligned(Alignment::Align8),
+            "IOAPIC base address must be at least 8-byte aligned"
+        );
+
         let frame = Frame::<M4KiB>::containing_address(base);
 
         let frame_end_addr = frame.start_address() + (M4KiB::SIZE - 1);
@@ -494,14 +501,12 @@ impl IoApic {
         );
         self.set_id(u8::try_from(cpu_count).unwrap() + id_offset);
 
-        let isos = ACPI.get().unwrap().madt().io_iso();
+        let isos = ACPI.get().unwrap().madt().io_iso().iter().filter(|iso| {
+            iso.gsi() >= self.gsi_base && iso.gsi() < self.gsi_base + u32::from(self.max_red_ent())
+        });
         let nmi_sources = ACPI.get().unwrap().madt().io_nmi_sources();
 
         for iso in isos {
-            if iso.gsi() < self.gsi_base {
-                continue;
-            }
-
             let (is_nmi, flags) = nmi_sources
                 .iter()
                 .find(|nmis| nmis.gsi() == iso.gsi())

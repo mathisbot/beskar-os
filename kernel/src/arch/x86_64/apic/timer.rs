@@ -60,7 +60,11 @@ impl LapicTimer {
     }
 
     /// Calibrate the timer using information from CPUID (Intel only).
-    /// Returns the rate in MHz.
+    ///
+    /// Returns the APIC timer rate in MHz.
+    ///
+    /// - For processors with onboard APIC and CPUID leaf 0x15: uses core crystal clock
+    /// - For processors without onboard APIC and CPUID leaf 0x16: uses processor base frequency
     fn calibrate_with_cpuid() -> Option<NonZeroU32> {
         use crate::arch::cpuid;
 
@@ -78,19 +82,34 @@ impl LapicTimer {
         }
     }
 
+    /// Calibrate the APIC timer by measuring elapsed ticks over a known time period.
+    ///
+    /// This method is used as a fallback when CPUID-based calibration is not available.
+    /// It measures the timer frequency by running a one-shot timer for a fixed duration.
+    ///
+    /// The APIC timer rate in MHz is returned.
     fn calibrate_with_time(&mut self) -> Option<NonZeroU32> {
+        const CALIBRATION_MS: u64 = 50;
+        const DIVIDER: Divider = Divider::Two;
+
         self.set(Mode::OneShot(ModeConfiguration {
-            divider: Divider::Two,
+            divider: DIVIDER,
             duration: u32::MAX - 1,
         }));
-        crate::time::wait(beskar_core::time::Duration::from_millis(50));
-        let ticks = self.read_curr_count_reg();
+        crate::time::wait(beskar_core::time::Duration::from_millis(CALIBRATION_MS));
+        let ticks_remaining = self.read_curr_count_reg();
 
         self.set(Mode::Inactive);
 
-        let elapsed_ticks = (u32::MAX - 1) - ticks;
+        let elapsed_ticks = (u32::MAX - 1) - ticks_remaining;
 
-        let rate_mhz = u32::try_from(2 * 20 * u64::from(elapsed_ticks) / 1_000_000).unwrap();
+        // Calculate rate: elapsed_ticks per CALIBRATION_MS with DIVIDER applied
+        // rate_mhz = (elapsed_ticks * divider) / (calibration_ms * 1000)
+        let rate_mhz = u32::try_from(
+            (u64::from(elapsed_ticks) * u64::from(DIVIDER.as_u32())) / (CALIBRATION_MS * 1_000),
+        )
+        .unwrap();
+
         if rate_mhz == 0 {
             return None;
         }

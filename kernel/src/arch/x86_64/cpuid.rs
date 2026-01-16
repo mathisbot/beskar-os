@@ -201,6 +201,12 @@ impl CpuFeature {
         bit: 0,
         name: "FSGSBASE",
     };
+    pub const RDSEED: Self = Self {
+        leaf: Leaf::new(7),
+        reg: CpuidReg::Ebx,
+        bit: 18,
+        name: "RDSEED",
+    };
     pub const INVPCID: Self = Self {
         leaf: Leaf::new(7),
         reg: CpuidReg::Ebx,

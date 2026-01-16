@@ -113,14 +113,17 @@ extern "x86-interrupt" fn page_fault_handler(
     _stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
+    let faulting_address = Cr2::read();
+    let thread_id = crate::process::scheduler::current_thread_id();
+
     video::error!(
-        "EXCEPTION: PAGE FAULT {:b} in Thread {}",
+        "EXCEPTION: PAGE FAULT ({:b}) at {:#x} in Thread {}",
         error_code,
-        crate::process::scheduler::current_thread_id().as_u64()
+        faulting_address.as_u64(),
+        thread_id.as_u64()
     );
-    video::error!("Accessed Address: {:#x}", Cr2::read().as_u64());
-    // video::error!("{:#?}", stack_frame);
-    panic!();
+
+    panic!("Unrecoverable page fault");
 }
 
 macro_rules! panic_isr {

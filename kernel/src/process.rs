@@ -214,3 +214,19 @@ impl ::storage::KernelDevice for RandFile {
         Err(::storage::BlockDeviceError::Unsupported)
     }
 }
+
+pub struct SeedFile;
+
+impl ::storage::KernelDevice for SeedFile {
+    fn read(&mut self, dst: &mut [u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        if dst.is_empty() {
+            Ok(())
+        } else {
+            crate::arch::rand::rand_seed_bytes(dst).map_err(|_| ::storage::BlockDeviceError::Io)
+        }
+    }
+
+    fn write(&mut self, _src: &[u8], _offset: usize) -> Result<(), storage::BlockDeviceError> {
+        Err(::storage::BlockDeviceError::Unsupported)
+    }
+}

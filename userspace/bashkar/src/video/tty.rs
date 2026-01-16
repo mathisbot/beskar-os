@@ -418,3 +418,10 @@ impl Tty {
 pub fn with_tty<R, F: FnOnce(&mut Tty) -> R>(f: F) -> R {
     TTY.with_locked(f)
 }
+
+impl core::fmt::Write for Tty {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        self.write_str(s);
+        Ok(())
+    }
+}

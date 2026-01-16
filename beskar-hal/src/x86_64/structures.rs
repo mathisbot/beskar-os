@@ -43,6 +43,7 @@ impl InterruptStackFrame {
 
     #[must_use]
     #[inline]
+    /// The stack segment is always zero in long mode.
     pub const fn stack_segment(&self) -> u16 {
         self.stack_segment
     }

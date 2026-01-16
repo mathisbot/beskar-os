@@ -6,7 +6,6 @@
 use crate::{locals, time::Duration};
 use alloc::{boxed::Box, sync::Arc};
 use beskar_core::{
-    arch::VirtAddr,
     process::{AtomicSleepReason, SleepHandle, SleepReason},
     time::Instant,
 };
@@ -185,11 +184,6 @@ impl Scheduler {
                 let cr3 = thread.process().address_space().cr3_raw();
                 if let Some(tls) = thread.tls() {
                     crate::arch::locals::store_thread_locals(tls);
-                }
-
-                if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
-                    let tss = unsafe { locals!().gdt().force_lock() }.tss_mut().unwrap();
-                    tss.privilege_stack_table[0] = VirtAddr::from_ptr(rsp0.as_ptr());
                 }
 
                 Self::stage_old_thread(action, old_thread);

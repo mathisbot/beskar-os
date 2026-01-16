@@ -113,14 +113,8 @@ impl<A: ReadAccess + WriteAccess, T> MmioRegister<A, T> {
     /// The caller must ensure that reading from and writing to the MMIO register is safe.
     /// In particular, `MmioRegister` is not synchronized but is `Send`/`Sync`,
     /// so the caller must ensure that concurrent reads/writes are safe.
-    pub unsafe fn update<F>(&self, f: F)
-    where
-        F: FnOnce(T) -> T,
-        T: Sized,
-    {
-        let current = unsafe { self.read() };
-        let new = f(current);
-        unsafe { self.write(new) };
+    pub unsafe fn update<F: FnOnce(T) -> T>(&self, f: F) {
+        unsafe { self.0.update(f) };
     }
 
     #[must_use]
