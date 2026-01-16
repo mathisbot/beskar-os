@@ -31,7 +31,7 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [x] MCFG
         - [x] RSDT/XSDT
     - NIC
-        - [ ] Intel e1000e (partial)
+        - [X] Intel e1000e
     - [X] PCI
         - [X] PCI/PCI-X
             - [X] MSI
@@ -42,8 +42,8 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [X] Keyboard
         - [ ] Mouse
     - Storage
-        - [ ] AHCI
-        - [ ] NVMe (partial)
+        - [X] AHCI
+        - [X] NVMe
     - [x] Time
         - [x] HPET
         - x86_64
@@ -69,12 +69,12 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - L3
             - [X] ARP
             - [ ] IP
-                - [ ] IPv4
+                - [X] IPv4
                 - [ ] IPv6
         - L4
-            - [ ] ICMP
-            - [ ] UDP
-            - [ ] TCP
+            - [X] ICMP
+            - [X] UDP
+            - [X] TCP
     - [ ] Services
         - [ ] DHCP
         - [ ] DNS
@@ -83,7 +83,7 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
     - [x] Scheduling
         - [X] Context save/switch
         - [X] Priority handling
-        - [ ] Sleeping threads (partial)
+        - [X] Sleeping threads/Events
         - [X] TLS
     - [X] User space
     - [X] Binary loading

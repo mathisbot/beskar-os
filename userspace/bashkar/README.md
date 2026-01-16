@@ -9,6 +9,7 @@ Supported commands are:
 - `echo`: Echoes the given arguments
 - `exit`: Terminates the shell
 - `help`: Prints help information
+- `rand`: Generates and prints random bytes
 
 ## Screenshots
 
