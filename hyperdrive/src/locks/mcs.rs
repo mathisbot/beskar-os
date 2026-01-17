@@ -296,6 +296,10 @@ impl McsNode {
 pub struct McsGuard<'node, 'lock, T: ?Sized, R: RelaxStrategy = Spin> {
     lock: &'lock McsLock<T, R>,
     node: *const McsNode,
+    // Due to the Stack Borrow Checker, we can't just store a reference to the node.
+    // Otherwise, Miri complains when storing the node in the lock's tail (Self::drop).
+    // Instead, we store a raw pointer and use PhantomData to keep lifetime
+    // information ONLY for the lifetime of the guard.
     _phantom: PhantomData<&'node McsNode>,
 }
 
