@@ -3,6 +3,7 @@
 /// Register offsets for the e1000e NIC.
 pub struct Registers;
 
+#[allow(dead_code)]
 impl Registers {
     // Control registers
     pub const CTRL: usize = 0x00000;
@@ -42,6 +43,7 @@ impl Registers {
 /// RCTL (Receive Control) register flags
 pub struct RctlFlags;
 
+#[allow(dead_code)]
 impl RctlFlags {
     /// Receiver Enable
     pub const EN: u32 = 1 << 1;
@@ -100,6 +102,7 @@ impl RctlFlags {
 /// TCTL (Transmit Control) register flags
 pub struct TctlFlags;
 
+#[allow(dead_code)]
 impl TctlFlags {
     /// Transmit Enable
     pub const EN: u32 = 1 << 1;
@@ -137,6 +140,7 @@ impl CtrlFlags {
 /// Interrupt Cause flags
 pub struct IntFlags;
 
+#[allow(dead_code)]
 impl IntFlags {
     /// Transmit Descriptor Written Back
     pub const TXDW: u32 = 1 << 0;

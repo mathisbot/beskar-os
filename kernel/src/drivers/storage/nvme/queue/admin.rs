@@ -49,6 +49,7 @@ impl AdminSubmissionQueue {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[allow(dead_code)]
 pub enum Command {
     DeleteIOSubmissionQueue = 0x00,
     CreateIOSubmissionQueue = 0x01,
@@ -83,6 +84,7 @@ pub enum Command {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum IdentifyTarget {
     Controller,
     Namespace(u32),

@@ -131,9 +131,13 @@ impl Cr4 {
     ///
     /// The value written must be a valid CR4 flag.
     pub unsafe fn insert_flags(flag: u64) {
-        let mut value = Self::read();
-        value |= flag;
-        unsafe { Self::write(value) };
+        unsafe {
+            core::arch::asm!(
+                "or cr4, {}",
+                in(reg) flag,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
     }
 }
 
