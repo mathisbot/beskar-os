@@ -9,7 +9,7 @@
 //! The second one being a wrapper around the first one that allows to safely lock a `MaybeUninit` value.
 //!
 //! These structure accept a generic type `T` that is the type of the data protected by the lock.
-//! The second generic type `B` is the back-off strategy used by the lock.
+//! The second generic type `R` is the relax strategy used by the lock.
 //!
 //! ### `McsLock`
 //!
@@ -109,8 +109,8 @@ use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 pub struct McsLock<T: ?Sized, R: RelaxStrategy = Spin> {
     /// Tail of the queue.
     tail: AtomicPtr<McsNode>,
-    /// Back-off strategy.
-    _back_off: PhantomData<R>,
+    /// Relax strategy.
+    _relax: PhantomData<R>,
     /// Data protected by the lock.
     data: UnsafeCell<T>,
 }
@@ -163,7 +163,7 @@ impl<T, R: RelaxStrategy> McsLock<T, R> {
         Self {
             tail: AtomicPtr::new(ptr::null_mut()),
             data: UnsafeCell::new(value),
-            _back_off: PhantomData,
+            _relax: PhantomData,
         }
     }
 

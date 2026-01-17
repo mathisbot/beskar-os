@@ -85,7 +85,7 @@ pub fn __init() {
 pub fn debug_break() {
     #[cfg(debug_assertions)]
     unsafe {
-        core::arch::asm!("int3");
+        core::arch::asm!("int3", options(nomem, nostack, preserves_flags));
     }
 }
 
@@ -96,6 +96,6 @@ pub fn debug_break() {
 pub fn debug_break_value(x: u64) {
     #[cfg(debug_assertions)]
     unsafe {
-        core::arch::asm!("int3", in("rax") x);
+        core::arch::asm!("int3", in("rax") x, options(nomem, nostack, preserves_flags));
     }
 }

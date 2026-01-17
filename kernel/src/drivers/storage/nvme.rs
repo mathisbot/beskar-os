@@ -620,3 +620,11 @@ impl Status {
 
     // TODO: Implement the rest of the fields
 }
+
+#[inline]
+pub fn with_nvme_controller<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&mut NvmeControllers) -> R,
+{
+    NVME_CONTROLLER.with_locked_if_init(f)
+}
