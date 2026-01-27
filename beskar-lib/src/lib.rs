@@ -71,7 +71,8 @@ pub fn __init() {
         // Heap
         {
             let heap_size = mem::HEAP_SIZE;
-            let res = mem::mmap(heap_size, None).expect("Memory mapping failed");
+            let res = mem::mmap(heap_size, None, mem::MemoryProtection::ReadWrite)
+                .expect("Memory mapping failed");
             unsafe { mem::init_heap(res.as_ptr(), heap_size.try_into().unwrap()) };
         }
 

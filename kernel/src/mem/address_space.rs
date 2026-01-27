@@ -157,8 +157,9 @@ impl AddressSpace {
     #[inline]
     #[expect(clippy::unused_self, reason = "Might be used in the future")]
     /// Returns whether a certain memory range is owned by the address space.
-    pub fn is_addr_owned(&self, _start: VirtAddr, end: VirtAddr) -> bool {
-        end < KERNEL_AS_BASE
+    pub fn is_addr_owned(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        debug_assert!(start <= end);
+        start <= end && end < KERNEL_AS_BASE
     }
 
     #[must_use]

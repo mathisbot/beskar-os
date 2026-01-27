@@ -47,9 +47,15 @@ pub fn sc_write(handle: i64, buffer: *const u8, size: u64, offset: u64) -> i64 {
 }
 
 #[inline]
-pub fn sc_mmap(size: u64, alignment: u64) -> *mut u8 {
-    let res = syscalls::syscall_2(Syscall::MemoryMap, size, alignment);
+pub fn sc_mmap(size: u64, alignment: u64, flags: u64) -> *mut u8 {
+    let res = syscalls::syscall_3(Syscall::MemoryMap, size, alignment, flags);
     res as _
+}
+
+#[inline]
+pub fn sc_mprotect(ptr: *mut u8, size: u64, flags: u64) -> SyscallExitCode {
+    let res = syscalls::syscall_3(Syscall::MemoryProtect, ptr as u64, size, flags);
+    SyscallExitCode::try_from(res).unwrap()
 }
 
 #[inline]

@@ -2,7 +2,7 @@ use crate::process;
 use beskar_core::{
     arch::{
         VirtAddr,
-        paging::{M4KiB, MemSize},
+        paging::{CacheFlush, M4KiB, Mapper, MappingError, MemSize, Page},
     },
     syscall::{Syscall, SyscallExitCode, SyscallReturnValue},
 };
@@ -36,6 +36,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
     match syscall {
         Syscall::Exit => sc_exit(args),
         Syscall::MemoryMap => SyscallReturnValue::ValueU(sc_mmap(args)),
+        Syscall::MemoryProtect => SyscallReturnValue::Code(sc_mprotect(args)),
         Syscall::Read => SyscallReturnValue::ValueI(sc_read(args)),
         Syscall::Write => SyscallReturnValue::ValueI(sc_write(args)),
         Syscall::Open => SyscallReturnValue::ValueI(sc_open(args)),
@@ -65,6 +66,22 @@ fn sc_exit(args: &Arguments) -> ! {
 }
 
 #[must_use]
+/// Build page table flags from user-space protection flags constants.
+fn build_flags_from_us(raw: u64) -> Flags {
+    let mut flags = Flags::USER_ACCESSIBLE;
+    if raw & beskar_core::syscall::consts::MFLAGS_READ != 0 {
+        flags |= Flags::PRESENT;
+    }
+    if raw & beskar_core::syscall::consts::MFLAGS_WRITE != 0 {
+        flags |= Flags::WRITABLE;
+    }
+    if raw & beskar_core::syscall::consts::MFLAGS_EXECUTE == 0 {
+        flags |= Flags::NO_EXECUTE;
+    }
+    flags
+}
+
+#[must_use]
 fn sc_mmap(args: &Arguments) -> u64 {
     let len = args.one;
     if len == 0 {
@@ -75,15 +92,64 @@ fn sc_mmap(args: &Arguments) -> u64 {
         // TODO: Support larger alignments
         return 0;
     }
+    let flags_raw = args.three;
 
-    let Some(page_range) = process::current().address_space().alloc_map::<M4KiB>(
-        usize::try_from(len).unwrap(),
-        Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE,
-    ) else {
+    let flags = build_flags_from_us(flags_raw);
+
+    let Some(page_range) = process::current()
+        .address_space()
+        .alloc_map::<M4KiB>(usize::try_from(len).unwrap(), flags)
+    else {
         return 0;
     };
 
     page_range.start().start_address().as_u64()
+}
+
+#[must_use]
+fn sc_mprotect(args: &Arguments) -> SyscallExitCode {
+    let ptr = args.one;
+    let size = args.two;
+    let flags_raw = args.three;
+
+    if size == 0 {
+        return SyscallExitCode::Success;
+    }
+
+    let Some(va) = VirtAddr::try_new(ptr) else {
+        return SyscallExitCode::Failure;
+    };
+    let end = va + (size - 1);
+
+    if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
+        && !size.is_multiple_of(M4KiB::SIZE)
+        && !probe(va, end)
+    {
+        return SyscallExitCode::Failure;
+    }
+
+    let flags = build_flags_from_us(flags_raw);
+
+    let page_start = va.page::<M4KiB>();
+    let page_end = end.page::<M4KiB>();
+
+    let page_range = Page::range_inclusive(page_start, page_end);
+
+    let res =
+        process::current()
+            .address_space()
+            .with_page_table(|pt| -> Result<_, MappingError<_>> {
+                for page in page_range {
+                    let cache_flush = pt.update_flags(page, flags)?;
+                    cache_flush.flush();
+                }
+                Ok(())
+            });
+
+    match res {
+        Ok(()) => SyscallExitCode::Success,
+        Err(_) => SyscallExitCode::Failure,
+    }
 }
 
 #[must_use]

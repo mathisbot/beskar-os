@@ -44,15 +44,24 @@ pub enum Syscall {
     ///
     /// The first argument is the size of the memory to allocate.
     /// The second argument is the alignment of the memory.
+    /// The third argument is the protection flags of the memory.
     MemoryMap = 5,
+    /// MemoryProtect syscall.
+    ///
+    /// Changes the protection of a memory region.
+    ///
+    /// The first argument is the pointer to the memory region.
+    /// The second argument is the size of the memory region.
+    /// The third argument is the new protection flags.
+    MemoryProtect = 6,
     /// Put the thread to sleep for a given amount of time.
     ///
     /// The first argument is the time to sleep in milliseconds.
-    Sleep = 6,
+    Sleep = 7,
     /// Put the thread to sleep until a given event is signalled.
     ///
     /// The first argument is the sleep handle to wait on.
-    WaitOnEvent = 7,
+    WaitOnEvent = 8,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
@@ -81,6 +90,12 @@ impl SyscallExitCode {
             "Called unwrap on a syscall exit code that was not successful: {self:?}",
         );
     }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_success(self) -> bool {
+        matches!(self, Self::Success)
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -107,6 +122,16 @@ impl SyscallReturnValue {
 pub enum ExitCode {
     Success = 0,
     Failure = 1,
+}
+
+/// Syscall-related constants
+pub mod consts {
+    /// Memory protection flags - read permission
+    pub const MFLAGS_READ: u64 = 0x1;
+    /// Memory protection flags - write permission
+    pub const MFLAGS_WRITE: u64 = 0x2;
+    /// Memory protection flags - execute permission
+    pub const MFLAGS_EXECUTE: u64 = 0x4;
 }
 
 #[cfg(test)]

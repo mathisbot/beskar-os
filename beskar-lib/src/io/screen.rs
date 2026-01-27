@@ -56,6 +56,7 @@ impl FrameBuffer {
             let internal_fb_start = mem::mmap(
                 u64::from(info.size()),
                 Some(NonZeroU64::new(u64::try_from(align_of::<u32>()).unwrap()).unwrap()),
+                mem::MemoryProtection::ReadWrite,
             )?;
             unsafe {
                 core::slice::from_raw_parts_mut(

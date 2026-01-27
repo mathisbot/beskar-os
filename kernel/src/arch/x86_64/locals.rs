@@ -51,7 +51,7 @@ impl CoreLocalsInfo {
     }
 
     #[must_use]
-    pub fn new(core_id: usize, apic_id: u8) -> &'static Self {
+    pub fn new(core_id: usize, apic_id: u8) -> &'static mut Self {
         let locals = Box::leak(Box::new(Self::new_impl(core_id, apic_id)));
         locals.set_self_ptr();
         locals
