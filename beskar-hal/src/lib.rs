@@ -19,3 +19,20 @@ mod x86_64;
 pub use aarch64::*;
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::*;
+
+pub enum Architecture {
+    X86_64,
+    AArch64,
+}
+
+#[must_use]
+#[inline]
+pub const fn current_arch() -> Architecture {
+    if cfg!(target_arch = "x86_64") {
+        Architecture::X86_64
+    } else if cfg!(target_arch = "aarch64") {
+        Architecture::AArch64
+    } else {
+        unimplemented!()
+    }
+}

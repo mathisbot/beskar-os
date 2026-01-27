@@ -49,8 +49,8 @@ fn cmd_help(tty: &mut Tty) {
     tty.write_str(
         "BeskarOS Shell - Available commands:\n  \
             clear       - Clear the terminal screen\n  \
-            echo        - Echo arguments to the console\n  \
-            exit [text] - Exit the shell\n  \
+            echo [text] - Echo arguments to the console\n  \
+            exit        - Exit the shell\n  \
             help        - Display this help text\n  \
             rand [n]    - Generate random bytes\n\
         ",

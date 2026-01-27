@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 beskar-core = { workspace = true }
 beskar-lib = { workspace = true }
-hyperdrive = { workspace = true}
+hyperdrive = { workspace = true }
 
 [build-dependencies]
-cc = "1.2.38"
+cc = "1.2.54"

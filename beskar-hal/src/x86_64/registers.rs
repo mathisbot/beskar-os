@@ -450,6 +450,96 @@ impl GS {
         unsafe { VirtAddr::new_unchecked(base) }
     }
 
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_u8(offset: usize) -> u8 {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {}, gs:[{}]",
+                lateout(reg_byte) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_u16(offset: usize) -> u16 {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:x}, gs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_u32(offset: usize) -> u32 {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:e}, gs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_usize(offset: usize) -> usize {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:r}, gs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_u64(offset: usize) -> u64 {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:r}, gs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_ptr<T>(offset: usize) -> *mut T {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:r}, gs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
     #[inline]
     pub unsafe fn write_base(base: VirtAddr) {
         unsafe { Self::MSR.write(base.as_u64()) };
@@ -466,6 +556,96 @@ impl FS {
     pub fn read_base() -> VirtAddr {
         let base = Self::MSR.read();
         unsafe { VirtAddr::new_unchecked(base) }
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_u8(offset: usize) -> u8 {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {}, fs:[{}]",
+                lateout(reg_byte) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_u16(offset: usize) -> u16 {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:x}, fs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_u32(offset: usize) -> u32 {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:e}, fs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_usize(offset: usize) -> usize {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:r}, fs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_u64(offset: usize) -> u64 {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:r}, fs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn read_ptr<T>(offset: usize) -> *mut T {
+        let res;
+        unsafe {
+            core::arch::asm!(
+                "mov {:r}, fs:[{}]",
+                lateout(reg) res,
+                in(reg) offset,
+                options(readonly, nostack, preserves_flags)
+            );
+        }
+        res
     }
 
     #[inline]
