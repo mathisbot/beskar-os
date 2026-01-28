@@ -113,6 +113,12 @@ impl CpuFeature {
         bit: 0,
         name: "FPU",
     };
+    pub const DE: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Edx,
+        bit: 2,
+        name: "DE",
+    };
     pub const PSE: Self = Self {
         leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
@@ -131,17 +137,41 @@ impl CpuFeature {
         bit: 5,
         name: "MSR",
     };
+    pub const PAE: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Edx,
+        bit: 6,
+        name: "PAE",
+    };
+    pub const MCE: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Edx,
+        bit: 7,
+        name: "MCE",
+    };
     pub const APIC_ONBOARD: Self = Self {
         leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 9,
         name: "APIC",
     };
+    pub const PGE: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Edx,
+        bit: 13,
+        name: "PGE",
+    };
     pub const PAT: Self = Self {
         leaf: Leaf::new(1),
         reg: CpuidReg::Edx,
         bit: 16,
         name: "PAT",
+    };
+    pub const MMX: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Edx,
+        bit: 23,
+        name: "MMX",
     };
     pub const FXSR: Self = Self {
         leaf: Leaf::new(1),
@@ -168,11 +198,29 @@ impl CpuFeature {
         bit: 0,
         name: "SSE3",
     };
+    pub const SSSE3: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Ecx,
+        bit: 9,
+        name: "SSSE3",
+    };
     pub const PCID: Self = Self {
         leaf: Leaf::new(1),
         reg: CpuidReg::Ecx,
         bit: 17,
         name: "PCID",
+    };
+    pub const SSE41: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Ecx,
+        bit: 19,
+        name: "SSE4.1",
+    };
+    pub const SSE42: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Ecx,
+        bit: 20,
+        name: "SSE4.2",
     };
     pub const X2APIC: Self = Self {
         leaf: Leaf::new(1),
@@ -186,11 +234,23 @@ impl CpuFeature {
         bit: 26,
         name: "XSAVE",
     };
+    pub const OSXSAVE: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Ecx,
+        bit: 27,
+        name: "OSXSAVE",
+    };
     pub const RDRAND: Self = Self {
         leaf: Leaf::new(1),
         reg: CpuidReg::Ecx,
         bit: 30,
         name: "RDRAND",
+    };
+    pub const HYPERVISOR: Self = Self {
+        leaf: Leaf::new(1),
+        reg: CpuidReg::Ecx,
+        bit: 31,
+        name: "HYPERVISOR",
     };
 
     // LEAF 7

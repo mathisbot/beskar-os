@@ -3,7 +3,7 @@ use crate::locals;
 use beskar_core::arch::VirtAddr;
 use beskar_hal::{
     instructions::int_enable,
-    registers::{CS, Cr0, Cr2},
+    registers::{CS, Cr2},
     structures::{GateType, InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
     userspace::Ring,
 };
@@ -291,22 +291,9 @@ impl core::fmt::Debug for ThreadRegisters {
     }
 }
 
-#[expect(
-    unreachable_code,
-    reason = "FPU/SIMD state saving/restoring is not implemented yet"
-)]
 extern "x86-interrupt" fn device_not_available_handler(_stack_frame: InterruptStackFrame) {
-    let cr0 = Cr0::read();
-    if cr0 & Cr0::TASK_SWITCHED != 0 {
-        panic!("EXCEPTION: DEVICE NOT AVAILABLE");
-    } else {
-        // TODO: Save FPU/SIMD state
-        // Choose between FXSAVE/FXRSTOR and XSAVE/XRSTOR
-        // Maybe set MP flag in CR0 and keep the Thread ID of the last FPU user?
-        todo!("Save FPU/SIMD state");
-        todo!("Restore FPU/SIMD state");
-        unsafe { Cr0::write(cr0 & !Cr0::TASK_SWITCHED) };
-    }
+    // Handle lazy FPU context switching
+    unsafe { crate::arch::fpu::handle_device_not_available() };
 }
 
 extern "x86-interrupt" fn non_maskable_interrupt_handler(_stack_frame: InterruptStackFrame) {

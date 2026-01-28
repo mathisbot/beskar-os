@@ -67,5 +67,37 @@ where
     }
 }
 
+#[inline]
+/// Initialize the FPU
+pub unsafe fn fpu_init() {
+    unsafe {
+        core::arch::asm!("fninit", options(nomem, nostack, preserves_flags));
+    }
+}
+
+#[inline]
+/// Save the FPU state
+pub unsafe fn fpu_save(dst: &mut super::structures::SseSave) {
+    unsafe {
+        core::arch::asm!(
+            "fxsave [{}]",
+            in(reg) dst,
+            options(nostack, preserves_flags)
+        );
+    }
+}
+
+#[inline]
+/// Restore the FPU state
+pub unsafe fn fpu_restore(src: &super::structures::SseSave) {
+    unsafe {
+        core::arch::asm!(
+            "fxrstor [{}]",
+            in(reg) src,
+            options(readonly, nostack, preserves_flags)
+        );
+    }
+}
+
 /// This value can be used to fill the stack when debugging stack overflows.
 pub const STACK_DEBUG_INSTR: u8 = 0xCC;

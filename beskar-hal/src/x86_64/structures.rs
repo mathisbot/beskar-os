@@ -810,6 +810,32 @@ impl TaskStateSegment {
     }
 }
 
+#[derive(Debug, Clone)]
+#[repr(C, align(16))]
+/// Saved SSE state (512 bytes aligned to 16 bytes)
+pub struct SseSave {
+    pub data: [u8; 160],
+    pub xmm: [core::arch::x86_64::__m128; 16],
+    _res: [core::arch::x86_64::__m128; 3],
+    pub available: [core::arch::x86_64::__m128; 3],
+}
+beskar_core::static_assert!(size_of::<SseSave>() == 512);
+
+impl Default for SseSave {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SseSave {
+    #[must_use]
+    #[inline]
+    pub const fn new() -> Self {
+        // Safety: All-zeroed state is a valid initial state for SSE save area.
+        unsafe { core::mem::zeroed() }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

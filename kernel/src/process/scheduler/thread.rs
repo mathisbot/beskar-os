@@ -1,5 +1,5 @@
 use crate::{
-    arch::context::ThreadRegisters,
+    arch::{context::ThreadRegisters, fpu::FpuState},
     mem::frame_alloc,
     process::binary::{Binary, BinaryType, LoadedBinary},
     storage::vfs,
@@ -13,6 +13,7 @@ use beskar_core::arch::{
 use beskar_hal::instructions::STACK_DEBUG_INSTR;
 use beskar_hal::paging::page_table::Flags;
 use core::{
+    cell::UnsafeCell,
     mem::offset_of,
     ptr::NonNull,
     sync::atomic::{AtomicPtr, AtomicU64, Ordering},
@@ -69,6 +70,8 @@ pub struct Thread {
     tls: Once<Tls>,
     /// Thread statistics for scheduling
     stats: ThreadStats,
+    /// FPU/SSE state for lazy context switching
+    fpu_state: UnsafeCell<FpuState>,
 
     /// Link to the next thread in the queue.
     link: Link<Self>,
@@ -124,6 +127,7 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
+            fpu_state: UnsafeCell::new(FpuState::new()),
         }
     }
 
@@ -150,6 +154,7 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
+            fpu_state: UnsafeCell::new(FpuState::new()),
         }
     }
 
@@ -200,6 +205,7 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
+            fpu_state: UnsafeCell::new(FpuState::new()),
         }
     }
 
@@ -272,6 +278,13 @@ impl Thread {
     /// Returns the thread local storage of the thread.
     pub fn tls(&self) -> Option<Tls> {
         self.tls.get().copied()
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns a pointer to the FPU state.
+    pub const fn fpu_state_ptr(&self) -> *mut FpuState {
+        self.fpu_state.get()
     }
 
     #[must_use]
