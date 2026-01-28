@@ -72,7 +72,7 @@ pub fn make_mappings(
             .enumerate()
         {
             let page = start_page + u64::try_from(i).unwrap();
-            let flags = Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE;
+            let flags = Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE | Flags::GLOBAL;
             page_tables
                 .kernel
                 .map(page, frame, flags, frame_allocator)
@@ -96,7 +96,7 @@ pub fn make_mappings(
             .into_iter()
             .zip(Frame::range_inclusive(start_frame, end_frame))
         {
-            let flags = Flags::PRESENT | Flags::NO_EXECUTE;
+            let flags = Flags::PRESENT | Flags::NO_EXECUTE | Flags::GLOBAL;
             page_tables
                 .kernel
                 .map(page, frame, flags, frame_allocator)
