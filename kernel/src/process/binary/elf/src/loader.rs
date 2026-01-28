@@ -73,6 +73,7 @@ impl ElfLoader {
         Ok(LoadedBinary {
             entry_point,
             tls_template,
+            image_size: addr_range.size(),
         })
     }
 
