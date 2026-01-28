@@ -81,12 +81,19 @@ impl Access for ReadWrite {}
 impl ReadAccess for ReadWrite {}
 impl WriteAccess for ReadWrite {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 /// A wrapper around structures to provide volatile access.
 pub struct Volatile<A: Access, T: ?Sized> {
     ptr: NonNull<T>,
     _phantom: PhantomData<A>,
 }
+
+impl<A: Access, T: ?Sized> Clone for Volatile<A, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<A: Access, T: ?Sized> Copy for Volatile<A, T> {}
 
 impl<A: Access, T: ?Sized> Volatile<A, T> {
     #[must_use]

@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "Utility functions")]
-
 #[must_use]
 #[inline]
 /// Convert bytes into a u16 value in network byte order (big-endian).

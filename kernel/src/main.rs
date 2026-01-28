@@ -64,7 +64,7 @@ fn kmain() -> ! {
                 ));
                 scheduler::spawn_thread(alloc::boxed::Box::new(Thread::new(
                     user_proc,
-                    Priority::High,
+                    Priority::Realtime,
                     alloc::vec![0; 1024*64],
                     user_trampoline,
                 )));

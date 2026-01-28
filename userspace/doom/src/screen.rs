@@ -56,6 +56,6 @@ pub fn draw() {
             buffer_mut[..SCREENWIDTH * CHANNELS].copy_from_slice(row);
             buffer_mut = &mut buffer_mut[stride_bytes..];
         }
-        let _ = screen.flush(Some(&(0..u16::try_from(SCREENHEIGHT).unwrap())));
+        let _ = screen.flush_rows(0..u16::try_from(SCREENHEIGHT).unwrap());
     });
 }

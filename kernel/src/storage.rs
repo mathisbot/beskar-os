@@ -23,11 +23,12 @@ pub fn init() {
     );
     device_fs.add_device(PathBuf::new("/stdout"), Box::new(crate::process::Stdout));
     device_fs.add_device(PathBuf::new("/rand"), Box::new(crate::process::RandFile));
+    device_fs.add_device(
+        PathBuf::new("/randseed"),
+        Box::new(crate::process::SeedFile),
+    );
     device_fs.add_device(PathBuf::new("/fb"), Box::new(video::screen::ScreenDevice));
     VFS.mount(PathBuf::new("/dev"), Box::new(device_fs));
-
-    // TODO: Mount RAM disk (FAT32)
-    // VFS.mount(PathBuf::new("/ramdisk"), todo!());
 }
 
 #[must_use]

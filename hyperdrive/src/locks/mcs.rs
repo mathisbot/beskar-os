@@ -9,7 +9,7 @@
 //! The second one being a wrapper around the first one that allows to safely lock a `MaybeUninit` value.
 //!
 //! These structure accept a generic type `T` that is the type of the data protected by the lock.
-//! The second generic type `B` is the back-off strategy used by the lock.
+//! The second generic type `R` is the relax strategy used by the lock.
 //!
 //! ### `McsLock`
 //!
@@ -109,17 +109,16 @@ use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 pub struct McsLock<T: ?Sized, R: RelaxStrategy = Spin> {
     /// Tail of the queue.
     tail: AtomicPtr<McsNode>,
-    /// Back-off strategy.
-    _back_off: PhantomData<R>,
+    /// Relax strategy.
+    _relax: PhantomData<R>,
     /// Data protected by the lock.
     data: UnsafeCell<T>,
 }
 
 // Safety:
 // Mellor-Crummey and Scott lock is a synchronization primitive.
-#[expect(clippy::non_send_fields_in_send_ty, reason = "FIXME")]
-unsafe impl<T: ?Sized, R: RelaxStrategy> Send for McsLock<T, R> {}
-unsafe impl<T: ?Sized, R: RelaxStrategy> Sync for McsLock<T, R> {}
+unsafe impl<T: ?Sized + Send, R: RelaxStrategy> Send for McsLock<T, R> {}
+unsafe impl<T: ?Sized + Send, R: RelaxStrategy> Sync for McsLock<T, R> {}
 
 /// Node for MCS lock.
 ///
@@ -164,7 +163,7 @@ impl<T, R: RelaxStrategy> McsLock<T, R> {
         Self {
             tail: AtomicPtr::new(ptr::null_mut()),
             data: UnsafeCell::new(value),
-            _back_off: PhantomData,
+            _relax: PhantomData,
         }
     }
 
@@ -265,6 +264,13 @@ impl<T: ?Sized, R: RelaxStrategy> McsLock<T, R> {
     pub unsafe fn force_lock(&self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
+
+    #[must_use]
+    #[inline]
+    /// Get a mutable reference to the data.
+    pub const fn get_mut(&mut self) -> &mut T {
+        self.data.get_mut()
+    }
 }
 
 impl Default for McsNode {
@@ -290,6 +296,10 @@ impl McsNode {
 pub struct McsGuard<'node, 'lock, T: ?Sized, R: RelaxStrategy = Spin> {
     lock: &'lock McsLock<T, R>,
     node: *const McsNode,
+    // Due to the Stack Borrow Checker, we can't just store a reference to the node.
+    // Otherwise, Miri complains when storing the node in the lock's tail (Self::drop).
+    // Instead, we store a raw pointer and use PhantomData to keep lifetime
+    // information ONLY for the lifetime of the guard.
     _phantom: PhantomData<&'node McsNode>,
 }
 
@@ -356,7 +366,7 @@ pub struct MUMcsLock<T, R: RelaxStrategy = Spin> {
 impl<T, R: RelaxStrategy> Drop for MUMcsLock<T, R> {
     fn drop(&mut self) {
         if self.is_initialized() {
-            unsafe { self.inner_lock.data.get_mut().assume_init_drop() };
+            unsafe { self.inner_lock.get_mut().assume_init_drop() };
         }
     }
 }
@@ -506,7 +516,18 @@ impl<T, R: RelaxStrategy> MUMcsLock<T, R> {
             // We cannot use `assume_init` as `inner_lock` is part of `self`.
             // Therefore, we need to `assume_init_read` the value, and "uninitialize"
             // the lock to avoid dropping the returned value.
-            Some(unsafe { self.inner_lock.data.get_mut().assume_init_read() })
+            Some(unsafe { self.inner_lock.get_mut().assume_init_read() })
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn get_mut(&mut self) -> Option<&mut T> {
+        if self.is_initialized() {
+            // Safety: The lock is initialized.
+            Some(unsafe { self.inner_lock.get_mut().assume_init_mut() })
         } else {
             None
         }

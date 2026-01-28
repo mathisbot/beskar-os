@@ -4,7 +4,7 @@
 //! It is an evolution of the spinlock, where multiple readers can access the data at the same time.
 //!
 //! The structure accept a generic type `T` that is the type of the data protected by the lock.
-//! The second generic type `B` is the back-off strategy used by the lock.
+//! The second generic type `R` is the relax strategy used by the lock.
 //!
 //! ## Starvation-Resistance
 //!
@@ -154,8 +154,8 @@ struct AtomicState<R: RelaxStrategy = Spin> {
     readers: AtomicU32,
     /// Whether a writer has acquired the lock.
     writer: AtomicBool,
-    /// Back-off strategy.
-    _back_off: PhantomData<R>,
+    /// Relax strategy.
+    _relax: PhantomData<R>,
 }
 
 unsafe impl<R: RelaxStrategy> Send for AtomicState<R> {}
@@ -167,7 +167,7 @@ impl<R: RelaxStrategy> AtomicState<R> {
         Self {
             readers: AtomicU32::new(0),
             writer: AtomicBool::new(false),
-            _back_off: PhantomData,
+            _relax: PhantomData,
         }
     }
 

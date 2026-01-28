@@ -23,6 +23,27 @@ pub fn rand_fill(buf: &mut [u8]) -> IoResult<()> {
     Ok(())
 }
 
+/// Fills the buffer with random bytes from the seed device.
+///
+/// # Errors
+///
+/// Returns an error if the random device cannot be read.
+pub fn rand_seed(buf: &mut [u8]) -> IoResult<()> {
+    const SEED_FILE: &str = "/dev/randseed";
+
+    // Open the random device
+    let mut file = File::open(SEED_FILE).map_err(|_| IoError::new(IoErrorKind::Other))?;
+
+    // Use read_exact semantics to ensure buffer is fully filled
+    file.read_exact(buf)
+        .map_err(|_| IoError::new(IoErrorKind::UnexpectedEof))?;
+
+    // Close the device (best-effort)
+    let _ = file.close();
+
+    Ok(())
+}
+
 /// Generates a random value of the given type.
 ///
 /// # Errors

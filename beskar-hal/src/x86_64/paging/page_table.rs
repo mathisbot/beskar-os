@@ -207,7 +207,7 @@ impl Entry {
         if self.is_present() && !self.is_large() {
             let va = VirtAddr::from_ptr(self);
             let next_raw = Self::next_unchecked(va);
-            let entries = unsafe { &*(next_raw.as_ptr()) };
+            let entries = unsafe { &*next_raw.as_ptr() };
             Ok(entries)
         } else if self.is_present() && self.is_large() {
             Err(MappingError::UnexpectedLargePage)
@@ -220,7 +220,7 @@ impl Entry {
         if self.is_present() && !self.is_large() {
             let va = VirtAddr::from_ptr(self);
             let next_raw = Self::next_unchecked(va);
-            let entries = unsafe { &mut *(next_raw.as_mut_ptr()) };
+            let entries = unsafe { &mut *next_raw.as_mut_ptr() };
             Ok(entries)
         } else if self.is_present() && self.is_large() {
             Err(MappingError::UnexpectedLargePage)

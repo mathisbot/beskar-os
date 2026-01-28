@@ -71,11 +71,32 @@ pub fn __init() {
         // Heap
         {
             let heap_size = mem::HEAP_SIZE;
-            let res = mem::mmap(heap_size, None).expect("Memory mapping failed");
+            let res = mem::mmap(heap_size, None, mem::MemoryProtection::ReadWrite)
+                .expect("Memory mapping failed");
             unsafe { mem::init_heap(res.as_ptr(), heap_size.try_into().unwrap()) };
         }
 
         // Time
         time::init();
     });
+}
+
+#[inline]
+/// In debug builds, triggers a breakpoint interrupt (`int3`).
+pub fn debug_break() {
+    #[cfg(debug_assertions)]
+    unsafe {
+        core::arch::asm!("int3", options(nomem, nostack, preserves_flags));
+    }
+}
+
+#[inline]
+/// In debug builds, triggers a breakpoint interrupt (`int3`).
+///
+/// The provided value `x` is placed in the `RAX` register before triggering the interrupt.
+pub fn debug_break_value(x: u64) {
+    #[cfg(debug_assertions)]
+    unsafe {
+        core::arch::asm!("int3", in("rax") x, options(nomem, nostack, preserves_flags));
+    }
 }

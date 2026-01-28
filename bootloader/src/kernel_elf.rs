@@ -181,7 +181,7 @@ fn handle_segment_load(load_segment: ProgramHeader, klu: &mut KernelLoadingUtils
     let virt_start = VirtAddr::new_extend(vao + load_segment.virtual_addr());
     let start_page = Page::<M4KiB>::containing_address(virt_start);
 
-    let mut segment_flags = Flags::PRESENT;
+    let mut segment_flags = Flags::PRESENT | Flags::GLOBAL;
     if load_segment.flags().is_write() {
         segment_flags = segment_flags.union(Flags::WRITABLE);
     }
@@ -267,7 +267,7 @@ fn zero_bss(virt_start: VirtAddr, load_segment: ProgramHeader, klu: &mut KernelL
         }
     }
 
-    let mut segment_flags = Flags::PRESENT;
+    let mut segment_flags = Flags::PRESENT | Flags::GLOBAL;
     if load_segment.flags().is_write() {
         segment_flags = segment_flags.union(Flags::WRITABLE);
     }

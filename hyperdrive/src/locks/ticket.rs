@@ -38,8 +38,8 @@ pub struct TicketLock<T: ?Sized, R: RelaxStrategy = super::Spin> {
     next_ticket: AtomicU32,
     /// The ticket number of the current thread holding the lock.
     now_serving: AtomicU32,
-    /// The back-off strategy to use when the lock is contended.
-    _back_off: PhantomData<R>,
+    /// The relax strategy to use when the lock is contended.
+    _relax: PhantomData<R>,
     /// The inner data protected by the lock.
     data: UnsafeCell<T>,
 }
@@ -58,7 +58,7 @@ impl<T, R: RelaxStrategy> TicketLock<T, R> {
             next_ticket: AtomicU32::new(0),
             now_serving: AtomicU32::new(0),
             data: UnsafeCell::new(data),
-            _back_off: PhantomData,
+            _relax: PhantomData,
         }
     }
 

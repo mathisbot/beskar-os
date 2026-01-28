@@ -40,7 +40,7 @@ impl PortAccessible for u8 {
     unsafe fn read_from_port(port: u16) -> Self {
         let value: Self;
         unsafe {
-            core::arch::asm!("in al, dx", out("al") value, in("dx") port, options(nomem, nostack, preserves_flags));
+            core::arch::asm!("in al, dx", lateout("al") value, in("dx") port, options(nomem, nostack, preserves_flags));
         }
         value
     }
@@ -58,7 +58,7 @@ impl PortAccessible for u16 {
     unsafe fn read_from_port(port: u16) -> Self {
         let value: Self;
         unsafe {
-            core::arch::asm!("in ax, dx", out("ax") value, in("dx") port, options(nomem, nostack, preserves_flags));
+            core::arch::asm!("in ax, dx", lateout("ax") value, in("dx") port, options(nomem, nostack, preserves_flags));
         }
         value
     }
@@ -76,7 +76,7 @@ impl PortAccessible for u32 {
     unsafe fn read_from_port(port: u16) -> Self {
         let value: Self;
         unsafe {
-            core::arch::asm!("in eax, dx", out("eax") value, in("dx") port, options(nomem, nostack, preserves_flags));
+            core::arch::asm!("in eax, dx", lateout("eax") value, in("dx") port, options(nomem, nostack, preserves_flags));
         }
         value
     }

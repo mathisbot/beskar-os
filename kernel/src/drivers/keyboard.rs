@@ -37,6 +37,10 @@ impl KeyboardManager {
             // FIXME: Override old events instead of dropping new ones.
             video::debug!("Keyboard event queue is full, dropping event: {:?}", event);
         }
+
+        crate::process::scheduler::wake_event_single(
+            beskar_core::process::SleepHandle::SLEEP_HANDLE_KEYBOARD_INTERRUPT,
+        );
     }
 
     #[must_use]

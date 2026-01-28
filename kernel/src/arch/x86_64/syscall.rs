@@ -102,10 +102,10 @@ extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
 
     let ssn = Syscall::try_from(regs.rax);
 
-    let res = match ssn {
-        Ok(ssn) => syscall(Syscall::from(ssn), &args),
-        Err(_) => SyscallReturnValue::Code(SyscallExitCode::InvalidSyscallNumber),
-    };
+    let res = ssn.map_or(
+        SyscallReturnValue::Code(SyscallExitCode::InvalidSyscallNumber),
+        |ssn| syscall(ssn, &args),
+    );
 
     // Store result
     regs.rax = res.as_u64();

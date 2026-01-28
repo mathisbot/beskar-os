@@ -1,18 +1,18 @@
-use core::ptr::NonNull;
-
 use beskar_core::arch::VirtAddr;
-use hyperdrive::ptrs::volatile::{ReadOnly, Volatile};
+use core::ptr::NonNull;
+use driver_shared::mmio::MmioRegister;
+use hyperdrive::ptrs::volatile::ReadOnly;
 
 #[derive(Clone, Copy)]
 pub struct CapabilitiesRegisters {
-    base: Volatile<ReadOnly, u32>,
+    base: MmioRegister<ReadOnly, u32>,
 }
 
 impl CapabilitiesRegisters {
     pub const MIN_LENGTH: usize = 0x20;
 
-    const CAP_LENGTH: usize = 0x00;
-    const HCI_VERSION: usize = 0x02;
+    // const CAP_LENGTH: usize = 0x00;
+    // const HCI_VERSION: usize = 0x02;
     const HCS_PARAMS1: usize = 0x04;
     const HCS_PARAMS2: usize = 0x08;
     const HCS_PARAMS3: usize = 0x0C;
@@ -23,27 +23,34 @@ impl CapabilitiesRegisters {
 
     #[must_use]
     pub const fn new(base: VirtAddr) -> Self {
-        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap());
+        let base = MmioRegister::new(NonNull::new(base.as_mut_ptr()).unwrap());
         Self { base }
     }
 
     #[must_use]
-    /// Offset of the first operational register from the base address
-    pub fn cap_length(self) -> u8 {
-        unsafe { self.base.cast::<u8>().byte_add(Self::CAP_LENGTH).read() }
+    /// There currently is a bug in QEMU, where xHCI registers do not support DWORD reads.
+    /// This is a workaround to read the register as a QWORD and extract the bytes.
+    ///
+    /// According to the xHCI specification, these fields should allow 1-4 bytes reads,
+    /// so it is safe to do so even on real hardware.
+    fn cap_length_version(self) -> (u8, u8, u8) {
+        let qword = unsafe { self.base.read() };
+        let [cap_len, _reserved, minor, major] = qword.to_ne_bytes();
+        (cap_len, major, minor)
     }
 
     #[must_use]
-    pub fn hci_version(self) -> HciVersion {
-        // unsafe { self.base.cast::<u16>().byte_add(Self::HCI_VERSION).read() }
-        // There currently is a bug in QEMU, where xHCI registers do not support DWORD reads.
-        // This is a workaround to read the register as a QWORD and extract the bytes.
-        //
-        // According to the xHCI specification, these fields should allow 1-4 bytes reads,
-        // so it is safe to do so even on real hardware.
-        let qword = unsafe { self.base.read() };
-        let [_cap_len, _reserved, minor, major] = qword.to_ne_bytes();
+    #[inline]
+    /// Offset of the first operational register from the base address
+    pub fn cap_length(self) -> u8 {
+        let (cap_len, _, _) = self.cap_length_version();
+        cap_len
+    }
 
+    #[must_use]
+    #[inline]
+    pub fn hci_version(self) -> HciVersion {
+        let (_, major, minor) = self.cap_length_version();
         HciVersion { major, minor }
     }
 

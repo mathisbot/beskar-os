@@ -8,22 +8,25 @@ use core::{
     ptr::NonNull,
     sync::atomic::{AtomicU16, Ordering},
 };
+use driver_shared::mmio::MmioRegister;
 use hyperdrive::ptrs::volatile::{ReadWrite, Volatile};
 
 pub mod admin;
 pub mod io;
 
-struct Queue<T> {
+struct Queue<T: ?Sized> {
     base: Volatile<ReadWrite, T>,
     pmap: PhysicalMapping,
     size: u16,
     tail: u16,
     head: u16,
-    doorbell: Volatile<ReadWrite, u32>,
+    doorbell: MmioRegister<ReadWrite, u32>,
 }
 
+unsafe impl<T: ?Sized + Send> Send for Queue<T> {}
+
 impl<T> Queue<T> {
-    fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
+    fn new(doorbell: MmioRegister<ReadWrite, u32>) -> DriverResult<Self> {
         let Some(frame) =
             frame_alloc::with_frame_allocator(frame_alloc::FrameAllocator::alloc::<M4KiB>)
         else {
@@ -54,7 +57,7 @@ impl<T> Queue<T> {
     }
 }
 
-impl<T> Drop for Queue<T> {
+impl<T: ?Sized> Drop for Queue<T> {
     fn drop(&mut self) {
         let frame = self.pmap.start_frame();
         frame_alloc::with_frame_allocator(|fralloc| fralloc.free(frame));
@@ -65,7 +68,7 @@ struct SubmissionQueue(Queue<SubmissionEntry>);
 
 impl SubmissionQueue {
     #[inline]
-    pub fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
+    pub fn new(doorbell: MmioRegister<ReadWrite, u32>) -> DriverResult<Self> {
         Ok(Self(Queue::new(doorbell)?))
     }
 
@@ -116,7 +119,7 @@ struct CompletionQueue(Queue<CompletionEntry>);
 
 impl CompletionQueue {
     #[inline]
-    pub fn new(doorbell: Volatile<ReadWrite, u32>) -> DriverResult<Self> {
+    pub fn new(doorbell: MmioRegister<ReadWrite, u32>) -> DriverResult<Self> {
         Ok(Self(Queue::new(doorbell)?))
     }
 
@@ -162,9 +165,9 @@ struct SubmissionEntry {
     dword0: CommandDwordZero,
     nsid: u32,
     _reserved: [u32; 2],
-    metadata_ptr: *mut u8,
+    metadata_ptr: PhysAddr,
     /// 2 physical addresses
-    data_ptr: [*mut u8; 2],
+    data_ptr: [PhysAddr; 2],
     command_specific: [u32; 6],
 }
 
@@ -180,8 +183,8 @@ impl SubmissionEntry {
             dword0: CommandDwordZero::new(opcode),
             nsid: 0,
             _reserved: [0; 2],
-            metadata_ptr: core::ptr::null_mut(),
-            data_ptr: [core::ptr::null_mut(); 2],
+            metadata_ptr: PhysAddr::ZERO,
+            data_ptr: [PhysAddr::ZERO; 2],
             command_specific: [0; 6],
         }
     }

@@ -25,11 +25,9 @@ use beskar_core::{
 };
 use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
 use core::ptr::NonNull;
+use driver_shared::mmio::MmioRegister;
 use holonet::l2::ethernet::MacAddress;
-use hyperdrive::{
-    locks::mcs::MUMcsLock,
-    ptrs::volatile::{ReadWrite, Volatile},
-};
+use hyperdrive::{locks::mcs::MUMcsLock, ptrs::volatile::ReadWrite};
 
 const RX_BUFFERS: usize = 32;
 const TX_BUFFERS: usize = 8;
@@ -62,7 +60,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
 
     let mut e1000e = E1000e {
         pci_device: network_controller,
-        base: Volatile::new(NonNull::new(reg_vaddr.as_mut_ptr()).unwrap()),
+        base: MmioRegister::new(NonNull::new(reg_vaddr.as_mut_ptr()).unwrap()),
         _physical_mapping: pmap,
         buffer_set,
         rx_curr: core::cell::Cell::new(0),
@@ -82,7 +80,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
 
 pub struct E1000e<'a> {
     pci_device: pci::Device,
-    base: Volatile<ReadWrite, u32>,
+    base: MmioRegister<ReadWrite, u32>,
     _physical_mapping: PhysicalMapping<M4KiB>,
     buffer_set: BufferSet<'a>,
     rx_curr: core::cell::Cell<usize>,
@@ -97,14 +95,14 @@ impl E1000e<'_> {
         self.enable_int();
     }
 
-    fn reset(&self) {
+    fn reset(&mut self) {
         self.update_reg(Registers::CTRL, |ctrl| ctrl | CtrlFlags::RST);
         while self.read_reg(Registers::CTRL) & CtrlFlags::RST != 0 {
             core::hint::spin_loop();
         }
     }
 
-    fn enable_int(&self) {
+    fn enable_int(&mut self) {
         let msix = crate::drivers::pci::with_pci_handler(|handler| {
             pci::msix::MsiX::<PhysicalMapping<M4KiB>, MsiHelper>::new(handler, &self.pci_device)
         });
@@ -211,11 +209,11 @@ impl E1000e<'_> {
         unsafe { self.base.byte_add(offset).read() }
     }
 
-    fn write_reg(&self, offset: usize, value: u32) {
+    fn write_reg(&mut self, offset: usize, value: u32) {
         unsafe { self.base.byte_add(offset).write(value) };
     }
 
-    fn update_reg<F>(&self, offset: usize, f: F)
+    fn update_reg<F>(&mut self, offset: usize, f: F)
     where
         F: FnOnce(u32) -> u32,
     {
@@ -339,7 +337,6 @@ struct BufferSet<'a> {
 
 impl BufferSet<'_> {
     #[must_use]
-    #[expect(clippy::too_many_lines, reason = "Many buffers to allocate")]
     pub fn new(nb_rx: usize, nb_tx: usize) -> (Self, PhysAddr, PhysAddr) {
         assert!(
             nb_rx * size_of::<RxDescriptor>() + nb_tx * size_of::<TxDescriptor>()

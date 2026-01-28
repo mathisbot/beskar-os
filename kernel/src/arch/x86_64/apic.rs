@@ -9,7 +9,7 @@ use crate::{
 };
 use acpi::sdt::madt::Lint;
 use beskar_core::arch::{
-    PhysAddr,
+    Alignment, PhysAddr,
     paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
 };
 use beskar_hal::{
@@ -22,6 +22,7 @@ use core::{
     ptr::NonNull,
     sync::atomic::{AtomicU8, Ordering},
 };
+use driver_shared::mmio::MmioRegister;
 use hyperdrive::{
     once::Once,
     ptrs::volatile::{ReadWrite, Volatile, WriteOnly},
@@ -124,7 +125,7 @@ fn enable_disable_interrupts(enable: bool) {
 }
 
 pub struct LocalApic {
-    base: Volatile<ReadWrite, u32>,
+    base: MmioRegister<ReadWrite, u32>,
     timer: LapicTimer,
     paddr: PhysAddr,
     acpi_id: u8,
@@ -182,17 +183,19 @@ impl LocalApic {
         let apic_lint0 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x350) };
         let apic_lint1 = unsafe { &mut *page.start_address().as_mut_ptr::<u32>().byte_add(0x360) };
         if let Some(acpi) = ACPI.get() {
-            acpi.madt().local_nmis().iter().for_each(|nmi| {
-                if nmi.acpi_id() != 0xFF || nmi.acpi_id() != acpi_id {
-                    return;
-                }
+            let nmis = acpi
+                .madt()
+                .local_nmis()
+                .iter()
+                .filter(|nmi| nmi.acpi_id() == 0xFF || nmi.acpi_id() == acpi_id);
 
+            for nmi in nmis {
                 let triggermode: u32 = match nmi.flags().trigger_mode() {
-                    acpi::sdt::madt::TriggerMode::Edge
-                    // Apparently bus default is edge
-                    | acpi::sdt::madt::TriggerMode::BusDefault => 0,
-                    acpi::sdt::madt::TriggerMode::Level => 1,
-                };
+                        acpi::sdt::madt::TriggerMode::Edge
+                        // Apparently bus default is edge
+                        | acpi::sdt::madt::TriggerMode::BusDefault => 0,
+                        acpi::sdt::madt::TriggerMode::Level => 1,
+                    };
                 let polarity: u32 = match nmi.flags().polarity() {
                     // Apparently bus default is high
                     acpi::sdt::madt::Polarity::High | acpi::sdt::madt::Polarity::BusDefault => 0,
@@ -216,7 +219,7 @@ impl LocalApic {
                         *apic_lint1 = value;
                     }
                 }
-            });
+            }
         }
 
         // Register spurious interrupt handler
@@ -226,7 +229,7 @@ impl LocalApic {
         *apic_spurious |= u32::from(0xFF_u8); // Set spurious handler index
         *apic_spurious |= 0x100; // Enable spurious interrupt
 
-        let base = Volatile::new(NonNull::new(base_ptr).unwrap());
+        let base = MmioRegister::new(NonNull::new(base_ptr).unwrap());
 
         let (irq, _) =
             super::interrupts::new_irq(timer_interrupt_handler, Some(locals!().core_id()));
@@ -240,8 +243,8 @@ impl LocalApic {
     }
 
     pub fn send_ipi(&self, ipi: &ipi::Ipi) {
-        let icr_low = unsafe { self.base.byte_add(0x300) };
-        let icr_high = unsafe { self.base.byte_add(0x310).change_access() };
+        let icr_low = unsafe { self.base.byte_add(0x300).as_volatile() };
+        let icr_high = unsafe { self.base.byte_add(0x310).lower_access().as_volatile() };
         // Safety:
         // The ICR registers are read/write and their addresses are valid.
         unsafe { ipi.send(icr_low, icr_high) };
@@ -268,7 +271,7 @@ impl LocalApic {
 
     #[must_use]
     #[inline]
-    pub const fn base(&self) -> Volatile<ReadWrite, u32> {
+    pub const fn base(&self) -> MmioRegister<ReadWrite, u32> {
         self.base
     }
 
@@ -445,6 +448,11 @@ pub struct Redirection {
 impl IoApic {
     #[must_use]
     pub fn new(base: PhysAddr, gsi_base: u32) -> Self {
+        debug_assert!(
+            base.is_aligned(Alignment::Align8),
+            "IOAPIC base address must be at least 8-byte aligned"
+        );
+
         let frame = Frame::<M4KiB>::containing_address(base);
 
         let frame_end_addr = frame.start_address() + (M4KiB::SIZE - 1);
@@ -493,14 +501,12 @@ impl IoApic {
         );
         self.set_id(u8::try_from(cpu_count).unwrap() + id_offset);
 
-        let isos = ACPI.get().unwrap().madt().io_iso();
+        let isos = ACPI.get().unwrap().madt().io_iso().iter().filter(|iso| {
+            iso.gsi() >= self.gsi_base && iso.gsi() < self.gsi_base + u32::from(self.max_red_ent())
+        });
         let nmi_sources = ACPI.get().unwrap().madt().io_nmi_sources();
 
         for iso in isos {
-            if iso.gsi() < self.gsi_base {
-                continue;
-            }
-
             let (is_nmi, flags) = nmi_sources
                 .iter()
                 .find(|nmis| nmis.gsi() == iso.gsi())

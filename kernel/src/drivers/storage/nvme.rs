@@ -20,6 +20,7 @@ use beskar_core::{
 };
 use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
 use core::ptr::NonNull;
+use driver_shared::mmio::MmioRegister;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
     ptrs::volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
@@ -105,10 +106,10 @@ impl NvmeControllers {
         .unwrap();
         let registers_base = physical_mapping.translate(paddr).unwrap();
 
-        let asq_doorbell = Volatile::new(
+        let asq_doorbell = MmioRegister::new(
             NonNull::new(unsafe { registers_base.as_mut_ptr::<u32>().byte_add(0x1000) }).unwrap(),
         );
-        let acq_doorbell = Volatile::new(
+        let acq_doorbell = MmioRegister::new(
             NonNull::new(unsafe {
                 registers_base
                     .as_mut_ptr::<u32>()
@@ -131,6 +132,7 @@ impl NvmeControllers {
         })
     }
 
+    #[expect(clippy::too_many_lines)]
     pub fn init(&mut self) -> DriverResult<()> {
         // --- Part One: Controller Bare Initialization ---
 
@@ -232,21 +234,19 @@ impl NvmeControllers {
         // --- Part Three: I/O queues creation ---
 
         let dstrd = self.capabilities().dstrd();
-        let io_sq_doorbell = Volatile::new(
+        let io_sq_doorbell = MmioRegister::new(
             NonNull::new(unsafe {
                 self.registers_base
-                    .as_mut_ptr::<u8>()
+                    .as_mut_ptr::<u32>()
                     .byte_add(0x1000 + 2 * dstrd)
-                    .cast::<u32>()
             })
             .unwrap(),
         );
-        let io_cq_doorbell = Volatile::new(
+        let io_cq_doorbell = MmioRegister::new(
             NonNull::new(unsafe {
                 self.registers_base
-                    .as_mut_ptr::<u8>()
+                    .as_mut_ptr::<u32>()
                     .byte_add(0x1000 + 3 * dstrd)
-                    .cast::<u32>()
             })
             .unwrap(),
         );
@@ -255,9 +255,7 @@ impl NvmeControllers {
         let io_sq = IoSubmissionQueue::new(io_sq_doorbell)?;
 
         // Respect MQES limit (value is 0-based in CAP, so +1 entries)
-        let max_entries = u16::try_from(self.capabilities().mqes())
-            .unwrap()
-            .saturating_add(1);
+        let max_entries = self.capabilities().mqes().saturating_add(1);
         let cq_entries = core::cmp::min(io_cq.entries(), max_entries).saturating_sub(1);
         let sq_entries = core::cmp::min(io_sq.entries(), max_entries).saturating_sub(1);
 
@@ -621,4 +619,12 @@ impl Status {
     }
 
     // TODO: Implement the rest of the fields
+}
+
+#[inline]
+pub fn with_nvme_controller<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&mut NvmeControllers) -> R,
+{
+    NVME_CONTROLLER.with_locked_if_init(f)
 }

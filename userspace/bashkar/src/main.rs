@@ -1,42 +1,42 @@
 #![no_std]
 #![no_main]
-use alloc::{string::String, vec::Vec};
-use beskar_lib::io::keyboard;
+use beskar_core::time::Duration;
+use beskar_lib::{io::keyboard, time::now};
 
 beskar_lib::entry_point!(main);
 
 fn main() {
+    const KEYBOARD_THRESHOLD: Duration = Duration::from_millis(300);
+
     bashkar::video::init();
+
+    let mut last_input_time = now();
 
     loop {
         if let Some(event) = keyboard::poll_keyboard() {
             let line_complete = bashkar::video::tty::with_tty(|tty| tty.handle_key_event(&event));
 
             if line_complete {
-                // Process the command
+                let line = bashkar::video::tty::with_tty(|tty| tty.drain_input_line());
+                let (command, args) = bashkar::commands::parse_command_line(&line);
+
+                let exec_res = bashkar::video::tty::with_tty(|tty| {
+                    bashkar::commands::execute_command(&command, &args, tty)
+                });
+
                 bashkar::video::tty::with_tty(|tty| {
-                    let input = tty.get_input_line();
-                    let (command, args) = bashkar::commands::parse_command_line(input);
+                    if let Err(err_msg) = exec_res {
+                        tty.write_str(&format!("Error: {}\n", err_msg));
+                    }
 
-                    // FIXME: Cloning the args into Strings is necessary to avoid borrowing issues below,
-                    // but it would be better to avoid this.
-                    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
-
-                    let _exec_res = bashkar::commands::execute_command(&command, &args_ref, tty);
-                    // match exec_res {
-                    //     bashkar::commands::CommandResult::Success => {
-                    //         // Success, just show the prompt again
-                    //     }
-                    //     bashkar::commands::CommandResult::Error(_msg) => {
-                    //         // Error, what to do more?
-                    //     }
-                    // }
-
-                    // Reset the input buffer
                     tty.reset_input();
                     tty.display_prompt();
                 });
             }
+
+            last_input_time = now();
+        } else if now() - last_input_time >= KEYBOARD_THRESHOLD {
+            keyboard::wait_next_event();
         } else {
             core::hint::spin_loop();
         }

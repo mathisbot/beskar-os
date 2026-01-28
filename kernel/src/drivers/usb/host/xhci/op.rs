@@ -1,15 +1,15 @@
-use core::ptr::NonNull;
-
 use beskar_core::arch::VirtAddr;
-use hyperdrive::ptrs::volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly};
+use core::ptr::NonNull;
+use driver_shared::mmio::MmioRegister;
+use hyperdrive::ptrs::volatile::{ReadOnly, ReadWrite, WriteOnly};
 
 #[derive(Clone, Copy)]
 pub struct OperationalRegisters {
-    base: Volatile<ReadWrite, u32>,
+    base: MmioRegister<ReadWrite, u32>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct StatusRegister(Volatile<ReadOnly, u32>);
+pub struct StatusRegister(MmioRegister<ReadOnly, u32>);
 
 impl StatusRegister {
     const HALT: u32 = 1 << 0;
@@ -71,7 +71,7 @@ impl StatusRegister {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct CommandRegister(Volatile<ReadWrite, u32>);
+pub struct CommandRegister(MmioRegister<ReadWrite, u32>);
 
 impl CommandRegister {
     const RUN_STOP: u32 = 1 << 0;
@@ -89,8 +89,8 @@ impl CommandRegister {
     const VTIO_E: u32 = 1 << 16;
 
     #[must_use]
-    pub const fn as_raw(self) -> Volatile<WriteOnly, u32> {
-        self.0.change_access()
+    pub const fn as_raw(self) -> MmioRegister<WriteOnly, u32> {
+        self.0.lower_access()
     }
 
     #[must_use]
@@ -231,7 +231,7 @@ impl OperationalRegisters {
 
     #[must_use]
     pub const fn new(base: VirtAddr) -> Self {
-        let base = Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap());
+        let base = MmioRegister::new(NonNull::new(base.as_mut_ptr()).unwrap());
         Self { base }
     }
 
@@ -242,7 +242,7 @@ impl OperationalRegisters {
 
     #[must_use]
     pub const fn status(self) -> StatusRegister {
-        StatusRegister(unsafe { self.base.byte_add(Self::STATUS).change_access() })
+        StatusRegister(unsafe { self.base.byte_add(Self::STATUS).lower_access() })
     }
 
     #[must_use]
@@ -253,23 +253,18 @@ impl OperationalRegisters {
     }
 
     #[must_use]
-    pub const fn dev_notification(self) -> Volatile<ReadWrite, u32> {
+    pub const fn dev_notification(self) -> MmioRegister<ReadWrite, u32> {
         // Bits 16-31 are reserved but writes must be DWORDs
         unsafe { self.base.byte_add(Self::DEV_NOTIFICATION) }
     }
 
     #[must_use]
-    pub const fn cmd_ring(self) -> Volatile<WriteOnly, u64> {
-        unsafe {
-            self.base
-                .cast::<u64>()
-                .byte_add(Self::CMD_RING)
-                .change_access()
-        }
+    pub const fn cmd_ring(self) -> MmioRegister<WriteOnly, u64> {
+        unsafe { self.base.cast::<u64>().byte_add(Self::CMD_RING) }.lower_access()
     }
 
     #[must_use]
-    pub const fn dcbaap(self) -> Volatile<ReadWrite, u64> {
+    pub const fn dcbaap(self) -> MmioRegister<ReadWrite, u64> {
         unsafe { self.base.cast::<u64>().byte_add(Self::DCBAAP) }
     }
 

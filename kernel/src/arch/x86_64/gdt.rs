@@ -110,8 +110,10 @@ impl Gdt {
         }
 
         let mut tss = TaskStateSegment::new();
-        tss.interrupt_stack_table[DOUBLE_FAULT_IST as usize] = alloc_stack(2);
-        tss.interrupt_stack_table[PAGE_FAULT_IST as usize] = alloc_stack(2);
+        tss.interrupt_stack_table[DOUBLE_FAULT_IST as usize] = alloc_stack(4);
+        tss.interrupt_stack_table[PAGE_FAULT_IST as usize] = alloc_stack(4);
+        tss.privilege_stack_table[0] = alloc_stack(4);
+
         tss
     }
 

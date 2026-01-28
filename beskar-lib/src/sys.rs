@@ -1,5 +1,8 @@
 use crate::arch::syscalls;
-use beskar_core::syscall::{ExitCode, Syscall, SyscallExitCode};
+use beskar_core::{
+    process::SleepHandle,
+    syscall::{ExitCode, Syscall, SyscallExitCode},
+};
 
 #[inline]
 pub fn sc_exit(code: ExitCode) -> ! {
@@ -44,13 +47,25 @@ pub fn sc_write(handle: i64, buffer: *const u8, size: u64, offset: u64) -> i64 {
 }
 
 #[inline]
-pub fn sc_mmap(size: u64, alignment: u64) -> *mut u8 {
-    let res = syscalls::syscall_2(Syscall::MemoryMap, size, alignment);
+pub fn sc_mmap(size: u64, alignment: u64, flags: u64) -> *mut u8 {
+    let res = syscalls::syscall_3(Syscall::MemoryMap, size, alignment, flags);
     res as _
+}
+
+#[inline]
+pub fn sc_mprotect(ptr: *mut u8, size: u64, flags: u64) -> SyscallExitCode {
+    let res = syscalls::syscall_3(Syscall::MemoryProtect, ptr as u64, size, flags);
+    SyscallExitCode::try_from(res).unwrap()
 }
 
 #[inline]
 pub fn sc_sleep(ms: u64) -> SyscallExitCode {
     let res = syscalls::syscall_1(Syscall::Sleep, ms);
+    SyscallExitCode::try_from(res).unwrap()
+}
+
+#[inline]
+pub fn sc_wait_on_event(handle: SleepHandle) -> SyscallExitCode {
+    let res = syscalls::syscall_1(Syscall::WaitOnEvent, handle.raw());
     SyscallExitCode::try_from(res).unwrap()
 }

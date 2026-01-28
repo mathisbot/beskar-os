@@ -1,10 +1,6 @@
-use crate::arch::{apic::LocalApic, gdt::Gdt, interrupts::Interrupts};
-use alloc::boxed::Box;
+pub use crate::arch::locals::CoreLocalsInfo;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use hyperdrive::{
-    locks::mcs::{MUMcsLock, McsLock},
-    once::Once,
-};
+use hyperdrive::once::Once;
 
 /// Distributes core IDs
 static CORE_ID: AtomicUsize = AtomicUsize::new(0);
@@ -14,17 +10,10 @@ static ALL_CORE_LOCALS: [Once<&'static CoreLocalsInfo>; 256] = [const { Once::un
 
 pub fn init() {
     let core_id = CORE_ID.fetch_add(1, Ordering::Relaxed);
-    let apic_id = crate::arch::apic::apic_id();
 
-    let core_locals = Box::new(CoreLocalsInfo {
-        core_id,
-        apic_id,
-        ..CoreLocalsInfo::empty()
-    });
-    let core_locals = Box::leak(core_locals);
+    let core_locals = crate::arch::locals::init(core_id);
 
     ALL_CORE_LOCALS[core_id].call_once(|| core_locals);
-    crate::arch::locals::store_locals(core_locals);
 }
 
 #[must_use]
@@ -32,66 +21,6 @@ pub fn init() {
 /// Returns the number of currently active cores
 pub fn core_count() -> usize {
     CORE_ID.load(core::sync::atomic::Ordering::Acquire)
-}
-
-pub struct CoreLocalsInfo {
-    core_id: usize,
-    apic_id: u8,
-    gdt: McsLock<Gdt>,
-    interrupts: Interrupts,
-    lapic: MUMcsLock<LocalApic>,
-    scheduler: Once<crate::process::scheduler::Scheduler>,
-}
-
-impl CoreLocalsInfo {
-    #[must_use]
-    #[inline]
-    pub const fn empty() -> Self {
-        Self {
-            core_id: 0,
-            apic_id: 0,
-            gdt: McsLock::new(Gdt::uninit()),
-            interrupts: Interrupts::new(),
-            lapic: MUMcsLock::uninit(),
-            scheduler: Once::uninit(),
-        }
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn core_id(&self) -> usize {
-        self.core_id
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn apic_id(&self) -> u8 {
-        self.apic_id
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn gdt(&self) -> &McsLock<Gdt> {
-        &self.gdt
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn interrupts(&self) -> &Interrupts {
-        &self.interrupts
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn lapic(&self) -> &MUMcsLock<LocalApic> {
-        &self.lapic
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn scheduler(&self) -> &Once<crate::process::scheduler::Scheduler> {
-        &self.scheduler
-    }
 }
 
 #[must_use]
