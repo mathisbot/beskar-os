@@ -175,11 +175,6 @@ impl Thread {
             "Stack too small"
         );
 
-        // Push the return address
-        let entry_point_bytes = (entry_point as usize).to_ne_bytes();
-        stack[stack_bottom - size_of::<usize>()..stack_bottom].copy_from_slice(&entry_point_bytes);
-        stack_bottom -= size_of::<usize>();
-
         // Push the thread registers
         let thread_regs = ThreadRegisters::new(entry_point, stack_ptr);
         let thread_regs_bytes = unsafe {

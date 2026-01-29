@@ -110,16 +110,17 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 extern "x86-interrupt" fn page_fault_handler(
-    _stack_frame: InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
     let faulting_address = Cr2::read();
     let thread_id = crate::process::scheduler::current_thread_id();
 
     video::error!(
-        "EXCEPTION: PAGE FAULT ({:b}) at {:#x} in Thread {}",
-        error_code,
+        "EXCEPTION: PAGE FAULT (Accessed {:#x} - {:b}) at {:#x} in Thread {}",
         faulting_address.as_u64(),
+        error_code,
+        stack_frame.instruction_pointer().as_u64(),
         thread_id.as_u64()
     );
 
