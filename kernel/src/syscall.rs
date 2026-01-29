@@ -36,6 +36,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
     match syscall {
         Syscall::Exit => sc_exit(args),
         Syscall::MemoryMap => SyscallReturnValue::ValueU(sc_mmap(args)),
+        Syscall::MemoryUnmap => SyscallReturnValue::Code(sc_munmap(args)),
         Syscall::MemoryProtect => SyscallReturnValue::Code(sc_mprotect(args)),
         Syscall::Read => SyscallReturnValue::ValueI(sc_read(args)),
         Syscall::Write => SyscallReturnValue::ValueI(sc_write(args)),
@@ -104,6 +105,36 @@ fn sc_mmap(args: &Arguments) -> u64 {
     };
 
     page_range.start().start_address().as_u64()
+}
+
+fn sc_munmap(args: &Arguments) -> SyscallExitCode {
+    let ptr = args.one;
+    let size = args.two;
+
+    if size == 0 {
+        return SyscallExitCode::Success;
+    }
+
+    let Some(va) = VirtAddr::try_new(ptr) else {
+        return SyscallExitCode::Failure;
+    };
+    let end = va + (size - 1);
+
+    if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
+        && !size.is_multiple_of(M4KiB::SIZE)
+        && !probe(va, end)
+    {
+        return SyscallExitCode::Failure;
+    }
+
+    let page_start = va.page::<M4KiB>();
+    let page_end = end.page::<M4KiB>();
+
+    let page_range = Page::range_inclusive(page_start, page_end);
+
+    unsafe { process::current().address_space().unmap_free(page_range) };
+
+    SyscallExitCode::Success
 }
 
 #[must_use]

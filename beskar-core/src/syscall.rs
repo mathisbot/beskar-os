@@ -46,6 +46,13 @@ pub enum Syscall {
     /// The second argument is the alignment of the memory.
     /// The third argument is the protection flags of the memory.
     MemoryMap = 5,
+    /// MemoryUnmap syscall.
+    ///
+    /// Frees previously allocated memory.
+    ///
+    /// The first argument is the pointer to the memory region.
+    /// The second argument is the size of the memory region.
+    MemoryUnmap = 6,
     /// MemoryProtect syscall.
     ///
     /// Changes the protection of a memory region.
@@ -53,15 +60,15 @@ pub enum Syscall {
     /// The first argument is the pointer to the memory region.
     /// The second argument is the size of the memory region.
     /// The third argument is the new protection flags.
-    MemoryProtect = 6,
+    MemoryProtect = 7,
     /// Put the thread to sleep for a given amount of time.
     ///
     /// The first argument is the time to sleep in milliseconds.
-    Sleep = 7,
+    Sleep = 8,
     /// Put the thread to sleep until a given event is signalled.
     ///
     /// The first argument is the sleep handle to wait on.
-    WaitOnEvent = 8,
+    WaitOnEvent = 9,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]

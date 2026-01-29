@@ -53,6 +53,12 @@ pub fn sc_mmap(size: u64, alignment: u64, flags: u64) -> *mut u8 {
 }
 
 #[inline]
+pub fn sc_munmap(ptr: *mut u8, size: u64) -> SyscallExitCode {
+    let res = syscalls::syscall_2(Syscall::MemoryUnmap, ptr as u64, size);
+    SyscallExitCode::try_from(res).unwrap()
+}
+
+#[inline]
 pub fn sc_mprotect(ptr: *mut u8, size: u64, flags: u64) -> SyscallExitCode {
     let res = syscalls::syscall_3(Syscall::MemoryProtect, ptr as u64, size, flags);
     SyscallExitCode::try_from(res).unwrap()
