@@ -3,6 +3,8 @@ use beskar_core::arch::{PhysAddr, VirtAddr, paging::Frame};
 pub struct Cr0;
 
 impl Cr0 {
+    pub const MONITOR_COPROCESSOR: u64 = 1 << 1;
+    pub const EMULATE_COPROCESSOR: u64 = 1 << 2;
     pub const TASK_SWITCHED: u64 = 1 << 3;
     pub const WRITE_PROTECT: u64 = 1 << 16;
     pub const CACHE_DISABLE: u64 = 1 << 30;
@@ -25,6 +27,14 @@ impl Cr0 {
     pub unsafe fn write(value: u64) {
         unsafe {
             core::arch::asm!("mov cr0, {}", in(reg) value, options(nomem, nostack, preserves_flags));
+        }
+    }
+
+    #[inline]
+    /// Clears the TS (Task Switched) flag in CR0.
+    pub unsafe fn clear_ts() {
+        unsafe {
+            core::arch::asm!("clts", options(nomem, nostack, preserves_flags));
         }
     }
 
@@ -99,6 +109,7 @@ impl Cr4 {
     pub const TSD: u64 = 1 << 2;
     pub const PAE: u64 = 1 << 5;
     pub const OSFXSR: u64 = 1 << 9;
+    pub const OSXMMEXCPT: u64 = 1 << 10;
     pub const SMXE: u64 = 1 << 14;
     pub const FSGSBASE: u64 = 1 << 16;
     pub const PCIDE: u64 = 1 << 17;

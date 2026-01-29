@@ -53,6 +53,19 @@ pub fn mmap(
     NonNull::new(ptr).ok_or_else(|| MemoryError::new(MemoryErrorKind::OutOfMemory))
 }
 
+/// Unmap memory from the address space
+///
+/// Returns true if the operation was successful, false otherwise.
+///
+/// # Safety
+///
+/// The pointer and size must be valid and correspond to a previously mapped region
+/// that will no longer be used after this call.
+pub unsafe fn munmap(ptr: *mut u8, size: u64) -> bool {
+    let res = crate::sys::sc_munmap(ptr, size);
+    res.is_success()
+}
+
 /// Change the protection of a memory region
 ///
 /// Returns true if the operation was successful, false otherwise.

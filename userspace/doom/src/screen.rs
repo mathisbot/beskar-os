@@ -24,6 +24,8 @@ pub fn init() {
     SCREEN_INFO.call_once(|| SCREEN.with_locked(|screen| *screen.info()));
 }
 
+#[must_use]
+#[inline]
 /// Returns the screen info.
 ///
 /// # Panics
@@ -33,29 +35,33 @@ fn screen_info() -> &'static Info {
     SCREEN_INFO.get().unwrap()
 }
 
+#[inline]
 fn with_screen<R, F: FnOnce(&mut FrameBuffer) -> R>(f: F) -> R {
     SCREEN.with_locked(f)
 }
 
 /// Draw the Doom framebuffer to the screen
 pub fn draw() {
-    let fb_start = unsafe { doom_get_framebuffer(CHANNELS.try_into().unwrap()) };
-    let fb_raw = core::ptr::slice_from_raw_parts(fb_start, SCREENWIDTH * SCREENHEIGHT * CHANNELS);
+    let fb_start = unsafe { doom_get_framebuffer(CHANNELS as i32) };
 
-    let Some(fb) = (unsafe { fb_raw.as_ref() }) else {
-        beskar_lib::println!("Warning: Doom framebuffer is not initialized");
-        return;
-    };
+    let info = screen_info();
+    let stride_bytes = usize::from(info.stride()) * usize::from(info.bytes_per_pixel());
+    let row_size = SCREENWIDTH * CHANNELS;
 
-    let stride = usize::from(screen_info().stride());
-    let bpp = usize::from(screen_info().bytes_per_pixel());
-    let stride_bytes = stride * bpp;
     with_screen(|screen| {
-        let mut buffer_mut = screen.buffer_mut();
-        for row in fb.chunks_exact(SCREENWIDTH * CHANNELS) {
-            buffer_mut[..SCREENWIDTH * CHANNELS].copy_from_slice(row);
-            buffer_mut = &mut buffer_mut[stride_bytes..];
+        let dst = screen.buffer_mut().as_mut_ptr();
+        let src = fb_start;
+
+        for y in 0..SCREENHEIGHT {
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    src.add(y * row_size),
+                    dst.add(y * stride_bytes),
+                    row_size,
+                );
+            }
         }
-        let _ = screen.flush_rows(0..u16::try_from(SCREENHEIGHT).unwrap());
+
+        let _ = screen.flush_rows(0..SCREENHEIGHT as u16);
     });
 }

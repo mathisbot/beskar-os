@@ -155,7 +155,7 @@ impl Pixel {
 
     #[must_use]
     #[inline]
-    fn new_rgb(components: PixelComponents) -> Self {
+    pub fn new_rgb(components: PixelComponents) -> Self {
         Self(
             ((u32::from(components.blue)) << 16)
                 | ((u32::from(components.green)) << 8)
@@ -165,7 +165,7 @@ impl Pixel {
 
     #[must_use]
     #[inline]
-    fn new_bgr(components: PixelComponents) -> Self {
+    pub fn new_bgr(components: PixelComponents) -> Self {
         Self(
             ((u32::from(components.red)) << 16)
                 | ((u32::from(components.green)) << 8)
@@ -185,7 +185,7 @@ impl Pixel {
 
     #[must_use]
     #[inline]
-    fn components_bgr(self) -> PixelComponents {
+    pub fn components_bgr(self) -> PixelComponents {
         let red = u8::try_from((self.0 >> 16) & 0xFF).unwrap();
         let green = u8::try_from((self.0 >> 8) & 0xFF).unwrap();
         let blue = u8::try_from(self.0 & 0xFF).unwrap();
@@ -194,7 +194,7 @@ impl Pixel {
 
     #[must_use]
     #[inline]
-    fn components_rgb(self) -> PixelComponents {
+    pub fn components_rgb(self) -> PixelComponents {
         let blue = u8::try_from((self.0 >> 16) & 0xFF).unwrap();
         let green = u8::try_from((self.0 >> 8) & 0xFF).unwrap();
         let red = u8::try_from(self.0 & 0xFF).unwrap();

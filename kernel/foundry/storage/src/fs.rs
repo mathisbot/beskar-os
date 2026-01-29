@@ -84,10 +84,10 @@ pub trait FileSystem {
     fn read_dir(&mut self, path: Path) -> FileResult<Vec<PathBuf>>;
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct PathBuf(String);
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Path<'a>(&'a str);
 
 impl PathBuf {

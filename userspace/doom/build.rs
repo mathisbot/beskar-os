@@ -29,6 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .flag("-w")
         // compile without simd
         .flag("-mgeneral-regs-only")
+        .flag("-flto")
         .compile("puredoom");
 
     Ok(())
