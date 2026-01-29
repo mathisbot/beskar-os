@@ -112,7 +112,7 @@ impl KernelDevice for ScreenDevice {
     fn write(&mut self, src: &[u8], offset: usize) -> Result<(), BlockDeviceError> {
         let (prefix, src, suffix) = unsafe { src.align_to::<PixelCompArr>() };
 
-        if !prefix.is_empty() || !suffix.is_empty() {
+        if !prefix.is_empty() || !suffix.is_empty() || !offset.is_multiple_of(size_of::<Pixel>()) {
             return Err(BlockDeviceError::UnalignedAccess);
         }
 
@@ -127,9 +127,34 @@ impl KernelDevice for ScreenDevice {
             let pixel_format = screen.info().pixel_format();
             let screen_buffer = screen.buffer_mut();
 
-            for (&pc, d) in src.iter().zip(screen_buffer[pixel_offset..].iter_mut()) {
-                let pixel = Pixel::from_format(pixel_format, pc.0);
-                *d = pixel;
+            let dst_ptr = unsafe { screen_buffer.as_mut_ptr().add(pixel_offset) };
+            let src_ptr = src.as_ptr();
+            let len = src.len();
+
+            // Safety: Bounds were validated above with pixel_offset + src.len() <= pixel_limit.
+            // We only access indices within [pixel_offset, pixel_offset + src.len()).
+            match pixel_format {
+                beskar_core::video::PixelFormat::Rgb => {
+                    for i in 0..len {
+                        let pc = unsafe { *src_ptr.add(i) }.0;
+                        let px = Pixel::new_rgb(pc);
+                        unsafe { dst_ptr.add(i).write(px) };
+                    }
+                }
+                beskar_core::video::PixelFormat::Bgr => {
+                    for i in 0..len {
+                        let pc = unsafe { *src_ptr.add(i) }.0;
+                        let px = Pixel::new_bgr(pc);
+                        unsafe { dst_ptr.add(i).write(px) };
+                    }
+                }
+                _ => {
+                    for i in 0..len {
+                        let pc = unsafe { *src_ptr.add(i) }.0;
+                        let pixel = Pixel::from_format(pixel_format, pc);
+                        unsafe { dst_ptr.add(i).write(pixel) };
+                    }
+                }
             }
 
             Ok(())
