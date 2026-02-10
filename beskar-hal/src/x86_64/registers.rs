@@ -136,20 +136,6 @@ impl Cr4 {
             core::arch::asm!("mov cr4, {}", in(reg) value, options(nomem, nostack, preserves_flags));
         }
     }
-
-    #[inline]
-    /// # Safety
-    ///
-    /// The value written must be a valid CR4 flag.
-    pub unsafe fn insert_flags(flag: u64) {
-        unsafe {
-            core::arch::asm!(
-                "or cr4, {}",
-                in(reg) flag,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
-    }
 }
 
 pub struct Efer;

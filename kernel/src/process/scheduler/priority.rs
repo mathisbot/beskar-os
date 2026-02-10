@@ -47,7 +47,6 @@ impl From<Priority> for u8 {
 pub unsafe trait ThreadQueue {
     fn append(&self, thread: Box<Thread>);
     /// Returns the best thread to run next, or None if no runnable threads are available.
-    // #[expect(clippy::unnecessary_box_returns, reason = "Thread objects are large")]
     fn pop_best(&self) -> Option<Box<Thread>>;
     /// Determines whether we should switch from the current thread to the candidate thread.
     ///

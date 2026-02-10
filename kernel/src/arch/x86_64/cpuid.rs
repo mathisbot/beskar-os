@@ -295,11 +295,8 @@ impl CpuFeature {
 /// Please keep the list sorted by leaf number
 const REQUIRED_FEATURES: [CpuFeature; 4] = [
     // Leaf 1
-    // CpuFeature::FPU,
     CpuFeature::PSE,
     CpuFeature::MSR,
-    // CpuFeature::PAT,
-    // CpuFeature::FXSR,
     CpuFeature::XSAVE,
     // XLeaf 1
     CpuFeature::SYSCALL,

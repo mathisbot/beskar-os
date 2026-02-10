@@ -20,7 +20,7 @@ pub mod video;
 
 #[macro_export]
 macro_rules! static_assert {
-    ($condition:expr $(, $($arg:tt)+)?) => {
-        const _: () = assert!($condition $(, $($arg)+)?);
+    ($($arg:tt)*) => {
+        const _: () = assert!($($arg)*);
     };
 }

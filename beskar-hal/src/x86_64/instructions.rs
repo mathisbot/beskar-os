@@ -99,5 +99,12 @@ pub unsafe fn fpu_restore(src: &super::structures::SseSave) {
     }
 }
 
+/// Invalidate the TLB entry for the given virtual address.
+pub unsafe fn invl_pg(addr: u64) {
+    unsafe {
+        core::arch::asm!("invlpg [{}]", in(reg) addr, options(nostack, nomem, preserves_flags));
+    }
+}
+
 /// This value can be used to fill the stack when debugging stack overflows.
 pub const STACK_DEBUG_INSTR: u8 = 0xCC;

@@ -48,11 +48,9 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
 }
 
 fn sc_exit(args: &Arguments) -> ! {
-    #[cfg_attr(not(debug_assertions), allow(unused_variables))]
     let exit_code = args.one;
 
-    #[cfg(debug_assertions)]
-    {
+    if cfg!(debug_assertions) {
         let exit_code = beskar_core::syscall::ExitCode::try_from(exit_code);
         let tid = crate::process::scheduler::current_thread_id();
 

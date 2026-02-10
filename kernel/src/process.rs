@@ -4,7 +4,7 @@ use alloc::{
     sync::Arc,
 };
 use beskar_hal::process::Kind;
-use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 use hyperdrive::{once::Once, ptrs::view::ViewRef};
 use storage::fs::{Path, PathBuf};
 
@@ -140,41 +140,6 @@ impl Drop for Process {
 #[inline]
 pub fn current() -> Arc<Process> {
     scheduler::current_process()
-}
-
-/// A struct representing a PCID.
-///
-/// Its valid values are 0 to 4095.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Pcid(u16);
-
-impl Default for Pcid {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Pcid {
-    #[must_use]
-    #[inline]
-    pub fn new() -> Self {
-        const MAX_PCID: u16 = 1 << 12;
-        static PCID_COUNTER: AtomicU16 = AtomicU16::new(0);
-
-        let raw: u16 = PCID_COUNTER.fetch_add(1, Ordering::Relaxed);
-
-        if raw >= MAX_PCID {
-            todo!("PCID recycling");
-        }
-
-        Self(raw % 4096)
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn as_u16(&self) -> u16 {
-        self.0
-    }
 }
 
 pub struct Stdout;
