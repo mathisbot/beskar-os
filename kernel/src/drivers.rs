@@ -12,7 +12,7 @@ pub mod usb;
 pub extern "C" fn init() -> ! {
     let pci_init_result = pci::init();
     if pci_init_result.is_err() {
-        video::warn!("PCI initialization failed");
+        crate::warn!("PCI initialization failed");
     }
 
     // TODO: Start each driver's process when needed

@@ -5,7 +5,7 @@
 use beskar_core::{
     arch::{PhysAddr, VirtAddr},
     mem::ranges::MemoryRange,
-    video::FrameBuffer,
+    video::FramebufferConfig,
 };
 
 #[macro_export]
@@ -29,7 +29,7 @@ pub struct BootInfo {
     /// A map of the physical memory regions.
     pub memory_regions: &'static mut [MemoryRange],
     /// Framebuffer for screen output.
-    pub framebuffer: FrameBuffer,
+    pub framebuffer: FramebufferConfig,
     /// The page index of the recursive level 4 table.
     pub recursive_index: u16,
     /// The address of the `RSDP`, used to find the ACPI tables (if reported).
@@ -52,7 +52,7 @@ impl BootInfo {
     #[must_use]
     #[inline]
     /// Returns the framebuffer for screen output.
-    pub const fn framebuffer(&self) -> &FrameBuffer {
+    pub const fn framebuffer(&self) -> &FramebufferConfig {
         &self.framebuffer
     }
 

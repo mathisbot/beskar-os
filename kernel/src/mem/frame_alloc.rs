@@ -21,7 +21,7 @@ static KFRAME_ALLOC: McsLock<FrameAllocator> = McsLock::new(FrameAllocator {
 pub fn init(ranges: &[MemoryRange]) {
     assert!(!ranges.is_empty(), "No usable memory regions found");
     if ranges.len() >= MAX_MEMORY_REGIONS {
-        video::warn!(
+        crate::warn!(
             "Too many usable memory regions, using only the first {}",
             MAX_MEMORY_REGIONS
         );
@@ -31,7 +31,7 @@ pub fn init(ranges: &[MemoryRange]) {
         ranges.iter().take(MAX_MEMORY_REGIONS).for_each(|r| {
             frallocator.memory_ranges.insert(*r);
         });
-        video::info!(
+        crate::info!(
             "Free memory: {} MiB",
             frallocator.memory_ranges.sum() / 1_048_576
         );

@@ -60,6 +60,33 @@ impl FileError {
 }
 
 #[derive(Debug)]
+pub struct SurfaceError {
+    kind: SurfaceErrorKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SurfaceErrorKind {
+    InvalidDimensions,
+    InvalidBuffer,
+    SyscallFailed,
+    Other,
+}
+
+impl SurfaceError {
+    #[must_use]
+    #[inline]
+    pub const fn new(kind: SurfaceErrorKind) -> Self {
+        Self { kind }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn kind(&self) -> SurfaceErrorKind {
+        self.kind
+    }
+}
+
+#[derive(Debug)]
 pub struct MemoryError {
     kind: MemoryErrorKind,
 }
@@ -127,6 +154,13 @@ impl fmt::Display for MemoryError {
 }
 impl core::error::Error for MemoryError {}
 
+impl fmt::Display for SurfaceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.kind)
+    }
+}
+impl core::error::Error for SurfaceError {}
+
 impl fmt::Display for SyscallError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "syscall failed with code {}", self.code)
@@ -139,6 +173,7 @@ pub enum Error {
     Io(IoError),
     File(FileError),
     Memory(MemoryError),
+    Surface(SurfaceError),
     Syscall(SyscallError),
 }
 
@@ -150,6 +185,7 @@ impl fmt::Display for Error {
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::File(e) => write!(f, "File error: {e}"),
             Self::Memory(e) => write!(f, "Memory error: {e}"),
+            Self::Surface(e) => write!(f, "Surface error: {e}"),
             Self::Syscall(e) => write!(f, "Syscall error: {e}"),
         }
     }
@@ -169,6 +205,11 @@ impl From<FileError> for Error {
 impl From<MemoryError> for Error {
     fn from(err: MemoryError) -> Self {
         Self::Memory(err)
+    }
+}
+impl From<SurfaceError> for Error {
+    fn from(err: SurfaceError) -> Self {
+        Self::Surface(err)
     }
 }
 impl From<SyscallError> for Error {

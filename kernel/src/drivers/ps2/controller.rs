@@ -65,7 +65,7 @@ impl Ps2Controller {
     pub fn initialize(&self) -> Ps2Result<()> {
         let keyboard_support = ACPI.get().unwrap().fadt().ps2_keyboard();
         if !keyboard_support {
-            video::warn!("PS/2 controller not supported by ACPI");
+            crate::warn!("PS/2 controller not supported by ACPI");
             return Err(Ps2Error::KeyboardUnsupported);
         }
 
@@ -93,7 +93,7 @@ impl Ps2Controller {
             }
         }
         if !has_passed {
-            video::warn!("PS/2 controller self-test failed");
+            crate::warn!("PS/2 controller self-test failed");
             return Err(Ps2Error::SelfTest);
         }
         self.write_config(config);
@@ -108,7 +108,7 @@ impl Ps2Controller {
             }
         }
         if !has_passed {
-            video::warn!("PS/2 controller first port test failed");
+            crate::warn!("PS/2 controller first port test failed");
             return Err(Ps2Error::FirstPortTest);
         }
 

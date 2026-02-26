@@ -5,11 +5,13 @@ use alloc::{
 };
 use beskar_hal::process::Kind;
 use core::sync::atomic::{AtomicU64, Ordering};
-use hyperdrive::{once::Once, ptrs::view::ViewRef};
+use hyperdrive::{once::Once, ptrs::view::ViewRef, queues::mpmc::MpmcQueue};
 use storage::fs::{Path, PathBuf};
 
 pub mod binary;
 pub mod scheduler;
+
+const MAX_SURFACES_PER_PROCESS: usize = 2;
 
 static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();
 
@@ -21,6 +23,7 @@ pub fn init() {
             address_space: ViewRef::new_borrow(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
             binary: None,
+            surfaces: MpmcQueue::new(),
         })
     });
 
@@ -84,6 +87,8 @@ pub struct Process {
     address_space: ViewRef<'static, AddressSpace>,
     kind: Kind,
     binary: Option<PathBuf>,
+    /// Surfaces allocated by this process (interior mutability for registration)
+    surfaces: MpmcQueue<MAX_SURFACES_PER_PROCESS, crate::video::SurfaceGuard>,
 }
 
 impl Process {
@@ -96,6 +101,7 @@ impl Process {
             address_space: ViewRef::new_owned(AddressSpace::new()),
             kind,
             binary,
+            surfaces: MpmcQueue::new(),
         }
     }
 
@@ -128,10 +134,17 @@ impl Process {
     pub fn binary(&self) -> Option<Path<'_>> {
         self.binary.as_ref().map(PathBuf::as_path)
     }
+
+    /// Register a surface as belonging to this process
+    pub fn register_surface(&self, guard: crate::video::SurfaceGuard) -> bool {
+        let res = self.surfaces.try_push(guard);
+        res.is_ok()
+    }
 }
 
 impl Drop for Process {
     fn drop(&mut self) {
+        // Close all file descriptors
         crate::storage::vfs().close_all_from_process(self.pid.as_u64());
     }
 }
@@ -158,7 +171,7 @@ impl ::storage::KernelDevice for Stdout {
 
         // TODO: Send somewhere else than the kernel log.
         let tid = crate::process::scheduler::current_thread_id();
-        video::info!("[Thread {}] {}", tid.as_u64(), text);
+        crate::info!("[Thread {}] {}", tid.as_u64(), text);
 
         Ok(())
     }

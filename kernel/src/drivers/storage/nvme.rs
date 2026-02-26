@@ -36,7 +36,7 @@ const MAX_QUEUES: usize = 3;
 
 pub fn init(nvme: &[Device]) -> DriverResult<()> {
     if nvme.len() > 1 {
-        video::warn!("Multiple NVMe controllers found, using the first one");
+        crate::warn!("Multiple NVMe controllers found, using the first one");
     }
     let Some(nvme) = nvme.first() else {
         return Err(DriverError::Absent);
@@ -45,7 +45,7 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
     let mut controller = NvmeControllers::new(nvme)?;
     controller.init()?;
 
-    video::info!(
+    crate::info!(
         "NVMe controller initialized with version {}",
         controller.version()
     );
@@ -76,7 +76,7 @@ impl NvmeControllers {
                 (handler.read_bar(dev, 0), MsiX::new(handler, dev))
             })
         else {
-            video::error!("NVMe controller has no memory BAR or no MSI-X capability");
+            crate::error!("NVMe controller has no memory BAR or no MSI-X capability");
             return Err(DriverError::Absent);
         };
 
@@ -175,7 +175,7 @@ impl NvmeControllers {
         self.cc().enable();
         while !self.csts().ready() {
             if self.csts().fatal() {
-                video::warn!("NVMe controller has encountered a fatal error when initializing");
+                crate::warn!("NVMe controller has encountered a fatal error when initializing");
                 return Err(DriverError::Unknown);
             }
             core::hint::spin_loop();
@@ -214,7 +214,7 @@ impl NvmeControllers {
                 core::hint::spin_loop();
             };
             if !res.is_success() {
-                video::error!(
+                crate::error!(
                     "Identify Controller command failed: status={:04x}",
                     res.status_code()
                 );
@@ -273,7 +273,7 @@ impl NvmeControllers {
             core::hint::spin_loop();
         };
         if !res_cq.is_success() {
-            video::error!(
+            crate::error!(
                 "Create IO CQ command failed: status={:04x}",
                 res_cq.status_code()
             );
@@ -293,7 +293,7 @@ impl NvmeControllers {
             core::hint::spin_loop();
         };
         if !res_sq.is_success() {
-            video::error!(
+            crate::error!(
                 "Create IO SQ command failed: status={:04x}",
                 res_sq.status_code()
             );
@@ -303,7 +303,7 @@ impl NvmeControllers {
         self.io_cq = Some(io_cq);
         self.io_sq = Some(io_sq);
 
-        video::debug!(
+        crate::debug!(
             "NVMe IO queues created: SQ entries={}, CQ entries={}",
             sq_entries,
             cq_entries
@@ -393,7 +393,7 @@ impl NvmeControllers {
 }
 
 extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    video::debug!("NVMe INTERRUPT on core {}", locals!().core_id());
+    crate::debug!("NVMe INTERRUPT on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
 

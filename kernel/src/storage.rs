@@ -29,7 +29,6 @@ pub fn init() {
         PathBuf::new("/randseed"),
         Box::new(crate::process::SeedFile),
     );
-    device_fs.add_device(PathBuf::new("/fb"), Box::new(video::screen::ScreenDevice));
     vfs.mount(PathBuf::new("/dev"), Box::new(device_fs));
 
     VFS.call_once(|| vfs);

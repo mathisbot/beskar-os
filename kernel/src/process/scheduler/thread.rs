@@ -170,8 +170,7 @@ impl Thread {
 
         let mut stack_bottom = stack.len();
         assert!(
-            stack_bottom
-                >= MINIMUM_LEFTOVER_STACK + size_of::<ThreadRegisters>() + size_of::<usize>(),
+            stack_bottom >= MINIMUM_LEFTOVER_STACK + size_of::<ThreadRegisters>(),
             "Stack too small"
         );
 

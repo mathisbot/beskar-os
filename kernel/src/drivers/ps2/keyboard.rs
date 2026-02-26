@@ -32,7 +32,7 @@ impl<'a> Ps2Keyboard<'a> {
         keyboard.scancode_set = keyboard.ensure_scancode_set(DEFAULT_SCANCODE_SET);
         keyboard.enable_scanning()?;
 
-        video::debug!("PS/2 keyboard scancode set: {:?}", keyboard.scancode_set);
+        crate::debug!("PS/2 keyboard scancode set: {:?}", keyboard.scancode_set);
 
         Ok(keyboard)
     }
@@ -50,12 +50,12 @@ impl<'a> Ps2Keyboard<'a> {
     /// Reset and self-test the keyboard device.
     fn reset_device(&self) -> DriverResult<()> {
         let Ok(value) = self.send_command(0xFF) else {
-            video::warn!("PS/2 keyboard failed to receive reset command");
+            crate::warn!("PS/2 keyboard failed to receive reset command");
             return Err(beskar_core::drivers::DriverError::Invalid);
         };
 
         if value != SpecialBytes::ACK {
-            video::warn!("PS/2 keyboard didn't acknowledge");
+            crate::warn!("PS/2 keyboard didn't acknowledge");
             return Err(beskar_core::drivers::DriverError::Invalid);
         }
 
@@ -67,13 +67,13 @@ impl<'a> Ps2Keyboard<'a> {
                 break;
             }
             if value == SpecialBytes::SELF_TEST_FAIL || value == SpecialBytes::SELF_TEST_FAIL2 {
-                video::warn!("PS/2 keyboard reset failed");
+                crate::warn!("PS/2 keyboard reset failed");
                 return Err(beskar_core::drivers::DriverError::Invalid);
             }
         }
 
         if !has_passed {
-            video::warn!("PS/2 keyboard reset failed with unexpected value");
+            crate::warn!("PS/2 keyboard reset failed with unexpected value");
             return Err(beskar_core::drivers::DriverError::Unknown);
         }
 
@@ -84,7 +84,7 @@ impl<'a> Ps2Keyboard<'a> {
     fn enable_scanning(&self) -> DriverResult<()> {
         let res = self.send_command(0xF4)?;
         if res != SpecialBytes::ACK {
-            video::warn!("PS/2 keyboard didn't acknowledge scanning enable command");
+            crate::warn!("PS/2 keyboard didn't acknowledge scanning enable command");
             return Err(beskar_core::drivers::DriverError::Invalid);
         }
         Ok(())

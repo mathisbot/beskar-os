@@ -8,7 +8,6 @@ pub use traits::{BufRead, Read, Seek, SeekFrom, Write};
 mod file;
 pub use file::File;
 pub mod keyboard;
-pub mod screen;
 
 /// A buffered reader that implements `BufRead`
 pub struct BufReader<R> {

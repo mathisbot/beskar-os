@@ -526,7 +526,7 @@ mod tests {
     // Helper function to create a test canvas
     fn create_test_canvas<'a>(width: u16, height: u16, buffer: &'a mut [Pixel]) -> AsciiCanvas<'a> {
         let size = u32::from(width) * u32::from(height) * 4;
-        let info = Info::new(size, width, height, PixelFormat::Rgb, width, 4);
+        let info = Info::new(width, height, PixelFormat::Rgb, width);
         let theme = Theme::white_on_black();
         AsciiCanvas::new(info, buffer, theme)
     }
@@ -562,10 +562,7 @@ mod tests {
         let mut buffer = [Pixel::from_format(PixelFormat::Rgb, PixelComponents::BLACK); 800 * 600];
         let mut canvas = create_test_canvas(800, 600, &mut buffer);
 
-        let new_theme = Theme::new(
-            PixelComponents::new(255, 0, 0),
-            PixelComponents::new(0, 255, 0),
-        );
+        let new_theme = Theme::new(PixelComponents::RED, PixelComponents::GREEN);
 
         canvas.set_theme(new_theme);
         assert_eq!(canvas.theme(), new_theme);
@@ -659,8 +656,8 @@ mod tests {
 
     #[test]
     fn test_theme_custom_colors() {
-        let fg = PixelComponents::new(128, 64, 32);
-        let bg = PixelComponents::new(200, 150, 100);
+        let fg = PixelComponents::new(128, 64, 32, 255);
+        let bg = PixelComponents::new(200, 150, 100, 255);
         let theme = Theme::new(fg, bg);
 
         assert_eq!(theme.foreground, fg);

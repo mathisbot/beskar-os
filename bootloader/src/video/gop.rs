@@ -1,7 +1,7 @@
 //! Handles the Graphical Output Protocol (GOP) provided by the UEFI firmware.
 use super::PhysicalFrameBuffer;
 use beskar_core::arch::PhysAddr;
-use beskar_core::video::{Info, PixelBitmask, PixelFormat};
+use beskar_core::video::{Info, PixelFormat};
 use uefi::{
     boot,
     proto::console::gop::{self, GraphicsOutput},
@@ -29,19 +29,10 @@ pub fn init() -> PhysicalFrameBuffer {
     let mode_info = best_mode.info();
 
     let pixel_format = match mode_info.pixel_format() {
-        gop::PixelFormat::Rgb => PixelFormat::Rgb,
-        gop::PixelFormat::Bgr => PixelFormat::Bgr,
-        gop::PixelFormat::Bitmask => {
-            let info_bm = mode_info.pixel_bitmask().unwrap();
-            let bitmask = PixelBitmask {
-                red: info_bm.red,
-                green: info_bm.green,
-                blue: info_bm.blue,
-            };
-            PixelFormat::Bitmask(bitmask)
-        }
-        gop::PixelFormat::BltOnly => {
-            panic!("BltOnly pixel format is not supported");
+        gop::PixelFormat::Rgb => PixelFormat::Xrgb8888,
+        gop::PixelFormat::Bgr => PixelFormat::Bgr8888,
+        f => {
+            unimplemented!("{:?} pixel format", f);
         }
     };
 
@@ -61,12 +52,10 @@ pub fn init() -> PhysicalFrameBuffer {
     PhysicalFrameBuffer {
         start_addr: PhysAddr::new_truncate(fb_slice.as_mut_ptr() as u64),
         info: Info::new(
-            gop_fb.size().try_into().unwrap(),
             mode_info.resolution().0.try_into().unwrap(),
             mode_info.resolution().1.try_into().unwrap(),
             pixel_format,
             mode_info.stride().try_into().unwrap(),
-            4,
         ),
     }
 }

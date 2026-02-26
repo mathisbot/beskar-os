@@ -69,6 +69,32 @@ pub enum Syscall {
     ///
     /// The first argument is the sleep handle to wait on.
     WaitOnEvent = 9,
+    /// Create a surface with a user-provided buffer.
+    ///
+    /// The first argument is the dimensions of the surface (u32 ; width << 16 | height).
+    /// The second argument is the x and y position on the screen (u32 ; x << 16 | y).
+    /// The third argument is a pointer to the buffer.
+    SurfaceCreate = 10,
+    /// Destroy a surface.
+    ///
+    /// The first argument is the surface ID.
+    SurfaceDestroy = 11,
+    /// Mark a region of a surface as dirty (needs to be redrawn).
+    ///
+    /// The first argument is the surface ID.
+    /// The second argument is the dimensions of the surface (u32 ; width << 16 | height).
+    /// The third argument is the x and y position on the surface (u32 ; x << 16 | y).
+    SurfaceDirty = 12,
+    /// Present dirty regions of a surface to the screen.
+    ///
+    /// The first argument is the surface ID.
+    SurfacePresent = 13,
+    /// Query configuration information from the kernel.
+    ///
+    /// The first argument is the type of information to query (u64).
+    /// The second argument is a pointer to a struct to fill in.
+    /// The third argument is the maximum size of the struct.
+    QueryConfig = 14,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
@@ -139,6 +165,9 @@ pub mod consts {
     pub const MFLAGS_WRITE: u64 = 0x2;
     /// Memory protection flags - execute permission
     pub const MFLAGS_EXECUTE: u64 = 0x4;
+
+    /// Query type - framebuffer information
+    pub const QUERY_FRAMEBUFFER: u64 = 0;
 }
 
 #[cfg(test)]

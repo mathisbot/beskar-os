@@ -39,7 +39,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
         crate::drivers::pci::with_pci_handler(|handler| handler.read_bar(&network_controller, 0))
     else {
         // FIXME: Apparently, some network controllers use IO BARs
-        video::warn!("Network controller does not have a memory BAR");
+        crate::warn!("Network controller does not have a memory BAR");
         return Err(DriverError::Absent);
     };
 
@@ -68,7 +68,7 @@ pub fn init(network_controller: pci::Device) -> DriverResult<()> {
     };
     e1000e.init(rxdesc_paddr, txdesc_paddr, nb_rx, nb_tx);
 
-    video::info!(
+    crate::info!(
         "Intel e1000e network controller initialized. MAC: {}",
         e1000e.mac_address()
     );
@@ -254,9 +254,9 @@ extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFram
             let status = e1000e.read_reg(Registers::STATUS);
             let link_up = (status & 0x02) != 0;
             if link_up {
-                video::debug!("Network link is up");
+                crate::debug!("Network link is up");
             } else {
-                video::debug!("Network link is down");
+                crate::debug!("Network link is down");
             }
         }
     });
@@ -294,7 +294,7 @@ impl Nic for E1000e<'_> {
 
     fn send_frame(&mut self, frame: &[u8]) {
         if frame.is_empty() || frame.len() > 4096 {
-            video::warn!("Invalid frame size: {}", frame.len());
+            crate::warn!("Invalid frame size: {}", frame.len());
             return;
         }
 
@@ -303,7 +303,7 @@ impl Nic for E1000e<'_> {
         // Wait for a free TX descriptor
         let desc = self.buffer_set.tx_desc(tx_idx);
         if !desc.is_done() {
-            video::warn!("No free TX descriptor available");
+            crate::warn!("No free TX descriptor available");
             return;
         }
 

@@ -23,7 +23,7 @@ pub fn init() -> DriverResult<()> {
     PS2_CONTROLLER.initialize()?;
     let ps2_keyboard = Ps2Keyboard::new(&PS2_CONTROLLER)?;
     PS2_KEYBOARD.call_once(|| ps2_keyboard);
-    video::info!("PS/2 controller initialized");
+    crate::info!("PS/2 controller initialized");
     Ok(())
 }
 

@@ -57,7 +57,7 @@ impl AhciPort {
 
             timeout -= 1;
             if timeout == 0 {
-                video::warn!("AHCI port {} device ready timeout", self.port_id);
+                crate::warn!("AHCI port {} device ready timeout", self.port_id);
                 return Err(DriverError::Unknown);
             }
         }
@@ -74,7 +74,7 @@ impl AhciPort {
         // Start command engine
         self.start_command_engine()?;
 
-        video::debug!(
+        crate::debug!(
             "AHCI port {} initialized (status=0x{:08x})",
             self.port_id,
             self.regs.sata_status()
@@ -107,7 +107,7 @@ impl AhciPort {
 
             timeout -= 1;
             if timeout == 0 {
-                video::warn!("AHCI port {} command engine start timeout", self.port_id);
+                crate::warn!("AHCI port {} command engine start timeout", self.port_id);
                 return Err(DriverError::Unknown);
             }
         }
@@ -135,7 +135,7 @@ impl AhciPort {
 
             timeout -= 1;
             if timeout == 0 {
-                video::warn!("AHCI port {} command engine stop timeout", self.port_id);
+                crate::warn!("AHCI port {} command engine stop timeout", self.port_id);
                 return Err(DriverError::Unknown);
             }
         }

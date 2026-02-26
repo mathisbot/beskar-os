@@ -128,11 +128,11 @@ impl LapicTimer {
         } else if let Some(rate_mhz) = self.calibrate_with_time() {
             self.configuration.rate_mhz = rate_mhz.get();
         } else {
-            video::warn!("LAPIC timer calibration failed");
+            crate::warn!("LAPIC timer calibration failed");
             return;
         }
 
-        video::debug!(
+        crate::debug!(
             "LAPIC timer calibrated at {} MHz",
             self.configuration.rate_mhz
         );

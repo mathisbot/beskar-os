@@ -29,13 +29,13 @@ static XHCI: MUMcsLock<Xhci> = MUMcsLock::uninit();
 pub fn init(mut xhci: impl Iterator<Item = (Device, PhysAddr)>) -> DriverResult<()> {
     // TODO: Support multiple xHCI controllers
     let Some((first_xhci_device, first_xhci_paddr)) = xhci.next() else {
-        video::warn!("No xHCI controller found");
+        crate::warn!("No xHCI controller found");
         return Err(DriverError::Absent);
     };
 
     let mut xhci = Xhci::new(first_xhci_device, first_xhci_paddr);
     xhci.reinitialize()?;
-    video::debug!(
+    crate::debug!(
         "xHCI controller with version {} is ready",
         xhci.cap.hci_version()
     );
@@ -235,7 +235,7 @@ impl Xhci {
 }
 
 extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    video::info!("xHCI INTERRUPT on core {}", locals!().core_id());
+    crate::info!("xHCI INTERRUPT on core {}", locals!().core_id());
     handle_xhci_interrupt();
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
@@ -255,12 +255,12 @@ pub const fn handle_xhci_interrupt() {
     //         match trb.trb_type() {
     //             trb::TrbType::CommandCompletionEvent => {
     //                 let event = trb::CommandCompletionEventTrb::from_trb(&trb);
-    //                 video::debug!("Command completion event: {:?}", event.completion_code());
+    //                 crate::debug!("Command completion event: {:?}", event.completion_code());
     //             }
     //             trb::TrbType::PortStatusChangeEvent => {
     //                 let event = trb::PortStatusChangeEventTrb::from_trb(&trb);
     //                 let port_id = event.port_id();
-    //                 video::debug!("Port status change event for port {}", port_id);
+    //                 crate::debug!("Port status change event for port {}", port_id);
 
     //                 // Get the port registers
     //                 let port_regs = xhci.port_regs.port_regs(port_id - 1);
@@ -269,10 +269,10 @@ pub const fn handle_xhci_interrupt() {
     //                 // Check what changed
     //                 if port_sc.connect_status_change() {
     //                     if port_sc.connected() {
-    //                         video::debug!("Device connected to port {}", port_id);
+    //                         crate::debug!("Device connected to port {}", port_id);
     //                         // TODO: Start device enumeration
     //                     } else {
-    //                         video::debug!("Device disconnected from port {}", port_id);
+    //                         crate::debug!("Device disconnected from port {}", port_id);
     //                         // TODO: Clean up device resources
     //                     }
     //                     port_sc.clear_connect_status_change();
@@ -280,20 +280,20 @@ pub const fn handle_xhci_interrupt() {
 
     //                 if port_sc.port_enabled_change() {
     //                     if port_sc.enabled() {
-    //                         video::debug!("Port {} enabled", port_id);
+    //                         crate::debug!("Port {} enabled", port_id);
     //                     } else {
-    //                         video::debug!("Port {} disabled", port_id);
+    //                         crate::debug!("Port {} disabled", port_id);
     //                     }
     //                     port_sc.clear_port_enabled_change();
     //                 }
 
     //                 if port_sc.port_reset_change() {
-    //                     video::debug!("Port {} reset complete", port_id);
+    //                     crate::debug!("Port {} reset complete", port_id);
     //                     port_sc.clear_port_reset_change();
     //                 }
     //             }
     //             _ => {
-    //                 video::debug!("Unhandled event type: {:?}", trb.trb_type());
+    //                 crate::debug!("Unhandled event type: {:?}", trb.trb_type());
     //             }
     //         }
 

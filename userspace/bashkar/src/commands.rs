@@ -95,7 +95,6 @@ fn cmd_rand(args: &[String], tty: &mut Tty) -> CommandResult {
     tty.write_str("Random Bytes: ");
     let mut str_buf = alloc::string::String::new();
     for byte in &buffer {
-        // tty.write_fmt(format_args!("{byte:02X} ")).unwrap();
         str_buf.write_fmt(format_args!("{byte:02X} ")).unwrap();
     }
     tty.write_str(&str_buf);

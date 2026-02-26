@@ -219,6 +219,16 @@ impl<const SIZE: usize, T> Ring<SIZE, T> {
         // Therefore, the element at `read_index` is initialized.
         Some(unsafe { value.assume_init() })
     }
+
+    #[must_use]
+    #[expect(clippy::iter_without_into_iter)]
+    /// Returns an iterator over the elements in the ring buffer.
+    pub const fn iter(&self) -> RingIter<'_, SIZE, T> {
+        RingIter {
+            ring: self,
+            index: 0,
+        }
+    }
 }
 
 impl<const SIZE: usize, T> Drop for Ring<SIZE, T> {
@@ -226,6 +236,30 @@ impl<const SIZE: usize, T> Drop for Ring<SIZE, T> {
         while let Some(v) = self.pop() {
             drop(v);
         }
+    }
+}
+
+pub struct RingIter<'a, const SIZE: usize, T> {
+    ring: &'a Ring<SIZE, T>,
+    index: usize,
+}
+
+impl<'a, const SIZE: usize, T> Iterator for RingIter<'a, SIZE, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.ring.len() {
+            return None;
+        }
+
+        let idx = (self.ring.read_index() + self.index) % SIZE;
+        let element = &self.ring.buffer[idx];
+
+        // SAFETY: The element is in bounds of the initialized range.
+        let value = unsafe { element.assume_init_ref() };
+
+        self.index += 1;
+        Some(value)
     }
 }
 
@@ -407,5 +441,20 @@ mod tests {
             assert_eq!(ring.pop(), Some(()));
         }
         assert!(ring.is_empty());
+    }
+
+    #[test]
+    fn test_ring_iter() {
+        let mut ring = Ring::<5, usize>::new();
+
+        ring.push(10);
+        ring.push(20);
+        ring.push(30);
+
+        let mut iter = ring.iter();
+        assert_eq!(iter.next(), Some(&10));
+        assert_eq!(iter.next(), Some(&20));
+        assert_eq!(iter.next(), Some(&30));
+        assert_eq!(iter.next(), None);
     }
 }

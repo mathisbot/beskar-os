@@ -12,7 +12,7 @@ pub mod userspace;
 
 pub fn init() {
     cpuid::check_cpuid();
-    video::debug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
+    crate::debug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
 
     prepare_sse();
 }

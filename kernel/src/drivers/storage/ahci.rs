@@ -47,7 +47,7 @@ pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
     let mut ahci = Ahci::new(ahci_base, pmap);
     ahci.initialize()?;
 
-    video::info!("AHCI controller initialized successfully");
+    crate::info!("AHCI controller initialized successfully");
 
     Ok(())
 }
@@ -69,8 +69,8 @@ impl Ahci {
         let capabilities = regs.capabilities();
         let port_count = capabilities.np() + 1;
 
-        video::debug!("AHCI version: {}.{}", version >> 16, version & 0xFFFF);
-        video::debug!("AHCI supports {} ports", port_count);
+        crate::debug!("AHCI version: {}.{}", version >> 16, version & 0xFFFF);
+        crate::debug!("AHCI supports {} ports", port_count);
 
         Self {
             base,
@@ -93,7 +93,7 @@ impl Ahci {
             timeout -= 1;
         }
         if timeout == 0 {
-            video::warn!("AHCI mode enable timeout");
+            crate::warn!("AHCI mode enable timeout");
             return Err(DriverError::Unknown);
         }
 
@@ -125,7 +125,7 @@ impl Ahci {
             // Check if a device is present
             if port.is_device_present() {
                 port.initialize()?;
-                video::debug!("AHCI port {} initialized with device", port_idx);
+                crate::debug!("AHCI port {} initialized with device", port_idx);
             }
         }
 

@@ -16,6 +16,7 @@ pub mod io;
 pub mod mem;
 pub mod prelude;
 pub mod rand;
+pub mod surface;
 mod sys;
 pub mod time;
 

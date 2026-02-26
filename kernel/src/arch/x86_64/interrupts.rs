@@ -116,7 +116,7 @@ extern "x86-interrupt" fn page_fault_handler(
     let faulting_address = Cr2::read();
     let thread_id = crate::process::scheduler::current_thread_id();
 
-    video::error!(
+    crate::error!(
         "EXCEPTION: PAGE FAULT (Accessed {:#x} - {:b}) at {:#x} in Thread {}",
         faulting_address.as_u64(),
         error_code,
@@ -157,7 +157,7 @@ macro_rules! panic_isr_with_errcode {
 macro_rules! info_isr {
     ($name:ident) => {
         extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) {
-            video::info!(
+            crate::info!(
                 "{} INTERRUPT on core {} - t{}",
                 stringify!($name),
                 locals!().core_id(),
@@ -242,7 +242,7 @@ extern "C" fn breakpoint_handler_impl(
     stack_frame: &InterruptStackFrame,
     registers: &ThreadRegisters,
 ) {
-    video::debug!(
+    crate::debug!(
         "Breakpoint reached in Thread {} ({:?})\n{:#?}",
         crate::process::scheduler::current_thread_id().as_u64(),
         stack_frame.instruction_pointer().as_ptr::<()>(),
