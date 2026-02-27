@@ -20,7 +20,7 @@ const SLAB_SIZES: &[usize] = &[8, 16, 32, 64, 128, 256, 512];
 const MIN_HEAP_SIZE: usize = 4096;
 
 /// Maximum number of slab size classes
-const MAX_SLABS: usize = 8;
+const MAX_SLABS: usize = SLAB_SIZES.len();
 
 /// Represents a free slot in a slab
 struct FreeSlot {
@@ -163,12 +163,6 @@ impl Slab {
         ptr >= self.start && ptr < self.end
     }
 
-    /// Check if the slab is empty (all slots free)
-    #[inline]
-    const fn _is_empty(&self) -> bool {
-        self.free_count == self.capacity
-    }
-
     /// Check if the slab is full (no free slots)
     #[inline]
     const fn is_full(&self) -> bool {
@@ -189,8 +183,6 @@ pub struct SlabAllocator {
     /// Array of slabs for different size classes
     slabs: [Option<Slab>; MAX_SLABS],
 }
-
-const NONE_SLAB: Option<Slab> = None;
 
 impl SlabAllocator {
     /// Create a new slab allocator
@@ -219,7 +211,7 @@ impl SlabAllocator {
         // Divide memory among slabs proportionally
         let base_size = remaining_size / SLAB_SIZES.len();
 
-        let mut slabs = [NONE_SLAB; MAX_SLABS];
+        let mut slabs = [const { None }; MAX_SLABS];
         for (i, &size) in SLAB_SIZES.iter().enumerate() {
             if i >= MAX_SLABS {
                 break;
@@ -319,6 +311,16 @@ impl SlabAllocator {
         } else {
             0
         }
+    }
+
+    /// Returns `true` if any slab in this allocator owns the given pointer.
+    #[must_use]
+    pub fn contains(&self, ptr: NonNull<u8>) -> bool {
+        let ptr_raw = ptr.as_ptr();
+        self.slabs
+            .iter()
+            .flatten()
+            .any(|slab| slab.contains(ptr_raw))
     }
 }
 

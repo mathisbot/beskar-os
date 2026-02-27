@@ -72,15 +72,12 @@ impl BuddyAllocator {
             max_order,
         };
 
-        // Add the initial block to the appropriate free list
-        let initial_order = size_to_order(adjusted_size.next_power_of_two() / 2);
-        let initial_block_size = order_to_size(initial_order);
-
-        if initial_block_size <= adjusted_size {
-            // SAFETY: We've validated the heap region and aligned it properly
-            unsafe {
-                buddy.add_block_to_free_list(aligned_ptr, initial_order);
-            }
+        // Add the initial block to the free list.
+        // `max_order` is capped to `MAX_ORDER - 1`, so `order_to_size(max_order) <= adjusted_size`
+        // is guaranteed and we cannot go out-of-bounds on `free_lists`.
+        // SAFETY: We've validated the heap region and aligned it properly
+        unsafe {
+            buddy.add_block_to_free_list(aligned_ptr, max_order);
         }
 
         Ok(buddy)
@@ -146,6 +143,17 @@ impl BuddyAllocator {
         }
 
         Ok(())
+    }
+
+    /// Returns `true` if this allocator owns the given pointer.
+    ///
+    /// A pointer is owned when it falls within the heap region provided at construction.
+    #[must_use]
+    pub fn contains(&self, ptr: NonNull<u8>) -> bool {
+        let ptr_raw = ptr.as_ptr();
+        // SAFETY: heap_start + heap_size is within the original allocation
+        let heap_end = unsafe { self.heap_start.add(self.heap_size) };
+        ptr_raw >= self.heap_start && ptr_raw < heap_end
     }
 
     /// Find and allocate a block of the given order
@@ -219,11 +227,7 @@ impl BuddyAllocator {
                 }
 
                 // Merge with buddy - the merged block starts at the lower address
-                current_ptr = if current_ptr < buddy_ptr {
-                    current_ptr
-                } else {
-                    buddy_ptr
-                };
+                current_ptr = current_ptr.min(buddy_ptr);
                 current_order += 1;
             } else {
                 break;

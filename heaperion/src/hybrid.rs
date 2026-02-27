@@ -26,6 +26,10 @@ pub struct HybridAllocator {
     slab: SlabAllocator,
     /// Buddy allocator for large allocations
     buddy: BuddyAllocator,
+    /// Start of the original heap region (for ownership queries)
+    heap_start: *mut u8,
+    /// Size of the original heap region (for ownership queries)
+    heap_size: usize,
 }
 
 impl HybridAllocator {
@@ -52,6 +56,8 @@ impl HybridAllocator {
         Ok(Self {
             slab: unsafe { SlabAllocator::new(heap_start, slab_size) }?,
             buddy: unsafe { BuddyAllocator::new(buddy_start, buddy_size) }?,
+            heap_start,
+            heap_size,
         })
     }
 
@@ -70,7 +76,7 @@ impl HybridAllocator {
         }
 
         // Choose allocator based on size
-        if layout.size() <= SLAB_THRESHOLD && layout.size() <= self.slab.max_size() {
+        if layout.size() <= SLAB_THRESHOLD {
             // Try slab first for small allocations
             if let Ok(ptr) = self.slab.allocate(layout) {
                 return Ok(ptr);
@@ -80,6 +86,17 @@ impl HybridAllocator {
 
         // Use buddy for large allocations or when slab fails
         self.buddy.allocate(layout)
+    }
+
+    /// Returns `true` if this allocator owns the given pointer.
+    ///
+    /// Checks whether `ptr` falls within the original heap region passed to [`HybridAllocator::new`].
+    #[must_use]
+    pub fn contains(&self, ptr: NonNull<u8>) -> bool {
+        let ptr_raw = ptr.as_ptr();
+        // SAFETY: heap_start + heap_size is within the original allocation
+        let heap_end = unsafe { self.heap_start.add(self.heap_size) };
+        ptr_raw >= self.heap_start && ptr_raw < heap_end
     }
 
     /// Deallocate memory at the given pointer with the given layout
@@ -97,7 +114,7 @@ impl HybridAllocator {
     /// - `HeapError::InvalidPointer` if the pointer was not allocated by this allocator
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) -> Result<()> {
         // Try to deallocate from slab first for small sizes
-        if layout.size() <= SLAB_THRESHOLD && layout.size() <= self.slab.max_size() {
+        if layout.size() <= SLAB_THRESHOLD {
             // SAFETY: Caller guarantees ptr was allocated by us
             if unsafe { self.slab.deallocate(ptr).is_ok() } {
                 return Ok(());
@@ -109,6 +126,12 @@ impl HybridAllocator {
         unsafe { self.buddy.deallocate(ptr, layout) }
     }
 }
+
+// SAFETY: HybridAllocator owns its memory region exclusively and does not share
+// interior pointers across threads. The raw pointer fields are only used for
+// ownership range checks and are always valid for the allocator's lifetime.
+unsafe impl Send for HybridAllocator {}
+unsafe impl Sync for HybridAllocator {}
 
 #[cfg(test)]
 mod tests {

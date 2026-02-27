@@ -28,3 +28,11 @@ Heaperion is a robust and efficient memory allocator designed for embedded syste
 - O(log(c)) allocation and deallocation
 - Power-of-two sized blocks
 - Automatic coalescing to reduce fragmentation
+
+### Hybrid Allocator
+
+Dispatch allocations to Slab or Buddy depending on the size.
+
+### GrowableHeap
+
+Wrapper around heaps that can grow at runtime.

@@ -402,7 +402,7 @@ pub extern "C" fn user_trampoline() -> ! {
     let rsp = super::with_scheduler(|scheduler| {
         scheduler.current.with_locked(|thread| {
             thread.stack.as_mut().map(|ts| {
-                ts.allocate_all(4 * M4KiB::SIZE);
+                ts.allocate_all(16 * M4KiB::SIZE);
                 ts.user_stack_top().unwrap()
             })
         })

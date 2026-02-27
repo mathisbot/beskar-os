@@ -1,17 +1,18 @@
 use crate::error::{MemoryError, MemoryErrorKind, MemoryResult};
 use beskar_core::arch::paging::{M4KiB, MemSize as _};
 use core::{num::NonZeroU64, ptr::NonNull};
+use heaperion::{DefaultGrowableHeap, HybridAllocator};
 use hyperdrive::locks::mcs::MUMcsLock;
 
-static ALLOCATOR: MUMcsLock<heaperion::Heap> = MUMcsLock::uninit();
-
-struct Heap;
+static ALLOCATOR: MUMcsLock<DefaultGrowableHeap<Mmap, 4>> = MUMcsLock::uninit();
 
 #[global_allocator]
 static HEAP: Heap = Heap;
 
-pub(crate) const HEAP_SIZE: u64 = 20 * 1024 * 1024; // 20 MiB
-beskar_core::static_assert!(HEAP_SIZE.is_multiple_of(M4KiB::SIZE));
+const HEAP_START_SIZE: u64 = 16 * 1024 * 1024; // 16 MiB
+beskar_core::static_assert!(HEAP_START_SIZE.is_multiple_of(M4KiB::SIZE));
+
+struct Heap;
 
 unsafe impl core::alloc::GlobalAlloc for Heap {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
@@ -30,8 +31,15 @@ unsafe impl core::alloc::GlobalAlloc for Heap {
 
 #[inline]
 /// Initialize the heap allocator
-pub(crate) unsafe fn init_heap(start: *mut u8, size: usize) {
-    ALLOCATOR.init(unsafe { heaperion::Heap::new(start, size) }.unwrap());
+pub(super) fn init_heap() {
+    let size = HEAP_START_SIZE;
+    let start = mmap(size, None, MemoryProtection::ReadWrite).unwrap();
+
+    // SAFETY: `start` and `size` come from a successful call to `mmap` and are not used after this point.
+    let heap =
+        unsafe { HybridAllocator::new(start.as_ptr(), usize::try_from(size).unwrap()) }.unwrap();
+    let growable = DefaultGrowableHeap::new(heap, Mmap);
+    ALLOCATOR.init(growable);
 }
 
 /// Map memory into the address space
@@ -74,6 +82,77 @@ pub unsafe fn munmap(ptr: *mut u8, size: u64) -> bool {
 pub fn mprotect(ptr: *mut u8, size: u64, flags: MemoryProtection) -> bool {
     let res = crate::sys::sc_mprotect(ptr, size, flags as _);
     res.is_success()
+}
+
+pub struct MmapReadWrite {
+    ptr: NonNull<u8>,
+    size: u64,
+}
+
+impl MmapReadWrite {
+    #[inline]
+    /// Create a new read-write memory mapping of the given size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the memory cannot be mapped.
+    pub fn new(size: u64) -> MemoryResult<Self> {
+        let ptr = mmap(size, None, MemoryProtection::ReadWrite)?;
+        Ok(Self { ptr, size })
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn size(&self) -> u64 {
+        self.size
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn as_ptr(&self) -> *mut u8 {
+        self.ptr.as_ptr()
+    }
+
+    #[must_use]
+    #[inline]
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
+    pub fn as_slice(&self) -> &[u8] {
+        let data = self.as_ptr();
+        let len = usize::try_from(self.size).unwrap();
+        unsafe { core::slice::from_raw_parts(data.cast::<u8>(), len) }
+    }
+
+    #[must_use]
+    #[inline]
+    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        let data = self.as_ptr();
+        let len = usize::try_from(self.size).unwrap();
+        unsafe { core::slice::from_raw_parts_mut(data.cast::<u8>(), len) }
+    }
+}
+
+impl Drop for MmapReadWrite {
+    fn drop(&mut self) {
+        // Safety: `ptr` and `size` come from a previous, successful call to `mmap`
+        // and are not used after this point.
+        unsafe {
+            munmap(self.ptr.as_ptr(), self.size);
+        }
+    }
+}
+
+struct Mmap;
+unsafe impl heaperion::MemorySource for Mmap {
+    fn request(&mut self, min_size: usize) -> Option<(*mut u8, usize)> {
+        let ptr = mmap(
+            u64::try_from(min_size).unwrap(),
+            None,
+            MemoryProtection::ReadWrite,
+        )
+        .ok()?;
+        Some((ptr.as_ptr(), min_size))
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

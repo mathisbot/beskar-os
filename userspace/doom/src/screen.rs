@@ -27,7 +27,7 @@ unsafe extern "C" {
 ///
 /// Panics if surface creation fails.
 pub fn init() {
-    let size = (SCREENWIDTH as u64) * (SCREENHEIGHT as u64) * CHANNELS as u64;
+    let size = u64::from(SCREENWIDTH) * u64::from(SCREENHEIGHT) * CHANNELS as u64;
 
     let buffer_ptr =
         beskar_lib::mem::mmap(size, None, beskar_lib::mem::MemoryProtection::ReadWrite)

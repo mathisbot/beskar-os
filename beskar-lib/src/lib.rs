@@ -7,6 +7,7 @@ extern crate alloc;
 
 pub use beskar_core::syscall::ExitCode;
 use beskar_core::{syscall::SyscallExitCode, time::Duration};
+use core::sync::atomic::{AtomicBool, Ordering};
 use hyperdrive::call_once;
 
 mod arch;
@@ -20,9 +21,20 @@ pub mod surface;
 mod sys;
 pub mod time;
 
+static PANIC_NESTED: AtomicBool = AtomicBool::new(false);
+
+/// Returns `true` if the current thread is already panicking (i.e., if we're in a nested panic).
+pub fn panicking() -> bool {
+    PANIC_NESTED.load(Ordering::SeqCst)
+}
+
 #[panic_handler]
 fn panic(info: &::core::panic::PanicInfo) -> ! {
-    println!("Panic occurred: {}", info);
+    if !panicking() {
+        PANIC_NESTED.store(true, Ordering::SeqCst);
+        println!("Panic occurred: {}", info);
+    }
+
     sys::sc_exit(ExitCode::Failure);
 }
 
@@ -70,13 +82,7 @@ macro_rules! entry_point {
 pub fn __init() {
     call_once!({
         // Heap
-        {
-            let heap_size = mem::HEAP_SIZE;
-            let res = mem::mmap(heap_size, None, mem::MemoryProtection::ReadWrite)
-                .expect("Memory mapping failed");
-            unsafe { mem::init_heap(res.as_ptr(), heap_size.try_into().unwrap()) };
-        }
-
+        mem::init_heap();
         // Time
         time::init();
     });
