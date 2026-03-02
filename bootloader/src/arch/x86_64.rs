@@ -7,6 +7,7 @@ pub fn init() {
     acpi::init();
 }
 
+#[inline(never)]
 /// Change context and jump to the kernel entry point.
 ///
 /// # Safety

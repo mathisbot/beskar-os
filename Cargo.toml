@@ -16,13 +16,13 @@ beskar-hal = { path = "beskar-hal" }
 beskar-lib = { path = "beskar-lib" }
 bootloader-api = { path = "bootloader/bootloader-api" }
 hyperdrive = { path = "hyperdrive" }
-thiserror = { version = "2.0.17", default-features = false }
+thiserror = { version = "2.0.18", default-features = false }
 
-[build-dependencies]
-bootloader = { path = "bootloader", artifact = "bin", target = "x86_64-unknown-uefi" }
-kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
-bashkar = { path = "userspace/bashkar", artifact = "bin", target = "x86_64-unknown-none" }
-# doom = { path = "userspace/doom", artifact = "bin", target = "x86_64-unknown-none" }
+[dependencies]
+anyhow = "1.0.102"
+clap = { version = "4.5.60", features = ["derive"] }
+ratatui = "0.30.0"
+thiserror = "2.0.18"
 
 [profile.release]
 panic = "abort"

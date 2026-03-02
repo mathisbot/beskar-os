@@ -293,11 +293,10 @@ impl CpuFeature {
 /// List of required features for the kernel to run
 ///
 /// Please keep the list sorted by leaf number
-const REQUIRED_FEATURES: [CpuFeature; 4] = [
+const REQUIRED_FEATURES: [CpuFeature; 3] = [
     // Leaf 1
     CpuFeature::PSE,
     CpuFeature::MSR,
-    CpuFeature::XSAVE,
     // XLeaf 1
     CpuFeature::SYSCALL,
 ];

@@ -236,5 +236,16 @@ mod tests {
         // Mark damage
         comp.mark_surface_dirty(sid, Rect::new(0, 0, 50, 50))
             .unwrap();
+        assert_eq!(
+            comp.surface(sid).unwrap().dirty_rect(),
+            Some(Rect::new(0, 0, 50, 50))
+        );
+
+        comp.mark_surface_dirty(sid, Rect::new(50, 50, 50, 50))
+            .unwrap();
+        assert_eq!(
+            comp.surface(sid).unwrap().dirty_rect(),
+            Some(Rect::new(0, 0, 100, 100))
+        );
     }
 }

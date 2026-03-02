@@ -25,13 +25,13 @@ static PANIC_NESTED: AtomicBool = AtomicBool::new(false);
 
 /// Returns `true` if the current thread is already panicking (i.e., if we're in a nested panic).
 pub fn panicking() -> bool {
-    PANIC_NESTED.load(Ordering::SeqCst)
+    PANIC_NESTED.load(Ordering::Acquire)
 }
 
 #[panic_handler]
 fn panic(info: &::core::panic::PanicInfo) -> ! {
     if !panicking() {
-        PANIC_NESTED.store(true, Ordering::SeqCst);
+        PANIC_NESTED.store(true, Ordering::Release);
         println!("Panic occurred: {}", info);
     }
 

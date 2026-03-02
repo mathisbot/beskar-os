@@ -8,6 +8,8 @@ pub fn syscall_1(syscall: Syscall, arg1: u64) -> u64 {
             in("rax") u64::from(syscall),
             lateout("rax") res_code,
             in("rdi") arg1,
+            lateout("rcx") _,
+            lateout("r11") _,
             options(nostack, preserves_flags)
         );
     }
@@ -23,6 +25,8 @@ pub fn syscall_2(syscall: Syscall, arg1: u64, arg2: u64) -> u64 {
             lateout("rax") res_code,
             in("rdi") arg1,
             in("rsi") arg2,
+            lateout("rcx") _,
+            lateout("r11") _,
             options(nostack, preserves_flags)
         );
     }
@@ -39,6 +43,8 @@ pub fn syscall_3(syscall: Syscall, arg1: u64, arg2: u64, arg3: u64) -> u64 {
             in("rdi") arg1,
             in("rsi") arg2,
             in("rdx") arg3,
+            lateout("rcx") _,
+            lateout("r11") _,
             options(nostack, preserves_flags)
         );
     }
@@ -56,6 +62,8 @@ pub fn syscall_4(syscall: Syscall, arg1: u64, arg2: u64, arg3: u64, arg4: u64) -
             in("rsi") arg2,
             in("rdx") arg3,
             in("r10") arg4,
+            lateout("rcx") _,
+            lateout("r11") _,
             options(nostack, preserves_flags)
         );
     }

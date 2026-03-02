@@ -487,7 +487,7 @@ impl ThreadStacks {
     }
 
     pub fn allocate_user(&self, size: u64) {
-        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE | Flags::NO_EXECUTE;
         self.user_pages.call_once(|| Self::allocate(size, flags));
     }
 
