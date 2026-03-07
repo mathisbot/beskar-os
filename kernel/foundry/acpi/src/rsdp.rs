@@ -81,7 +81,7 @@ impl<M: PhysicalMapper<M4KiB>> Rsdp<M> {
                     _physical_mapping: physical_mapping,
                 }
             }
-            x => panic!("Unknown RSDP revision: {}", x),
+            x => panic!("Unknown RSDP revision: {x}"),
         };
 
         let mut sum: u8 = 0;

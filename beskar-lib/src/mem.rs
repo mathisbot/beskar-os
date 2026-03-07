@@ -84,6 +84,9 @@ pub fn mprotect(ptr: *mut u8, size: u64, flags: MemoryProtection) -> bool {
     res.is_success()
 }
 
+/// A memory-mapped buffer that can be read from and written to.
+///
+/// Offers a safe API to manage `mmap`-backed memory, including automatic unmapping when dropped.
 pub struct MmapReadWrite {
     ptr: NonNull<u8>,
     size: u64,
@@ -96,8 +99,8 @@ impl MmapReadWrite {
     /// # Errors
     ///
     /// Returns an error if the memory cannot be mapped.
-    pub fn new(size: u64) -> MemoryResult<Self> {
-        let ptr = mmap(size, None, MemoryProtection::ReadWrite)?;
+    pub fn new(size: u64, alignment: Option<NonZeroU64>) -> MemoryResult<Self> {
+        let ptr = mmap(size, alignment, MemoryProtection::ReadWrite)?;
         Ok(Self { ptr, size })
     }
 

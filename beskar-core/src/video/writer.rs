@@ -15,6 +15,7 @@ pub struct FramebufferWriter {
     x: u16,
     y: u16,
     curr_color: PixelComponents,
+    bg_color: PixelComponents,
 }
 
 impl FramebufferWriter {
@@ -26,6 +27,7 @@ impl FramebufferWriter {
             x: BORDER_PADDING,
             y: BORDER_PADDING,
             curr_color: PixelComponents::WHITE,
+            bg_color: PixelComponents::BLACK,
         }
     }
 
@@ -90,6 +92,11 @@ impl FramebufferWriter {
     }
 
     #[inline]
+    pub const fn set_bg_color(&mut self, color: PixelComponents) {
+        self.bg_color = color;
+    }
+
+    #[inline]
     /// Writes a string to the framebuffer.
     pub fn write_str(&mut self, buffer: &mut [Pixel], s: &str) {
         for c in s.chars() {
@@ -130,12 +137,21 @@ impl FramebufferWriter {
 
                 for (v, row) in rasterized_char.raster().iter().enumerate() {
                     for (u, &byte) in row.iter().enumerate() {
-                        let pixel_components = PixelComponents {
+                        let fg_mask = PixelComponents {
                             red: byte,
                             green: byte,
                             blue: byte,
                             alpha: 0xFF,
-                        } * self.curr_color;
+                        };
+                        let inv = 255 - byte;
+                        let bg_mask = PixelComponents {
+                            red: inv,
+                            green: inv,
+                            blue: inv,
+                            alpha: 0xFF,
+                        };
+                        let pixel_components =
+                            (fg_mask * self.curr_color) + (bg_mask * self.bg_color);
                         let pixel = Pixel::from_format(self.info.pixel_format, pixel_components);
                         self.write_pixel(
                             buffer,

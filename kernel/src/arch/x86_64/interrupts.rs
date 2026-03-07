@@ -103,10 +103,7 @@ extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) -> ! {
-    panic!(
-        "EXCEPTION: DOUBLE FAULT {:#x}\n{:#?}",
-        error_code, stack_frame
-    );
+    panic!("EXCEPTION: DOUBLE FAULT {error_code:#x}\n{stack_frame:#?}");
 }
 
 extern "x86-interrupt" fn page_fault_handler(
