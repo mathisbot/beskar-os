@@ -21,58 +21,60 @@ pub fn init() {
 
     let cs = CS::read();
 
-    idt.divide_error.set_handler_fn(divide_error_handler, cs);
-    idt.debug.set_handler_fn(debug_handler, cs);
-    idt.non_maskable_interrupt
-        .set_handler_fn(non_maskable_interrupt_handler, cs);
+    // Safety: each handler is the naked trampoline produced by `isr!` for the
+    // exact vector it is being registered on, with the matching signature for
+    // whether the CPU pushes an error code and whether the handler diverges.
     unsafe {
+        idt.divide_error.set_handler_fn(divide_error_handler, cs);
+        idt.debug.set_handler_fn(debug_handler, cs);
+        idt.non_maskable_interrupt
+            .set_handler_fn(non_maskable_interrupt_handler, cs);
         idt.breakpoint
-            .set_handler_fn_unchecked(VirtAddr::from_ptr(breakpoint_handler as *const ()), cs);
-    }
-    idt.breakpoint.set_gate_type(GateType::Trap);
-    idt.breakpoint.set_dpl(Ring::User);
-    idt.overflow.set_handler_fn(overflow_handler, cs);
-    idt.bound_range_exceeded
-        .set_handler_fn(bound_range_exceeded_handler, cs);
-    idt.invalid_opcode
-        .set_handler_fn(invalid_opcode_handler, cs);
-    idt.device_not_available
-        .set_handler_fn(device_not_available_handler, cs);
-    idt.invalid_tss.set_handler_fn(invalid_tss_handler, cs);
-    idt.segment_not_present
-        .set_handler_fn(segment_not_present_handler, cs);
-    idt.stack_segment_fault
-        .set_handler_fn(stack_segment_fault_handler, cs);
-    idt.general_protection_fault
-        .set_handler_fn(general_protection_fault_handler, cs);
-    idt.x87_floating_point
-        .set_handler_fn(x87_floating_point_handler, cs);
-    idt.alignment_check
-        .set_handler_fn(alignment_check_handler, cs);
-    idt.machine_check.set_handler_fn(machine_check_handler, cs);
-    idt.simd_floating_point
-        .set_handler_fn(simd_floating_point_handler, cs);
-    idt.cp_protection_exception
-        .set_handler_fn(cp_protection_handler, cs);
-    idt.hv_injection_exception
-        .set_handler_fn(hv_injection_handler, cs);
-    idt.vmm_communication_exception
-        .set_handler_fn(vmm_communication_handler, cs);
-    idt.security_exception
-        .set_handler_fn(security_exception_handler, cs);
+            .set_handler_va(VirtAddr::from_ptr(breakpoint_handler as *const ()), cs);
+        idt.breakpoint.set_gate_type(GateType::Trap);
+        idt.breakpoint.set_dpl(Ring::User);
+        idt.overflow.set_handler_fn(overflow_handler, cs);
+        idt.bound_range_exceeded
+            .set_handler_fn(bound_range_exceeded_handler, cs);
+        idt.invalid_opcode
+            .set_handler_fn(invalid_opcode_handler, cs);
+        idt.device_not_available
+            .set_handler_fn(device_not_available_handler, cs);
+        idt.invalid_tss.set_handler_fn(invalid_tss_handler, cs);
+        idt.segment_not_present
+            .set_handler_fn(segment_not_present_handler, cs);
+        idt.stack_segment_fault
+            .set_handler_fn(stack_segment_fault_handler, cs);
+        idt.general_protection_fault
+            .set_handler_fn(general_protection_fault_handler, cs);
+        idt.x87_floating_point
+            .set_handler_fn(x87_floating_point_handler, cs);
+        idt.alignment_check
+            .set_handler_fn(alignment_check_handler, cs);
+        idt.machine_check
+            .set_handler_va(VirtAddr::from_ptr(machine_check_handler as *const ()), cs);
+        idt.simd_floating_point
+            .set_handler_fn(simd_floating_point_handler, cs);
+        idt.cp_protection_exception
+            .set_handler_fn(cp_protection_handler, cs);
+        idt.hv_injection_exception
+            .set_handler_fn(hv_injection_handler, cs);
+        idt.vmm_communication_exception
+            .set_handler_fn(vmm_communication_handler, cs);
+        idt.security_exception
+            .set_handler_fn(security_exception_handler, cs);
 
-    idt.double_fault.set_handler_fn(double_fault_handler, cs);
-    unsafe {
+        idt.double_fault
+            .set_handler_va(VirtAddr::from_ptr(double_fault_handler as *const ()), cs);
         idt.double_fault.set_stack_index(DOUBLE_FAULT_IST);
-    }
-    idt.page_fault.set_handler_fn(page_fault_handler, cs);
-    unsafe {
-        idt.page_fault.set_stack_index(PAGE_FAULT_IST);
-    }
 
-    idt.irq(0xFF)
-        .unwrap()
-        .set_handler_fn(spurious_interrupt_handler, cs);
+        idt.page_fault.set_handler_fn(page_fault_handler, cs);
+        idt.page_fault.set_stack_index(PAGE_FAULT_IST);
+
+        idt.irq(0xFF)
+            .unwrap()
+            .set_handler_fn(spurious_interrupt_handler, cs);
+    }
 
     idt.load();
 
@@ -99,15 +101,18 @@ impl Interrupts {
     }
 }
 
-extern "x86-interrupt" fn double_fault_handler(
-    stack_frame: InterruptStackFrame,
-    error_code: u64,
-) -> ! {
+extern "C" fn double_fault_handler_inner(stack_frame: &InterruptStackFrame, error_code: u64) -> ! {
     panic!("EXCEPTION: DOUBLE FAULT {error_code:#x}\n{stack_frame:#?}");
 }
+beskar_hal::isr!(
+    double_fault_handler,
+    double_fault_handler_inner,
+    err_code,
+    diverge
+);
 
-extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: InterruptStackFrame,
+extern "C" fn page_fault_handler_inner(
+    stack_frame: &InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
     let faulting_address = Cr2::read();
@@ -123,44 +128,61 @@ extern "x86-interrupt" fn page_fault_handler(
 
     panic!("Unrecoverable page fault");
 }
+beskar_hal::isr!(
+    page_fault_handler,
+    page_fault_handler_inner,
+    err_code(PageFaultErrorCode)
+);
 
 macro_rules! panic_isr {
     ($name:ident) => {
-        extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame) {
-            panic!(
-                "EXCEPTION: {} INTERRUPT on core {}\n{:#?}",
-                stringify!($name),
-                locals!().core_id(),
-                stack_frame
-            );
+        mod $name {
+            use super::*;
+            pub extern "C" fn __inner(stack_frame: &InterruptStackFrame) {
+                panic!(
+                    "EXCEPTION: {} INTERRUPT on core {}\n{:#?}",
+                    stringify!($name),
+                    crate::locals!().core_id(),
+                    stack_frame
+                );
+            }
         }
+        beskar_hal::isr!($name, $name::__inner);
     };
 }
 
 macro_rules! panic_isr_with_errcode {
     ($name:ident) => {
-        extern "x86-interrupt" fn $name(stack_frame: InterruptStackFrame, err_code: u64) {
-            panic!(
-                "EXCEPTION: {} INTERRUPT {:#x} on core {}\n{:#?}",
-                stringify!($name),
-                err_code,
-                locals!().core_id(),
-                stack_frame
-            );
+        mod $name {
+            use super::*;
+            pub extern "C" fn __inner(stack_frame: &InterruptStackFrame, err_code: u64) {
+                panic!(
+                    "EXCEPTION: {} INTERRUPT {:#x} on core {}\n{:#?}",
+                    stringify!($name),
+                    err_code,
+                    crate::locals!().core_id(),
+                    stack_frame
+                );
+            }
         }
+        beskar_hal::isr!($name, $name::__inner, err_code);
     };
 }
 
 macro_rules! info_isr {
     ($name:ident) => {
-        extern "x86-interrupt" fn $name(_stack_frame: InterruptStackFrame) {
-            crate::info!(
-                "{} INTERRUPT on core {} - t{}",
-                stringify!($name),
-                locals!().core_id(),
-                $crate::process::scheduler::current_thread_id().as_u64()
-            );
+        mod $name {
+            use super::*;
+            pub extern "C" fn __inner(_stack_frame: &InterruptStackFrame) {
+                crate::info!(
+                    "{} INTERRUPT on core {} - t{}",
+                    stringify!($name),
+                    crate::locals!().core_id(),
+                    crate::process::scheduler::current_thread_id().as_u64()
+                );
+            }
         }
+        beskar_hal::isr!($name, $name::__inner);
     };
 }
 
@@ -289,22 +311,31 @@ impl core::fmt::Debug for ThreadRegisters {
     }
 }
 
-extern "x86-interrupt" fn device_not_available_handler(_stack_frame: InterruptStackFrame) {
+extern "C" fn device_not_available_handler_inner(_stack_frame: &InterruptStackFrame) {
     // Handle lazy FPU context switching
     unsafe { crate::arch::fpu::handle_device_not_available() };
 }
+beskar_hal::isr!(
+    device_not_available_handler,
+    device_not_available_handler_inner
+);
 
-extern "x86-interrupt" fn non_maskable_interrupt_handler(_stack_frame: InterruptStackFrame) {
+extern "C" fn non_maskable_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
     if crate::kernel_has_panicked() {
         panic!("Another Core has panicked in a kernel thread");
     } else {
         panic!("EXCEPTION: NON MASKABLE INTERRUPT");
     }
 }
+beskar_hal::isr!(
+    non_maskable_interrupt_handler,
+    non_maskable_interrupt_handler_inner
+);
 
-extern "x86-interrupt" fn machine_check_handler(_stack_frame: InterruptStackFrame) -> ! {
+extern "C" fn machine_check_handler_inner(_stack_frame: &InterruptStackFrame) -> ! {
     panic!("EXCEPTION: MACHINE CHECK");
 }
+beskar_hal::isr!(machine_check_handler, machine_check_handler_inner, diverge);
 
 info_isr!(spurious_interrupt_handler);
 
@@ -312,10 +343,7 @@ info_isr!(spurious_interrupt_handler);
 /// Allocates a new IRQ handler in the IDT and return its index.
 ///
 /// A CPU index may be passed to bind the IRQ to a specific CPU core.
-pub fn new_irq(
-    handler: extern "x86-interrupt" fn(InterruptStackFrame),
-    core: Option<usize>,
-) -> (u8, usize) {
+pub fn new_irq(handler: extern "C" fn(), core: Option<usize>) -> (u8, usize) {
     /// IDT index counter.
     ///
     /// It skips the first 32 entries, which are reserved for exceptions.
@@ -335,7 +363,7 @@ pub fn new_irq(
         VirtAddr::ZERO,
         "IRQ {idx} is already used",
     );
-    idt_entry.set_handler_fn(handler, CS::read());
+    unsafe { idt_entry.set_handler_fn(handler, CS::read()) };
 
     (idx, core_id)
 }

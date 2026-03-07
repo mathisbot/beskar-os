@@ -1,4 +1,3 @@
-#![feature(abi_x86_interrupt)]
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]

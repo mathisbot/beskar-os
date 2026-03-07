@@ -236,7 +236,7 @@ impl E1000e<'_> {
     }
 }
 
-extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFrame) {
+extern "C" fn nic_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
     E1000E.with_locked(|e1000e| {
         // Read and acknowledge interrupt cause
         let icr = e1000e.read_reg(Registers::ICR);
@@ -263,6 +263,7 @@ extern "x86-interrupt" fn nic_interrupt_handler(_stack_frame: InterruptStackFram
 
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
+beskar_hal::isr!(nic_interrupt_handler, nic_interrupt_handler_inner);
 
 impl Nic for E1000e<'_> {
     fn poll_frame(&self) -> Option<&[u8]> {

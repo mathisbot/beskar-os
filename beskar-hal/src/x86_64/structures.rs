@@ -1,6 +1,5 @@
 use super::userspace::Ring;
 use beskar_core::{arch::VirtAddr, static_assert};
-use core::marker::PhantomData;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -49,46 +48,25 @@ impl InterruptStackFrame {
     }
 }
 
-trait Sealed {}
-#[expect(private_bounds, reason = "Forbid impl `IdtFnPtr`")]
-pub trait IdtFnPtr: Sealed {
-    fn addr(&self) -> VirtAddr;
-}
-
-macro_rules! impl_idt_fn_ptr {
-    ($($name:ident),+) => {
-        $(
-            impl Sealed for $name {}
-            impl IdtFnPtr for $name {
-                fn addr(&self) -> VirtAddr {
-                    let addr = *self as *const () as u64;
-                    unsafe { VirtAddr::new_unchecked(addr) }
-                }
-            }
-        )+
-    };
-}
-
 #[derive(Clone, Copy)]
 #[repr(C)]
 /// An entry in the Interrupt Descriptor Table (IDT).
-pub struct IdtEntry<T: IdtFnPtr> {
+pub struct IdtEntry {
     ptr_low: u16,
     options_cs: u16,
     options: u16,
     ptr_mid: u16,
     ptr_high: u32,
     _reserved: u32,
-    _phantom: PhantomData<T>,
 }
 
-impl Default for IdtEntry<Handler> {
+impl Default for IdtEntry {
     fn default() -> Self {
         Self::empty()
     }
 }
 
-impl<T: IdtFnPtr> IdtEntry<T> {
+impl IdtEntry {
     #[must_use]
     #[inline]
     pub const fn empty() -> Self {
@@ -99,25 +77,28 @@ impl<T: IdtFnPtr> IdtEntry<T> {
             ptr_mid: 0,
             ptr_high: 0,
             _reserved: 0,
-            _phantom: PhantomData,
-        }
-    }
-
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "In practice, the value is 8 bytes long"
-    )]
-    #[inline]
-    pub fn set_handler_fn(&mut self, handler: T, cs: u16) {
-        unsafe {
-            self.set_handler_fn_unchecked(handler.addr(), cs);
         }
     }
 
     /// # Safety
     ///
-    /// The caller must ensure that the provided handler address is valid.
-    pub unsafe fn set_handler_fn_unchecked(&mut self, handler: VirtAddr, cs: u16) {
+    /// The handler must have the exact calling convention and signature expected
+    /// by the hardware for this interrupt vector, including whether the CPU pushes
+    /// an error code, and whether the handler is permitted to return.
+    #[inline]
+    pub unsafe fn set_handler_fn(&mut self, handler: extern "C" fn(), cs: u16) {
+        let addr = VirtAddr::from_ptr(handler as *const ());
+        unsafe { self.set_handler_va(addr, cs) };
+    }
+
+    /// # Safety
+    ///
+    /// The provided virtual address must point to a valid interrupt handler.
+    ///
+    /// The handler must have the exact calling convention and signature expected
+    /// by the hardware for this interrupt vector, including whether the CPU pushes
+    /// an error code, and whether the handler is permitted to return.
+    pub unsafe fn set_handler_va(&mut self, handler: VirtAddr, cs: u16) {
         const OPTIONS_PRESENT: u16 = 1 << 15;
         const OPTIONS_GATE_TYPE: u16 = GateType::Interrupt.to_raw() << 8; // Interrupt gate
 
@@ -200,23 +181,6 @@ impl GateType {
     }
 }
 
-type Handler = extern "x86-interrupt" fn(InterruptStackFrame);
-type HandlerErr = extern "x86-interrupt" fn(InterruptStackFrame, u64);
-
-// TODO: When never type is stabilized, use Handler<T>.
-type HandlerNever = extern "x86-interrupt" fn(InterruptStackFrame) -> !;
-type HandlerErrNever = extern "x86-interrupt" fn(InterruptStackFrame, u64) -> !;
-
-pub type PageFaultHandlerFunc = extern "x86-interrupt" fn(InterruptStackFrame, PageFaultErrorCode);
-
-impl_idt_fn_ptr!(
-    Handler,
-    HandlerErr,
-    HandlerNever,
-    HandlerErrNever,
-    PageFaultHandlerFunc
-);
-
 /// Interrupt Descriptor Table
 ///
 /// The first 32 entries are reserved for CPU exceptions.
@@ -231,7 +195,7 @@ pub struct InterruptDescriptorTable {
     /// The saved instruction pointer points to the instruction that caused the `#DE`.
     ///
     /// The vector number of the `#DE` exception is 0.
-    pub divide_error: IdtEntry<Handler>,
+    pub divide_error: IdtEntry,
 
     /// A debug exception (`#DB`) can occur under many conditions.
     /// `#DB`  are enabled and disabled using the debug-control register, `DR7` and `RFLAGS.TF`.
@@ -242,7 +206,7 @@ pub struct InterruptDescriptorTable {
     /// Otherwise, it points to the instruction after.
     ///
     /// The vector number of the `#DB` exception is 1.
-    pub debug: IdtEntry<Handler>,
+    pub debug: IdtEntry,
 
     /// A non maskable interrupt exception (NMI) occurs as a result of system logic
     /// signaling a non-maskable interrupt to the processor.
@@ -252,14 +216,14 @@ pub struct InterruptDescriptorTable {
     /// boundary where the NMI was recognized.
     ///
     /// The vector number of the NMI exception is 2.
-    pub non_maskable_interrupt: IdtEntry<Handler>,
+    pub non_maskable_interrupt: IdtEntry,
 
     /// A breakpoint (`#BP`) exception occurs when an `INT3` instruction is executed.
     ///
     /// The saved instruction pointer points to the byte after the `INT3` instruction.
     ///
     /// The vector number of the `#BP` exception is 3.
-    pub breakpoint: IdtEntry<Handler>,
+    pub breakpoint: IdtEntry,
 
     /// An overflow exception (`#OF`) occurs as a result of executing an `INTO` instruction
     /// with the overflow bit in `RFLAGS` set.
@@ -268,7 +232,7 @@ pub struct InterruptDescriptorTable {
     /// instruction that caused the `#OF`.
     ///
     /// The vector number of the `#OF` exception is 4.
-    pub overflow: IdtEntry<Handler>,
+    pub overflow: IdtEntry,
 
     /// A bound-range exception (`#BR`) exception can occur as a result of executing
     /// the `BOUND` instruction.
@@ -277,7 +241,7 @@ pub struct InterruptDescriptorTable {
     /// The saved instruction pointer points to the `BOUND` instruction that caused the `#BR`.
     ///
     /// The vector number of the `#BR` exception is 5.
-    pub bound_range_exceeded: IdtEntry<Handler>,
+    pub bound_range_exceeded: IdtEntry,
 
     /// An invalid opcode exception (`#UD`) occurs when an attempt is made to execute an
     /// invalid or undefined opcode. The validity of an opcode often depends on the
@@ -286,7 +250,7 @@ pub struct InterruptDescriptorTable {
     /// The saved instruction pointer points to the instruction that caused the `#UD`.
     ///
     /// The vector number of the `#UD` exception is 6.
-    pub invalid_opcode: IdtEntry<Handler>,
+    pub invalid_opcode: IdtEntry,
 
     /// A device not available exception (`#NM`) occurs when an attempt is made to execute
     /// an x87 floating-point instruction or an SSE instruction while the x87 FPU or SSE
@@ -295,7 +259,7 @@ pub struct InterruptDescriptorTable {
     /// The saved instruction pointer points to the instruction that caused the `#NM`.
     ///
     /// The vector number of the `#NM` exception is 7.
-    pub device_not_available: IdtEntry<Handler>,
+    pub device_not_available: IdtEntry,
 
     /// A double fault (`#DF`) exception can occur when a second exception occurs during
     /// the handling of a prior critical (namely "contributory") exception.
@@ -304,11 +268,11 @@ pub struct InterruptDescriptorTable {
     /// as the program cannot be restarted.
     ///
     /// The vector number of the `#DF` exception is 8.
-    pub double_fault: IdtEntry<HandlerErrNever>,
+    pub double_fault: IdtEntry,
 
     /// This interrupt vector is reserved. It is for a discontinued exception originally used
     /// by processors that supported external x87-instruction coprocessors.
-    _coprocessor_segment_overrun: IdtEntry<Handler>,
+    _coprocessor_segment_overrun: IdtEntry,
 
     /// An invalid TSS exception (`#TS`) occurs only as a result of a control transfer through
     /// a gate descriptor that results in an invalid stack-segment reference using an `SS`
@@ -318,7 +282,7 @@ pub struct InterruptDescriptorTable {
     /// points to the control-transfer instruction that caused the `#TS`.
     ///
     /// The vector number of the `#TS` exception is 10.
-    pub invalid_tss: IdtEntry<HandlerErr>,
+    pub invalid_tss: IdtEntry,
 
     /// An segment-not-present exception (`#NP`) occurs when an attempt is made to load a
     /// segment or gate with a clear present bit.
@@ -328,7 +292,7 @@ pub struct InterruptDescriptorTable {
     /// that loaded the segment selector resulting in the `#NP`.
     ///
     /// The vector number of the `#NP` exception is 11.
-    pub segment_not_present: IdtEntry<HandlerErr>,
+    pub segment_not_present: IdtEntry,
 
     /// An stack segment exception (`#SS`) can occur when an operation involving the stack
     /// (such as push, pop or call) is attempted with a cleared present bit in the stack segment
@@ -340,7 +304,7 @@ pub struct InterruptDescriptorTable {
     /// caused the `#SS`.
     ///
     /// The vector number of the `#NP` exception is 12.
-    pub stack_segment_fault: IdtEntry<HandlerErr>,
+    pub stack_segment_fault: IdtEntry,
 
     /// A general protection fault (`#GP`) can occur in various situations, including executing
     /// privileged instructions in user mode, writing a 1 into reserved register fields,
@@ -352,7 +316,7 @@ pub struct InterruptDescriptorTable {
     /// the instruction that caused the `#GP`.
     ///
     /// The vector number of the `#GP` exception is 13.
-    pub general_protection_fault: IdtEntry<HandlerErr>,
+    pub general_protection_fault: IdtEntry,
 
     /// A page fault (`#PF`) can occur during a memory access if the page isn't mapped/present,
     /// if CPU tries to fetch an instruction from a non-executable page, or if the access violates the
@@ -362,16 +326,16 @@ pub struct InterruptDescriptorTable {
     /// The saved instruction pointer points to the instruction that caused the `#PF`.
     ///
     /// The vector number of the `#PF` exception is 14.
-    pub page_fault: IdtEntry<PageFaultHandlerFunc>,
+    pub page_fault: IdtEntry,
 
     /// Reserved exception vector 15
-    _reserved1: IdtEntry<Handler>,
+    _reserved1: IdtEntry,
 
     /// 32-bit mode only: The x87 Floating-Point Exception-Pending exception (`#MF`)
     /// is used to handle unmasked x87 floating-point exceptions.
     ///
     /// The vector number of the `#MF` exception is 16.
-    pub x87_floating_point: IdtEntry<Handler>,
+    pub x87_floating_point: IdtEntry,
 
     /// An alignment check exception (`#AC`) occurs when an unaligned-memory data reference
     /// is performed while alignment checking is enabled. An `#AC` can occur only when CPL=3.
@@ -380,7 +344,7 @@ pub struct InterruptDescriptorTable {
     /// instruction that caused the `#AC`.
     ///
     /// The vector number of the `#AC` exception is 17.
-    pub alignment_check: IdtEntry<HandlerErr>,
+    pub alignment_check: IdtEntry,
 
     /// The machine check exception (`#MC`) is model specific. Processor implementations
     /// are not required to support the `#MC` exception, and those implementations that do
@@ -389,7 +353,7 @@ pub struct InterruptDescriptorTable {
     /// There is no reliable way to restart the program.
     ///
     /// The vector number of the `#MC` exception is 18.
-    pub machine_check: IdtEntry<HandlerNever>,
+    pub machine_check: IdtEntry,
 
     /// The SIMD Floating-Point Exception (`#XF`) is used to handle unmasked SSE
     /// floating-point exceptions. The SSE floating-point exceptions reported by
@@ -405,10 +369,10 @@ pub struct InterruptDescriptorTable {
     /// The saved instruction pointer points to the instruction that caused the `#XF`.
     ///
     /// The vector number of the `#XF` exception is 19.
-    pub simd_floating_point: IdtEntry<Handler>,
+    pub simd_floating_point: IdtEntry,
 
     /// Unused exception vector 20
-    virtualization: IdtEntry<Handler>,
+    virtualization: IdtEntry,
 
     /// A `#CP` exception is generated when shadow stacks are enabled and mismatch
     /// scenarios are detected (possible error code cases below).
@@ -421,23 +385,23 @@ pub struct InterruptDescriptorTable {
     /// - A missing ENDBRANCH instruction if indirect branch tracking is enabled.
     ///
     /// The vector number of the `#CP` exception is 19.
-    pub cp_protection_exception: IdtEntry<HandlerErr>,
+    pub cp_protection_exception: IdtEntry,
 
     /// Vectors 20 through 27 are reserved.
-    _reserved2: [IdtEntry<Handler>; 6],
+    _reserved2: [IdtEntry; 6],
 
     /// The Hypervisor Injection Exception (`#HV`) is injected by a hypervisor
     /// as a doorbell to inform an `SEV-SNP` enabled guest running with the
     /// `Restricted Injection` feature of events to be processed.
     ///
     /// The vector number of the ``#HV`` exception is 28.
-    pub hv_injection_exception: IdtEntry<Handler>,
+    pub hv_injection_exception: IdtEntry,
 
     /// The VMM Communication Exception (`#VC`) is always generated by hardware when an `SEV-ES`
     /// enabled guest is running and an `NAE` event occurs.
     ///
     /// The vector number of the ``#VC`` exception is 29.
-    pub vmm_communication_exception: IdtEntry<HandlerErr>,
+    pub vmm_communication_exception: IdtEntry,
 
     /// The Security Exception (`#SX`) signals security-sensitive events that occur while
     /// executing the VMM, in the form of an exception so that the VMM may take appropriate
@@ -448,13 +412,13 @@ pub struct InterruptDescriptorTable {
     /// The only error code currently defined is 1, and indicates redirection of INIT has occurred.
     ///
     /// The vector number of the ``#SX`` exception is 30.
-    pub security_exception: IdtEntry<HandlerErr>,
+    pub security_exception: IdtEntry,
 
     /// Vector 31
-    _reserved3: IdtEntry<Handler>,
+    _reserved3: IdtEntry,
 
     /// User-defined interrupts.
-    interrupts: [IdtEntry<Handler>; 256 - 32],
+    interrupts: [IdtEntry; 256 - 32],
 }
 
 impl Default for InterruptDescriptorTable {
@@ -496,13 +460,13 @@ impl InterruptDescriptorTable {
             security_exception: IdtEntry::empty(),
             _reserved3: IdtEntry::empty(),
 
-            interrupts: [IdtEntry::<Handler>::empty(); 256 - 32],
+            interrupts: [IdtEntry::empty(); 256 - 32],
         }
     }
 
     #[must_use]
     #[inline]
-    pub fn irq(&mut self, index: u8) -> Option<&mut IdtEntry<Handler>> {
+    pub fn irq(&mut self, index: u8) -> Option<&mut IdtEntry> {
         let offset_idx = index.checked_sub(32)?;
         self.interrupts.get_mut(usize::from(offset_idx))
     }
@@ -549,6 +513,268 @@ impl core::ops::BitOr for PageFaultErrorCode {
     fn bitor(self, rhs: Self) -> Self::Output {
         Self(self.0 | rhs.0)
     }
+}
+
+#[macro_export]
+/// Generate a naked ISR trampoline that saves/restores caller-saved registers and
+/// calls a Rust handler with the correct arguments.
+macro_rules! isr {
+    ($name:ident, $inner:path) => {
+        const _: extern "C" fn(&$crate::structures::InterruptStackFrame) = $inner;
+        #[unsafe(naked)]
+        pub extern "C" fn $name() {
+            unsafe {
+                core::arch::naked_asm!(
+                    // swapgs on entry from ring 3
+                    // "test byte ptr [rsp + 8], 3",
+                    // "jz 1f",
+                    // "swapgs",
+                    // "1:",
+
+                    "push rax",
+                    "push rcx",
+                    "push rdx",
+                    "push rsi",
+                    "push rdi",
+                    "push r8",
+                    "push r9",
+                    "push r10",
+                    "push r11",
+
+                    "cld",
+
+                    "lea rdi, [rsp + {isf_offset}]",
+                    "call {inner}",
+
+                    "pop r11",
+                    "pop r10",
+                    "pop r9",
+                    "pop r8",
+                    "pop rdi",
+                    "pop rsi",
+                    "pop rdx",
+                    "pop rcx",
+                    "pop rax",
+
+                    // swapgs on exit to ring 3
+                    // "test byte ptr [rsp + 8], 3",
+                    // "jz 2f",
+                    // "swapgs",
+                    // "2:",
+                    "iretq",
+
+                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    inner = sym $inner,
+                );
+            }
+        }
+    };
+
+    ($name:ident, $inner:path, diverge) => {
+        const _: extern "C" fn(&$crate::structures::InterruptStackFrame) -> ! = $inner;
+        #[unsafe(naked)]
+        pub extern "C" fn $name() -> ! {
+            unsafe {
+                core::arch::naked_asm!(
+                    // swapgs on entry from ring 3
+                    // "test byte ptr [rsp + 8], 3",
+                    // "jz 1f",
+                    // "swapgs",
+                    // "1:",
+
+                    "push rax",
+                    "push rcx",
+                    "push rdx",
+                    "push rsi",
+                    "push rdi",
+                    "push r8",
+                    "push r9",
+                    "push r10",
+                    "push r11",
+
+                    "cld",
+
+                    "lea rdi, [rsp + {isf_offset}]",
+                    "call {inner}",
+                    #[cfg(debug_assertions)]
+                    "ud2",
+
+                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    inner = sym $inner,
+                );
+            }
+        }
+    };
+
+    ($name:ident, $inner:path, err_code) => {
+        const _: extern "C" fn(&$crate::structures::InterruptStackFrame, u64) = $inner;
+        #[unsafe(naked)]
+        pub extern "C" fn $name() {
+            unsafe {
+                core::arch::naked_asm!(
+                    // swapgs on entry from ring 3
+                    // "test byte ptr [rsp + 8], 3",
+                    // "jz 1f",
+                    // "swapgs",
+                    // "1:",
+
+                    "push rax",
+                    "push rcx",
+                    "push rdx",
+                    "push rsi",
+                    "push rdi",
+                    "push r8",
+                    "push r9",
+                    "push r10",
+                    "push r11",
+
+                    "cld",
+
+                    "lea rdi, [rsp + {isf_offset}]",
+                    "mov rsi, qword ptr [rsp + {err_offset}]",
+                    "call {inner}",
+
+                    "pop r11",
+                    "pop r10",
+                    "pop r9",
+                    "pop r8",
+                    "pop rdi",
+                    "pop rsi",
+                    "pop rdx",
+                    "pop rcx",
+                    "pop rax",
+
+                    // Discard the error code the CPU pushed before the ISF.
+                    "add rsp, 8",
+
+                    // swapgs on exit to ring 3
+                    // "test byte ptr [rsp + 8], 3",
+                    // "jz 2f",
+                    // "swapgs",
+                    // "2:",
+                    "iretq",
+
+                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
+                    err_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    inner = sym $inner,
+                );
+            }
+        }
+    };
+
+    ($name:ident, $inner:path, err_code, diverge) => {
+        const _: extern "C" fn(&$crate::structures::InterruptStackFrame, u64) -> ! = $inner;
+        #[unsafe(naked)]
+        pub extern "C" fn $name() -> ! {
+            unsafe {
+                core::arch::naked_asm!(
+                    // swapgs on entry from ring 3
+                    // "test byte ptr [rsp + 8], 3",
+                    // "jz 1f",
+                    // "swapgs",
+                    // "1:",
+
+                    "push rax",
+                    "push rcx",
+                    "push rdx",
+                    "push rsi",
+                    "push rdi",
+                    "push r8",
+                    "push r9",
+                    "push r10",
+                    "push r11",
+
+                    "cld",
+
+                    "lea rdi, [rsp + {isf_offset}]",
+                    "mov rsi, qword ptr [rsp + {err_offset}]",
+                    "call {inner}",
+                    #[cfg(debug_assertions)]
+                    "ud2",
+
+                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
+                    err_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    inner = sym $inner,
+                );
+            }
+        }
+    };
+
+    ($name:ident, $inner:path, err_code($EC:ty)) => {
+        const _: extern "C" fn(&$crate::structures::InterruptStackFrame, $EC) = $inner;
+        #[unsafe(naked)]
+        pub extern "C" fn $name() {
+            unsafe {
+                core::arch::naked_asm!(
+                    "push rax",
+                    "push rcx",
+                    "push rdx",
+                    "push rsi",
+                    "push rdi",
+                    "push r8",
+                    "push r9",
+                    "push r10",
+                    "push r11",
+
+                    "cld",
+
+                    "lea rdi, [rsp + {isf_offset}]",
+                    "mov rsi, qword ptr [rsp + {err_offset}]",
+                    "call {inner}",
+
+                    "pop r11",
+                    "pop r10",
+                    "pop r9",
+                    "pop r8",
+                    "pop rdi",
+                    "pop rsi",
+                    "pop rdx",
+                    "pop rcx",
+                    "pop rax",
+
+                    // Discard the error code the CPU pushed before the ISF.
+                    "add rsp, 8",
+                    "iretq",
+
+                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
+                    err_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    inner = sym $inner,
+                );
+            }
+        }
+    };
+
+    ($name:ident, $inner:path, err_code($EC:ty), diverge) => {
+        const _: extern "C" fn(&$crate::structures::InterruptStackFrame, $EC) -> ! = $inner;
+        #[unsafe(naked)]
+        pub extern "C" fn $name() -> ! {
+            unsafe {
+                core::arch::naked_asm!(
+                    "push rax",
+                    "push rcx",
+                    "push rdx",
+                    "push rsi",
+                    "push rdi",
+                    "push r8",
+                    "push r9",
+                    "push r10",
+                    "push r11",
+
+                    "cld",
+
+                    "lea rdi, [rsp + {isf_offset}]",
+                    "mov rsi, qword ptr [rsp + {err_offset}]",
+                    "call {inner}",
+                    #[cfg(debug_assertions)]
+                    "ud2",
+
+                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
+                    err_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    inner = sym $inner,
+                );
+            }
+        }
+    };
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -842,9 +1068,9 @@ mod tests {
 
     #[test]
     fn test_idt_entry_set_handler_fn() {
-        extern "x86-interrupt" fn test_handler(_stack_frame: InterruptStackFrame) {}
-        let mut entry: IdtEntry<Handler> = IdtEntry::empty();
-        entry.set_handler_fn(test_handler, 0x08);
+        extern "C" fn test_handler() {}
+        let mut entry: IdtEntry = IdtEntry::empty();
+        unsafe { entry.set_handler_fn(test_handler, 0x08) };
 
         let addr = test_handler as *const () as u64;
         assert_eq!(entry.ptr_low, (addr & 0xFFFF) as u16);
@@ -856,7 +1082,7 @@ mod tests {
 
     #[test]
     fn test_idt_entry_set_stack_index() {
-        let mut entry: IdtEntry<Handler> = IdtEntry::empty();
+        let mut entry: IdtEntry = IdtEntry::empty();
         unsafe { entry.set_stack_index(3) };
         assert_eq!(entry.options & 0x7, 4); // IST index starts at 1
     }
@@ -864,7 +1090,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Stack index must be less than 8")]
     fn test_idt_entry_set_stack_index_invalid() {
-        let mut entry: IdtEntry<Handler> = IdtEntry::empty();
+        let mut entry: IdtEntry = IdtEntry::empty();
         unsafe { entry.set_stack_index(8) };
     }
 

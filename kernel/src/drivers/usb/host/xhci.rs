@@ -234,11 +234,12 @@ impl Xhci {
     }
 }
 
-extern "x86-interrupt" fn xhci_interrupt_handler(_stack_frame: InterruptStackFrame) {
+extern "C" fn xhci_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
     crate::info!("xHCI INTERRUPT on core {}", locals!().core_id());
     handle_xhci_interrupt();
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
+beskar_hal::isr!(xhci_interrupt_handler, xhci_interrupt_handler_inner);
 
 pub const fn handle_xhci_interrupt() {
     // with_xhci(|xhci| {

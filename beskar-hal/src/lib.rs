@@ -8,7 +8,6 @@
     clippy::missing_safety_doc,
     clippy::doc_markdown
 )]
-#![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64;

@@ -392,10 +392,11 @@ impl NvmeControllers {
     }
 }
 
-extern "x86-interrupt" fn nvme_interrupt_handler(_stack_frame: InterruptStackFrame) {
+extern "C" fn nvme_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
     crate::debug!("NVMe INTERRUPT on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
+beskar_hal::isr!(nvme_interrupt_handler, nvme_interrupt_handler_inner);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
