@@ -30,7 +30,7 @@ pub fn kbsp_entry(boot_info: &'static mut BootInfo, kernel_main: fn() -> !) -> !
 
     bsp_init(boot_info);
 
-    video::debug!("Starting up APs. Core count: {}", core_count);
+    crate::debug!("Starting up APs. Core count: {}", core_count);
 
     arch::ap::start_up_aps(core_count);
 
@@ -47,18 +47,18 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         ..
     } = boot_info;
 
-    video::log::init_serial();
-    video::debug!("Booting on BSP");
-
-    video::screen::init(framebuffer);
-    video::log::init_screen();
+    crate::trace::init_serial();
+    crate::debug!("Booting on BSP");
 
     arch::init();
 
-    video::info!("BeskarOS kernel starting...");
+    crate::info!("BeskarOS kernel starting...");
 
     mem::init(*recursive_index, memory_regions, kernel_info);
-    video::info!("Memory initialized");
+    crate::info!("Memory initialized");
+
+    crate::video::init(framebuffer);
+    crate::trace::init_screen();
 
     locals::init();
 
@@ -68,16 +68,16 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         .with_locked(|gdt| unsafe { gdt.init_load() });
 
     time::init();
-    video::info!("Time subsystem initialized");
+    crate::info!("Time subsystem initialized");
 
     process::init();
-    video::info!("Process subsystem initialized");
+    crate::info!("Process subsystem initialized");
 
     // If the bootloader provided an RSDP address, we can initialize ACPI.
     rsdp_paddr.map(drivers::acpi::init);
 
     interrupts::init();
-    video::info!("Interrupts initialized");
+    crate::info!("Interrupts initialized");
 
     syscall::init();
 
@@ -86,7 +86,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
     apic::init_ioapic();
 
     storage::init();
-    video::info!("Storage subsystem initialized");
+    crate::info!("Storage subsystem initialized");
 }
 
 /// Rust entry point for APs
@@ -101,7 +101,7 @@ pub extern "C" fn kap_entry() -> ! {
 
     ap_init();
 
-    video::debug!("AP {} started", locals!().core_id());
+    crate::debug!("AP {} started", locals!().core_id());
 
     crate::boot::enter_kmain()
 }

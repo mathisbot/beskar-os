@@ -152,7 +152,7 @@ fn load_segments(klu: &mut KernelLoadingUtils, vao: u64) -> LoadedSegmentsInfo {
             for page in Page::range_inclusive(start_page, end_page) {
                 let (_, flags) = klu
                     .page_table
-                    .translate(end_page)
+                    .translate(page)
                     .expect("Last page of segment is not mapped");
 
                 if flags.contains(Flags::BIT_9) {

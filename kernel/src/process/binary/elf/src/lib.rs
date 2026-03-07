@@ -74,8 +74,6 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![no_std]
 
-extern crate alloc;
-
 mod error;
 mod loader;
 pub mod mapper;

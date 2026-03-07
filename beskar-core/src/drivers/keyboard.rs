@@ -230,6 +230,17 @@ impl KeyCode {
             Self::Numpad7 => '7',
             Self::Numpad8 => '8',
             Self::Numpad9 => '9',
+            Self::Comma => ',',
+            Self::Dot => '.',
+            Self::Minus => '-',
+            Self::Equal => '=',
+            Self::Semicolon => ';',
+            Self::Apostrophe => '\'',
+            Self::Slash => '/',
+            Self::Backslash => '\\',
+            Self::Tilde => '~',
+            Self::LeftBracket => '[',
+            Self::RightBracket => ']',
             _ => '\0',
         };
 

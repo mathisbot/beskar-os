@@ -2,6 +2,7 @@ use crate::arch::syscalls;
 use beskar_core::{
     process::SleepHandle,
     syscall::{ExitCode, Syscall, SyscallExitCode},
+    video::SurfaceId,
 };
 
 #[inline]
@@ -53,6 +54,12 @@ pub fn sc_mmap(size: u64, alignment: u64, flags: u64) -> *mut u8 {
 }
 
 #[inline]
+pub fn sc_munmap(ptr: *mut u8, size: u64) -> SyscallExitCode {
+    let res = syscalls::syscall_2(Syscall::MemoryUnmap, ptr as u64, size);
+    SyscallExitCode::try_from(res).unwrap()
+}
+
+#[inline]
 pub fn sc_mprotect(ptr: *mut u8, size: u64, flags: u64) -> SyscallExitCode {
     let res = syscalls::syscall_3(Syscall::MemoryProtect, ptr as u64, size, flags);
     SyscallExitCode::try_from(res).unwrap()
@@ -67,5 +74,50 @@ pub fn sc_sleep(ms: u64) -> SyscallExitCode {
 #[inline]
 pub fn sc_wait_on_event(handle: SleepHandle) -> SyscallExitCode {
     let res = syscalls::syscall_1(Syscall::WaitOnEvent, handle.raw());
+    SyscallExitCode::try_from(res).unwrap()
+}
+
+pub fn sc_surface_create(width: u16, height: u16, x: u16, y: u16, buffer: *const u8) -> i64 {
+    let res = syscalls::syscall_3(
+        Syscall::SurfaceCreate,
+        (u64::from(width) << 16) | u64::from(height),
+        (u64::from(x) << 16) | u64::from(y),
+        buffer as u64,
+    );
+    res.cast_signed()
+}
+
+#[inline]
+pub fn sc_surface_destroy(surface_id: SurfaceId) -> SyscallExitCode {
+    let res = syscalls::syscall_1(Syscall::SurfaceDestroy, u64::from(surface_id.0));
+    SyscallExitCode::try_from(res).unwrap()
+}
+
+#[inline]
+pub fn sc_surface_dirty(
+    surface_id: SurfaceId,
+    width: u16,
+    height: u16,
+    x: u16,
+    y: u16,
+) -> SyscallExitCode {
+    let res = syscalls::syscall_3(
+        Syscall::SurfaceDirty,
+        u64::from(surface_id.0),
+        (u64::from(width) << 16) | u64::from(height),
+        (u64::from(x) << 16) | u64::from(y),
+    );
+    SyscallExitCode::try_from(res).unwrap()
+}
+
+#[inline]
+pub fn sc_surface_present(surface_id: SurfaceId) -> SyscallExitCode {
+    let res = syscalls::syscall_1(Syscall::SurfacePresent, u64::from(surface_id.0));
+    SyscallExitCode::try_from(res).unwrap()
+}
+
+#[inline]
+pub fn sc_query_config(info_type: u64, buffer: *mut (), buffer_size: u64) -> SyscallExitCode {
+    let res = syscalls::syscall_3(Syscall::QueryConfig, info_type, buffer as u64, buffer_size);
     SyscallExitCode::try_from(res).unwrap()
 }

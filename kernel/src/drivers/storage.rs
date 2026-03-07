@@ -29,7 +29,7 @@ pub fn init() -> DriverResult<()> {
     let nvme_res = nvme::init(&nvme);
 
     if ahci_res.is_err() && nvme_res.is_err() {
-        video::warn!("No storage controllers found");
+        crate::warn!("No storage controllers found");
         Err(DriverError::Absent)
     } else {
         Ok(())

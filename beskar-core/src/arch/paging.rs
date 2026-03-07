@@ -56,7 +56,6 @@ pub trait CacheFlush<S: MemSize> {
     /// The page table containing the page must not be used at the moment,
     /// otherwise the CPU will not be aware of the changes.
     unsafe fn ignore_flush(&self) {}
-    fn page(&self) -> Page<S>;
 }
 
 pub trait Mapper<S: MemSize, F: Flags> {

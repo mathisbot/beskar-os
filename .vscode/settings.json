@@ -12,4 +12,10 @@
 
     // Optimization for large `no_std` projects
     "rust-analyzer.lens.enable": false,
+    
+    // Format on save for Rust files
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true,
+    },
 }

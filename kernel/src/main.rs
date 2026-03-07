@@ -25,7 +25,7 @@ kernel::kernel_main!(kmain);
 /// BSP entry point (called by bootloader) is defined in `boot.rs`.
 fn kmain() -> ! {
     if locals!().core_id() == 0 {
-        video::info!("Welcome to BeskarOS kernel!");
+        kernel::info!("Welcome to BeskarOS kernel!");
     }
 
     scheduler::set_scheduling(true);
@@ -53,7 +53,7 @@ fn kmain() -> ! {
 
             for file in ram_files {
                 let full_path = PathBuf::new("/ramdisk").join(file.as_path().as_str());
-                video::info!(
+                kernel::info!(
                     "Starting user process for file: {}",
                     full_path.as_path().as_str()
                 );

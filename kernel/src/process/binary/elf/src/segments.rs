@@ -20,4 +20,6 @@ pub struct LoadedBinary {
     pub entry_point: extern "C" fn(),
     /// TLS template (if present)
     pub tls_template: Option<TlsTemplate>,
+    /// Image size in memory
+    pub image_size: u64,
 }

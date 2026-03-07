@@ -22,13 +22,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .flag("-ffreestanding")
         .flag("-nostdlib")
         .flag("-fno-builtin")
-        .flag("-fno-stack-protector")
-        .flag("-mno-red-zone")
         .flag("-fPIC")
-        // suppress warnings from clang
         .flag("-w")
         // compile without simd
         .flag("-mgeneral-regs-only")
+        .flag("-flto")
+        // make signed integer overflow wrap instead of UB
+        .flag("-fwrapv")
         .compile("puredoom");
 
     Ok(())

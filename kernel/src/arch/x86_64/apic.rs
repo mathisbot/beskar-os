@@ -57,7 +57,7 @@ pub fn apic_id() -> u8 {
 pub fn init_lapic() {
     let x2apic_supported = cpuid::check_feature(cpuid::CpuFeature::X2APIC);
     if locals!().core_id() == 0 && !x2apic_supported {
-        video::warn!("x2APIC not supported");
+        crate::warn!("x2APIC not supported");
     }
 
     let lapic_paddr = ACPI
@@ -288,12 +288,13 @@ impl LocalApic {
     }
 }
 
-extern "x86-interrupt" fn local_nmi_handler(_stack_frame: InterruptStackFrame) {
-    video::info!("Local NMI on core {}", locals!().core_id());
+extern "C" fn local_nmi_handler_inner(_stack_frame: &InterruptStackFrame) {
+    crate::info!("Local NMI on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
+beskar_hal::isr!(local_nmi_handler, local_nmi_handler_inner);
 
-extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+extern "C" fn timer_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
     let rescheduling_result = crate::process::scheduler::scheduler_tick();
 
     unsafe { locals!().lapic().force_lock() }.send_eoi();
@@ -304,6 +305,7 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
         unsafe { context_switch.perform() };
     }
 }
+beskar_hal::isr!(timer_interrupt_handler, timer_interrupt_handler_inner);
 
 /// Ensures that PIC 8259 is disabled.
 ///
@@ -561,15 +563,20 @@ impl IoApic {
     }
 }
 
-extern "x86-interrupt" fn io_iso_handler(_stack_frame: InterruptStackFrame) {
-    video::info!("IO ISO on core {}", locals!().core_id());
+extern "C" fn io_iso_handler_inner(_stack_frame: &InterruptStackFrame) {
+    crate::info!("IO ISO on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
+beskar_hal::isr!(io_iso_handler, io_iso_handler_inner);
 
-extern "x86-interrupt" fn ps2_keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+extern "C" fn ps2_keyboard_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
     crate::drivers::ps2::handle_keyboard_interrupt();
     unsafe { locals!().lapic().force_lock() }.send_eoi();
 }
+beskar_hal::isr!(
+    ps2_keyboard_interrupt_handler,
+    ps2_keyboard_interrupt_handler_inner
+);
 
 // Safe register access
 impl IoApic {

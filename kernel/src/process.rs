@@ -4,12 +4,14 @@ use alloc::{
     sync::Arc,
 };
 use beskar_hal::process::Kind;
-use core::sync::atomic::{AtomicU16, AtomicU64, Ordering};
-use hyperdrive::{once::Once, ptrs::view::ViewRef};
+use core::sync::atomic::{AtomicU64, Ordering};
+use hyperdrive::{once::Once, ptrs::view::ViewRef, queues::mpmc::MpmcQueue};
 use storage::fs::{Path, PathBuf};
 
 pub mod binary;
 pub mod scheduler;
+
+const MAX_SURFACES_PER_PROCESS: usize = 2;
 
 static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();
 
@@ -21,6 +23,7 @@ pub fn init() {
             address_space: ViewRef::new_borrow(address_space::get_kernel_address_space()),
             kind: Kind::Kernel,
             binary: None,
+            surfaces: MpmcQueue::new(),
         })
     });
 
@@ -84,6 +87,8 @@ pub struct Process {
     address_space: ViewRef<'static, AddressSpace>,
     kind: Kind,
     binary: Option<PathBuf>,
+    /// Surfaces allocated by this process (interior mutability for registration)
+    surfaces: MpmcQueue<MAX_SURFACES_PER_PROCESS, crate::video::SurfaceGuard>,
 }
 
 impl Process {
@@ -96,6 +101,7 @@ impl Process {
             address_space: ViewRef::new_owned(AddressSpace::new()),
             kind,
             binary,
+            surfaces: MpmcQueue::new(),
         }
     }
 
@@ -128,10 +134,17 @@ impl Process {
     pub fn binary(&self) -> Option<Path<'_>> {
         self.binary.as_ref().map(PathBuf::as_path)
     }
+
+    /// Register a surface as belonging to this process
+    pub fn register_surface(&self, guard: crate::video::SurfaceGuard) -> bool {
+        let res = self.surfaces.try_push(guard);
+        res.is_ok()
+    }
 }
 
 impl Drop for Process {
     fn drop(&mut self) {
+        // Close all file descriptors
         crate::storage::vfs().close_all_from_process(self.pid.as_u64());
     }
 }
@@ -140,41 +153,6 @@ impl Drop for Process {
 #[inline]
 pub fn current() -> Arc<Process> {
     scheduler::current_process()
-}
-
-/// A struct representing a PCID.
-///
-/// Its valid values are 0 to 4095.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Pcid(u16);
-
-impl Default for Pcid {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Pcid {
-    #[must_use]
-    #[inline]
-    pub fn new() -> Self {
-        const MAX_PCID: u16 = 1 << 12;
-        static PCID_COUNTER: AtomicU16 = AtomicU16::new(0);
-
-        let raw: u16 = PCID_COUNTER.fetch_add(1, Ordering::Relaxed);
-
-        if raw >= MAX_PCID {
-            todo!("PCID recycling");
-        }
-
-        Self(raw % 4096)
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn as_u16(&self) -> u16 {
-        self.0
-    }
 }
 
 pub struct Stdout;
@@ -193,7 +171,7 @@ impl ::storage::KernelDevice for Stdout {
 
         // TODO: Send somewhere else than the kernel log.
         let tid = crate::process::scheduler::current_thread_id();
-        video::info!("[Thread {}] {}", tid.as_u64(), text);
+        crate::info!("[Thread {}] {}", tid.as_u64(), text);
 
         Ok(())
     }

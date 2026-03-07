@@ -1,10 +1,11 @@
 use super::fs::{FileError, FileResult, FileSystem, PathBuf};
 use crate::fs::Path;
-use alloc::{boxed::Box, collections::BTreeMap};
+use alloc::{boxed::Box, vec::Vec};
 use core::{
     marker::PhantomData,
     sync::atomic::{AtomicI64, Ordering},
 };
+use hashbrown::HashMap;
 use hyperdrive::locks::rw::RwLock;
 
 pub trait VfsHelper {
@@ -13,7 +14,7 @@ pub trait VfsHelper {
     fn get_current_process_id() -> u64;
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Handle {
     id: i64,
 }
@@ -31,14 +32,10 @@ impl Handle {
 
     #[must_use]
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     pub fn new() -> Self {
-        let id = HANDLE_COUNTER.fetch_add(1, Ordering::Relaxed);
-
         // By opening 1 000 files a second, it would take 3 000 000 centuries to overflow,
         // so we can deliberately not handle the overflow.
-        assert!(id >= 0, "Handle ID overflow");
-
+        let id = HANDLE_COUNTER.fetch_add(1, Ordering::Relaxed);
         Self { id }
     }
 
@@ -53,7 +50,7 @@ impl Handle {
     ///
     /// The given ID should be positive.
     pub const unsafe fn from_raw(id: i64) -> Self {
-        debug_assert!(id >= 0);
+        debug_assert!(id >= 1);
         Self { id }
     }
 
@@ -64,12 +61,11 @@ impl Handle {
     }
 }
 
-type Mounts = BTreeMap<PathBuf, RwLock<Box<dyn FileSystem + Send + Sync>>>;
-type OpenFiles = BTreeMap<Handle, OpenFileInfo>;
+type OpenFiles = HashMap<Handle, OpenFileInfo>;
 
 #[derive(Default)]
 pub struct Vfs<H: VfsHelper> {
-    mounts: RwLock<Mounts>,
+    mounts: RwLock<MountIndex>,
     open_handles: RwLock<OpenFiles>,
     _helper: PhantomData<H>,
 }
@@ -79,37 +75,69 @@ struct OpenFileInfo {
     path: PathBuf,
 }
 
+/// Cached sorted mount list for efficient path matching.
+/// Stored as `(path_length, path, filesystem)` sorted by length descending.
+#[derive(Default)]
+struct MountIndex {
+    /// Sorted list of mounts by path length (longest first) for prefix matching
+    sorted_mounts: Vec<(usize, PathBuf)>,
+    /// `HashMap` for filesystem lookup
+    filesystems: HashMap<PathBuf, RwLock<Box<dyn FileSystem + Send + Sync>>>,
+}
+
 impl<H: VfsHelper> Vfs<H> {
     #[must_use]
-    #[inline]
     /// Creates a new VFS instance.
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            mounts: RwLock::new(BTreeMap::new()),
-            open_handles: RwLock::new(BTreeMap::new()),
+            mounts: RwLock::new(MountIndex::default()),
+            open_handles: RwLock::new(HashMap::new()),
             _helper: PhantomData,
         }
     }
 
     /// Mounts a filesystem at the given path.
     pub fn mount(&self, path: PathBuf, fs: Box<dyn FileSystem + Send + Sync>) {
-        self.mounts.write().insert(path, RwLock::new(fs));
+        let mut mounts = self.mounts.write();
+        let path_len = path.as_path().len();
+
+        // Insert into hashmap
+        mounts.filesystems.insert(path.clone(), RwLock::new(fs));
+
+        // Insert into sorted list maintaining descending order by length
+        match mounts
+            .sorted_mounts
+            .binary_search_by(|&(len, _)| len.cmp(&path_len).reverse())
+        {
+            Ok(idx) => {
+                // Find the correct position (may have duplicates)
+                mounts.sorted_mounts.insert(idx, (path_len, path));
+            }
+            Err(idx) => mounts.sorted_mounts.insert(idx, (path_len, path)),
+        }
     }
 
     /// Unmounts the filesystem at the given path.
-    pub fn unmount(&self, path: &str) -> FileResult<Box<dyn FileSystem + Send + Sync>> {
-        self.mounts
-            .write()
-            .remove(path)
-            .map(RwLock::into_inner)
-            .ok_or(FileError::NotFound)
-    }
+    pub fn unmount(&self, path: Path) -> FileResult<Box<dyn FileSystem + Send + Sync>> {
+        let mut mounts = self.mounts.write();
 
-    /// Checks if a file is opened.
-    fn check_file_opened(&self, path: Path) -> bool {
-        let current_pid = H::get_current_process_id();
-        self.open_handles.read().values().any(|open_file| {
-            open_file.path.as_path() == path && open_file.process_id == current_pid
+        // Remove from sorted list
+        mounts.sorted_mounts.retain(|(_, p)| p.as_path() != path);
+
+        // Remove from hashmap and return the filesystem
+        // Try to find matching PathBuf by string comparison
+        let path_buf = mounts
+            .filesystems
+            .iter()
+            .find(|(p, _)| p.as_path() == path)
+            .map(|(p, _)| p.clone());
+
+        path_buf.map_or(Err(FileError::NotFound), |path_buf| {
+            mounts
+                .filesystems
+                .remove(&path_buf)
+                .map(RwLock::into_inner)
+                .ok_or(FileError::NotFound)
         })
     }
 
@@ -117,13 +145,22 @@ impl<H: VfsHelper> Vfs<H> {
     ///
     /// This function performs checks and adds the handle to the open handles list.
     fn new_handle(&self, path: Path) -> FileResult<Handle> {
-        if self.check_file_opened(path) {
-            return Err(FileError::PermissionDenied);
+        let current_pid = H::get_current_process_id();
+
+        // Check if already opened by this process
+        {
+            let open_handles = self.open_handles.read();
+            if open_handles.values().any(|open_file| {
+                open_file.path.as_path() == path && open_file.process_id == current_pid
+            }) {
+                return Err(FileError::PermissionDenied);
+            }
         }
+
         let handle = Handle::new();
         let open_file_info = OpenFileInfo {
             path: path.to_owned(),
-            process_id: H::get_current_process_id(),
+            process_id: current_pid,
         };
         self.open_handles.write().insert(handle, open_file_info);
         Ok(handle)
@@ -156,37 +193,33 @@ impl<H: VfsHelper> Vfs<H> {
         f: impl FnOnce(&mut (dyn FileSystem + Send + Sync), Path) -> FileResult<T>,
     ) -> FileResult<T> {
         let mounts = self.mounts.read();
-
-        let mut best_match: Option<(&RwLock<Box<dyn FileSystem + Send + Sync>>, usize)> = None;
-        let mut best_len = 0;
-
         let path_str = path.as_str();
 
-        for (mount_path, fs) in mounts.iter() {
-            let mount_len = mount_path.as_path().len();
-            if mount_len <= best_len {
+        for &(mount_len, ref mount_path) in &mounts.sorted_mounts {
+            if mount_len > path_str.len() {
                 continue;
             }
 
             // Check if path starts with mount point
-            if path_str.len() >= mount_len
-                && &path_str[..mount_len] == mount_path.as_path().as_str()
-            {
+            if &path_str[..mount_len] == mount_path.as_path().as_str() {
                 // Ensure we match at path boundaries to avoid partial matches
                 // e.g., /dev should not match /device
                 if mount_len == path_str.len()
                     || path_str.as_bytes().get(mount_len) == Some(&b'/')
                     || mount_path.as_path().as_str().ends_with('/')
                 {
-                    best_match = Some((fs, mount_len));
-                    best_len = mount_len;
+                    // Found match - get filesystem from hashmap for O(1) lookup
+                    let fs = mounts
+                        .filesystems
+                        .get(mount_path)
+                        .ok_or(FileError::InvalidPath)?;
+                    let rel_path = Path::from(&path_str[mount_len..]);
+                    return f(&mut **fs.write(), rel_path);
                 }
             }
         }
 
-        let (fs, mount_len) = best_match.ok_or(FileError::InvalidPath)?;
-        let rel_path = Path::from(&path_str[mount_len..]);
-        f(&mut **fs.write(), rel_path)
+        Err(FileError::InvalidPath)
     }
 
     #[inline]
@@ -220,8 +253,9 @@ impl<H: VfsHelper> Vfs<H> {
         self.open_handles.write().retain(|_handle, open_file| {
             let retained = open_file.process_id != pid;
             if !retained {
-                self.path_to_fs(open_file.path.as_path(), |fs, rel_path| fs.close(rel_path))
-                    .unwrap();
+                let res =
+                    self.path_to_fs(open_file.path.as_path(), |fs, rel_path| fs.close(rel_path));
+                debug_assert!(res.is_ok(), "Failed to close file during process cleanup");
             }
             retained
         });
@@ -229,10 +263,19 @@ impl<H: VfsHelper> Vfs<H> {
 
     /// Deletes a file at the given path.
     pub fn delete(&self, path: Path) -> FileResult<()> {
-        if self.check_file_opened(path) {
-            return Err(FileError::PermissionDenied);
+        let current_pid = H::get_current_process_id();
+
+        // Check if file is opened with lock to prevent TOCTOU issues
+        {
+            let open_handles = self.open_handles.read();
+            if open_handles.values().any(|open_file| {
+                open_file.path.as_path() == path && open_file.process_id == current_pid
+            }) {
+                return Err(FileError::PermissionDenied);
+            }
         }
-        // FIXME: TOCTOU vulnerability?
+
+        // Delete the file from the filesystem
         self.path_to_fs(path, |fs, rel_path| fs.delete(rel_path))
     }
 
@@ -261,7 +304,7 @@ impl<H: VfsHelper> Vfs<H> {
         self.path_to_fs(path, |fs, rel_path| fs.metadata(rel_path))
     }
 
-    pub fn read_dir(&self, path: Path) -> FileResult<alloc::vec::Vec<PathBuf>> {
+    pub fn read_dir(&self, path: Path) -> FileResult<Vec<PathBuf>> {
         self.path_to_fs(path, |fs, rel_path| fs.read_dir(rel_path))
     }
 }

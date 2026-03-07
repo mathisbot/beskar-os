@@ -7,6 +7,7 @@ extern crate alloc;
 
 pub use beskar_core::syscall::ExitCode;
 use beskar_core::{syscall::SyscallExitCode, time::Duration};
+use core::sync::atomic::{AtomicBool, Ordering};
 use hyperdrive::call_once;
 
 mod arch;
@@ -16,12 +17,24 @@ pub mod io;
 pub mod mem;
 pub mod prelude;
 pub mod rand;
+pub mod surface;
 mod sys;
 pub mod time;
 
+static PANIC_NESTED: AtomicBool = AtomicBool::new(false);
+
+/// Returns `true` if the current thread is already panicking (i.e., if we're in a nested panic).
+pub fn panicking() -> bool {
+    PANIC_NESTED.load(Ordering::Acquire)
+}
+
 #[panic_handler]
 fn panic(info: &::core::panic::PanicInfo) -> ! {
-    println!("Panic occurred: {}", info);
+    if !panicking() {
+        PANIC_NESTED.store(true, Ordering::Release);
+        println!("Panic occurred: {}", info);
+    }
+
     sys::sc_exit(ExitCode::Failure);
 }
 
@@ -69,13 +82,7 @@ macro_rules! entry_point {
 pub fn __init() {
     call_once!({
         // Heap
-        {
-            let heap_size = mem::HEAP_SIZE;
-            let res = mem::mmap(heap_size, None, mem::MemoryProtection::ReadWrite)
-                .expect("Memory mapping failed");
-            unsafe { mem::init_heap(res.as_ptr(), heap_size.try_into().unwrap()) };
-        }
-
+        mem::init_heap();
         // Time
         time::init();
     });
@@ -84,9 +91,10 @@ pub fn __init() {
 #[inline]
 /// In debug builds, triggers a breakpoint interrupt (`int3`).
 pub fn debug_break() {
-    #[cfg(debug_assertions)]
-    unsafe {
-        core::arch::asm!("int3", options(nomem, nostack, preserves_flags));
+    if cfg!(debug_assertions) {
+        unsafe {
+            core::arch::asm!("int3", options(nomem, nostack, preserves_flags));
+        }
     }
 }
 
@@ -95,8 +103,9 @@ pub fn debug_break() {
 ///
 /// The provided value `x` is placed in the `RAX` register before triggering the interrupt.
 pub fn debug_break_value(x: u64) {
-    #[cfg(debug_assertions)]
-    unsafe {
-        core::arch::asm!("int3", in("rax") x, options(nomem, nostack, preserves_flags));
+    if cfg!(debug_assertions) {
+        unsafe {
+            core::arch::asm!("int3", in("rax") x, options(nomem, nostack, preserves_flags));
+        }
     }
 }

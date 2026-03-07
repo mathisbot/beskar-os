@@ -1,5 +1,5 @@
 use crate::{
-    arch::context::ThreadRegisters,
+    arch::{context::ThreadRegisters, fpu::FpuState},
     mem::frame_alloc,
     process::binary::{Binary, BinaryType, LoadedBinary},
     storage::vfs,
@@ -13,6 +13,7 @@ use beskar_core::arch::{
 use beskar_hal::instructions::STACK_DEBUG_INSTR;
 use beskar_hal::paging::page_table::Flags;
 use core::{
+    cell::UnsafeCell,
     mem::offset_of,
     ptr::NonNull,
     sync::atomic::{AtomicPtr, AtomicU64, Ordering},
@@ -69,6 +70,8 @@ pub struct Thread {
     tls: Once<Tls>,
     /// Thread statistics for scheduling
     stats: ThreadStats,
+    /// FPU/SSE state for lazy context switching
+    fpu_state: UnsafeCell<FpuState>,
 
     /// Link to the next thread in the queue.
     link: Link<Self>,
@@ -124,6 +127,7 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
+            fpu_state: UnsafeCell::new(FpuState::new()),
         }
     }
 
@@ -150,6 +154,7 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
+            fpu_state: UnsafeCell::new(FpuState::new()),
         }
     }
 
@@ -165,15 +170,9 @@ impl Thread {
 
         let mut stack_bottom = stack.len();
         assert!(
-            stack_bottom
-                >= MINIMUM_LEFTOVER_STACK + size_of::<ThreadRegisters>() + size_of::<usize>(),
+            stack_bottom >= MINIMUM_LEFTOVER_STACK + size_of::<ThreadRegisters>(),
             "Stack too small"
         );
-
-        // Push the return address
-        let entry_point_bytes = (entry_point as usize).to_ne_bytes();
-        stack[stack_bottom - size_of::<usize>()..stack_bottom].copy_from_slice(&entry_point_bytes);
-        stack_bottom -= size_of::<usize>();
 
         // Push the thread registers
         let thread_regs = ThreadRegisters::new(entry_point, stack_ptr);
@@ -200,6 +199,7 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
+            fpu_state: UnsafeCell::new(FpuState::new()),
         }
     }
 
@@ -272,6 +272,13 @@ impl Thread {
     /// Returns the thread local storage of the thread.
     pub fn tls(&self) -> Option<Tls> {
         self.tls.get().copied()
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns a pointer to the FPU state.
+    pub const fn fpu_state_ptr(&self) -> *mut FpuState {
+        self.fpu_state.get()
     }
 
     #[must_use]
@@ -395,7 +402,7 @@ pub extern "C" fn user_trampoline() -> ! {
     let rsp = super::with_scheduler(|scheduler| {
         scheduler.current.with_locked(|thread| {
             thread.stack.as_mut().map(|ts| {
-                ts.allocate_all(4 * M4KiB::SIZE);
+                ts.allocate_all(16 * M4KiB::SIZE);
                 ts.user_stack_top().unwrap()
             })
         })
@@ -480,7 +487,7 @@ impl ThreadStacks {
     }
 
     pub fn allocate_user(&self, size: u64) {
-        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE;
+        let flags = Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE | Flags::NO_EXECUTE;
         self.user_pages.call_once(|| Self::allocate(size, flags));
     }
 

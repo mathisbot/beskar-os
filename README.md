@@ -49,12 +49,16 @@ For example, usage of SIMD registers is currently a to-do.
 
 ### Building
 
-The OS can be built using `cargo build [--release]`.
-The result of the building process lies inside the `efi_disk` directory.
+The OS can be built using a convenient TUI tool: `cargo run [--release]`.
+The tool also features a button to launch QEMU immediately.
+
+For automation or scripts, the tool can also be used as a CLI: `cargo run [--release] -- help`.
+
+For development, the TUI tool provides a way to quickly build/test/run clippy for the OS as well as start QEMU with default parameters.
 
 ### Running on QEMU
 
-If you want to run the OS on a testing virtual machine on QEMU, you can do so by running the following command :
+If you want to manually run the OS on a testing virtual machine on QEMU, you can do so by running the following command :
 
 ```powershell
 qemu-system-x86_64.exe -drive if=pflash,format=raw,readonly=on,file=<x86_64-OVMF> -drive format=raw,file=fat:rw:efi_disk -smp <NB_CORES> -m <RAM_SIZE> -cpu <CPU_ARCH> -accel <ACCEL_BACKEND> -serial stdio -M q35
@@ -78,7 +82,7 @@ Other useful parameters:
 
 If the firmware starts and boots on the UEFI shell instead of the bootloader, try deleting `efi_disk/NvVars`.
 
-If you are using `-accel whpx` and QEMU boots with a blank window right before crashing, remove WHPX acceleration. This a bug with QEMU (apparently, they are not planning on fixing Windows builds of QEMU).
+If you are using `-accel whpx` and QEMU boots with a blank window right before crashing, remove WHPX acceleration. This a bug with QEMU and OVMF.
 
 ### Running on baremetal
 
@@ -104,7 +108,7 @@ Use the `entry_point!` macro to define the entry point.
 
 For more information, read the documentation of `beskar-lib` and read examples in `userspace/`.
 
-Once your program compiled successfully for `x86_64-unknown-none`, add it as a binary dependency in `Cargo.toml` and update `USERSPACE_APPS` in `build.rs`.
+Once your program compiled successfully for `x86_64-unknown-none`, add it in `userspace/`.
 
 ### Debugging
 

@@ -1,5 +1,5 @@
 use core::{
-    ffi::{c_char, c_void},
+    ffi::{CStr, c_char, c_void},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -33,15 +33,14 @@ pub fn init() {
     unsafe { doom_set_getenv(getenv) };
 }
 
-#[cfg(debug_assertions)]
 extern "C" fn print(s: *const c_char) {
-    let s = unsafe { core::ffi::CStr::from_ptr(s) };
-    if let Ok(s) = s.to_str() {
-        beskar_lib::println!("DOOM: {}", s);
+    if !cfg!(debug_assertions) {
+        let s = unsafe { CStr::from_ptr(s) };
+        if let Ok(s) = s.to_str() {
+            beskar_lib::println!("DOOM: {}", s);
+        }
     }
 }
-#[cfg(not(debug_assertions))]
-extern "C" fn print(_s: *const c_char) {}
 
 extern "C" fn malloc(size: i32) -> *mut c_void {
     // `alloc` states the layout size must be non-zero.
@@ -57,8 +56,7 @@ extern "C" fn malloc(size: i32) -> *mut c_void {
 
     assert!(
         !ptr.is_null(),
-        "malloc failed: out of memory (requested {} bytes)",
-        size
+        "malloc failed: out of memory (requested {size} bytes)",
     );
 
     ptr.cast()

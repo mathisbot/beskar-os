@@ -228,8 +228,18 @@ impl<const SIZE: usize, T> MpmcQueue<SIZE, T> {
 
 impl<const SIZE: usize, T> Drop for MpmcQueue<SIZE, T> {
     fn drop(&mut self) {
-        while let Some(v) = self.pop() {
-            drop(v);
+        let start = self.read_index.load(Ordering::Acquire);
+        let end = self.write_index.load(Ordering::Acquire);
+
+        for pos in start..end {
+            let slot = &self.buffer[pos % SIZE];
+            let seq = slot.sequence.load(Ordering::Acquire);
+
+            if seq == pos + 1 {
+                // Safety: We are the only thread accessing this slot (we have a mutable ref over self),
+                // and it contains a valid value.
+                drop(unsafe { slot.read(pos) });
+            }
         }
     }
 }

@@ -1,41 +1,22 @@
 #![no_std]
 #![no_main]
+
 use beskar_core::time::Duration;
 use beskar_lib::{io::keyboard, time::now};
 
 beskar_lib::entry_point!(main);
 
 fn main() {
-    const KEYBOARD_THRESHOLD: Duration = Duration::from_millis(300);
+    const IDLE_THRESHOLD: Duration = Duration::from_millis(200);
 
-    bashkar::video::init();
-
-    let mut last_input_time = now();
+    let mut shell = bashkar::shell::Shell::new();
+    let mut last_input = now();
 
     loop {
         if let Some(event) = keyboard::poll_keyboard() {
-            let line_complete = bashkar::video::tty::with_tty(|tty| tty.handle_key_event(&event));
-
-            if line_complete {
-                let line = bashkar::video::tty::with_tty(|tty| tty.drain_input_line());
-                let (command, args) = bashkar::commands::parse_command_line(&line);
-
-                let exec_res = bashkar::video::tty::with_tty(|tty| {
-                    bashkar::commands::execute_command(&command, &args, tty)
-                });
-
-                bashkar::video::tty::with_tty(|tty| {
-                    if let Err(err_msg) = exec_res {
-                        tty.write_str(&format!("Error: {}\n", err_msg));
-                    }
-
-                    tty.reset_input();
-                    tty.display_prompt();
-                });
-            }
-
-            last_input_time = now();
-        } else if now() - last_input_time >= KEYBOARD_THRESHOLD {
+            shell.handle_key(&event);
+            last_input = now();
+        } else if now() - last_input >= IDLE_THRESHOLD {
             keyboard::wait_next_event();
         } else {
             core::hint::spin_loop();

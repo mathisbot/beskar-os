@@ -12,17 +12,17 @@ pub fn init() -> DriverResult<()> {
         |_| {
             init_legacy().map_or_else(
                 |_| {
-                    video::error!("PCI failed to initialize or no PCI devices were found");
+                    crate::error!("PCI failed to initialize or no PCI devices were found");
                     DriverResult::Err(DriverError::Invalid)
                 },
                 |device_count| {
-                    video::info!("Legacy PCI devices found: {}", device_count);
+                    crate::info!("Legacy PCI devices found: {}", device_count);
                     DriverResult::Ok(())
                 },
             )
         },
         |device_count| {
-            video::info!("PCIe devices found: {}", device_count);
+            crate::info!("PCIe devices found: {}", device_count);
             DriverResult::Ok(())
         },
     )

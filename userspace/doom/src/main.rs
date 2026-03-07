@@ -22,8 +22,8 @@ fn main() {
     unsafe { doom_init(1, argv.as_ptr(), 0b111) };
 
     loop {
+        doom::input::poll_inputs();
         unsafe { doom_update() };
         doom::screen::draw();
-        doom::input::poll_inputs();
     }
 }

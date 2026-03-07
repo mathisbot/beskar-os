@@ -1,7 +1,11 @@
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic, clippy::nursery)]
+
 extern crate alloc;
 
-pub mod commands;
-pub mod video;
+pub mod buffer;
+pub mod input;
+pub mod render;
+pub mod shell;
+pub mod theme;

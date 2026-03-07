@@ -2,7 +2,7 @@
 
 use beskar_core::{
     arch::{PhysAddr, VirtAddr},
-    video::{FrameBuffer, Info, Pixel},
+    video::{FramebufferConfig, Info, Pixel},
 };
 use hyperdrive::locks::mcs::MUMcsLock;
 
@@ -60,8 +60,14 @@ impl PhysicalFrameBuffer {
     /// # Safety
     ///
     /// The provided framebuffer must only be used to transfer the framebuffer to the kernel.
-    pub const unsafe fn to_framebuffer(&self, vaddr: VirtAddr) -> FrameBuffer {
-        unsafe { FrameBuffer::new(vaddr, self.info) }
+    pub const unsafe fn to_framebuffer(&self, vaddr: VirtAddr) -> FramebufferConfig {
+        FramebufferConfig::new(
+            self.info().width(),
+            self.info().height(),
+            self.info().stride(),
+            self.info().pixel_format(),
+            vaddr,
+        )
     }
 }
 

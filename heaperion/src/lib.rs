@@ -4,19 +4,6 @@
 //! It combines multiple allocation strategies to provide optimal performance across different
 //! allocation sizes and patterns.
 //!
-//! ## Architecture
-//!
-//! The allocator uses a hybrid approach:
-//! - **Slab Allocator**: For small, frequently allocated objects (<= 512 bytes)
-//!   - O(1) allocation and deallocation
-//!   - Excellent cache locality
-//!   - Minimal fragmentation for fixed-size allocations
-//!
-//! - **Buddy Allocator**: For larger allocations (> 512 bytes)
-//!   - O(log(n)) allocation and deallocation
-//!   - Power-of-two sized blocks
-//!   - Automatic coalescing to reduce fragmentation
-//!
 //! ## Usage
 //!
 //! ### Basic Usage
@@ -48,6 +35,7 @@
 
 mod buddy;
 mod error;
+mod growable;
 mod hybrid;
 mod slab;
 mod utils;
@@ -55,10 +43,14 @@ mod utils;
 // Public exports
 pub use buddy::BuddyAllocator;
 pub use error::{HeapError, Result};
+pub use growable::{
+    AdditionalHeapBackend, DefaultGrowableHeap, GrowableHeap, HeapBackend, MemorySource,
+};
 pub use hybrid::HybridAllocator;
 pub use slab::SlabAllocator;
 
 /// The main heap allocator type
 ///
 /// This is an alias to `HybridAllocator` for convenience.
+/// For a heap that grows automatically, use [`GrowableHeap`].
 pub type Heap = HybridAllocator;

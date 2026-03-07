@@ -36,6 +36,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
     match syscall {
         Syscall::Exit => sc_exit(args),
         Syscall::MemoryMap => SyscallReturnValue::ValueU(sc_mmap(args)),
+        Syscall::MemoryUnmap => SyscallReturnValue::Code(sc_munmap(args)),
         Syscall::MemoryProtect => SyscallReturnValue::Code(sc_mprotect(args)),
         Syscall::Read => SyscallReturnValue::ValueI(sc_read(args)),
         Syscall::Write => SyscallReturnValue::ValueI(sc_write(args)),
@@ -43,22 +44,25 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::Close => SyscallReturnValue::Code(sc_close(args)),
         Syscall::Sleep => SyscallReturnValue::Code(sc_sleep(args)),
         Syscall::WaitOnEvent => SyscallReturnValue::Code(sc_wait_on_event(args)),
+        Syscall::SurfaceCreate => SyscallReturnValue::ValueI(sc_surface_create(args)),
+        Syscall::SurfaceDestroy => SyscallReturnValue::Code(sc_surface_destroy(args)),
+        Syscall::SurfaceDirty => SyscallReturnValue::Code(sc_surface_dirty(args)),
+        Syscall::SurfacePresent => SyscallReturnValue::Code(sc_surface_present(args)),
+        Syscall::QueryConfig => SyscallReturnValue::Code(sc_query_config(args)),
     }
 }
 
 fn sc_exit(args: &Arguments) -> ! {
-    #[cfg_attr(not(debug_assertions), allow(unused_variables))]
     let exit_code = args.one;
 
-    #[cfg(debug_assertions)]
-    {
+    if cfg!(debug_assertions) {
         let exit_code = beskar_core::syscall::ExitCode::try_from(exit_code);
         let tid = crate::process::scheduler::current_thread_id();
 
         if let Ok(exit_code) = exit_code {
-            video::debug!("Thread {} exited with code {:?}", tid.as_u64(), exit_code);
+            crate::debug!("Thread {} exited with code {:?}", tid.as_u64(), exit_code);
         } else {
-            video::debug!("Thread {} exited with invalid code", tid.as_u64());
+            crate::debug!("Thread {} exited with invalid code", tid.as_u64());
         }
     }
 
@@ -104,6 +108,36 @@ fn sc_mmap(args: &Arguments) -> u64 {
     };
 
     page_range.start().start_address().as_u64()
+}
+
+fn sc_munmap(args: &Arguments) -> SyscallExitCode {
+    let ptr = args.one;
+    let size = args.two;
+
+    if size == 0 {
+        return SyscallExitCode::Success;
+    }
+
+    let Some(va) = VirtAddr::try_new(ptr) else {
+        return SyscallExitCode::Failure;
+    };
+    let end = va + (size - 1);
+
+    if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
+        && !size.is_multiple_of(M4KiB::SIZE)
+        && !probe(va, end)
+    {
+        return SyscallExitCode::Failure;
+    }
+
+    let page_start = va.page::<M4KiB>();
+    let page_end = end.page::<M4KiB>();
+
+    let page_range = Page::range_inclusive(page_start, page_end);
+
+    unsafe { process::current().address_space().unmap_free(page_range) };
+
+    SyscallExitCode::Success
 }
 
 #[must_use]
@@ -275,4 +309,133 @@ fn sc_wait_on_event(args: &Arguments) -> SyscallExitCode {
     crate::process::scheduler::sleep_on(handle);
 
     SyscallExitCode::Success
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Arguments are passed as u64 but represent smaller types"
+)]
+fn sc_surface_create(args: &Arguments) -> i64 {
+    let width = (args.one >> 16) as u16;
+    let height = args.one as u16;
+    let x = (args.two >> 16) as u16;
+    let y = args.two as u16;
+    let user_buffer_ptr = args.three as *mut u8;
+
+    if width == 0 || height == 0 {
+        return -1;
+    }
+
+    let user_buffer = VirtAddr::from_ptr(user_buffer_ptr);
+    let buffer_size = u64::from(width) * u64::from(height) * 4;
+    let buffer_end = user_buffer + buffer_size;
+    if !probe(user_buffer, buffer_end) {
+        return -1;
+    }
+
+    let res = crate::video::with_compositor(|c| {
+        let sid = unsafe { c.create_surface_with_buffer(x, y, width, height, user_buffer_ptr) };
+        (sid, crate::video::SurfaceGuard(sid))
+    });
+
+    if let Some((raw_sid, guard)) = res {
+        // Register the surface with the current process for automatic cleanup
+        let process = crate::process::current();
+        let registered = process.register_surface(guard);
+        crate::trace::set_screen_logging(false);
+        if registered { i64::from(raw_sid.0) } else { -1 }
+    } else {
+        -1
+    }
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Arguments are passed as u64 but represent smaller types"
+)]
+fn sc_surface_destroy(args: &Arguments) -> SyscallExitCode {
+    let sid_raw = args.one as u32;
+    let sid = beskar_core::video::SurfaceId(sid_raw);
+
+    crate::video::with_compositor(|c| c.destroy_surface(sid));
+
+    SyscallExitCode::Success
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Arguments are passed as u64 but represent smaller types"
+)]
+fn sc_surface_dirty(args: &Arguments) -> SyscallExitCode {
+    let sid_raw = args.one as u32;
+    let sid = beskar_core::video::SurfaceId(sid_raw);
+    let width = (args.two >> 16) as u16;
+    let height = args.two as u16;
+    let x = (args.three >> 16) as u16;
+    let y = args.three as u16;
+
+    let rect = beskar_core::video::Rect::new(x, y, width, height);
+
+    // Render only this surface synchronously in the syscall context
+    // where we can safely access the userspace buffer
+    let result = crate::video::with_compositor(|c| c.mark_surface_dirty(sid, rect).ok()).flatten();
+
+    if result.is_some() {
+        SyscallExitCode::Success
+    } else {
+        SyscallExitCode::Failure
+    }
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Arguments are passed as u64 but represent smaller types"
+)]
+fn sc_surface_present(args: &Arguments) -> SyscallExitCode {
+    let sid_raw = args.one as u32;
+
+    // Render only this surface synchronously in the syscall context
+    // where we can safely access the userspace buffer
+    let result = crate::video::with_compositor(|c| {
+        c.render_surface_dirty(beskar_core::video::SurfaceId(sid_raw))
+            .ok()
+    })
+    .flatten();
+
+    if result.is_some() {
+        SyscallExitCode::Success
+    } else {
+        SyscallExitCode::Failure
+    }
+}
+
+fn sc_query_config(args: &Arguments) -> SyscallExitCode {
+    let query_type = args.one;
+    let output_ptr = args.two as *mut ();
+    let output_size = args.three;
+
+    let start = VirtAddr::from_ptr(output_ptr);
+    let end = start + output_size;
+    if !probe(start, end) {
+        return SyscallExitCode::Failure;
+    }
+
+    let size = usize::try_from(output_size).unwrap_or(0);
+    match query_type {
+        beskar_core::syscall::consts::QUERY_FRAMEBUFFER => {
+            if size < core::mem::size_of::<beskar_core::video::Info>() {
+                return SyscallExitCode::Failure;
+            }
+            let Some(info) = crate::video::with_compositor(|c| c.config().info()) else {
+                return SyscallExitCode::Failure;
+            };
+            unsafe {
+                output_ptr
+                    .cast::<beskar_core::video::Info>()
+                    .write_unaligned(info);
+            }
+            SyscallExitCode::Success
+        }
+        _ => SyscallExitCode::Failure,
+    }
 }

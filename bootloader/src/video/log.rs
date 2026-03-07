@@ -127,7 +127,7 @@ pub struct ScreenWriter(FramebufferWriter);
 impl ScreenWriter {
     #[must_use]
     #[inline]
-    pub fn new(info: Info) -> Self {
+    pub const fn new(info: Info) -> Self {
         Self(FramebufferWriter::new(info))
     }
 

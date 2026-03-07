@@ -20,7 +20,7 @@ pub fn init() {
         )
         .unwrap();
 
-    video::debug!(
+    crate::debug!(
         "Kernel heap allocated at {:#x}",
         page_range.start().start_address().as_u64()
     );
