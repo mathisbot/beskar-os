@@ -19,7 +19,10 @@
 
 use beskar_core::{
     arch::paging::M4KiB,
-    video::{Pixel, PixelComponents, SurfaceId, writer::FramebufferWriter},
+    video::{
+        Pixel, PixelComponents, Rect, SurfaceId,
+        writer::{CHAR_HEIGHT, FramebufferWriter, LINE_SPACING},
+    },
 };
 use beskar_hal::paging::page_table::Flags;
 use beskar_hal::port::serial::com::{ComNumber, SerialCom};
@@ -238,18 +241,33 @@ impl ScreenWriter<'_> {
         self.writer.set_color(color);
     }
 
-    /// Mark the surface dirty after writing
-    fn mark_dirty(&self) {
-        // TODO: Track the region actually written to.
+    /// Mark a specific region of the surface dirty after writing
+    fn mark_dirty_region(&self, rect: Rect) {
+        let _ = crate::video::with_compositor(|c| c.mark_surface_dirty(self.surface_id, rect));
+    }
+
+    /// Mark the entire surface dirty (e.g. after a full clear)
+    fn mark_all_dirty(&self) {
         let _ = crate::video::with_compositor(|c| c.mark_surface_all_dirty(self.surface_id));
     }
 }
 
 impl core::fmt::Write for ScreenWriter<'_> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let y_before = self.writer.y();
         self.writer.write_str(self.buffer, s);
+        let y_after = self.writer.y();
 
-        self.mark_dirty();
+        // If a screen clear happened during writing (cursor wrapped back to top),
+        // the whole surface must be considered dirty.
+        if y_after < y_before {
+            self.mark_all_dirty();
+        } else {
+            // Cover all rows that were actually drawn into.
+            let dirty_height = (y_after - y_before) + CHAR_HEIGHT + LINE_SPACING;
+            let rect = Rect::new(0, y_before, self.writer.info().width(), dirty_height);
+            self.mark_dirty_region(rect);
+        }
 
         Ok(())
     }
