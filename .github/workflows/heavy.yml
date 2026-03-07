@@ -46,10 +46,10 @@ jobs:
       - name: Checkout the code
         uses: actions/checkout@v4
 
-      - name: Install latest nightly
+      - name: Install latest stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: nightly
+          toolchain: stable
           targets: x86_64-unknown-none, x86_64-unknown-uefi
           components: llvm-tools-preview, rust-src
 
@@ -73,10 +73,10 @@ jobs:
       - name: Checkout the code
         uses: actions/checkout@v4
 
-      - name: Install latest nightly
+      - name: Install latest stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: nightly
+          toolchain: stable
           targets: x86_64-unknown-none, x86_64-unknown-uefi
           components: clippy, rustfmt, llvm-tools-preview, rust-src
 
