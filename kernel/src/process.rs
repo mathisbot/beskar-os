@@ -107,6 +107,20 @@ impl Process {
 
     #[must_use]
     #[inline]
+    /// Creates a new process that shares the kernel address space.
+    pub fn new_kernel_as(name: &str, kind: Kind, binary: Option<PathBuf>) -> Self {
+        Self {
+            name: String::from(name),
+            pid: ProcessId::new(),
+            address_space: ViewRef::new_borrow(address_space::get_kernel_address_space()),
+            kind,
+            binary,
+            surfaces: MpmcQueue::new(),
+        }
+    }
+
+    #[must_use]
+    #[inline]
     pub fn name(&self) -> &str {
         &self.name
     }

@@ -50,6 +50,9 @@ pub enum NetworkError {
     #[error("Unsupported operation")]
     /// The operation is not supported
     Unsupported,
+    #[error("Resources exhausted")]
+    /// All available resources of this type are in use
+    Exhausted,
 }
 
 pub type NetworkResult<T> = Result<T, NetworkError>;

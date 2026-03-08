@@ -23,8 +23,11 @@ impl Registers {
     pub const RDBAL0: usize = 0x02800; // RX Descriptor Base Address Low
     pub const RDBAH0: usize = 0x02804; // RX Descriptor Base Address High
     pub const RDLEN: usize = 0x02808; // RX Descriptor Length
+    pub const SRRCTL: usize = 0x0280C; // Split and Replication Receive Control
     pub const RDH: usize = 0x02810; // RX Descriptor Head
     pub const RDT: usize = 0x02818; // RX Descriptor Tail
+    pub const RXDCTL: usize = 0x02828; // RX Descriptor Control
+    pub const RFCTL: usize = 0x05008; // Receive Filter Control
 
     // Transmit registers
     pub const TCTL: usize = 0x00400; // Transmit Control
@@ -133,6 +136,10 @@ impl TctlFlags {
 pub struct CtrlFlags;
 
 impl CtrlFlags {
+    /// Set Link Up
+    pub const SLU: u32 = 1 << 6;
+    /// VLAN Mode Enable
+    pub const VME: u32 = 1 << 18;
     /// Device Reset
     pub const RST: u32 = 1 << 26;
 }

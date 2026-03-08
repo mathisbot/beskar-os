@@ -96,10 +96,20 @@ impl E1000e<'_> {
     }
 
     fn reset(&mut self) {
+        // Mask all interrupts before reset
+        self.write_reg(Registers::IMC, 0xFFFF_FFFF);
+
         self.update_reg(Registers::CTRL, |ctrl| ctrl | CtrlFlags::RST);
         while self.read_reg(Registers::CTRL) & CtrlFlags::RST != 0 {
             core::hint::spin_loop();
         }
+
+        // Mask all interrupts again (reset clears IMC)
+        self.write_reg(Registers::IMC, 0xFFFF_FFFF);
+
+        self.update_reg(Registers::CTRL, |ctrl| {
+            (ctrl | CtrlFlags::SLU) & !CtrlFlags::VME
+        });
     }
 
     fn enable_int(&mut self) {
@@ -152,17 +162,23 @@ impl E1000e<'_> {
             u32::try_from(nb_rx * size_of::<RxDescriptor>()).unwrap(),
         );
         self.write_reg(Registers::RDH, 0);
-        let rdt_val = u32::from(u16::try_from(nb_rx - 1).unwrap());
-        self.write_reg(Registers::RDT, rdt_val);
         self.rx_curr.set(0);
+
+        self.write_reg(Registers::SRRCTL, 0); // DESCTYPE=000 = legacy
+        self.write_reg(Registers::RXDCTL, 1 << 16); // WTHRESH=1
+
         let rctl_value = RctlFlags::EN
             | RctlFlags::UPE
             | RctlFlags::MPE
             | RctlFlags::LBM_PHY
             | RctlFlags::RDMTS_HALF
             | RctlFlags::BAM
+            | RctlFlags::SECRC
             | RctlFlags::BSIZE_4096;
         self.write_reg(Registers::RCTL, rctl_value);
+
+        let rdt_val = u32::from(u16::try_from(nb_rx - 1).unwrap());
+        self.write_reg(Registers::RDT, rdt_val);
 
         assert!(txdesc_paddr.as_u64().trailing_zeros() >= 4);
         let tx_hi = u32::try_from(txdesc_paddr.as_u64() >> 32).unwrap();
@@ -175,8 +191,7 @@ impl E1000e<'_> {
             u32::try_from(nb_tx * size_of::<TxDescriptor>()).unwrap(),
         );
         self.write_reg(Registers::TDH, 0);
-        let tdt_val = u32::from(u16::try_from(nb_tx - 1).unwrap());
-        self.write_reg(Registers::TDT, tdt_val);
+        self.write_reg(Registers::TDT, 0);
         self.tx_curr.set(0);
         let tctl_value = TctlFlags::EN
             | TctlFlags::PSP
@@ -231,33 +246,19 @@ impl E1000e<'_> {
         let next = (rx_idx + 1) % RX_BUFFERS;
         self.rx_curr.set(next);
 
-        // Update RDT register to notify hardware
-        self.write_reg(Registers::RDT, u32::try_from(next).unwrap());
+        // Return the freed descriptor to hardware
+        self.write_reg(Registers::RDT, u32::try_from(rx_idx).unwrap());
     }
 }
 
 extern "C" fn nic_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
-    E1000E.with_locked(|e1000e| {
-        // Read and acknowledge interrupt cause
+    // If the polling thread holds the lock, we skip the ICR read.
+    // The pending events will be processed by the next poll() call.
+    E1000E.try_with_locked(|e1000e| {
         let icr = e1000e.read_reg(Registers::ICR);
 
         if icr & IntFlags::RXT0 != 0 || icr & IntFlags::RXDMT0 != 0 {
-            // TODO: Packet received (notify network stack)
-        }
-
-        if icr & IntFlags::TXDW != 0 {
-            // TODO: Transmit done
-        }
-
-        if icr & IntFlags::LSC != 0 {
-            // Link status changed
-            let status = e1000e.read_reg(Registers::STATUS);
-            let link_up = (status & 0x02) != 0;
-            if link_up {
-                crate::debug!("Network link is up");
-            } else {
-                crate::debug!("Network link is down");
-            }
+            // TODO: Notify network stack of the new RX
         }
     });
 
@@ -276,13 +277,10 @@ impl Nic for E1000e<'_> {
 
         let packet_len = desc.packet_length() as usize;
         if packet_len == 0 || packet_len > 4096 {
-            // Invalid packet length - will be skipped on consume_frame()
             return None;
         }
 
-        // Check for errors in the packet
         if desc.has_errors() {
-            // Packet has errors - will be skipped on consume_frame()
             return None;
         }
 

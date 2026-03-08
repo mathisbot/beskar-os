@@ -255,14 +255,14 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     /// Set the version and header length fields.
     pub fn set_version_and_header_len(&mut self, version: u8, header_len: u8) {
         let data = self.buffer.as_mut();
-        data[0] = (version << 4) | (header_len & 0x0F);
+        data[0] = ((version & 0x0F) << 4) | (header_len & 0x0F);
     }
 
     #[inline]
     /// Set the DSCP and ECN fields.
     pub fn set_dscp_ecn(&mut self, dscp: u8, ecn: u8) {
         let data = self.buffer.as_mut();
-        data[1] = (dscp << 2) | (ecn & 0x03);
+        data[1] = ((dscp & 0x3F) << 2) | (ecn & 0x03);
     }
 
     #[inline]
@@ -282,7 +282,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     #[inline]
     /// Set the flags and fragment offset fields.
     pub fn set_flags_and_fragment_offset(&mut self, flags: Flags, fragment_offset: u16) {
-        let value = (u16::from(flags.to_bits()) << 5) | (fragment_offset & 0x1FFF);
+        let value = (u16::from(flags.to_bits()) << 8) | (fragment_offset & 0x1FFF);
         let data = self.buffer.as_mut();
         data[FLAGS_FRAG_OFFSET].copy_from_slice(&u16_to_inet_bytes(value));
     }
@@ -334,7 +334,6 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
         let header_len = self.header_len();
         let data = self.buffer.as_ref();
         let cksum = checksum(&data[..header_len]);
-        let _ = data;
         self.set_checksum(cksum);
     }
 }
