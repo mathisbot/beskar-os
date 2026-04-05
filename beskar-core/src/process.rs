@@ -1,5 +1,6 @@
 use crate::time::{Duration, Instant};
 use core::sync::atomic::{AtomicU64, Ordering};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 pub mod binary;
 
@@ -19,9 +20,7 @@ impl Default for SleepHandle {
 }
 
 impl SleepHandle {
-    pub const SLEEP_HANDLE_KEYBOARD_INTERRUPT: Self = Self(1);
-
-    const SLEEP_HANDLE_FREE: u64 = 2;
+    const SLEEP_HANDLE_FREE: u64 = 1;
 
     /// Creates a fresh handle that can later be signalled to wake sleepers.
     #[must_use]
@@ -154,4 +153,19 @@ impl AtomicSleepReason {
         let old_raw = self.0.swap(raw, order);
         unsafe { Self::unpack(old_raw) }
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
+#[repr(u64)]
+pub enum WaitResult {
+    /// The wait was satisfied by a signal/event.
+    Event = 0,
+    /// The wait completed because timeout elapsed.
+    Timeout = 1,
+    /// The wait was cancelled.
+    Cancelled = 2,
+    /// The waiting thread was forcefully interrupted.
+    Killed = 3,
+    /// Unexpected wakeup source.
+    Unknown = 4,
 }

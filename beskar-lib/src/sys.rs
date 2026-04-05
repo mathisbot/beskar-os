@@ -1,6 +1,6 @@
 use crate::arch::syscalls;
 use beskar_core::{
-    process::SleepHandle,
+    process::{SleepHandle, WaitResult},
     syscall::{ExitCode, Syscall, SyscallExitCode},
     video::SurfaceId,
 };
@@ -72,9 +72,9 @@ pub fn sc_sleep(ms: u64) -> SyscallExitCode {
 }
 
 #[inline]
-pub fn sc_wait_on_event(handle: SleepHandle) -> SyscallExitCode {
-    let res = syscalls::syscall_1(Syscall::WaitOnEvent, handle.raw());
-    SyscallExitCode::try_from(res).unwrap()
+pub fn sc_wait_on_event(handle: SleepHandle, timeout_us: u64) -> WaitResult {
+    let res = syscalls::syscall_2(Syscall::WaitOnEvent, handle.raw(), timeout_us);
+    WaitResult::try_from(res).unwrap()
 }
 
 pub fn sc_surface_create(width: u16, height: u16, x: u16, y: u16, buffer: *const u8) -> i64 {

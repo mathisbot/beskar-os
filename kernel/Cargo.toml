@@ -18,3 +18,4 @@ pci = { path = "foundry/pci" }
 storage = { path = "foundry/storage" }
 thiserror = { workspace = true }
 video = { path = "foundry/video" }
+wait = { path = "src/process/scheduler/wait" }

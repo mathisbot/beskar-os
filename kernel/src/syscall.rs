@@ -43,7 +43,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::Open => SyscallReturnValue::ValueI(sc_open(args)),
         Syscall::Close => SyscallReturnValue::Code(sc_close(args)),
         Syscall::Sleep => SyscallReturnValue::Code(sc_sleep(args)),
-        Syscall::WaitOnEvent => SyscallReturnValue::Code(sc_wait_on_event(args)),
+        Syscall::WaitOnEvent => SyscallReturnValue::ValueU(sc_wait_on_event(args)),
         Syscall::SurfaceCreate => SyscallReturnValue::ValueI(sc_surface_create(args)),
         Syscall::SurfaceDestroy => SyscallReturnValue::Code(sc_surface_destroy(args)),
         Syscall::SurfaceDirty => SyscallReturnValue::Code(sc_surface_dirty(args)),
@@ -302,13 +302,20 @@ fn sc_sleep(args: &Arguments) -> SyscallExitCode {
 }
 
 #[must_use]
-fn sc_wait_on_event(args: &Arguments) -> SyscallExitCode {
+fn sc_wait_on_event(args: &Arguments) -> u64 {
     let handle_raw = args.one;
+    let timeout_us = args.two;
+
     let handle = beskar_core::process::SleepHandle::from_raw(handle_raw);
 
-    crate::process::scheduler::sleep_on(handle);
+    let wake = if timeout_us == 0 {
+        crate::process::scheduler::wait(wait::WaitRequest::event(handle))
+    } else {
+        let deadline = crate::time::now() + crate::time::Duration::from_micros(timeout_us);
+        crate::process::scheduler::wait(wait::WaitRequest::event_or_timeout(handle, deadline))
+    };
 
-    SyscallExitCode::Success
+    u64::from(beskar_core::process::WaitResult::from(wake.cause()))
 }
 
 #[expect(
@@ -410,6 +417,17 @@ fn sc_surface_present(args: &Arguments) -> SyscallExitCode {
 }
 
 fn sc_query_config(args: &Arguments) -> SyscallExitCode {
+    fn fill<T, F: FnOnce() -> Option<T>>(ptr: *mut (), size: usize, f: F) -> SyscallExitCode {
+        if size >= size_of::<T>()
+            && let Some(v) = f()
+        {
+            unsafe { ptr.cast::<T>().write_unaligned(v) };
+            SyscallExitCode::Success
+        } else {
+            SyscallExitCode::Failure
+        }
+    }
+
     let query_type = args.one;
     let output_ptr = args.two as *mut ();
     let output_size = args.three;
@@ -422,20 +440,13 @@ fn sc_query_config(args: &Arguments) -> SyscallExitCode {
 
     let size = usize::try_from(output_size).unwrap_or(0);
     match query_type {
-        beskar_core::syscall::consts::QUERY_FRAMEBUFFER => {
-            if size < core::mem::size_of::<beskar_core::video::Info>() {
-                return SyscallExitCode::Failure;
-            }
-            let Some(info) = crate::video::with_compositor(|c| c.config().info()) else {
-                return SyscallExitCode::Failure;
-            };
-            unsafe {
-                output_ptr
-                    .cast::<beskar_core::video::Info>()
-                    .write_unaligned(info);
-            }
-            SyscallExitCode::Success
+        beskar_core::syscall::consts::QUERY_FRAMEBUFFER => fill(output_ptr, size, || {
+            crate::video::with_compositor(|c| c.config().info())
+        }),
+        beskar_core::syscall::consts::QUERY_KEYBOARD_WAIT_HANDLE => {
+            fill(output_ptr, size, crate::drivers::keyboard::wait_handle)
         }
+
         _ => SyscallExitCode::Failure,
     }
 }

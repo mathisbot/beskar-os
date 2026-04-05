@@ -4,12 +4,9 @@
 )]
 
 use crate::{locals, time::Duration};
+use ::wait::{WakeCause, WakeResult};
 use alloc::{boxed::Box, sync::Arc};
-use beskar_core::{
-    arch::VirtAddr,
-    process::{AtomicSleepReason, SleepHandle, SleepReason},
-    time::Instant,
-};
+use beskar_core::{arch::VirtAddr, process::SleepHandle, time::Instant};
 use beskar_hal::instructions::without_interrupts;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use hyperdrive::{call_once, locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
@@ -18,9 +15,8 @@ use thread::{Thread, ThreadId};
 
 mod priority;
 pub use priority::Priority;
-mod sleep;
-use sleep::SleepQueues;
 pub mod thread;
+mod wait;
 
 static SCHEDULER_SWITCH: AtomicBool = AtomicBool::new(false);
 
@@ -40,9 +36,6 @@ static QUEUE: Once<priority::RoundRobinQueues> = Once::uninit();
 /// A queue for finished threads.
 static FINISHED: Once<MpscQueue<Thread>> = Once::uninit();
 
-/// Sleep queues for timed and event-based sleepers.
-static SLEEPING: McsLock<SleepQueues> = McsLock::new(SleepQueues::new());
-
 /// This function initializes the scheduler with the kernel thread.
 ///
 /// # Safety
@@ -53,6 +46,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
 
     QUEUE.call_once(|| priority::RoundRobinQueues::new(kernel_process.clone()));
     FINISHED.call_once(|| MpscQueue::new(Box::new(Thread::new_stub(kernel_process.clone()))));
+    call_once!(wait::init());
 
     let scheduler = Scheduler::new(kernel_thread);
     locals!().scheduler().call_once(|| scheduler);
@@ -82,7 +76,7 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
 #[must_use]
 #[inline]
 pub fn scheduler_tick() -> Option<ContextSwitch> {
-    wake_sleeping_threads();
+    wake_blocked_threads();
 
     // Attempt to reschedule
     crate::process::scheduler::reschedule(RescheduleReason::QuantumExpired)
@@ -110,7 +104,6 @@ impl ContextSwitch {
 pub struct Scheduler {
     current: McsLock<Box<Thread>>,
     should_exit: AtomicBool,
-    sleep_intent: AtomicSleepReason,
 }
 
 impl Scheduler {
@@ -120,7 +113,6 @@ impl Scheduler {
         Self {
             current: McsLock::new(Box::new(kernel_thread)),
             should_exit: AtomicBool::new(false),
-            sleep_intent: AtomicSleepReason::new(None),
         }
     }
 
@@ -135,13 +127,16 @@ impl Scheduler {
     }
 
     #[inline]
-    /// Sets an inner flag to indicate that the current thread should sleep.
-    ///
-    /// This function does not perform the context switch, but it will
-    /// ensure that the next time the scheduler is called, the current thread
-    /// will be put to sleep.
-    fn set_sleep(&self, reason: SleepReason) {
-        self.sleep_intent.store(Some(reason), Ordering::Release);
+    /// Arms a previously registered wait token on the current thread.
+    fn arm_wait_token(&self, token: u64) {
+        self.current.with_locked(|thread| {
+            debug_assert_eq!(
+                thread.wait_token(),
+                0,
+                "thread has pending wait token; finalize_block not called"
+            );
+            thread.arm_wait(token);
+        });
     }
 
     #[must_use]
@@ -152,19 +147,19 @@ impl Scheduler {
     fn reschedule(&self, reason: RescheduleReason) -> Option<ContextSwitch> {
         self.current
             .try_with_locked(|thread| {
+                // FIXME: cpu_time_ms is charged on all reschedule calls including explicit yields.
+                // This over-counts time spent on ExplicitYield.
                 thread.stats_mut().cpu_time_ms += u64::from(SCHEDULER_QUANTUM_MS);
 
                 let queue = QUEUE.get()?;
                 let Some(mut candidate) = queue.pop_best() else {
-                    // No runnable threads available. This can happen when all idle threads
-                    // are already running on other cores. Keep the current thread running.
                     debug_assert!(thread.priority() == Priority::Idle);
                     return None;
                 };
 
-                let action = self.next_action();
+                let action = self.next_action(thread);
 
-                let should_stay = matches!(action, ThreadAction::Ready)
+                let should_stay = matches!(action, ThreadAction::Runnable)
                     && !queue.should_switch(thread, &candidate, reason);
                 if should_stay {
                     queue.append(candidate);
@@ -175,7 +170,7 @@ impl Scheduler {
                 core::mem::swap(thread.as_mut(), candidate.as_mut());
                 let mut old_thread = candidate; // Renaming for clarity.
 
-                debug_assert_eq!(thread.state(), thread::ThreadState::Ready);
+                debug_assert_eq!(thread.state(), thread::ThreadState::Runnable);
                 unsafe { thread.set_state(thread::ThreadState::Running) };
 
                 // Handle stack pointers.
@@ -207,13 +202,15 @@ impl Scheduler {
     }
 
     #[inline]
-    fn next_action(&self) -> ThreadAction {
+    fn next_action(&self, current: &Thread) -> ThreadAction {
         if self.should_exit.swap(false, Ordering::Relaxed) {
-            ThreadAction::Exit
-        } else if let Some(reason) = self.sleep_intent.swap(None, Ordering::Acquire) {
-            ThreadAction::Sleep(reason)
+            return ThreadAction::Exit;
+        }
+
+        if current.wait_token() != 0 {
+            ThreadAction::Block
         } else {
-            ThreadAction::Ready
+            ThreadAction::Runnable
         }
     }
 
@@ -238,16 +235,20 @@ impl Scheduler {
     fn stage_old_thread(action: ThreadAction, mut old_thread: Box<Thread>) {
         match action {
             ThreadAction::Exit => {
+                unsafe { old_thread.set_state(thread::ThreadState::Exiting) };
                 // As the scheduler must not acquire locks, it cannot drop heap-allocated memory.
                 // This job should be done by a cleaning thread.
                 FINISHED.get().unwrap().enqueue(old_thread);
             }
-            ThreadAction::Sleep(reason) => {
-                unsafe { old_thread.set_state(thread::ThreadState::Sleeping) };
-                SLEEPING.with_locked(|queues| queues.insert(reason, old_thread));
-            }
-            ThreadAction::Ready => {
-                unsafe { old_thread.set_state(thread::ThreadState::Ready) };
+            ThreadAction::Block => match wait::commit_block(old_thread) {
+                ::wait::BlockCommit::Parked => {}
+                ::wait::BlockCommit::Requeue(mut thread) => {
+                    unsafe { thread.set_state(thread::ThreadState::Runnable) };
+                    QUEUE.get().unwrap().append(thread);
+                }
+            },
+            ThreadAction::Runnable => {
+                unsafe { old_thread.set_state(thread::ThreadState::Runnable) };
                 QUEUE.get().unwrap().append(old_thread);
             }
         }
@@ -257,8 +258,8 @@ impl Scheduler {
 #[derive(Debug, Clone, Copy)]
 enum ThreadAction {
     Exit,
-    Sleep(SleepReason),
-    Ready,
+    Block,
+    Runnable,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -288,17 +289,15 @@ fn with_scheduler<R, F: FnOnce(&'static Scheduler) -> R>(f: F) -> R {
     })
 }
 
-fn wake_sleeping_threads() {
+fn wake_blocked_threads() {
     let now = crate::time::now();
-    SLEEPING.try_with_locked(|sleepers| {
-        while let Some(thread) = sleepers.pop_ready(now) {
-            enqueue_ready_thread(thread);
-        }
-    });
+    for thread in wait::collect_timed_out(now) {
+        enqueue_ready_thread(thread);
+    }
 }
 
 fn enqueue_ready_thread(mut thread: Box<Thread>) {
-    unsafe { thread.set_state(thread::ThreadState::Ready) };
+    unsafe { thread.set_state(thread::ThreadState::Runnable) };
     QUEUE.get().unwrap().append(thread);
 }
 
@@ -310,6 +309,7 @@ fn enqueue_ready_thread(mut thread: Box<Thread>) {
 extern "C" fn guard_thread() -> ! {
     loop {
         while let Some(thread) = FINISHED.get().unwrap().dequeue() {
+            debug_assert!(thread.state() == thread::ThreadState::Exiting);
             drop(thread);
         }
         thread_yield();
@@ -428,43 +428,78 @@ impl hyperdrive::locks::RelaxStrategy for Yield {
     }
 }
 
-/// Put the current thread to sleep.
-pub fn sleep() {
-    request_sleep(SleepReason::Indefinite);
-}
-
 /// Sleep for a relative duration.
 pub fn sleep_for(duration: Duration) {
-    request_sleep(SleepReason::for_duration(crate::time::now(), duration));
+    let deadline = crate::time::now() + duration;
+    let _ = wait(::wait::WaitRequest::until(deadline));
 }
 
 /// Sleep until an absolute deadline.
 pub fn sleep_until(deadline: Instant) {
-    request_sleep(SleepReason::Until(deadline));
+    let _ = wait(::wait::WaitRequest::until(deadline));
 }
 
 /// Sleep until the given handle is signalled by another subsystem.
 pub fn sleep_on(handle: SleepHandle) {
-    request_sleep(SleepReason::Event(handle));
+    let _ = wait(::wait::WaitRequest::event(handle));
 }
 
-fn request_sleep(reason: SleepReason) {
-    with_scheduler(|scheduler| scheduler.set_sleep(reason));
+/// Sleep until either an event is signalled or a deadline expires.
+pub fn sleep_on_or_until(handle: SleepHandle, deadline: Instant) {
+    let _ = wait(::wait::WaitRequest::event_or_timeout(handle, deadline));
+}
+
+#[must_use]
+/// Generic blocking primitive used by synchronization objects.
+///
+/// Returns the wake outcome once the current thread becomes runnable again.
+pub fn wait(wait: ::wait::WaitRequest) -> ::wait::WakeResult {
+    request_wait(wait);
+
+    loop {
+        let (wait_token, wake_result) = with_scheduler(|scheduler| {
+            // Safety:
+            // Interrupts are disabled, so the current thread cannot change.
+            let thread = unsafe { scheduler.current.force_lock() };
+            (thread.wait_token(), thread.wake_result())
+        });
+
+        // The wait operation is fully completed once the token is disarmed.
+        if wait_token == 0 {
+            return wake_result;
+        }
+
+        // Blocking commit was deferred due to lock contention; retry by yielding again.
+        thread_yield();
+    }
+}
+
+fn request_wait(wait: ::wait::WaitRequest) {
+    let tid = current_thread_id();
+    let token = wait::register_wait(tid, wait);
+
+    with_scheduler(|scheduler| scheduler.arm_wait_token(token));
     thread_yield();
 }
 
 /// Signal an event handle and wake a single sleeper waiting on it.
+#[expect(clippy::must_use_candidate)]
 pub fn wake_event_single(handle: SleepHandle) -> bool {
-    let ready = SLEEPING.with_locked(|sleepers| sleepers.wake_event_single(handle));
-    ready.is_some_and(|thread| {
-        enqueue_ready_thread(thread);
-        true
-    })
+    let wake = wait::wake_event_single(handle);
+    match wake {
+        ::wait::WakeHit::None => false,
+        ::wait::WakeHit::WokeParking => true,
+        ::wait::WakeHit::Ready(thread) => {
+            enqueue_ready_thread(thread);
+            true
+        }
+    }
 }
 
 /// Signal an event handle and wake all sleepers waiting on it.
+#[expect(clippy::must_use_candidate)]
 pub fn wake_event_all(handle: SleepHandle) -> usize {
-    let ready = SLEEPING.with_locked(|sleepers| sleepers.wake_event_all(handle));
+    let ready = wait::wake_event_all(handle);
     let count = ready.len();
     for thread in ready {
         enqueue_ready_thread(thread);
@@ -476,11 +511,14 @@ pub fn wake_event_all(handle: SleepHandle) -> usize {
 ///
 /// Returns `true` if the thread was woken up,
 /// `false` if the thread was not sleeping.
+#[expect(clippy::must_use_candidate)]
 pub fn wake_up(thread: ThreadId) -> bool {
-    SLEEPING
-        .with_locked(|sleepers| sleepers.wake_thread(thread))
-        .is_some_and(|thread| {
+    match wait::wake_thread(thread, WakeResult::new(WakeCause::Killed, 0)) {
+        ::wait::WakeHit::None => false,
+        ::wait::WakeHit::WokeParking => true,
+        ::wait::WakeHit::Ready(thread) => {
             enqueue_ready_thread(thread);
             true
-        })
+        }
+    }
 }

@@ -1,7 +1,11 @@
 use super::{File, Read};
 use crate::error::{FileResult, IoResult};
 pub use beskar_core::drivers::keyboard::{KeyCode, KeyEvent, KeyModifiers, KeyState};
-use core::mem::size_of;
+use beskar_core::process::{SleepHandle, WaitResult};
+use core::{
+    mem::MaybeUninit,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 #[repr(align(8))]
 struct KeyboardEventBuffer([u8; size_of::<u64>()]);
@@ -53,12 +57,58 @@ pub fn poll_keyboard() -> Option<KeyEvent> {
 }
 
 #[inline]
+#[expect(clippy::must_use_candidate)]
 /// Wait until the next keyboard event occurs.
 ///
 /// Note that this function is allowed to spuriously return even if no keyboard event has
 /// occurred; in that case, simply call it again.
-pub fn wait_next_event() {
-    crate::sys::sc_wait_on_event(
-        beskar_core::process::SleepHandle::SLEEP_HANDLE_KEYBOARD_INTERRUPT,
+pub fn wait_next_event() -> WaitResult {
+    let sh = cached_handle();
+    crate::sys::sc_wait_on_event(sh, 0)
+}
+
+#[inline]
+#[expect(clippy::must_use_candidate)]
+/// Wait until the next keyboard event occurs, or timeout expires.
+///
+/// Returns the wake reason as reported by the kernel.
+pub fn wait_next_event_timeout(timeout: beskar_core::time::Duration) -> WaitResult {
+    let sh = cached_handle();
+    crate::sys::sc_wait_on_event(sh, timeout.total_micros())
+}
+
+#[must_use]
+fn cached_handle() -> SleepHandle {
+    static WAIT_HANDLE_CACHE: AtomicU64 = AtomicU64::new(0);
+
+    let raw = WAIT_HANDLE_CACHE.load(Ordering::Acquire);
+    if raw != 0 {
+        return SleepHandle::from_raw(raw);
+    }
+
+    // Not cached, query the kernel for the wait handle
+    let mut payload = MaybeUninit::<SleepHandle>::uninit();
+    let code = crate::sys::sc_query_config(
+        beskar_core::syscall::consts::QUERY_KEYBOARD_WAIT_HANDLE,
+        payload.as_mut_ptr().cast(),
+        size_of_val(&payload) as u64,
     );
+
+    // This should never fail
+    assert!(code.is_success(), "Failed to query keyboard wait handle");
+
+    // Safety: We just initialized the payload
+    let payload = unsafe { payload.assume_init() };
+    let raw = payload.raw();
+
+    if cfg!(debug_assertions) {
+        let previous = WAIT_HANDLE_CACHE.swap(raw, Ordering::Release);
+        assert!(
+            previous == 0 || previous == raw,
+            "Multiple different keyboard wait handles detected: {previous:#x} and {raw:#x}"
+        );
+    } else {
+        WAIT_HANDLE_CACHE.store(raw, Ordering::Release);
+    }
+    SleepHandle::from_raw(raw)
 }

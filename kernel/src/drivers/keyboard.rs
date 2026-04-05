@@ -1,4 +1,5 @@
 use beskar_core::drivers::keyboard::KeyEvent;
+use beskar_core::process::SleepHandle;
 use driver_api::DriverResult;
 use hyperdrive::{once::Once, queues::mpmc::MpmcQueue};
 
@@ -13,6 +14,7 @@ pub fn init() -> DriverResult<()> {
 
 pub struct KeyboardManager {
     event_queue: MpmcQueue<QUEUE_SIZE, KeyEvent>,
+    wait_handle: SleepHandle,
 }
 
 impl Default for KeyboardManager {
@@ -27,6 +29,7 @@ impl KeyboardManager {
     pub fn new() -> Self {
         Self {
             event_queue: MpmcQueue::new(),
+            wait_handle: SleepHandle::new(),
         }
     }
 
@@ -38,15 +41,19 @@ impl KeyboardManager {
             crate::debug!("Keyboard event queue is full, dropping event: {:?}", event);
         }
 
-        crate::process::scheduler::wake_event_single(
-            beskar_core::process::SleepHandle::SLEEP_HANDLE_KEYBOARD_INTERRUPT,
-        );
+        crate::process::scheduler::wake_event_single(self.wait_handle);
     }
 
     #[must_use]
     #[inline]
     pub fn poll_event(&self) -> Option<KeyEvent> {
         self.event_queue.pop()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn wait_handle(&self) -> SleepHandle {
+        self.wait_handle
     }
 }
 
@@ -58,6 +65,12 @@ where
     F: FnOnce(&KeyboardManager) -> R,
 {
     KEYBOARD_MANAGER.get().map(f)
+}
+
+#[must_use]
+#[inline]
+pub fn wait_handle() -> Option<SleepHandle> {
+    with_keyboard_manager(KeyboardManager::wait_handle)
 }
 
 pub struct KeyboardDevice;

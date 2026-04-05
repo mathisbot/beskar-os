@@ -23,6 +23,7 @@ use hyperdrive::{
     queues::mpsc::{Link, Queueable},
 };
 use storage::fs::Path;
+use wait::WakeResult;
 
 use super::{super::Process, priority::Priority};
 
@@ -62,6 +63,10 @@ pub struct Thread {
     priority: Priority,
     /// The state of the thread.
     state: ThreadState,
+    /// Armed token for the current blocking operation.
+    wait_token: u64,
+    /// Last wake result delivered by the wait subsystem.
+    wake_result: WakeResult,
     /// Used to keep ownership of the stacks when needed.
     stack: Option<ThreadStacks>,
     /// Keeps track of where the stack pointer is.
@@ -121,6 +126,8 @@ impl Thread {
             root_proc: kernel_process,
             priority: Priority::High,
             state: ThreadState::Running,
+            wait_token: 0,
+            wake_result: WakeResult::none(),
             stack: None,
             // Will be overwritten before being used.
             last_stack_ptr: AtomicPtr::new(core::ptr::null_mut()),
@@ -148,7 +155,9 @@ impl Thread {
             id: ThreadId::new(),
             root_proc,
             priority,
-            state: ThreadState::Ready,
+            state: ThreadState::Runnable,
+            wait_token: 0,
+            wake_result: WakeResult::none(),
             stack: Some(ThreadStacks::new(stack)),
             last_stack_ptr: AtomicPtr::new(stack_ptr),
             link: Link::new(),
@@ -193,7 +202,9 @@ impl Thread {
             id: ThreadId(0),
             root_proc,
             priority: Priority::Low,
-            state: ThreadState::Ready,
+            state: ThreadState::Runnable,
+            wait_token: 0,
+            wake_result: WakeResult::none(),
             stack: None,
             last_stack_ptr: AtomicPtr::new(core::ptr::null_mut()),
             link: Link::new(),
@@ -229,6 +240,34 @@ impl Thread {
     #[inline]
     pub const fn state(&self) -> ThreadState {
         self.state
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn wait_token(&self) -> u64 {
+        self.wait_token
+    }
+
+    #[inline]
+    pub(super) const fn arm_wait(&mut self, token: u64) {
+        self.wait_token = token;
+        self.wake_result = WakeResult::none();
+    }
+
+    #[inline]
+    pub(super) const fn disarm_wait(&mut self) {
+        self.wait_token = 0;
+    }
+
+    #[inline]
+    pub(super) const fn set_wake_result(&mut self, wake_result: WakeResult) {
+        self.wake_result = wake_result;
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn wake_result(&self) -> WakeResult {
+        self.wake_result
     }
 
     #[must_use]
@@ -567,8 +606,10 @@ impl Tls {
 pub enum ThreadState {
     /// The thread is running.
     Running,
-    /// The thread is ready to run.
-    Ready,
-    /// The thread is waiting for an event.
-    Sleeping,
+    /// The thread is runnable and can be picked by a policy.
+    Runnable,
+    /// The thread is blocked in the waiting subsystem.
+    Blocked,
+    /// The thread requested termination and awaits cleanup.
+    Exiting,
 }

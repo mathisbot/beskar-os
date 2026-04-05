@@ -19,8 +19,19 @@ pub mod time;
 pub mod video;
 
 #[macro_export]
+/// Compile-time assertion macro.
 macro_rules! static_assert {
     ($($arg:tt)*) => {
         const _: () = assert!($($arg)*);
+    };
+}
+
+#[macro_export]
+/// Debug-only panic macro.
+macro_rules! debug_panic {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            panic!($($arg)*);
+        }
     };
 }
