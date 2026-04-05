@@ -3,6 +3,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 pub mod binary;
+pub mod sync;
 
 /// A token that identifies a sleepable event.
 ///
@@ -20,6 +21,7 @@ impl Default for SleepHandle {
 }
 
 impl SleepHandle {
+    pub const NONE: Self = Self(0);
     const SLEEP_HANDLE_FREE: u64 = 1;
 
     /// Creates a fresh handle that can later be signalled to wake sleepers.

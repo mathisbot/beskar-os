@@ -3,10 +3,10 @@
     reason = "Boxed threads are necessary for dynamic allocation"
 )]
 
-use crate::{locals, time::Duration};
+use crate::locals;
 use ::wait::{WakeCause, WakeResult};
 use alloc::{boxed::Box, sync::Arc};
-use beskar_core::{arch::VirtAddr, process::SleepHandle, time::Instant};
+use beskar_core::{arch::VirtAddr, process::SleepHandle};
 use beskar_hal::instructions::without_interrupts;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use hyperdrive::{call_once, locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
@@ -428,34 +428,44 @@ impl hyperdrive::locks::RelaxStrategy for Yield {
     }
 }
 
-/// Sleep for a relative duration.
-pub fn sleep_for(duration: Duration) {
-    let deadline = crate::time::now() + duration;
-    let _ = wait(::wait::WaitRequest::until(deadline));
-}
-
-/// Sleep until an absolute deadline.
-pub fn sleep_until(deadline: Instant) {
-    let _ = wait(::wait::WaitRequest::until(deadline));
-}
-
-/// Sleep until the given handle is signalled by another subsystem.
-pub fn sleep_on(handle: SleepHandle) {
-    let _ = wait(::wait::WaitRequest::event(handle));
-}
-
-/// Sleep until either an event is signalled or a deadline expires.
-pub fn sleep_on_or_until(handle: SleepHandle, deadline: Instant) {
-    let _ = wait(::wait::WaitRequest::event_or_timeout(handle, deadline));
-}
-
 #[must_use]
 /// Generic blocking primitive used by synchronization objects.
 ///
 /// Returns the wake outcome once the current thread becomes runnable again.
 pub fn wait(wait: ::wait::WaitRequest) -> ::wait::WakeResult {
-    request_wait(wait);
+    let _ = arm_wait(wait);
+    thread_yield();
+    wait_completion()
+}
 
+#[must_use]
+/// Registers the current thread in the wait database and arms its wait token.
+fn arm_wait(wait: ::wait::WaitRequest) -> ThreadId {
+    let tid = current_thread_id();
+    let token = wait::register_wait(tid, wait);
+
+    with_scheduler(|scheduler| scheduler.arm_wait_token(token));
+    tid
+}
+
+#[must_use]
+/// Wait while the supplied predicate says the caller should still block.
+pub fn wait_if<F>(wait: ::wait::WaitRequest, should_block: F) -> ::wait::WakeResult
+where
+    F: FnOnce() -> bool,
+{
+    let tid = arm_wait(wait);
+
+    if !should_block() {
+        let _ = wait::wake_thread(tid, WakeResult::cancelled());
+    }
+
+    thread_yield();
+    wait_completion()
+}
+
+#[must_use]
+fn wait_completion() -> ::wait::WakeResult {
     loop {
         let (wait_token, wake_result) = with_scheduler(|scheduler| {
             // Safety:
@@ -472,14 +482,6 @@ pub fn wait(wait: ::wait::WaitRequest) -> ::wait::WakeResult {
         // Blocking commit was deferred due to lock contention; retry by yielding again.
         thread_yield();
     }
-}
-
-fn request_wait(wait: ::wait::WaitRequest) {
-    let tid = current_thread_id();
-    let token = wait::register_wait(tid, wait);
-
-    with_scheduler(|scheduler| scheduler.arm_wait_token(token));
-    thread_yield();
 }
 
 /// Signal an event handle and wake a single sleeper waiting on it.

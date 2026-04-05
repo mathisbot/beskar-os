@@ -1,7 +1,7 @@
 use crate::process;
 use beskar_core::{
     arch::{
-        VirtAddr,
+        Alignment, VirtAddr,
         paging::{CacheFlush, M4KiB, Mapper, MappingError, MemSize, Page},
     },
     syscall::{Syscall, SyscallExitCode, SyscallReturnValue},
@@ -42,8 +42,9 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::Write => SyscallReturnValue::ValueI(sc_write(args)),
         Syscall::Open => SyscallReturnValue::ValueI(sc_open(args)),
         Syscall::Close => SyscallReturnValue::Code(sc_close(args)),
-        Syscall::Sleep => SyscallReturnValue::Code(sc_sleep(args)),
         Syscall::WaitOnEvent => SyscallReturnValue::ValueU(sc_wait_on_event(args)),
+        Syscall::FutexWait => SyscallReturnValue::ValueU(sc_futex_wait(args)),
+        Syscall::FutexWake => SyscallReturnValue::ValueU(sc_futex_wake(args)),
         Syscall::SurfaceCreate => SyscallReturnValue::ValueI(sc_surface_create(args)),
         Syscall::SurfaceDestroy => SyscallReturnValue::Code(sc_surface_destroy(args)),
         Syscall::SurfaceDirty => SyscallReturnValue::Code(sc_surface_dirty(args)),
@@ -291,31 +292,86 @@ fn sc_close(args: &Arguments) -> SyscallExitCode {
 }
 
 #[must_use]
-fn sc_sleep(args: &Arguments) -> SyscallExitCode {
-    let sleep_time_ms = args.one;
+fn sc_wait_on_event(args: &Arguments) -> u64 {
+    let handle_raw = args.one;
+    let timeout_us_raw = args.two;
 
-    let sleep_time = crate::time::Duration::from_millis(sleep_time_ms);
+    let handle = core::num::NonZeroU64::new(handle_raw)
+        .map(|h| beskar_core::process::SleepHandle::from_raw(h.get()));
+    let timeout_us = core::num::NonZeroU64::new(timeout_us_raw);
 
-    crate::process::scheduler::sleep_for(sleep_time);
+    if handle.is_none() && timeout_us.is_none() {
+        return u64::from(beskar_core::process::WaitResult::Unknown);
+    }
 
-    SyscallExitCode::Success
+    let deadline =
+        timeout_us.map(|us| crate::time::now() + crate::time::Duration::from_micros(us.get()));
+    let wake = crate::process::scheduler::wait(wait::WaitRequest::new(handle, deadline));
+
+    u64::from(beskar_core::process::WaitResult::from(wake.cause()))
 }
 
 #[must_use]
-fn sc_wait_on_event(args: &Arguments) -> u64 {
-    let handle_raw = args.one;
-    let timeout_us = args.two;
+fn sc_futex_wait(args: &Arguments) -> u64 {
+    use beskar_core::process::sync::FutexWaitResult;
+    use core::sync::atomic::AtomicU64;
 
-    let handle = beskar_core::process::SleepHandle::from_raw(handle_raw);
+    let ptr = args.one;
+    let size = size_of::<u64>() as u64;
+    let expected = args.two;
+    let timeout_us = args.three;
 
-    let wake = if timeout_us == 0 {
-        crate::process::scheduler::wait(wait::WaitRequest::event(handle))
+    let Some(futex_addr) = VirtAddr::try_new(ptr) else {
+        return u64::from(FutexWaitResult::InvalidAddress);
+    };
+    let futex_end = futex_addr + (size - 1);
+    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !probe(futex_addr, futex_end) {
+        return u64::from(FutexWaitResult::InvalidAddress);
+    }
+
+    // Safety: the pointer was validated as user-owned and 8-byte aligned above.
+    let futex_word = unsafe { AtomicU64::from_ptr(futex_addr.as_mut_ptr()) };
+    let wait = if timeout_us == 0 {
+        crate::process::sync::Futex::wait_on_address(futex_word, expected)
     } else {
-        let deadline = crate::time::now() + crate::time::Duration::from_micros(timeout_us);
-        crate::process::scheduler::wait(wait::WaitRequest::event_or_timeout(handle, deadline))
+        let timeout = crate::time::Duration::from_micros(timeout_us);
+        crate::process::sync::Futex::wait_on_address_for(futex_word, expected, timeout)
     };
 
-    u64::from(beskar_core::process::WaitResult::from(wake.cause()))
+    u64::from(wait)
+}
+
+#[must_use]
+fn sc_futex_wake(args: &Arguments) -> u64 {
+    use core::sync::atomic::AtomicU64;
+
+    let ptr = args.one;
+    let size = size_of::<u64>() as u64;
+    let amount = args.two;
+
+    let Some(futex_addr) = VirtAddr::try_new(ptr) else {
+        return 0;
+    };
+    let futex_end = futex_addr + (size - 1);
+    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !probe(futex_addr, futex_end) {
+        return 0;
+    }
+
+    let wake_count = usize::try_from(amount).unwrap_or(usize::MAX);
+    if wake_count == 0 {
+        return 0;
+    }
+
+    // Safety: the pointer was validated as user-owned and 8-byte aligned above.
+    let futex_word = unsafe { AtomicU64::from_ptr(futex_addr.as_mut_ptr()) };
+
+    let woken = if wake_count == usize::MAX {
+        crate::process::sync::Futex::wake_by_address_all(futex_word)
+    } else {
+        crate::process::sync::Futex::wake_by_address_n(futex_word, wake_count)
+    };
+
+    u64::try_from(woken).unwrap_or(u64::MAX)
 }
 
 #[expect(

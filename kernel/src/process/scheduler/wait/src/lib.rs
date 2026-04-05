@@ -21,6 +21,16 @@ pub struct WaitRequest {
 impl WaitRequest {
     #[must_use]
     #[inline]
+    pub const fn new(event: Option<SleepHandle>, deadline: Option<Instant>) -> Self {
+        debug_assert!(
+            event.is_some() || deadline.is_some(),
+            "creating wait request with no event or deadline"
+        );
+        Self { event, deadline }
+    }
+
+    #[must_use]
+    #[inline]
     pub const fn indefinite() -> Self {
         Self {
             event: None,

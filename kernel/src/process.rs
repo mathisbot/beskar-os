@@ -10,6 +10,7 @@ use storage::fs::{Path, PathBuf};
 
 pub mod binary;
 pub mod scheduler;
+pub mod sync;
 
 const MAX_SURFACES_PER_PROCESS: usize = 2;
 

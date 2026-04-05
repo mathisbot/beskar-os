@@ -61,10 +61,12 @@ pub enum Syscall {
     /// The second argument is the size of the memory region.
     /// The third argument is the new protection flags.
     MemoryProtect = 7,
-    /// Put the thread to sleep for a given amount of time.
+    /// Query configuration information from the kernel.
     ///
-    /// The first argument is the time to sleep in milliseconds.
-    Sleep = 8,
+    /// The first argument is the type of information to query (u64).
+    /// The second argument is a pointer to a struct to fill in.
+    /// The third argument is the maximum size of the struct.
+    QueryConfig = 8,
     /// Put the thread to sleep until a given event is signalled.
     ///
     /// The first argument is the sleep handle to wait on.
@@ -90,12 +92,18 @@ pub enum Syscall {
     ///
     /// The first argument is the surface ID.
     SurfacePresent = 13,
-    /// Query configuration information from the kernel.
+    /// Wait on a futex word while it remains equal to an expected value.
     ///
-    /// The first argument is the type of information to query (u64).
-    /// The second argument is a pointer to a struct to fill in.
-    /// The third argument is the maximum size of the struct.
-    QueryConfig = 14,
+    /// The first argument is a pointer to the futex word (u64).
+    /// The second argument is the expected u64 value.
+    /// The third argument is the timeout in microseconds (0 for no timeout).
+    FutexWait = 14,
+    /// Wake waiters blocked on a futex word.
+    ///
+    /// The first argument is a pointer to the futex word (u64).
+    /// The second argument is the maximum number of waiters to wake
+    /// (`usize::MAX` means wake all).
+    FutexWake = 15,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
