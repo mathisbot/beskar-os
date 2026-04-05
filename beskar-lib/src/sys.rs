@@ -1,6 +1,6 @@
 use crate::arch::syscalls;
 use beskar_core::{
-    process::{SleepHandle, WaitResult},
+    process::{SleepHandle, WaitResult, sync::FutexWaitResult},
     syscall::{ExitCode, Syscall, SyscallExitCode},
     video::SurfaceId,
 };
@@ -66,15 +66,26 @@ pub fn sc_mprotect(ptr: *mut u8, size: u64, flags: u64) -> SyscallExitCode {
 }
 
 #[inline]
-pub fn sc_sleep(ms: u64) -> SyscallExitCode {
-    let res = syscalls::syscall_1(Syscall::Sleep, ms);
-    SyscallExitCode::try_from(res).unwrap()
-}
-
-#[inline]
 pub fn sc_wait_on_event(handle: SleepHandle, timeout_us: u64) -> WaitResult {
     let res = syscalls::syscall_2(Syscall::WaitOnEvent, handle.raw(), timeout_us);
     WaitResult::try_from(res).unwrap()
+}
+
+#[inline]
+pub fn sc_futex_wait(value: *const u64, expected: u64, timeout_us: u64) -> FutexWaitResult {
+    let res = syscalls::syscall_3(Syscall::FutexWait, value as u64, expected, timeout_us);
+    FutexWaitResult::try_from(res).unwrap()
+}
+
+#[inline]
+pub fn sc_futex_wake(value: *const u64, wake_count: usize) -> usize {
+    let res = syscalls::syscall_2(
+        Syscall::FutexWake,
+        value as u64,
+        u64::try_from(wake_count).unwrap_or(u64::MAX),
+    );
+
+    usize::try_from(res).unwrap_or(usize::MAX)
 }
 
 pub fn sc_surface_create(width: u16, height: u16, x: u16, y: u16, buffer: *const u8) -> i64 {

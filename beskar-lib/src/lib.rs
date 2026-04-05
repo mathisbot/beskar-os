@@ -6,7 +6,10 @@
 extern crate alloc;
 
 pub use beskar_core::syscall::ExitCode;
-use beskar_core::{syscall::SyscallExitCode, time::Duration};
+use beskar_core::{
+    process::{SleepHandle, WaitResult},
+    time::Duration,
+};
 use core::sync::atomic::{AtomicBool, Ordering};
 use hyperdrive::call_once;
 
@@ -18,6 +21,7 @@ pub mod mem;
 pub mod prelude;
 pub mod rand;
 pub mod surface;
+pub mod sync;
 mod sys;
 pub mod time;
 
@@ -51,9 +55,9 @@ pub fn exit(code: ExitCode) -> ! {
 ///
 /// Returns an error if the syscall fails.
 pub fn sleep(duration: Duration) -> SyscallResult<()> {
-    let code = sys::sc_sleep(duration.total_millis());
+    let code = sys::sc_wait_on_event(SleepHandle::NONE, duration.total_micros());
     match code {
-        SyscallExitCode::Success => Ok(()),
+        WaitResult::Timeout => Ok(()),
         _ => Err(SyscallError::new(-1)),
     }
 }
