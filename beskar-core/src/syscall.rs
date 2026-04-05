@@ -68,6 +68,7 @@ pub enum Syscall {
     /// Put the thread to sleep until a given event is signalled.
     ///
     /// The first argument is the sleep handle to wait on.
+    /// The second argument is the timeout in microseconds (0 for no timeout).
     WaitOnEvent = 9,
     /// Create a surface with a user-provided buffer.
     ///
@@ -168,6 +169,8 @@ pub mod consts {
 
     /// Query type - framebuffer information
     pub const QUERY_FRAMEBUFFER: u64 = 0;
+    /// Query type - dynamic keyboard wait handle.
+    pub const QUERY_KEYBOARD_WAIT_HANDLE: u64 = 1;
 }
 
 #[cfg(test)]

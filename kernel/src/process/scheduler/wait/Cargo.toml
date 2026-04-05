@@ -1,0 +1,9 @@
+[package]
+name = "wait"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+beskar-core = { workspace = true }
+hashbrown = "0.16.1"
+hyperdrive = { workspace = true }
