@@ -1,6 +1,6 @@
 // FIXME: Support for multiple HPET blocks?
 
-use crate::{drivers::acpi::ACPI, mem::page_alloc::pmap::PhysicalMapping};
+use crate::{drivers::acpi::ACPI, mem::vmm::phys_map::PhysicalMapping};
 use acpi::sdt::hpet_table::ParsedHpetTable;
 use beskar_core::{
     arch::{PhysAddr, VirtAddr, paging::M4KiB},

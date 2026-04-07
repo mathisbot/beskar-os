@@ -8,13 +8,13 @@
 use crate::{
     drivers::pci::MsiHelper,
     locals,
-    mem::{frame_alloc, page_alloc::pmap::PhysicalMapping},
+    mem::{vmm, vmm::phys_map::PhysicalMapping},
 };
 use ::pci::{Bar, Device, msix::MsiX};
 use beskar_core::{
     arch::{
         PhysAddr, VirtAddr,
-        paging::{M4KiB, MemSize},
+        paging::{M4KiB, MemSize, Page},
     },
     drivers::{DriverError, DriverResult},
 };
@@ -183,8 +183,28 @@ impl NvmeControllers {
 
         // --- Part Two: Controller Identification ---
 
-        let frame =
-            frame_alloc::with_frame_allocator(frame_alloc::FrameAllocator::alloc::<M4KiB>).unwrap();
+        let identify_page = vmm::kernel::reserve_pages::<M4KiB>(1)
+            .map(|r| r.start())
+            .ok_or(DriverError::Unknown)?;
+        let identify_pages = Page::range_inclusive(identify_page, identify_page);
+
+        let Some(frame) = vmm::kernel::alloc_frame::<M4KiB>() else {
+            vmm::kernel::free_pages(identify_pages);
+            return Err(DriverError::Unknown);
+        };
+
+        if vmm::kernel::map_frame(
+            identify_page,
+            frame,
+            Flags::PRESENT | Flags::NO_EXECUTE | Flags::CACHE_DISABLED,
+        )
+        .is_err()
+        {
+            vmm::kernel::free_frame(frame);
+            vmm::kernel::free_pages(identify_pages);
+            return Err(DriverError::Unknown);
+        }
+
         let identify_cmd = queue::admin::AdminSubmissionEntry::new_identify(
             queue::admin::IdentifyTarget::Controller,
             frame,
@@ -194,14 +214,9 @@ impl NvmeControllers {
         self.asq.push(&identify_cmd);
 
         let identify_result = {
-            let pmap = PhysicalMapping::<M4KiB>::new(
-                frame.start_address(),
-                size_of::<queue::admin::IdentifyController>(),
-                Flags::PRESENT | Flags::NO_EXECUTE | Flags::CACHE_DISABLED,
-            )
-            .unwrap();
-            let vaddr = pmap.translate(frame.start_address()).unwrap();
-            let ptr = vaddr.as_ptr::<queue::admin::IdentifyController>();
+            let ptr = identify_page
+                .start_address()
+                .as_ptr::<queue::admin::IdentifyController>();
             // Wait for command completion
             // TODO: On interrupt, dequeue the completion queue into another Rustier queue/tree
             // intended to be browsed by command identifier
@@ -218,10 +233,19 @@ impl NvmeControllers {
                     "Identify Controller command failed: status={:04x}",
                     res.status_code()
                 );
+                if let Ok(frame) = vmm::kernel::unmap_page(identify_page) {
+                    vmm::kernel::free_frame(frame);
+                }
+                vmm::kernel::free_pages(identify_pages);
                 return Err(DriverError::Unknown);
             }
             unsafe { ptr.read() }
         };
+
+        if let Ok(frame) = vmm::kernel::unmap_page(identify_page) {
+            vmm::kernel::free_frame(frame);
+        }
+        vmm::kernel::free_pages(identify_pages);
 
         self.max_transfer_sz =
             identify_result

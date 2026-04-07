@@ -1,13 +1,13 @@
 use crate::{
     arch::{context::ThreadRegisters, fpu::FpuState},
-    mem::frame_alloc,
+    mem::vmm,
     process::binary::{Binary, BinaryType, LoadedBinary},
     storage::vfs,
 };
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use beskar_core::arch::{
     Alignment, VirtAddr,
-    paging::{CacheFlush, FrameAllocator, M4KiB, Mapper, MemSize, PageRangeInclusive},
+    paging::{M4KiB, MemSize, PageRangeInclusive},
 };
 #[cfg(debug_assertions)]
 use beskar_hal::instructions::STACK_DEBUG_INSTR;
@@ -394,18 +394,15 @@ impl ThreadId {
 }
 
 fn thread_load_binary(path: Path) -> LoadedBinary {
-    let curr_proc = super::current_process();
     let handle = vfs().open(path).unwrap();
 
     let file_info = vfs().metadata(path).unwrap();
 
-    let page_range = curr_proc
-        .address_space()
-        .alloc_map::<M4KiB>(
-            file_info.size(),
-            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
-        )
-        .unwrap();
+    let page_range = vmm::process_local::alloc_map::<M4KiB>(
+        file_info.size(),
+        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+    )
+    .unwrap();
 
     let input_buffer = unsafe {
         core::slice::from_raw_parts_mut(
@@ -422,7 +419,7 @@ fn thread_load_binary(path: Path) -> LoadedBinary {
     let loaded_binary = binary.load().unwrap();
 
     // Safety: Binary has been laoded, input bytes can be freed.
-    unsafe { curr_proc.address_space().unmap_free(page_range) };
+    unsafe { vmm::process_local::unmap_free(page_range) };
 
     loaded_binary
 }
@@ -452,13 +449,11 @@ pub extern "C" fn user_trampoline() -> ! {
     if let Some(tlst) = loaded_binary.tls_template() {
         let tls_size = tlst.mem_size();
 
-        let pages = root_proc
-            .address_space()
-            .alloc_map::<M4KiB>(
-                usize::try_from(tls_size).unwrap(),
-                Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE,
-            )
-            .unwrap();
+        let pages = vmm::process_local::alloc_map::<M4KiB>(
+            usize::try_from(tls_size).unwrap(),
+            Flags::PRESENT | Flags::WRITABLE | Flags::USER_ACCESSIBLE,
+        )
+        .unwrap();
         let tls_vaddr = pages.start().start_address();
 
         // Copy TLS initialization image from binary
@@ -550,21 +545,7 @@ impl ThreadStacks {
     fn allocate(size: u64, flags: Flags) -> PageRangeInclusive {
         assert!(size >= u64::from(Self::STACK_ALIGNMENT));
 
-        let (_guard_start, page_range, _guard_end) = super::current_process()
-            .address_space()
-            .with_pgalloc(|palloc| palloc.allocate_guarded(size.div_ceil(M4KiB::SIZE)))
-            .unwrap();
-
-        frame_alloc::with_frame_allocator(|fralloc| {
-            super::current_process()
-                .address_space()
-                .with_page_table(|pt| {
-                    for page in page_range {
-                        let frame = fralloc.allocate_frame().unwrap();
-                        pt.map(page, frame, flags, fralloc).unwrap().flush();
-                    }
-                });
-        });
+        let page_range = vmm::process_local::alloc_guarded_4k(size, flags).unwrap();
 
         #[cfg(debug_assertions)]
         unsafe {

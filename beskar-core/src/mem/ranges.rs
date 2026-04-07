@@ -126,6 +126,15 @@ impl<const N: usize> MemoryRanges<N> {
 
     #[must_use]
     #[inline]
+    pub const fn from_single(range: MemoryRange) -> Self {
+        assert!(1 <= N, "N must be at least 1 to use from_single");
+        let mut ranges = [MemoryRange { start: 0, end: 0 }; N];
+        ranges[0] = range;
+        Self { ranges, used: 1 }
+    }
+
+    #[must_use]
+    #[inline]
     pub fn entries(&self) -> &[MemoryRange] {
         &self.ranges[..self.used]
     }

@@ -1,7 +1,7 @@
-use crate::mem::{address_space, frame_alloc};
+use crate::mem::vmm;
 use beskar_core::arch::{
     Alignment, VirtAddr,
-    paging::{CacheFlush as _, M4KiB, Mapper as _, MemSize as _},
+    paging::{M4KiB, MemSize as _},
 };
 use beskar_hal::{
     instructions::load_tss,
@@ -84,27 +84,11 @@ impl Gdt {
     #[must_use]
     fn create_tss() -> TaskStateSegment {
         fn alloc_stack(count: u64) -> VirtAddr {
-            let (_guard_start, page_range, _guard_end) =
-                address_space::with_kernel_pgalloc(|page_allocator| {
-                    page_allocator.allocate_guarded(count).unwrap()
-                });
-
-            frame_alloc::with_frame_allocator(|frame_allocator| {
-                crate::mem::address_space::with_kernel_pt(|page_table| {
-                    for page in page_range {
-                        let frame = frame_allocator.alloc::<M4KiB>().unwrap();
-                        page_table
-                            .map(
-                                page,
-                                frame,
-                                Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
-                                frame_allocator,
-                            )
-                            .expect("Failed to allocate TSS stack")
-                            .flush();
-                    }
-                });
-            });
+            let page_range = vmm::kernel::alloc_guarded_4k(
+                count,
+                Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+            )
+            .expect("Failed to allocate TSS stack");
 
             (page_range.end().start_address() + (M4KiB::SIZE - 1)).aligned_down(Alignment::Align16)
         }

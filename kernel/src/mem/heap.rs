@@ -13,12 +13,11 @@ static KERNEL_HEAP: MUMcsLock<Heap> = MUMcsLock::uninit();
 static GLOBAL_ALLOCATOR: HeapGA = HeapGA;
 
 pub fn init() {
-    let page_range = super::address_space::get_kernel_address_space()
-        .alloc_map::<M2MiB>(
-            usize::try_from(KERNEL_HEAP_PAGES * M2MiB::SIZE).unwrap(),
-            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
-        )
-        .unwrap();
+    let page_range = super::vmm::kernel::alloc_map::<M2MiB>(
+        usize::try_from(KERNEL_HEAP_PAGES * M2MiB::SIZE).unwrap(),
+        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+    )
+    .unwrap();
 
     crate::debug!(
         "Kernel heap allocated at {:#x}",

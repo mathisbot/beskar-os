@@ -1,9 +1,9 @@
 use super::trb::{LinkTrb, Trb};
-use crate::mem::page_alloc::pmap::PhysicalMapping;
+use crate::mem::vmm;
 use alloc::vec::Vec;
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
-    paging::{M4KiB, MemSize as _},
+    paging::{Frame, M4KiB, MemSize as _, Page},
 };
 use beskar_hal::paging::page_table::Flags;
 
@@ -29,8 +29,10 @@ pub struct Ring<T: RingElement + Sized> {
     enqueue_index: u8,
     /// Current consumer index
     dequeue_index: u8,
-    /// Physical mapping for the ring buffer
-    _physical_mapping: PhysicalMapping,
+    /// Backing virtual page in the kernel-global pool
+    page: Page<M4KiB>,
+    /// Backing physical frame owned by this ring
+    frame: Frame<M4KiB>,
     _phantom: core::marker::PhantomData<T>,
 }
 
@@ -45,32 +47,24 @@ impl<T: RingElement + Sized> Ring<T> {
         assert!(capacity > 0, "Ring capacity must be greater than 0");
         assert!(usize::from(capacity) * size_of::<T>() <= usize::try_from(M4KiB::SIZE).unwrap());
 
-        let ring_frame = crate::mem::frame_alloc::with_frame_allocator(
-            crate::mem::frame_alloc::FrameAllocator::alloc::<M4KiB>,
-        )
-        .unwrap();
+        let page = vmm::kernel::reserve_pages::<M4KiB>(1).unwrap().start();
+        let frame = vmm::kernel::alloc_frame::<M4KiB>().unwrap();
 
         let flags = Flags::MMIO_SUITABLE | Flags::WRITABLE;
-        let physical_mapping = PhysicalMapping::<M4KiB>::new(
-            ring_frame.start_address(),
-            usize::from(capacity) * size_of::<Trb>(),
-            flags,
-        )
-        .unwrap();
+        vmm::kernel::map_frame(page, frame, flags).unwrap();
 
-        let vaddr = physical_mapping
-            .translate(ring_frame.start_address())
-            .unwrap();
+        let vaddr = page.start_address();
 
         // Initialize the ring
         let ring = Self {
             vaddr,
-            paddr: ring_frame.start_address(),
+            paddr: frame.start_address(),
             capacity,
             cycle_bit: true,
             enqueue_index: 0,
             dequeue_index: 0,
-            _physical_mapping: physical_mapping,
+            page,
+            frame,
             _phantom: core::marker::PhantomData,
         };
 
@@ -166,6 +160,17 @@ impl<T: RingElement + Sized> Ring<T> {
         self.dequeue_index = (self.dequeue_index + 1) % self.capacity;
 
         Some(trb)
+    }
+}
+
+impl<T: RingElement + Sized> Drop for Ring<T> {
+    fn drop(&mut self) {
+        if let Ok(frame) = vmm::kernel::unmap_page(self.page) {
+            vmm::kernel::free_frame(frame);
+        } else {
+            vmm::kernel::free_frame(self.frame);
+        }
+        vmm::kernel::free_pages(Page::range_inclusive(self.page, self.page));
     }
 }
 
@@ -265,6 +270,10 @@ pub struct EventRing {
     segment_table: &'static mut [EventRingSegmentTableEntry],
     /// Physical address of the segment table
     segment_table_paddr: PhysAddr,
+    /// Segment table backing page
+    segment_table_page: Page<M4KiB>,
+    /// Segment table backing frame
+    segment_table_frame: Frame<M4KiB>,
     /// Current consumer index
     dequeue_index: usize,
     /// Current segment index
@@ -289,16 +298,11 @@ impl EventRing {
             table_size <= usize::try_from(M4KiB::SIZE).unwrap(),
             "Segment table size exceeds page size"
         );
-        let frame = crate::mem::frame_alloc::with_frame_allocator(
-            crate::mem::frame_alloc::FrameAllocator::alloc::<M4KiB>,
-        )
-        .unwrap();
-        let segment_table_mapping =
-            PhysicalMapping::<M4KiB>::new(frame.start_address(), table_size, flags).unwrap();
+        let page = vmm::kernel::reserve_pages::<M4KiB>(1).unwrap().start();
+        let frame = vmm::kernel::alloc_frame::<M4KiB>().unwrap();
+        vmm::kernel::map_frame(page, frame, flags).unwrap();
 
-        let virt_addr = segment_table_mapping
-            .translate(frame.start_address())
-            .unwrap();
+        let virt_addr = page.start_address();
 
         // Initialize the segment table
         let segment_table = unsafe { core::slice::from_raw_parts_mut(virt_addr.as_mut_ptr(), 1) };
@@ -308,6 +312,8 @@ impl EventRing {
             segments,
             segment_table,
             segment_table_paddr: frame.start_address(),
+            segment_table_page: page,
+            segment_table_frame: frame,
             dequeue_index: 0,
             segment_index: 0,
         }
@@ -346,6 +352,20 @@ impl EventRing {
     /// Get the current segment
     pub fn current_segment(&self) -> &EventRingSegment {
         &self.segments[self.segment_index]
+    }
+}
+
+impl Drop for EventRing {
+    fn drop(&mut self) {
+        if let Ok(frame) = vmm::kernel::unmap_page(self.segment_table_page) {
+            vmm::kernel::free_frame(frame);
+        } else {
+            vmm::kernel::free_frame(self.segment_table_frame);
+        }
+        vmm::kernel::free_pages(Page::range_inclusive(
+            self.segment_table_page,
+            self.segment_table_page,
+        ));
     }
 }
 

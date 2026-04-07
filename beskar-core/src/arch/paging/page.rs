@@ -29,6 +29,12 @@ impl<S: MemSize> Page<S> {
 
     #[must_use]
     #[inline]
+    pub fn end_address(self) -> VirtAddr {
+        self.start_address + (S::SIZE - 1)
+    }
+
+    #[must_use]
+    #[inline]
     pub const fn size(self) -> u64 {
         S::SIZE
     }

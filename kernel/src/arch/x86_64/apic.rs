@@ -1,16 +1,11 @@
 //! Advanced Programmable Interrupt Controller (APIC) driver.
 
 use super::cpuid;
-use crate::{
-    drivers::acpi::ACPI,
-    locals,
-    mem::{address_space, frame_alloc},
-    process,
-};
+use crate::{drivers::acpi::ACPI, locals, mem::vmm};
 use acpi::sdt::madt::Lint;
 use beskar_core::arch::{
     Alignment, PhysAddr,
-    paging::{CacheFlush as _, Frame, M4KiB, Mapper as _, MemSize as _, Page},
+    paging::{Frame, M4KiB, MemSize as _, Page},
 };
 use beskar_hal::{
     paging::page_table::Flags,
@@ -149,19 +144,8 @@ impl LocalApic {
         let apic_flags = Flags::MMIO_SUITABLE;
 
         LAPIC_MMIO_BASE.call_once(|| {
-            let page = process::current()
-                .address_space()
-                .with_pgalloc(|page_allocator| {
-                    page_allocator.allocate_pages::<M4KiB>(1).unwrap().start()
-                });
-            frame_alloc::with_frame_allocator(|frame_allocator| {
-                address_space::with_kernel_pt(|page_table| {
-                    page_table
-                        .map(page, frame, apic_flags, &mut *frame_allocator)
-                        .expect("Failed to map LAPIC frame")
-                        .flush();
-                });
-            });
+            let page = vmm::kernel::reserve_pages::<M4KiB>(1).unwrap().start();
+            vmm::kernel::map_frame(page, frame, apic_flags).expect("Failed to map LAPIC frame");
             page
         });
         let page = *LAPIC_MMIO_BASE.get().unwrap();
@@ -465,22 +449,10 @@ impl IoApic {
 
         let apic_flags = Flags::MMIO_SUITABLE;
 
-        let page = process::current()
-            .address_space()
-            .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<M4KiB>(1))
-            .unwrap()
-            .start();
+        let page = vmm::kernel::reserve_pages::<M4KiB>(1).unwrap().start();
 
-        frame_alloc::with_frame_allocator(|frame_allocator| {
-            address_space::with_kernel_pt(|page_table| {
-                // Safety:
-                // The frame is reserved by the UEFI, so it is already allocated.
-                page_table
-                    .map(page, frame, apic_flags, frame_allocator)
-                    .expect("Failed to map IOAPIC frame")
-                    .flush();
-            });
-        });
+        // Safety: The frame is reserved by firmware and already allocated physically.
+        vmm::kernel::map_frame(page, frame, apic_flags).expect("Failed to map IOAPIC frame");
 
         let base = Volatile::new(
             NonNull::new((page.start_address() + (base - frame.start_address())).as_mut_ptr())

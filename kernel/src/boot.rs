@@ -43,7 +43,6 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
         recursive_index,
         memory_regions,
         rsdp_paddr,
-        kernel_info,
         ..
     } = boot_info;
 
@@ -54,7 +53,7 @@ fn bsp_init(boot_info: &'static mut BootInfo) {
 
     crate::info!("BeskarOS kernel starting...");
 
-    mem::init(*recursive_index, memory_regions, kernel_info);
+    mem::init(*recursive_index, memory_regions);
     crate::info!("Memory initialized");
 
     crate::video::init(framebuffer);

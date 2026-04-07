@@ -5,8 +5,14 @@ use beskar_core::{
     },
     mem::ranges::{MemoryRange, MemoryRanges},
 };
+use bootloader_api::KERNEL_POOL_BASE;
+use hyperdrive::locks::mcs::McsLock;
 
-pub mod pmap;
+const KERNEL_PAGE_ALLOCATOR_SIZE: usize = 256;
+
+/// The kernel page allocator.
+static KERNEL_PAGE_ALLOCATOR: McsLock<PageAllocator<KERNEL_PAGE_ALLOCATOR_SIZE>> =
+    McsLock::new(PageAllocator::new_range(KERNEL_POOL_BASE, VirtAddr::MAX));
 
 #[derive(Debug)]
 pub struct PageAllocator<const N: usize> {
@@ -16,18 +22,9 @@ pub struct PageAllocator<const N: usize> {
 impl<const N: usize> PageAllocator<N> {
     #[must_use]
     #[inline]
-    pub fn new_empty() -> Self {
-        Self {
-            vranges: MemoryRanges::default(),
-        }
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn new_range(start: VirtAddr, end: VirtAddr) -> Self {
-        let mut vaddrs = MemoryRanges::new();
-        vaddrs.insert(MemoryRange::new(start.as_u64(), end.as_u64()));
-        Self { vranges: vaddrs }
+    pub const fn new_range(start: VirtAddr, end: VirtAddr) -> Self {
+        let vranges = MemoryRanges::from_single(MemoryRange::new(start.as_u64(), end.as_u64()));
+        Self { vranges }
     }
 
     pub fn allocate_pages<S: MemSize>(&mut self, count: u64) -> Option<PageRangeInclusive<S>> {
@@ -66,4 +63,10 @@ impl<const N: usize> PageAllocator<N> {
             pages.end().start_address().as_u64() + (S::SIZE - 1),
         ));
     }
+}
+
+pub fn with_kernel_page_allocator<R>(
+    f: impl FnOnce(&mut PageAllocator<KERNEL_PAGE_ALLOCATOR_SIZE>) -> R,
+) -> R {
+    KERNEL_PAGE_ALLOCATOR.with_locked(f)
 }

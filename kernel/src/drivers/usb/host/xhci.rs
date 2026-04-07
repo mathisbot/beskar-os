@@ -1,9 +1,9 @@
-use crate::{drivers::pci, locals, mem::page_alloc::pmap::PhysicalMapping};
+use crate::{drivers::pci, locals, mem::vmm::phys_map::PhysicalMapping};
 use ::pci::Device;
 use beskar_core::{
     arch::{
         PhysAddr,
-        paging::{M4KiB, MemSize as _},
+        paging::{Frame, M4KiB, MemSize as _},
     },
     drivers::{DriverError, DriverResult},
 };
@@ -64,6 +64,8 @@ pub struct Xhci {
     cmd_ring: Option<ring::CommandRing>,
     /// Event ring
     event_ring: Option<ring::EventRing>,
+    /// Frame backing the Device Context Base Address Array (DCBAA)
+    dcbaa_frame: Option<Frame<M4KiB>>,
     /// Physical mapping for the controller registers
     _physical_mapping: PhysicalMapping,
 }
@@ -111,6 +113,7 @@ impl Xhci {
             db_regs,
             cmd_ring: None,
             event_ring: None,
+            dcbaa_frame: None,
             _physical_mapping: physical_mapping,
         }
     }
@@ -145,9 +148,7 @@ impl Xhci {
         // Initialize the Device Context Base Address Array
         let dcbaa_size = usize::from(max_slots) * size_of::<u64>();
         assert!(dcbaa_size <= usize::try_from(M4KiB::SIZE).unwrap());
-        let dcbaa_frame = crate::mem::frame_alloc::with_frame_allocator(|frame_allocator| {
-            frame_allocator.alloc::<M4KiB>().unwrap()
-        });
+        let dcbaa_frame = crate::mem::vmm::kernel::alloc_frame::<M4KiB>().unwrap();
         let flags = Flags::MMIO_SUITABLE | Flags::WRITABLE;
         let dcbaa_mapping =
             PhysicalMapping::<M4KiB>::new(dcbaa_frame.start_address(), dcbaa_size, flags).unwrap();
@@ -170,6 +171,10 @@ impl Xhci {
         // Set the Device Context Base Address Array Pointer Register
         unsafe {
             self.op.dcbaap().write(dcbaa_phys_addr.as_u64());
+        }
+
+        if let Some(previous_frame) = self.dcbaa_frame.replace(dcbaa_frame) {
+            crate::mem::vmm::kernel::free_frame(previous_frame);
         }
 
         // Initialize the Event Ring
