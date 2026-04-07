@@ -199,9 +199,11 @@ impl ScreenWriter<'_> {
             width as usize * height as usize * compositor_info.bytes_per_pixel() as usize;
 
         // Allocate buffer in kernel address space
-        let page_range = crate::mem::address_space::get_kernel_address_space()
-            .alloc_map_zeroed::<M4KiB>(buffer_size, Flags::PRESENT | Flags::WRITABLE)
-            .unwrap();
+        let page_range = crate::mem::vmm::kernel::alloc_map_zeroed::<M4KiB>(
+            buffer_size,
+            Flags::PRESENT | Flags::WRITABLE,
+        )
+        .unwrap();
         let buffer_start = page_range.start().start_address();
 
         let buffer = unsafe {

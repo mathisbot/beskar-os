@@ -14,7 +14,7 @@ use hyperdrive::locks::mcs::McsLock;
 
 const MAX_MEMORY_REGIONS: usize = 4096;
 
-static KFRAME_ALLOC: McsLock<FrameAllocator> = McsLock::new(FrameAllocator {
+static KERNEL_FRAME_ALLOCATOR: McsLock<FrameAllocator> = McsLock::new(FrameAllocator {
     memory_ranges: MemoryRanges::new(),
 });
 
@@ -27,7 +27,7 @@ pub fn init(ranges: &[MemoryRange]) {
         );
     }
 
-    KFRAME_ALLOC.with_locked(|frallocator| {
+    KERNEL_FRAME_ALLOCATOR.with_locked(|frallocator| {
         ranges.iter().take(MAX_MEMORY_REGIONS).for_each(|r| {
             frallocator.memory_ranges.insert(*r);
         });
@@ -115,5 +115,5 @@ pub fn with_frame_allocator<F, R>(f: F) -> R
 where
     F: FnOnce(&mut FrameAllocator) -> R,
 {
-    KFRAME_ALLOC.with_locked(f)
+    KERNEL_FRAME_ALLOCATOR.with_locked(f)
 }

@@ -1,4 +1,4 @@
-use crate::mem::page_alloc::pmap::PhysicalMapping;
+use crate::mem::vmm::phys_map::PhysicalMapping;
 use ::pci::{Bar, Device};
 use beskar_core::{
     arch::{VirtAddr, paging::M4KiB},

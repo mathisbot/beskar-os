@@ -101,6 +101,16 @@ impl Cr3 {
             core::arch::asm!("mov cr3, {}", in(reg) value, options(nomem, nostack, preserves_flags));
         }
     }
+
+    #[inline]
+    /// # Safety
+    ///
+    /// The value written must be a valid CR3 value.
+    pub unsafe fn write_raw(value: u64) {
+        unsafe {
+            core::arch::asm!("mov cr3, {}", in(reg) value, options(nomem, nostack, preserves_flags));
+        }
+    }
 }
 
 pub struct Cr4;

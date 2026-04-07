@@ -1,11 +1,9 @@
-//! Utility functions to easily map and unmap physical memory to virtual memory.
-//!
-//! It is useful as ACPI tables must me mapped before being read, but are not needed after that.
+//! Physical-to-virtual mapping helpers for MMIO and firmware-owned regions.
 
-use crate::{mem::frame_alloc, process};
+use crate::mem::vmm;
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, Frame, M4KiB, Mapper, MappingError, MemSize, Page},
+    paging::{Frame, M4KiB, Mapper, MappingError, MemSize, Page},
 };
 use beskar_hal::paging::page_table::{Flags, PageTable};
 
@@ -27,6 +25,12 @@ impl<S: MemSize> PhysicalMapping<S>
 where
     for<'a> PageTable<'a>: Mapper<S, Flags>,
 {
+    const EMPTY: Self = Self {
+        start_frame: Frame::containing_address(PhysAddr::ZERO),
+        start_page: Page::containing_address(VirtAddr::ZERO),
+        count: 0,
+    };
+
     /// Creates a new physical mapping.
     ///
     /// `flags` will be `OR`ed with `PageTableFlags::PRESENT` to ensure the page is present.
@@ -35,7 +39,11 @@ where
         required_length: usize,
         flags: Flags,
     ) -> Result<Self, MappingError<S>> {
-        let end_paddr = start_paddr + u64::try_from(required_length).unwrap();
+        if required_length == 0 {
+            return Ok(Self::EMPTY);
+        }
+
+        let end_paddr = start_paddr + (u64::try_from(required_length).unwrap() - 1);
 
         let start_frame = Frame::<S>::containing_address(start_paddr);
         let end_frame = Frame::<S>::containing_address(end_paddr);
@@ -44,22 +52,25 @@ where
 
         let count = end_frame - start_frame + 1;
 
-        let page_range = process::current()
-            .address_space()
-            .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<S>(count).unwrap());
+        let page_range =
+            vmm::kernel::reserve_pages::<S>(count).ok_or(MappingError::FrameAllocationFailed)?;
 
-        frame_alloc::with_frame_allocator(|frame_allocator| {
-            process::current()
-                .address_space()
-                .with_page_table(|page_table| {
-                    for (frame, page) in frame_range.into_iter().zip(page_range) {
-                        page_table
-                            .map(page, frame, flags | Flags::PRESENT, frame_allocator)?
-                            .flush();
-                    }
-                    Ok(())
-                })
-        })?;
+        for (frame, page) in frame_range.clone().into_iter().zip(page_range) {
+            let res = vmm::kernel::map_frame(page, frame, flags);
+
+            if let Err(e) = res {
+                // Unmap any pages that were successfully mapped before the failure.
+                for (_prev_frame, prev_page) in frame_range
+                    .into_iter()
+                    .zip(page_range)
+                    .take_while(|(f, _)| *f <= frame)
+                {
+                    let _ = vmm::kernel::unmap_page(prev_page);
+                }
+
+                return Err(e);
+            }
+        }
 
         Ok(Self {
             start_frame,
@@ -110,24 +121,16 @@ where
     for<'a> PageTable<'a>: Mapper<S, Flags>,
 {
     fn drop(&mut self) {
+        if self.count == 0 {
+            return;
+        }
+
         let page_range =
             Page::<S>::range_inclusive(self.start_page, self.start_page + self.count - 1);
-
-        process::current()
-            .address_space()
-            .with_page_table(|page_table| {
-                for page in page_range {
-                    if let Ok((_frame, tlb)) = page_table.unmap(page) {
-                        tlb.flush();
-                    }
-                }
-            });
-
-        process::current()
-            .address_space()
-            .with_pgalloc(|page_allocator| {
-                page_allocator.free_pages(page_range);
-            });
+        for page in page_range {
+            let _ = vmm::kernel::unmap_page(page);
+        }
+        vmm::kernel::free_pages(page_range);
     }
 }
 

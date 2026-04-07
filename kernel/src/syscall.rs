@@ -1,8 +1,8 @@
-use crate::process;
+use crate::mem::vmm;
 use beskar_core::{
     arch::{
         Alignment, VirtAddr,
-        paging::{CacheFlush, M4KiB, Mapper, MappingError, MemSize, Page},
+        paging::{M4KiB, MemSize, Page},
     },
     syscall::{Syscall, SyscallExitCode, SyscallReturnValue},
 };
@@ -28,7 +28,7 @@ pub struct Arguments {
 #[must_use]
 #[inline]
 pub fn probe(start: VirtAddr, end: VirtAddr) -> bool {
-    process::current().address_space().is_addr_owned(start, end)
+    vmm::process_local::probe(start, end)
 }
 
 #[must_use]
@@ -101,9 +101,8 @@ fn sc_mmap(args: &Arguments) -> u64 {
 
     let flags = build_flags_from_us(flags_raw);
 
-    let Some(page_range) = process::current()
-        .address_space()
-        .alloc_map::<M4KiB>(usize::try_from(len).unwrap(), flags)
+    let Some(page_range) =
+        vmm::process_local::alloc_map::<M4KiB>(usize::try_from(len).unwrap(), flags)
     else {
         return 0;
     };
@@ -136,7 +135,7 @@ fn sc_munmap(args: &Arguments) -> SyscallExitCode {
 
     let page_range = Page::range_inclusive(page_start, page_end);
 
-    unsafe { process::current().address_space().unmap_free(page_range) };
+    unsafe { vmm::process_local::unmap_free(page_range) };
 
     SyscallExitCode::Success
 }
@@ -170,16 +169,7 @@ fn sc_mprotect(args: &Arguments) -> SyscallExitCode {
 
     let page_range = Page::range_inclusive(page_start, page_end);
 
-    let res =
-        process::current()
-            .address_space()
-            .with_page_table(|pt| -> Result<_, MappingError<_>> {
-                for page in page_range {
-                    let cache_flush = pt.update_flags(page, flags)?;
-                    cache_flush.flush();
-                }
-                Ok(())
-            });
+    let res = vmm::process_local::update_flags(page_range, flags);
 
     match res {
         Ok(()) => SyscallExitCode::Success,

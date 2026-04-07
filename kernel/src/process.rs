@@ -1,11 +1,11 @@
-use crate::mem::address_space::{self, AddressSpace};
+use crate::mem::AddressSpace;
 use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
 use beskar_hal::process::Kind;
 use core::sync::atomic::{AtomicU64, Ordering};
-use hyperdrive::{once::Once, ptrs::view::ViewRef, queues::mpmc::MpmcQueue};
+use hyperdrive::{once::Once, queues::mpmc::MpmcQueue};
 use storage::fs::{Path, PathBuf};
 
 pub mod binary;
@@ -14,14 +14,14 @@ pub mod sync;
 
 const MAX_SURFACES_PER_PROCESS: usize = 2;
 
-static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();
-
 pub fn init() {
+    static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();
+
     KERNEL_PROCESS.call_once(|| {
         Arc::new(Process {
             name: "kernel".to_string(),
             pid: ProcessId::new(),
-            address_space: ViewRef::new_borrow(address_space::get_kernel_address_space()),
+            address_space: AddressSpace::new(),
             kind: Kind::Kernel,
             binary: None,
             surfaces: MpmcQueue::new(),
@@ -29,7 +29,8 @@ pub fn init() {
     });
 
     let kernel_process = KERNEL_PROCESS.get().unwrap().clone();
-    debug_assert!(kernel_process.address_space().is_active());
+    // Safety: the kernel process address space has just been constructed and is valid.
+    unsafe { kernel_process.address_space().activate() };
 
     let current_thread = scheduler::thread::Thread::new_kernel(kernel_process);
 
@@ -85,7 +86,7 @@ impl ProcessId {
 pub struct Process {
     name: String,
     pid: ProcessId,
-    address_space: ViewRef<'static, AddressSpace>,
+    address_space: AddressSpace,
     kind: Kind,
     binary: Option<PathBuf>,
     /// Surfaces allocated by this process (interior mutability for registration)
@@ -99,21 +100,7 @@ impl Process {
         Self {
             name: String::from(name),
             pid: ProcessId::new(),
-            address_space: ViewRef::new_owned(AddressSpace::new()),
-            kind,
-            binary,
-            surfaces: MpmcQueue::new(),
-        }
-    }
-
-    #[must_use]
-    #[inline]
-    /// Creates a new process that shares the kernel address space.
-    pub fn new_kernel_as(name: &str, kind: Kind, binary: Option<PathBuf>) -> Self {
-        Self {
-            name: String::from(name),
-            pid: ProcessId::new(),
-            address_space: ViewRef::new_borrow(address_space::get_kernel_address_space()),
+            address_space: AddressSpace::new(),
             kind,
             binary,
             surfaces: MpmcQueue::new(),
@@ -134,7 +121,7 @@ impl Process {
 
     #[must_use]
     #[inline]
-    pub fn address_space(&self) -> &AddressSpace {
+    pub(crate) const fn address_space(&self) -> &AddressSpace {
         &self.address_space
     }
 

@@ -34,7 +34,7 @@ fn kmain() -> ! {
     // (GUI, ...)
 
     call_once!({
-        let driver_proc = Arc::new(Process::new_kernel_as(
+        let driver_proc = Arc::new(Process::new(
             "Drivers",
             beskar_hal::process::Kind::Driver,
             None,

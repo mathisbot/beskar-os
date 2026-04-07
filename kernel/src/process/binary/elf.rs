@@ -1,8 +1,8 @@
 use super::LoadedBinary;
-use crate::{mem::frame_alloc, process};
+use crate::{mem::vmm, process};
 use beskar_core::arch::{
     VirtAddr,
-    paging::{CacheFlush, FrameAllocator, M4KiB, Mapper, MappingError, MemSize as _, Page},
+    paging::{M4KiB, MemSize as _, Page},
 };
 use beskar_core::process::binary::BinaryResult;
 use beskar_hal::{paging::page_table::Flags, userspace::Ring};
@@ -34,37 +34,13 @@ impl MemoryMapper for ElfMemoryMapper {
             return Err(());
         }
 
-        let page_count = size.div_ceil(M4KiB::SIZE);
-        let page_range = process::current()
-            .address_space()
-            .with_pgalloc(|palloc| palloc.allocate_pages::<M4KiB>(page_count))
-            .ok_or(())?;
-
-        let start_page = page_range.start();
-        let end_page = start_page + (page_count - 1);
-        let base_addr = start_page.start_address();
-
         let initial_flags = convert_flags(flags, process::current().kind().ring());
 
-        let map_result: Result<(), MappingError<M4KiB>> =
-            frame_alloc::with_frame_allocator(|fralloc| {
-                process::current().address_space().with_page_table(|pt| {
-                    for page in Page::range_inclusive(start_page, end_page) {
-                        let frame = fralloc
-                            .allocate_frame()
-                            .ok_or(MappingError::FrameAllocationFailed)?;
-                        pt.map(page, frame, initial_flags, fralloc)?.flush();
-                    }
-                    Ok(())
-                })
-            });
+        let page_range =
+            vmm::process_local::alloc_map::<M4KiB>(size.try_into().unwrap(), initial_flags)
+                .ok_or(())?;
 
-        if map_result.is_err() {
-            // Best-effort cleanup for partially mapped regions
-            release_region(base_addr, page_count * M4KiB::SIZE);
-            return Err(());
-        }
-
+        let base_addr = page_range.start().start_address();
         self.allocated_regions.push((base_addr, size));
 
         Ok(MappedRegion {
@@ -83,13 +59,8 @@ impl MemoryMapper for ElfMemoryMapper {
         let end_page = Page::<M4KiB>::containing_address(end_addr);
         let kernel_flags = convert_flags(flags, process::current().kind().ring());
 
-        process::current().address_space().with_page_table(|pt| {
-            for page in Page::range_inclusive(start_page, end_page) {
-                let tlb_flush = pt.update_flags(page, kernel_flags).map_err(|_| ())?;
-                tlb_flush.flush();
-            }
-            Ok(())
-        })
+        vmm::process_local::update_flags(Page::range_inclusive(start_page, end_page), kernel_flags)
+            .map_err(|_| ())
     }
 
     fn copy_data(&mut self, dest: VirtAddr, src: &[u8]) -> core::result::Result<(), ()> {
@@ -166,20 +137,7 @@ fn release_region(base: VirtAddr, size: u64) {
     let end_page = start_page + (page_count - 1);
     let page_range = Page::range_inclusive(start_page, end_page);
 
-    frame_alloc::with_frame_allocator(|fralloc| {
-        process::current().address_space().with_page_table(|pt| {
-            for page in page_range {
-                if let Ok((frame, tlb)) = pt.unmap(page) {
-                    tlb.flush();
-                    fralloc.free(frame);
-                }
-            }
-        });
-    });
-
-    process::current().address_space().with_pgalloc(|palloc| {
-        palloc.free_pages(Page::range_inclusive(start_page, end_page));
-    });
+    unsafe { vmm::process_local::unmap_free(page_range) };
 }
 
 impl From<::elf::segments::TlsTemplate> for super::TlsTemplate {

@@ -1,60 +1,17 @@
-use super::{frame_alloc, page_alloc};
-use crate::{arch::cpuid, process::scheduler};
+use super::page_alloc;
+use crate::mem::vmm;
 use beskar_core::arch::{
     PhysAddr, VirtAddr,
-    paging::{CacheFlush as _, M4KiB, Mapper, MemSize, Page, PageRangeInclusive},
+    paging::{M4KiB, MemSize, Page},
 };
 use beskar_hal::{
     paging::page_table::{Entries, Flags, PageTable},
-    registers::{Cr3, Efer},
+    registers::Cr3,
 };
-use bootloader_api::{
-    KERNEL_AS_BASE, KERNEL_POOL_BASE, KERNEL_PT_START_ENTRY, KernelInfo, USER_PT_END_ENTRY,
-};
-use hyperdrive::{locks::mcs::McsLock, once::Once};
-
-static KERNEL_ADDRESS_SPACE: Once<AddressSpace> = Once::uninit();
-
-static KERNEL_CODE_INFO: Once<KernelInfo> = Once::uninit();
-
-static KERNEL_PT_RECURSIVE_INDEX: Once<u16> = Once::uninit();
+use bootloader_api::{KERNEL_AS_BASE, KERNEL_PT_START_ENTRY, USER_PT_END_ENTRY};
+use hyperdrive::locks::mcs::McsLock;
 
 const PROCESS_PGALLOC_VRANGES: usize = 64;
-
-pub fn init(recursive_index: u16, kernel_info: &KernelInfo) {
-    KERNEL_CODE_INFO.call_once(|| *kernel_info);
-    KERNEL_PT_RECURSIVE_INDEX.call_once(|| recursive_index);
-
-    let kernel_pt = {
-        let vaddr = VirtAddr::from_pt_indices(
-            recursive_index,
-            recursive_index,
-            recursive_index,
-            recursive_index,
-            0,
-        );
-        // Safety: The page table given by the bootloader is valid
-        let raw_pt = unsafe { &mut *vaddr.as_mut_ptr::<Entries>() };
-        PageTable::new(raw_pt)
-    };
-
-    if cpuid::check_feature(cpuid::CpuFeature::TCE) {
-        unsafe { Efer::insert_flags(Efer::TRANSLATION_CACHE_EXTENSION) };
-    }
-
-    KERNEL_ADDRESS_SPACE.call_once(|| {
-        let (frame, _flags) = Cr3::read();
-        let pgalloc = McsLock::new(page_alloc::PageAllocator::new_range(
-            KERNEL_POOL_BASE,
-            VirtAddr::MAX,
-        ));
-        AddressSpace {
-            pt: McsLock::new(kernel_pt),
-            lvl4_paddr: frame.start_address(),
-            pgalloc,
-        }
-    });
-}
 
 // TODO: Free PT frames on drop? Useful for userland processes.
 pub struct AddressSpace {
@@ -81,59 +38,43 @@ impl AddressSpace {
     #[must_use]
     /// Create a new address space.
     pub fn new() -> Self {
-        let curr_process = scheduler::current_process();
-        let curr_addr_space = curr_process.address_space();
+        // Prepare memory for the new PML4.
+        let page = vmm::kernel::reserve_pages::<M4KiB>(1).unwrap().start();
+        let frame = vmm::kernel::alloc_frame::<M4KiB>().unwrap();
+        vmm::kernel::map_frame(
+            page,
+            frame,
+            Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+        )
+        .unwrap();
 
-        let recursive_index = KERNEL_PT_RECURSIVE_INDEX.get().copied().unwrap();
-
-        let page = curr_addr_space
-            .with_pgalloc(|page_allocator| page_allocator.allocate_pages::<M4KiB>(1))
-            .unwrap()
-            .start();
-
-        let frame = frame_alloc::with_frame_allocator(|frame_allocator| {
-            let frame = frame_allocator.alloc().unwrap();
-            curr_addr_space.with_page_table(|page_table| {
-                page_table
-                    .map(
-                        page,
-                        frame,
-                        Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
-                        frame_allocator,
-                    )
-                    .expect("Failed to allocate new PML4 frame")
-                    .flush();
-            });
-            frame
-        });
-
+        // Prepare the new PML4
         let mut pt = Entries::new();
+        let recursive_index = vmm::kernel::recursive_index();
 
-        curr_addr_space.with_page_table(|cpt| {
-            for (i, pte) in cpt
-                .entries()
-                .iter_entries()
-                .enumerate()
-                .skip(usize::from(KERNEL_PT_START_ENTRY))
-            {
-                pt[i] = *pte;
-            }
-        });
+        // Safety: `skip(usize::from(KERNEL_PT_START_ENTRY))` guarantees we only read kernel entries.
+        unsafe {
+            vmm::kernel::with_kernel_pt(|kpt| {
+                for (kpte, pte) in kpt
+                    .entries()
+                    .iter_entries()
+                    .zip(pt.iter_entries_mut())
+                    .skip(usize::from(KERNEL_PT_START_ENTRY))
+                {
+                    *pte = *kpte;
+                }
+            });
+        }
         pt[usize::from(recursive_index)]
             .set(frame.start_address(), Flags::PRESENT | Flags::WRITABLE);
 
+        // Write the new PML4 to the reserved page
         unsafe { page.start_address().as_mut_ptr::<Entries>().write(pt) };
 
         // Unmap the page from the current address space as we're done with it
-        curr_addr_space.with_page_table(|page_table| page_table.unmap(page).unwrap().1.flush());
-        curr_addr_space.with_pgalloc(|page_allocator| {
-            page_allocator.free_pages(Page::range_inclusive(page, page));
-        });
-
-        let lvl4_vaddr = {
-            let i = recursive_index;
-            VirtAddr::from_pt_indices(i, i, i, i, 0)
-        };
+        let unmapped_frame = vmm::kernel::unmap_page(page).unwrap();
+        debug_assert_eq!(unmapped_frame, frame);
+        vmm::kernel::free_pages(Page::range_inclusive(page, page));
 
         // Create a new process page allocator with 256 PLM4 index free (128TiB)
         let pgalloc = {
@@ -144,6 +85,10 @@ impl AddressSpace {
             let end_vaddr = end_page.start_address() + (M4KiB::SIZE - 1);
 
             page_alloc::PageAllocator::new_range(start_vaddr, end_vaddr)
+        };
+        let lvl4_vaddr = {
+            let i = recursive_index;
+            VirtAddr::from_pt_indices(i, i, i, i, 0)
         };
 
         Self {
@@ -184,105 +129,40 @@ impl AddressSpace {
         self.lvl4_paddr.as_u64() | u64::from(self.cr3_flags())
     }
 
+    #[inline]
+    /// Activate the address space by writing to CR3.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the CPU's state allows switching to that address space.
+    pub(crate) unsafe fn activate(&self) {
+        unsafe { Cr3::write_raw(self.cr3_raw()) };
+    }
+
     /// Operate on the page table of the address space.
     ///
     /// # Panics
     ///
     /// Panics if the address space is not active.
-    pub fn with_page_table<R>(&self, f: impl FnOnce(&mut PageTable<'static>) -> R) -> R {
+    ///
+    /// # Safety
+    ///
+    /// The caller must only modify the userland portion of the page table.
+    pub(super) unsafe fn with_page_table<R>(
+        &self,
+        f: impl FnOnce(&mut PageTable<'static>) -> R,
+    ) -> R {
         assert!(self.is_active(), "Address space must be active");
         self.pt.with_locked(f)
     }
 
     #[inline]
     /// Operate on the process' page allocator.
-    pub fn with_pgalloc<R>(
+    pub(super) fn with_pgalloc<R>(
         &self,
         f: impl FnOnce(&mut super::page_alloc::PageAllocator<PROCESS_PGALLOC_VRANGES>) -> R,
     ) -> R {
         self.pgalloc.with_locked(f)
-    }
-
-    #[must_use]
-    /// Allocate and map a memory region of the given size with the given flags.
-    ///
-    /// Note that it acquires locks on the process-specific page allocator, then on both the system-wide frame allocator and
-    /// the process-specific page allocator.
-    pub fn alloc_map<S: MemSize>(&self, size: usize, flags: Flags) -> Option<PageRangeInclusive<S>>
-    where
-        PageTable<'static>: Mapper<S, beskar_hal::paging::page_table::Flags>,
-    {
-        let pages = u64::try_from(size).unwrap().div_ceil(S::SIZE);
-        let page_range = self.with_pgalloc(|pgalloc| pgalloc.allocate_pages(pages))?;
-
-        frame_alloc::with_frame_allocator(|frame_allocator| {
-            self.with_page_table(|page_table| {
-                for page in page_range {
-                    let frame = frame_allocator.alloc()?;
-                    page_table
-                        .map(page, frame, flags | Flags::PRESENT, frame_allocator)
-                        .ok()?
-                        .flush();
-                }
-                Some(())
-            })
-        })?;
-
-        Some(page_range)
-    }
-
-    #[must_use]
-    /// Allocate and map a zeroed memory region of the given size with the given flags.
-    ///
-    /// Note that it acquires locks on the process-specific page allocator, then on both the system-wide frame allocator and
-    /// the process-specific page allocator.
-    pub fn alloc_map_zeroed<S: MemSize>(
-        &self,
-        size: usize,
-        flags: Flags,
-    ) -> Option<PageRangeInclusive<S>>
-    where
-        PageTable<'static>: Mapper<S, beskar_hal::paging::page_table::Flags>,
-    {
-        let page_range = self.alloc_map::<S>(size, flags)?;
-
-        unsafe {
-            page_range
-                .start()
-                .start_address()
-                .as_mut_ptr::<u8>()
-                .write_bytes(0, size);
-        }
-
-        Some(page_range)
-    }
-
-    /// Unmap and free a memory region.
-    ///
-    /// Note that it acquires locks on both the system-wide frame allocator and
-    /// the process-specific page allocator, then on the process-specific page allocator.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the pages are not in use after this call.
-    /// Furthermore, the mapped physical frames must not be mapped elsewhere.
-    pub unsafe fn unmap_free<S: MemSize>(&self, page_range: PageRangeInclusive<S>)
-    where
-        PageTable<'static>: Mapper<S, beskar_hal::paging::page_table::Flags>,
-    {
-        frame_alloc::with_frame_allocator(|frame_allocator| {
-            self.with_page_table(|page_table| {
-                for page in page_range {
-                    if let Ok((frame, flush)) = page_table.unmap(page) {
-                        flush.flush();
-                        frame_allocator.free(frame);
-                    }
-                }
-            });
-        });
-        self.with_pgalloc(|pgalloc| {
-            pgalloc.free_pages(page_range);
-        });
     }
 }
 
@@ -293,23 +173,6 @@ impl Drop for AddressSpace {
             !self.is_active(),
             "Address space is suspiciously still active on drop"
         );
+        // TODO: Free frames in userland
     }
-}
-
-#[must_use]
-#[inline]
-pub fn get_kernel_address_space() -> &'static AddressSpace {
-    KERNEL_ADDRESS_SPACE.get().unwrap()
-}
-
-#[inline]
-pub fn with_kernel_pgalloc<R>(
-    f: impl FnOnce(&mut super::page_alloc::PageAllocator<PROCESS_PGALLOC_VRANGES>) -> R,
-) -> R {
-    get_kernel_address_space().with_pgalloc(f)
-}
-
-#[inline]
-pub fn with_kernel_pt<R>(f: impl FnOnce(&mut PageTable<'static>) -> R) -> R {
-    get_kernel_address_space().with_page_table(f)
 }

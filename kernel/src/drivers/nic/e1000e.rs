@@ -13,13 +13,17 @@ use self::{
     registers::{CtrlFlags, IntFlags, RctlFlags, Registers, TctlFlags},
 };
 use super::Nic;
-use crate::{drivers::pci::MsiHelper, locals, mem::page_alloc::pmap::PhysicalMapping, process};
+use crate::{
+    drivers::pci::MsiHelper,
+    locals,
+    mem::{vmm, vmm::phys_map::PhysicalMapping},
+};
 use ::pci::Bar;
 use alloc::vec::Vec;
 use beskar_core::{
     arch::{
         PhysAddr, VirtAddr,
-        paging::{CacheFlush as _, M4KiB, Mapper, MemSize as _, Page},
+        paging::{M4KiB, MemSize as _, Page},
     },
     drivers::{DriverError, DriverResult},
 };
@@ -350,23 +354,13 @@ impl BufferSet<'_> {
         // The easiest way I found to do this is to allocate a full frame for each object.
         // It gives a very nice 4096 bytes buffer, which is common.
 
-        let descriptor_page = process::current()
-            .address_space()
-            .with_pgalloc(|palloc| palloc.allocate_pages(1).unwrap())
-            .start();
+        let descriptor_page = vmm::kernel::reserve_pages::<M4KiB>(1).unwrap().start();
         let flags = Flags::MMIO_SUITABLE;
-        let descriptor_frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-            let frame = fralloc.alloc::<M4KiB>().unwrap();
-            process::current()
-                .address_space()
-                .with_page_table(|page_table| {
-                    page_table
-                        .map(descriptor_page, frame, flags, fralloc)
-                        .unwrap()
-                        .flush();
-                });
+        let descriptor_frame = {
+            let frame = vmm::kernel::alloc_frame::<M4KiB>().unwrap();
+            vmm::kernel::map_frame(descriptor_page, frame, flags).unwrap();
             frame
-        });
+        };
 
         // SAFETY: We just allocated and mapped this page. The memory is valid and properly aligned.
         // The lifetime 'a is tied to BufferSet, ensuring these slices don't outlive the allocation.
@@ -390,20 +384,15 @@ impl BufferSet<'_> {
             )
         };
 
-        let page_range = process::current()
-            .address_space()
-            .with_pgalloc(|palloc| palloc.allocate_pages(nb_rx as u64 + nb_tx as u64).unwrap());
+        let page_range =
+            vmm::kernel::reserve_pages::<M4KiB>(u64::try_from(nb_rx + nb_tx).unwrap()).unwrap();
 
         for (i, page) in page_range.into_iter().take(nb_rx).enumerate() {
-            let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-                let frame = fralloc.alloc::<M4KiB>().unwrap();
-                process::current()
-                    .address_space()
-                    .with_page_table(|page_table| {
-                        page_table.map(page, frame, flags, fralloc).unwrap().flush();
-                    });
+            let frame = {
+                let frame = vmm::kernel::alloc_frame::<M4KiB>().unwrap();
+                vmm::kernel::map_frame(page, frame, flags).unwrap();
                 frame
-            });
+            };
 
             // SAFETY: We just allocated and mapped this page. The memory is valid.
             // The lifetime 'a ensures this slice doesn't outlive the BufferSet.
@@ -418,15 +407,11 @@ impl BufferSet<'_> {
         }
 
         for (i, page) in page_range.into_iter().skip(nb_rx).take(nb_tx).enumerate() {
-            let frame = crate::mem::frame_alloc::with_frame_allocator(|fralloc| {
-                let frame = fralloc.alloc::<M4KiB>().unwrap();
-                process::current()
-                    .address_space()
-                    .with_page_table(|page_table| {
-                        page_table.map(page, frame, flags, fralloc).unwrap().flush();
-                    });
+            let frame = {
+                let frame = vmm::kernel::alloc_frame::<M4KiB>().unwrap();
+                vmm::kernel::map_frame(page, frame, flags).unwrap();
                 frame
-            });
+            };
 
             // SAFETY: We just allocated and mapped this page. The memory is valid.
             // The lifetime 'a ensures this slice doesn't outlive the BufferSet.
@@ -504,28 +489,16 @@ impl Drop for BufferSet<'_> {
         );
 
         for page in buffer_page_range {
-            let frame = process::current().address_space().with_page_table(|pt| {
-                let (frame, tlb) = pt.unmap(page).unwrap();
-                tlb.flush();
-                frame
-            });
-            crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.free(frame));
+            let frame = vmm::kernel::unmap_page(page).unwrap();
+            vmm::kernel::free_frame(frame);
         }
-        process::current()
-            .address_space()
-            .with_pgalloc(|palloc| palloc.free_pages(buffer_page_range));
+        vmm::kernel::free_pages(buffer_page_range);
 
         let descriptors_page =
             Page::<M4KiB>::containing_address(VirtAddr::from_ptr(self.rx_descriptors.as_ptr()));
-        let descriptors_frame = process::current().address_space().with_page_table(|pt| {
-            let (frame, tlb) = pt.unmap(descriptors_page).unwrap();
-            tlb.flush();
-            frame
-        });
-        crate::mem::frame_alloc::with_frame_allocator(|fralloc| fralloc.free(descriptors_frame));
-        process::current().address_space().with_pgalloc(|palloc| {
-            palloc.free_pages(Page::range_inclusive(descriptors_page, descriptors_page));
-        });
+        let descriptors_frame = vmm::kernel::unmap_page(descriptors_page).unwrap();
+        vmm::kernel::free_frame(descriptors_frame);
+        vmm::kernel::free_pages(Page::range_inclusive(descriptors_page, descriptors_page));
     }
 }
 

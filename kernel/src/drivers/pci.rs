@@ -1,4 +1,4 @@
-use crate::mem::page_alloc::pmap::PhysicalMapping;
+use crate::mem::vmm::phys_map::PhysicalMapping;
 use ::pci::{LegacyPciHandler, PciExpressHandler, PciHandler};
 use beskar_core::{arch::paging::M2MiB, drivers::DriverResult};
 use driver_api::DriverError;

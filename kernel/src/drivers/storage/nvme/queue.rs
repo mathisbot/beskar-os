@@ -1,6 +1,9 @@
-use crate::mem::{frame_alloc, page_alloc::pmap::PhysicalMapping};
+use crate::mem::vmm;
 use beskar_core::{
-    arch::{PhysAddr, paging::M4KiB},
+    arch::{
+        PhysAddr,
+        paging::{M4KiB, Page},
+    },
     drivers::{DriverError, DriverResult},
 };
 use beskar_hal::paging::page_table::Flags;
@@ -16,7 +19,8 @@ pub mod io;
 
 struct Queue<T: ?Sized> {
     base: Volatile<ReadWrite, T>,
-    pmap: PhysicalMapping,
+    page: Page<M4KiB>,
+    frame: beskar_core::arch::paging::Frame<M4KiB>,
     size: u16,
     tail: u16,
     head: u16,
@@ -27,20 +31,25 @@ unsafe impl<T: ?Sized + Send> Send for Queue<T> {}
 
 impl<T> Queue<T> {
     fn new(doorbell: MmioRegister<ReadWrite, u32>) -> DriverResult<Self> {
-        let Some(frame) =
-            frame_alloc::with_frame_allocator(frame_alloc::FrameAllocator::alloc::<M4KiB>)
-        else {
+        let Some(page) = vmm::kernel::reserve_pages::<M4KiB>(1).map(|range| range.start()) else {
+            return Err(DriverError::Unknown);
+        };
+
+        let page_range = Page::range_inclusive(page, page);
+
+        let Some(frame) = vmm::kernel::alloc_frame::<M4KiB>() else {
+            vmm::kernel::free_pages(page_range);
             return Err(DriverError::Unknown);
         };
 
         let flags = Flags::MMIO_SUITABLE;
-        let pmap = PhysicalMapping::new(
-            frame.start_address(),
-            frame.size().try_into().unwrap(),
-            flags,
-        )
-        .unwrap();
-        let base = pmap.translate(frame.start_address()).unwrap();
+        if vmm::kernel::map_frame(page, frame, flags).is_err() {
+            vmm::kernel::free_frame(frame);
+            vmm::kernel::free_pages(page_range);
+            return Err(DriverError::Unknown);
+        }
+
+        let base = page.start_address();
 
         unsafe {
             core::ptr::write_bytes(base.as_mut_ptr::<u8>(), 0, frame.size().try_into().unwrap());
@@ -48,7 +57,8 @@ impl<T> Queue<T> {
 
         Ok(Self {
             base: Volatile::new(NonNull::new(base.as_mut_ptr()).unwrap()),
-            pmap,
+            page,
+            frame,
             size: u16::try_from(frame.size() / u64::try_from(size_of::<T>()).unwrap()).unwrap(),
             tail: 0,
             head: 0,
@@ -59,8 +69,12 @@ impl<T> Queue<T> {
 
 impl<T: ?Sized> Drop for Queue<T> {
     fn drop(&mut self) {
-        let frame = self.pmap.start_frame();
-        frame_alloc::with_frame_allocator(|fralloc| fralloc.free(frame));
+        if let Ok(frame) = vmm::kernel::unmap_page(self.page) {
+            vmm::kernel::free_frame(frame);
+        } else {
+            vmm::kernel::free_frame(self.frame);
+        }
+        vmm::kernel::free_pages(Page::range_inclusive(self.page, self.page));
     }
 }
 
@@ -75,7 +89,7 @@ impl SubmissionQueue {
     #[must_use]
     #[inline]
     pub const fn paddr(&self) -> PhysAddr {
-        self.0.pmap.start_frame().start_address()
+        self.0.frame.start_address()
     }
 
     #[must_use]
@@ -126,7 +140,7 @@ impl CompletionQueue {
     #[must_use]
     #[inline]
     pub const fn paddr(&self) -> PhysAddr {
-        self.0.pmap.start_frame().start_address()
+        self.0.frame.start_address()
     }
 
     #[must_use]
