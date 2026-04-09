@@ -24,8 +24,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .flag("-fno-builtin")
         .flag("-fPIC")
         .flag("-w")
-        // compile without simd
-        .flag("-mgeneral-regs-only")
+        .flag("-march=x86-64-v2")
+        .flag("-mfpmath=sse")
+        .flag("-mno-avx")
+        .flag("-mno-avx2")
+        .flag("-mno-fma")
+        .flag("-mno-f16c")
+        .flag("-mno-mmx")
         .flag("-flto")
         // make signed integer overflow wrap instead of UB
         .flag("-fwrapv")

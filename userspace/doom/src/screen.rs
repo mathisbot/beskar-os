@@ -92,9 +92,9 @@ fn draw_raw(src: &[u8], dst: &mut [u8], format: PixelFormat) {
             let dst_words = unsafe {
                 core::slice::from_raw_parts_mut(dst.as_mut_ptr().cast::<u32>(), pixel_count)
             };
-            for (d, &s) in dst_words.iter_mut().zip(src_words.iter()) {
+            for (d, &s) in dst_words.iter_mut().zip(src_words) {
                 // Swap R and B channels
-                *d = (s & 0xFF00_FF00) | ((s & 0x0000_00FF) << 16) | ((s & 0x00FF_0000) >> 16);
+                *d = (s & 0xFF00_FF00) | (s.rotate_left(16) & 0x00FF_00FF);
             }
         }
         _ => {

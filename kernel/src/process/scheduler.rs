@@ -188,6 +188,8 @@ impl Scheduler {
                     crate::arch::locals::store_thread_locals(tls);
                 }
 
+                crate::arch::fpu::on_thread_switch(&mut old_thread);
+
                 Self::stage_old_thread(action, old_thread);
 
                 beskar_hal::instructions::int_disable();

@@ -15,6 +15,7 @@ pub unsafe extern "C" fn enter_usermode(entry: extern "C" fn(), rsp: *mut u8) ->
         "pushfq",
         "pop r11",
         "mov rsp, rsi",
+        "sub rsp, 8", // Align the stack to 8 mod 16
         "sysretq",
     );
 }

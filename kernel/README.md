@@ -17,6 +17,9 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
             - [x] LAPIC
             - [X] IOAPIC
         - [X] CPUID
+        - SIMD
+            - [ ] AVX
+            - [X] FPU/SSE
         - [x] GDT/TSS
         - [x] Interrupts
         - [x] Randomness
@@ -83,8 +86,8 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
     - [x] Scheduling
         - [X] Context save/switch
         - [X] Priority handling
-        - [X] Sleeping threads/Events
-        - [X] TLS
+        - [X] Thread parking
+        - [X] Futexes
     - [X] User space
     - [X] Binary loading
         - [X] ELF
@@ -105,4 +108,5 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
 - Video
     - [x] Character rendering
     - [x] Logging
+    - [x] Graphics API
     - [ ] GPU drivers (🤠)

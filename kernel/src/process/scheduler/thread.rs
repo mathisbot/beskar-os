@@ -13,7 +13,6 @@ use beskar_core::arch::{
 use beskar_hal::instructions::STACK_DEBUG_INSTR;
 use beskar_hal::paging::page_table::Flags;
 use core::{
-    cell::UnsafeCell,
     mem::offset_of,
     ptr::NonNull,
     sync::atomic::{AtomicPtr, AtomicU64, Ordering},
@@ -76,7 +75,7 @@ pub struct Thread {
     /// Thread statistics for scheduling
     stats: ThreadStats,
     /// FPU/SSE state for lazy context switching
-    fpu_state: UnsafeCell<FpuState>,
+    fpu_state: FpuState,
 
     /// Link to the next thread in the queue.
     link: Link<Self>,
@@ -134,7 +133,7 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
-            fpu_state: UnsafeCell::new(FpuState::new()),
+            fpu_state: FpuState::new(),
         }
     }
 
@@ -163,7 +162,7 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
-            fpu_state: UnsafeCell::new(FpuState::new()),
+            fpu_state: FpuState::new(),
         }
     }
 
@@ -210,7 +209,7 @@ impl Thread {
             link: Link::new(),
             tls: Once::uninit(),
             stats: ThreadStats::new(),
-            fpu_state: UnsafeCell::new(FpuState::new()),
+            fpu_state: FpuState::new(),
         }
     }
 
@@ -315,16 +314,24 @@ impl Thread {
 
     #[must_use]
     #[inline]
-    /// Returns a pointer to the FPU state.
-    pub const fn fpu_state_ptr(&self) -> *mut FpuState {
-        self.fpu_state.get()
+    /// Returns a reference to the thread's FPU state.
+    pub const fn fpu_state(&self) -> &FpuState {
+        &self.fpu_state
+    }
+
+    #[must_use]
+    #[inline]
+    /// Returns a mutable reference to the thread's FPU state.
+    pub const fn fpu_state_mut(&mut self) -> &mut FpuState {
+        &mut self.fpu_state
     }
 
     #[must_use]
     /// Get a snapshot of the thread's state.
     pub fn snapshot(&self) -> ThreadSnapshot {
         let kst = self.stack.as_ref().map(ThreadStacks::kernel_stack_top);
-        ThreadSnapshot::new(self.id, kst)
+        let fpu = self.fpu_state();
+        ThreadSnapshot::new(self.id, kst, fpu)
     }
 }
 
@@ -335,15 +342,22 @@ pub struct ThreadSnapshot {
     id: ThreadId,
     /// RSP0.
     kernel_stack_top: Option<NonNull<u8>>,
+    /// FPU state pointer, used for lazy FPU context switching.
+    fpu_state: *const FpuState,
 }
 
 impl ThreadSnapshot {
     #[must_use]
     #[inline]
-    pub(super) const fn new(id: ThreadId, kst: Option<NonNull<u8>>) -> Self {
+    pub(super) const fn new(
+        id: ThreadId,
+        kst: Option<NonNull<u8>>,
+        fpu_state: *const FpuState,
+    ) -> Self {
         Self {
             id,
             kernel_stack_top: kst,
+            fpu_state,
         }
     }
 
@@ -357,6 +371,12 @@ impl ThreadSnapshot {
     #[inline]
     pub const fn kernel_stack_top(&self) -> Option<NonNull<u8>> {
         self.kernel_stack_top
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn fpu_state(&self) -> *const FpuState {
+        self.fpu_state
     }
 }
 
@@ -491,6 +511,7 @@ pub extern "C" fn user_trampoline() -> ! {
     }
 
     drop(root_proc); // Decrease the reference count of the process
+    debug_assert!(VirtAddr::from_ptr(rsp).is_aligned(Alignment::Align16));
     unsafe { crate::arch::userspace::enter_usermode(loaded_binary.entry_point(), rsp) };
 }
 
