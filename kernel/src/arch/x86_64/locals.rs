@@ -2,7 +2,7 @@ use crate::process::scheduler::thread::Tls;
 use alloc::boxed::Box;
 use beskar_core::arch::VirtAddr;
 use beskar_hal::registers::{FS, GS};
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use hyperdrive::{
     locks::mcs::{MUMcsLock, McsLock},
     once::Once,
@@ -27,6 +27,7 @@ pub struct CoreLocalsInfo {
 
     core_id: usize,
     scheduler: Once<crate::process::scheduler::Scheduler>,
+    fpu_owner: AtomicU64,
 
     // Arch specific fields
     apic_id: u8,
@@ -43,6 +44,7 @@ impl CoreLocalsInfo {
             self_ptr: AtomicPtr::new(core::ptr::null_mut()),
             core_id,
             scheduler: Once::uninit(),
+            fpu_owner: AtomicU64::new(0),
             apic_id,
             gdt: McsLock::new(super::gdt::Gdt::uninit()),
             interrupts: super::interrupts::Interrupts::new(),
@@ -73,6 +75,17 @@ impl CoreLocalsInfo {
     #[inline]
     pub const fn scheduler(&self) -> &Once<crate::process::scheduler::Scheduler> {
         &self.scheduler
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn fpu_owner(&self) -> u64 {
+        self.fpu_owner.load(Ordering::Relaxed)
+    }
+
+    #[inline]
+    pub fn set_fpu_owner(&self, owner: u64) {
+        self.fpu_owner.store(owner, Ordering::Relaxed);
     }
 
     #[must_use]
