@@ -20,7 +20,7 @@ doom/
         main.rs
 ```
 
-If compilation fails or the program crashes, try using the commit hash [48376dd](https://github.com/Daivuk/PureDOOM/tree/48376ddd6bbdb70085dab91feb1c6ceef80fa9b7).
+If compilation fails or the program crashes, try using the commit hash [aa9510a](https://github.com/Daivuk/PureDOOM/commit/aa9510a97767a1383bfd7711106c4aeee48605fb).
 
 Finally, you will have to edit the root `build.rs`/`Cargo.toml` to add doom as a dependency and edit the ramdisk accordingly (temporary).
 

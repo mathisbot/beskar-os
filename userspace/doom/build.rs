@@ -15,13 +15,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let compiler = if cfg!(windows) { "clang.exe" } else { "gcc" };
+
     cc::Build::new()
-        .compiler("clang.exe")
+        .compiler(compiler)
+        .std("gnu17")
         .files(&c_files)
-        .target("x86_64-unknown-none")
         .flag("-ffreestanding")
         .flag("-nostdlib")
         .flag("-fno-builtin")
+        .flag("-fno-stack-protector")
         .flag("-fPIC")
         .flag("-w")
         .flag("-march=x86-64-v2")
@@ -31,7 +34,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .flag("-mno-fma")
         .flag("-mno-f16c")
         .flag("-mno-mmx")
-        .flag("-flto")
         // make signed integer overflow wrap instead of UB
         .flag("-fwrapv")
         .compile("puredoom");

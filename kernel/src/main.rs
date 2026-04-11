@@ -30,9 +30,6 @@ fn kmain() -> ! {
 
     scheduler::set_scheduling(true);
 
-    // TODO: Start user-space processes
-    // (GUI, ...)
-
     call_once!({
         let driver_proc = Arc::new(Process::new(
             "Drivers",
