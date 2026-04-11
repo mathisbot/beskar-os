@@ -5,7 +5,7 @@
 
 extern crate alloc;
 
-pub use beskar_core::syscall::ExitCode;
+pub use beskar_core::{process::ThreadStartBlock, syscall::ExitCode};
 use beskar_core::{
     process::{SleepHandle, WaitResult},
     time::Duration,
@@ -64,6 +64,9 @@ pub fn sleep(duration: Duration) -> SyscallResult<()> {
 
 #[macro_export]
 /// Sets the entry point for the program.
+///
+/// The target function must have the signature:
+/// `fn(&beskar_lib::ThreadStartBlock)`.
 macro_rules! entry_point {
     ($path:path) => {
         #[macro_use]
@@ -73,9 +76,12 @@ macro_rules! entry_point {
         /// # Safety
         ///
         /// Do not call this function.
-        unsafe extern "C" fn __program_entry() {
+        unsafe extern "C" fn __program_entry(start_block: *const $crate::ThreadStartBlock) -> ! {
             $crate::__init();
-            ($path)();
+
+            let start_block = unsafe { &*start_block };
+            ($path)(start_block);
+
             $crate::exit($crate::ExitCode::Success);
         }
     };

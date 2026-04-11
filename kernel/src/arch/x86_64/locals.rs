@@ -1,7 +1,6 @@
-use crate::process::scheduler::thread::Tls;
 use alloc::boxed::Box;
 use beskar_core::arch::VirtAddr;
-use beskar_hal::registers::{FS, GS};
+use beskar_hal::registers::GS;
 use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use hyperdrive::{
     locks::mcs::{MUMcsLock, McsLock},
@@ -131,10 +130,4 @@ pub fn load_locals() -> &'static CoreLocalsInfo {
     // The GS register is set to point to CoreLocalsInfo (via store_locals).
     // The self_ptr field is set to point to the CoreLocalsInfo itself during init.
     unsafe { &*GS::read_ptr(core::mem::offset_of!(CoreLocalsInfo, self_ptr)) }
-}
-
-#[inline]
-/// Store the thread's local info.
-pub fn store_thread_locals(tls: Tls) {
-    unsafe { FS::write_base(tls.addr()) };
 }

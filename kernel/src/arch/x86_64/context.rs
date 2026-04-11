@@ -95,8 +95,9 @@ pub struct ThreadRegisters {
 impl ThreadRegisters {
     #[must_use]
     #[inline]
-    pub fn new(entry: extern "C" fn() -> !, rbp: *mut u8) -> Self {
+    pub fn new(entry: extern "C" fn(usize) -> !, arg0: usize, rbp: *mut u8) -> Self {
         let rip = u64::try_from(entry as usize).unwrap();
+        let rdi = u64::try_from(arg0).unwrap();
         let rbp = u64::try_from(rbp as usize).unwrap();
         let rflags = Rflags::IF;
         Self {
@@ -108,7 +109,7 @@ impl ThreadRegisters {
             r10: 0,
             r9: 0,
             r8: 0,
-            rdi: 0,
+            rdi,
             rsi: 0,
             rbp,
             rbx: 0,

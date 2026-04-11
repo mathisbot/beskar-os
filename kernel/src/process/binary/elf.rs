@@ -16,6 +16,8 @@ pub fn load(input: &[u8]) -> BinaryResult<LoadedBinary> {
         .map(|bin| LoadedBinary {
             entry_point: bin.entry_point,
             tls_template: bin.tls_template.map(Into::into),
+            image_size: bin.image_size,
+            base_address: bin.base_address,
         })
         .map_err(|_| beskar_core::process::binary::LoadError::InvalidBinary)
 }

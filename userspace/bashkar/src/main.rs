@@ -6,7 +6,7 @@ use beskar_lib::{io::keyboard, time::now};
 
 beskar_lib::entry_point!(main);
 
-fn main() {
+fn main(_start: &beskar_lib::ThreadStartBlock) {
     const IDLE_THRESHOLD: Duration = Duration::from_millis(200);
 
     let mut shell = bashkar::shell::Shell::new();

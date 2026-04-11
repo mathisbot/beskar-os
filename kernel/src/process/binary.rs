@@ -1,5 +1,6 @@
 mod elf;
 
+use beskar_core::process::ThreadStartBlock;
 use beskar_core::{arch::VirtAddr, process::binary::BinaryResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,15 +35,17 @@ impl<'a> Binary<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct LoadedBinary {
-    entry_point: extern "C" fn(),
+    entry_point: extern "C" fn(*const ThreadStartBlock),
     tls_template: Option<TlsTemplate>,
+    image_size: u64,
+    base_address: VirtAddr,
     // TODO: Add information about the binary, such as frames, to impl `Drop`
 }
 
 impl LoadedBinary {
     #[must_use]
     #[inline]
-    pub const fn entry_point(&self) -> extern "C" fn() {
+    pub const fn entry_point(&self) -> extern "C" fn(*const ThreadStartBlock) {
         self.entry_point
     }
 
@@ -50,6 +53,18 @@ impl LoadedBinary {
     #[inline]
     pub const fn tls_template(&self) -> Option<TlsTemplate> {
         self.tls_template
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn image_size(&self) -> u64 {
+        self.image_size
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn base_address(&self) -> VirtAddr {
+        self.base_address
     }
 }
 

@@ -1,9 +1,22 @@
-use crate::time::{Duration, Instant};
+use crate::{
+    arch::VirtAddr,
+    time::{Duration, Instant},
+};
 use core::sync::atomic::{AtomicU64, Ordering};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 pub mod binary;
 pub mod sync;
+
+/// Startup block passed to every userspace entry point in RDI.
+///
+/// This is a stable C ABI contract between the kernel and userspace runtime.
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct ThreadStartBlock {
+    /// The base address of the loaded binary in memory.
+    pub start: VirtAddr,
+}
 
 /// A token that identifies a sleepable event.
 ///

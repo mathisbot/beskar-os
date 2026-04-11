@@ -11,7 +11,7 @@ use kernel::{
         Process,
         scheduler::{
             self, Priority,
-            thread::{Thread, user_trampoline},
+            thread::{Thread, start_user_process},
         },
     },
     storage::vfs,
@@ -39,12 +39,10 @@ fn kmain() -> ! {
             beskar_hal::process::Kind::Driver,
             None,
         ));
-        scheduler::spawn_thread(alloc::boxed::Box::new(Thread::new(
-            driver_proc,
-            Priority::Low,
-            alloc::vec![0; 1024 * 128],
-            kernel::drivers::init,
-        )));
+        Thread::builder(driver_proc, kernel::drivers::init)
+            .priority(Priority::Normal)
+            .stack_heap(alloc::vec![0; 1024 * 128])
+            .spawn();
 
         if let Some(ramdisk) = kernel::boot::ramdisk() {
             let ramfs = InMemoryFS::new(ramdisk).unwrap();
@@ -62,12 +60,10 @@ fn kmain() -> ! {
                     beskar_hal::process::Kind::User,
                     Some(full_path),
                 ));
-                scheduler::spawn_thread(alloc::boxed::Box::new(Thread::new(
-                    user_proc,
-                    Priority::Realtime,
-                    alloc::vec![0; 1024*64],
-                    user_trampoline,
-                )));
+                Thread::builder_with_arg(user_proc, start_user_process, 64 * 1024)
+                    .priority(Priority::Realtime)
+                    .stack_heap(alloc::vec![0; 1024 * 16])
+                    .spawn();
             }
         }
     });

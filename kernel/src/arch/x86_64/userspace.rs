@@ -1,3 +1,5 @@
+use beskar_core::process::ThreadStartBlock;
+
 /// Enter usermode.
 ///
 /// # Safety
@@ -7,11 +9,17 @@
 /// Also, as a matter of safety, interrupts should be enabled before calling this function,
 /// otherwise the CPU will be stuck in usermode!
 #[unsafe(naked)]
-pub unsafe extern "C" fn enter_usermode(entry: extern "C" fn(), rsp: *mut u8) -> ! {
+pub unsafe extern "C" fn enter_usermode(
+    entry: extern "C" fn(*const ThreadStartBlock),
+    rsp: *mut u8,
+    start_block: *const ThreadStartBlock,
+) -> ! {
     // RDI contains a pointer to the entry point
     // RSI contains a pointer to the stack pointer
+    // RDX contains a pointer to `ThreadStartBlock`
     core::arch::naked_asm!(
         "mov rcx, rdi",
+        "mov rdi, rdx",
         "pushfq",
         "pop r11",
         "mov rsp, rsi",
