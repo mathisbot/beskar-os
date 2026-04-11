@@ -12,7 +12,7 @@ unsafe extern "C" {
 
 beskar_lib::entry_point!(main);
 
-fn main() {
+fn main(_start: &beskar_lib::ThreadStartBlock) {
     let ex_name = c"doom";
     let argv = [ex_name.as_ptr()];
 

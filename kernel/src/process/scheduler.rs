@@ -7,7 +7,7 @@ use crate::locals;
 use ::wait::{WakeCause, WakeResult};
 use alloc::{boxed::Box, sync::Arc};
 use beskar_core::{arch::VirtAddr, process::SleepHandle};
-use beskar_hal::instructions::without_interrupts;
+use beskar_hal::{instructions::without_interrupts, paging::page_table::Flags};
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use hyperdrive::{call_once, locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
@@ -52,24 +52,20 @@ pub unsafe fn init(kernel_thread: thread::Thread) {
     locals!().scheduler().call_once(|| scheduler);
 
     for _ in 0..IDLE_THREADS_PER_CORE {
-        let local_idle_thread = Thread::new(
-            kernel_process.clone(),
-            Priority::Low,
-            alloc::vec![0; 8 * 1024],
-            idle,
-        );
-        spawn_thread(Box::new(local_idle_thread));
+        Thread::builder(kernel_process.clone(), idle)
+            .priority(Priority::Idle)
+            .stack_pool(4096, Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE)
+            .spawn();
     }
 
     call_once!({
-        let clean_thread = Thread::new(
-            kernel_process,
-            priority::Priority::Low,
-            alloc::vec![0; 1024 * 128],
-            guard_thread,
-        );
-
-        spawn_thread(Box::new(clean_thread));
+        Thread::builder(kernel_process, guard_thread)
+            .priority(priority::Priority::Low)
+            .stack_pool(
+                1024 * 32,
+                Flags::PRESENT | Flags::WRITABLE | Flags::NO_EXECUTE,
+            )
+            .spawn();
     });
 }
 
@@ -184,9 +180,6 @@ impl Scheduler {
                 }
 
                 let cr3 = thread.process().address_space().cr3_raw();
-                if let Some(tls) = thread.tls() {
-                    crate::arch::locals::store_thread_locals(tls);
-                }
 
                 crate::arch::fpu::on_thread_switch(&mut old_thread);
 

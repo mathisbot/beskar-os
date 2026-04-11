@@ -297,6 +297,30 @@ pub mod kernel {
 
         Some(page_range)
     }
+
+    /// Unmap and free a kernel region.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the pages are no longer in use.
+    pub unsafe fn unmap_free<S: MemSize>(page_range: PageRangeInclusive<S>)
+    where
+        PageTable<'static>: Mapper<S, Flags>,
+    {
+        assert!(check_kernel(page_range.start()));
+        // Safety: The page range is within the kernel range.
+        unsafe {
+            with_kernel_pt(|page_table| {
+                for page in page_range {
+                    if let Ok((frame, flush)) = page_table.unmap(page) {
+                        flush.flush();
+                        free_frame(frame);
+                    }
+                }
+            });
+        }
+        free_pages(page_range);
+    }
 }
 
 pub mod process_local {

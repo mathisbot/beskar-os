@@ -1,6 +1,7 @@
 //! ELF segment structures and metadata.
 
 use beskar_core::arch::VirtAddr;
+use beskar_core::process::ThreadStartBlock;
 
 /// Template for Thread-Local Storage initialization
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,9 +18,11 @@ pub struct TlsTemplate {
 #[derive(Debug, Clone)]
 pub struct LoadedBinary {
     /// Entry point function pointer
-    pub entry_point: extern "C" fn(),
+    pub entry_point: extern "C" fn(*const ThreadStartBlock),
     /// TLS template (if present)
     pub tls_template: Option<TlsTemplate>,
     /// Image size in memory
     pub image_size: u64,
+    /// Base address where the binary is loaded
+    pub base_address: VirtAddr,
 }

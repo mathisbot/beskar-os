@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 beskar-core = { workspace = true }
-hashbrown = "0.16.1"
+hashbrown = "0.17.0"
 hyperdrive = { workspace = true }

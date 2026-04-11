@@ -6,7 +6,7 @@ use crate::{
     mapper::{MappedRegion, MemoryMapper, PageFlags},
     segments::{LoadedBinary, TlsTemplate},
 };
-use beskar_core::{arch::VirtAddr, mem::ranges::MemoryRange};
+use beskar_core::{arch::VirtAddr, mem::ranges::MemoryRange, process::ThreadStartBlock};
 use xmas_elf::{
     ElfFile, P64,
     dynamic::Tag,
@@ -67,13 +67,16 @@ impl ElfLoader {
             let entry_vaddr = elf.header.pt2.entry_point();
             let runtime_addr = region.virt_addr + (entry_vaddr - addr_range.start());
             let entry_ptr = runtime_addr.as_ptr();
-            unsafe { core::mem::transmute::<*const (), extern "C" fn()>(entry_ptr) }
+            unsafe {
+                core::mem::transmute::<*const (), extern "C" fn(*const ThreadStartBlock)>(entry_ptr)
+            }
         };
 
         Ok(LoadedBinary {
             entry_point,
             tls_template,
             image_size: addr_range.size(),
+            base_address: region.virt_addr,
         })
     }
 
