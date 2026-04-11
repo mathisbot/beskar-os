@@ -195,12 +195,12 @@ pub mod kernel {
                         .alloc::<S>()
                         .ok_or(MappingError::FrameAllocationFailed)?;
 
-                    let map_res = page_table
-                        .map(page, frame, flags | Flags::PRESENT, frame_allocator)
-                        .map(|flush| flush.flush());
+                    let map_res =
+                        page_table.map(page, frame, flags | Flags::PRESENT, frame_allocator);
 
                     match map_res {
-                        Ok(()) => {
+                        Ok(flush) => {
+                            flush.flush();
                             mapped_end = Some(page);
                         }
                         Err(err) => {
@@ -265,12 +265,12 @@ pub mod kernel {
                         .alloc::<M4KiB>()
                         .ok_or(MappingError::FrameAllocationFailed)?;
 
-                    let map_res = page_table
-                        .map(page, frame, flags | Flags::PRESENT, frame_allocator)
-                        .map(|flush| flush.flush());
+                    let map_res =
+                        page_table.map(page, frame, flags | Flags::PRESENT, frame_allocator);
 
                     match map_res {
-                        Ok(()) => {
+                        Ok(flush) => {
+                            flush.flush();
                             mapped_end = Some(page);
                         }
                         Err(err) => {
@@ -370,12 +370,11 @@ pub mod process_local {
                         .alloc::<S>()
                         .ok_or(MappingError::FrameAllocationFailed)?;
 
-                    let map_res = pt
-                        .map(page, frame, flags | Flags::PRESENT, frame_allocator)
-                        .map(|flush| flush.flush());
+                    let map_res = pt.map(page, frame, flags | Flags::PRESENT, frame_allocator);
 
                     match map_res {
-                        Ok(()) => {
+                        Ok(flush) => {
+                            flush.flush();
                             mapped_end = Some(page);
                         }
                         Err(err) => {

@@ -366,13 +366,15 @@ impl IndexMut<usize> for PageTable<'_> {
 }
 
 impl Mapper<M4KiB, Flags> for PageTable<'_> {
+    type Flush = super::TlbFlush<M4KiB>;
+
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<M4KiB>,
         frame: Frame<M4KiB>,
         flags: Flags,
         fralloc: &mut A,
-    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M4KiB>, MappingError<M4KiB>> {
+    ) -> Result<Self::Flush, MappingError<M4KiB>> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
@@ -404,13 +406,7 @@ impl Mapper<M4KiB, Flags> for PageTable<'_> {
     fn unmap(
         &mut self,
         page: Page<M4KiB>,
-    ) -> Result<
-        (
-            Frame<M4KiB>,
-            impl beskar_core::arch::paging::CacheFlush<M4KiB>,
-        ),
-        MappingError<M4KiB>,
-    > {
+    ) -> Result<(Frame<M4KiB>, Self::Flush), MappingError<M4KiB>> {
         let p4_entry = &mut self[usize::from(page.p4_index())];
         let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
@@ -431,7 +427,7 @@ impl Mapper<M4KiB, Flags> for PageTable<'_> {
         &mut self,
         page: Page<M4KiB>,
         flags: Flags,
-    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M4KiB>, MappingError<M4KiB>> {
+    ) -> Result<Self::Flush, MappingError<M4KiB>> {
         let p4_entry = &mut self[usize::from(page.p4_index())];
         let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
@@ -465,13 +461,15 @@ impl Mapper<M4KiB, Flags> for PageTable<'_> {
 }
 
 impl Mapper<M2MiB, Flags> for PageTable<'_> {
+    type Flush = super::TlbFlush<M2MiB>;
+
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<M2MiB>,
         frame: Frame<M2MiB>,
         flags: Flags,
         fralloc: &mut A,
-    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M2MiB>, MappingError<M2MiB>> {
+    ) -> Result<Self::Flush, MappingError<M2MiB>> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
@@ -501,13 +499,7 @@ impl Mapper<M2MiB, Flags> for PageTable<'_> {
     fn unmap(
         &mut self,
         page: Page<M2MiB>,
-    ) -> Result<
-        (
-            Frame<M2MiB>,
-            impl beskar_core::arch::paging::CacheFlush<M2MiB>,
-        ),
-        MappingError<M2MiB>,
-    > {
+    ) -> Result<(Frame<M2MiB>, Self::Flush), MappingError<M2MiB>> {
         let p4_entry = &mut self[usize::from(page.p4_index())];
         let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
@@ -530,7 +522,7 @@ impl Mapper<M2MiB, Flags> for PageTable<'_> {
         &mut self,
         page: Page<M2MiB>,
         flags: Flags,
-    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M2MiB>, MappingError<M2MiB>> {
+    ) -> Result<Self::Flush, MappingError<M2MiB>> {
         let p4_entry = &mut self[usize::from(page.p4_index())];
         let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
@@ -563,13 +555,15 @@ impl Mapper<M2MiB, Flags> for PageTable<'_> {
 }
 
 impl Mapper<M1GiB, Flags> for PageTable<'_> {
+    type Flush = super::TlbFlush<M1GiB>;
+
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<M1GiB>,
         frame: Frame<M1GiB>,
         flags: Flags,
         fralloc: &mut A,
-    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M1GiB>, MappingError<M1GiB>> {
+    ) -> Result<Self::Flush, MappingError<M1GiB>> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
@@ -597,13 +591,7 @@ impl Mapper<M1GiB, Flags> for PageTable<'_> {
     fn unmap(
         &mut self,
         page: Page<M1GiB>,
-    ) -> Result<
-        (
-            Frame<M1GiB>,
-            impl beskar_core::arch::paging::CacheFlush<M1GiB>,
-        ),
-        MappingError<M1GiB>,
-    > {
+    ) -> Result<(Frame<M1GiB>, Self::Flush), MappingError<M1GiB>> {
         let p4_entry = &mut self[usize::from(page.p4_index())];
         let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
@@ -624,7 +612,7 @@ impl Mapper<M1GiB, Flags> for PageTable<'_> {
         &mut self,
         page: Page<M1GiB>,
         flags: Flags,
-    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M1GiB>, MappingError<M1GiB>> {
+    ) -> Result<Self::Flush, MappingError<M1GiB>> {
         let p4_entry = &mut self[usize::from(page.p4_index())];
         let p3 = p4_entry.next_mut()?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
@@ -769,13 +757,15 @@ impl<'t> OffsetPageTable<'t> {
 }
 
 impl Mapper<M4KiB, Flags> for OffsetPageTable<'_> {
+    type Flush = super::TlbFlush<M4KiB>;
+
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<M4KiB>,
         frame: Frame<M4KiB>,
         flags: Flags,
         allocator: &mut A,
-    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M4KiB>, MappingError<M4KiB>> {
+    ) -> Result<Self::Flush, MappingError<M4KiB>> {
         let parent_flags = if flags.contains(Flags::USER_ACCESSIBLE) {
             Flags::PARENT | Flags::USER_ACCESSIBLE
         } else {
@@ -821,13 +811,7 @@ impl Mapper<M4KiB, Flags> for OffsetPageTable<'_> {
     fn unmap(
         &mut self,
         page: Page<M4KiB>,
-    ) -> Result<
-        (
-            Frame<M4KiB>,
-            impl beskar_core::arch::paging::CacheFlush<M4KiB>,
-        ),
-        MappingError<M4KiB>,
-    > {
+    ) -> Result<(Frame<M4KiB>, Self::Flush), MappingError<M4KiB>> {
         let p4_entry = &mut self.entries[usize::from(page.p4_index())];
         let p3 = Self::next_table_mut(self.offset, p4_entry).ok_or(MappingError::NotMapped)?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
@@ -848,7 +832,7 @@ impl Mapper<M4KiB, Flags> for OffsetPageTable<'_> {
         &mut self,
         page: Page<M4KiB>,
         flags: Flags,
-    ) -> Result<impl beskar_core::arch::paging::CacheFlush<M4KiB>, MappingError<M4KiB>> {
+    ) -> Result<Self::Flush, MappingError<M4KiB>> {
         let p4_entry = &mut self.entries[usize::from(page.p4_index())];
         let p3 = Self::next_table_mut(self.offset, p4_entry).ok_or(MappingError::NotMapped)?;
         let p3_entry = &mut p3[usize::from(page.p3_index())];
