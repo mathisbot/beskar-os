@@ -59,19 +59,17 @@ pub trait CacheFlush<S: MemSize> {
 }
 
 pub trait Mapper<S: MemSize, F: Flags> {
+    type Flush: CacheFlush<S>;
+
     fn map<A: FrameAllocator<M4KiB>>(
         &mut self,
         page: Page<S>,
         frame: Frame<S>,
         flags: F,
         fralloc: &mut A,
-    ) -> Result<impl CacheFlush<S>, MappingError<S>>;
-    fn unmap(&mut self, page: Page<S>) -> Result<(Frame<S>, impl CacheFlush<S>), MappingError<S>>;
-    fn update_flags(
-        &mut self,
-        page: Page<S>,
-        flags: F,
-    ) -> Result<impl CacheFlush<S>, MappingError<S>>;
+    ) -> Result<Self::Flush, MappingError<S>>;
+    fn unmap(&mut self, page: Page<S>) -> Result<(Frame<S>, Self::Flush), MappingError<S>>;
+    fn update_flags(&mut self, page: Page<S>, flags: F) -> Result<Self::Flush, MappingError<S>>;
     fn translate(&self, page: Page<S>) -> Option<(Frame<S>, F)>;
 }
 
