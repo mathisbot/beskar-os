@@ -27,7 +27,8 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
 - Drivers
     - [ ] ACPI
         - [ ] DSDT (partial)
-            - [ ] AML
+            - [x] Minimal AML (`_S5`)
+            - [ ] Full AML
         - [ ] FADT (partial)
         - [x] HPET
         - [x] MADT
