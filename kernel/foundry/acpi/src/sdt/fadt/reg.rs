@@ -20,7 +20,7 @@ pub struct Pm1ControlRegister {
 #[derive(Debug, Clone, Copy)]
 /// ACPI reset port and value pair.
 pub struct ResetRegister {
-    port: u16,
+    register: GenericAddress,
     value: u8,
 }
 
@@ -51,19 +51,18 @@ impl ResetRegister {
                 && (register.access_size() == AccessSize::Byte
                     || register.access_size() == AccessSize::Undefined)
         );
-        let port = u16::try_from(register.address()).unwrap();
-        Self { port, value }
+        Self { register, value }
     }
 
     #[must_use]
     #[inline]
-    pub const fn reset_port(self) -> u16 {
-        self.port
+    pub const fn register(&self) -> GenericAddress {
+        self.register
     }
 
     #[must_use]
     #[inline]
-    pub const fn value(self) -> u8 {
+    pub const fn value(&self) -> u8 {
         self.value
     }
 }
