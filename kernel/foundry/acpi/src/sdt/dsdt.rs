@@ -3,22 +3,28 @@
 //! This module heaviliy relies on AML parsing and validation.
 //! See <https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#aml-encoding>
 //! for more information.
-#![allow(dead_code, reason = "WIP")]
 
-use super::super::aml::parse_aml;
+use super::super::aml::Aml;
 use super::{Sdt, SdtHeader};
 
 super::impl_sdt!(Dsdt);
-
-#[derive(Debug, Copy, Clone)]
-struct DefinitionBlock;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 struct RawDsdt {
     header: SdtHeader,
     /// Bytes of AML code.
-    def_block: DefinitionBlock,
+    def_block: [u8; 0],
+}
+
+impl RawDsdt {
+    #[must_use]
+    #[inline]
+    pub fn aml_bytes(&self) -> &[u8] {
+        let data = self.def_block.as_ptr();
+        let len = usize::try_from(self.header.length).unwrap() - size_of::<SdtHeader>();
+        unsafe { core::slice::from_raw_parts(data, len) }
+    }
 }
 
 impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Dsdt<M> {
@@ -30,18 +36,25 @@ impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Dsdt<M> {
             "Invalid DSDT signature"
         );
 
-        let aml_slice = {
-            let aml_start = self.start_vaddr + u64::try_from(size_of::<SdtHeader>()).unwrap();
-            let aml_bytes = usize::try_from(self.length()).unwrap() - size_of::<SdtHeader>();
-            // Safety: Assuming data coming from DSDT is valid, the pointer is valid and the length is correct
-            // (as in: there are `len * sizeof::<u8>()` bytes valid for read).
-            unsafe { core::slice::from_raw_parts(aml_start.as_ptr::<u8>(), aml_bytes) }
+        let raw = {
+            let raw_ptr = self.start_vaddr.as_ptr::<RawDsdt>();
+            unsafe { &*raw_ptr }
         };
 
-        let _res = parse_aml(aml_slice);
+        let aml = Aml::parse(raw.aml_bytes());
 
-        ParsedDsdt {}
+        ParsedDsdt { aml }
     }
 }
 
-pub struct ParsedDsdt {}
+pub struct ParsedDsdt {
+    aml: Option<Aml>,
+}
+
+impl ParsedDsdt {
+    #[must_use]
+    #[inline]
+    pub const fn aml(&self) -> Option<&Aml> {
+        self.aml.as_ref()
+    }
+}

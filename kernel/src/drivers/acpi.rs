@@ -10,3 +10,7 @@ pub fn init(rsdp_paddr: PhysAddr) {
     ACPI.call_once(|| acpi);
     crate::debug!("ACPI initialized");
 }
+
+pub fn acpi() -> &'static Acpi<PhysicalMapping<M4KiB>> {
+    ACPI.get().expect("ACPI not initialized")
+}

@@ -1,4 +1,4 @@
-#![expect(dead_code, unreachable_code, reason = "Incomplete implementation")]
+#![expect(dead_code, reason = "Some ACPI fields are not used yet")]
 use crate::sdt::{AccessSize, AddressSpace, GenericAddress};
 use beskar_core::static_assert;
 
@@ -17,6 +17,13 @@ pub struct Pm1ControlRegister {
     pm1b: Option<GenericAddress>,
 }
 
+#[derive(Debug, Clone, Copy)]
+/// ACPI reset port and value pair.
+pub struct ResetRegister {
+    port: u16,
+    value: u8,
+}
+
 /// A value that can be written to the PM1 Control Register.
 pub struct Pm1ControlValue {
     /// The raw value
@@ -32,6 +39,34 @@ pub struct Pm1ControlValue {
     raw: u16,
 }
 static_assert!(size_of::<Pm1ControlValue>() == 2);
+
+impl ResetRegister {
+    #[must_use]
+    pub fn new(register: GenericAddress, value: u8) -> Self {
+        debug_assert!(
+            (register.address_space() == AddressSpace::SystemIO
+                || register.address_space() == AddressSpace::SystemMemory)
+                && register.bit_width() == 8
+                && register.bit_offset() == 0
+                && (register.access_size() == AccessSize::Byte
+                    || register.access_size() == AccessSize::Undefined)
+        );
+        let port = u16::try_from(register.address()).unwrap();
+        Self { port, value }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn reset_port(self) -> u16 {
+        self.port
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn value(self) -> u8 {
+        self.value
+    }
+}
 
 impl Pm1ControlRegister {
     #[must_use]
@@ -125,49 +160,24 @@ impl Pm1ControlRegister {
         }
     }
 
-    #[inline]
-    /// Put the CPU to sleep using the selected sleep type.
-    pub fn sleep(&self, sleep_type: SleepType) {
-        match sleep_type {
-            SleepType::On => {}
-            SleepType::Shutdown => {
-                /// What a very nice name!
-                const SLEEP_MASK: u16 = 0b0011_1100_0000_0000;
+    /// Triggers ACPI S5 shutdown through PM1 control registers.
+    pub fn shutdown(&self, sleep_type_a: u8, sleep_type_b: u8) {
+        // What a very nice name!
+        const SLEEP_MASK: u16 = 0b0011_1100_0000_0000;
 
-                todo!("Call _PTS from DSDT");
+        assert!(
+            sleep_type_a <= 0b111 && sleep_type_b <= 0b111,
+            "ACPI SLP_TYPx must fit in 3 bits"
+        );
 
-                let prev_value = self.read_pm1a();
-                let prev_masked = prev_value & !SLEEP_MASK;
+        let prev_pm1a = self.read_pm1a() & !SLEEP_MASK;
+        let pm1a_value = prev_pm1a | (u16::from(sleep_type_a) << 10) | (1 << 13);
+        self.write_pm1a(pm1a_value);
 
-                todo!("Find _S5 from DSDT");
-                // let s5: u16 = todo!("Find _S5 from DSDT");
-                // assert!(s5 <= 0b111, "_S5 is unexpectedly not 3-bit long");
-
-                // let new_value = prev_masked
-                //     | (s5 << 10) // SLP_TYPx
-                //     | (1 << 13); // SLP_EN
-
-                // // Perform the shutdown
-                // self.write_pm1a(new_value);
-
-                // unreachable!("System did not shutdown")
-            }
-            _ => {
-                todo!("Other sleep states")
-            }
+        if self.pm1b.is_some() {
+            let prev_pm1b = self.read_pm1b() & !SLEEP_MASK;
+            let pm1b_value = prev_pm1b | (u16::from(sleep_type_b) << 10) | (1 << 13);
+            self.write_pm1b(pm1b_value);
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum SleepType {
-    /// The current running mode.
-    On,
-    /// The CPU enters a low power state.
-    Sleep,
-    /// The CPU and RAM are powered off.
-    Hibernate,
-    /// The whole system is powered off.
-    Shutdown,
 }

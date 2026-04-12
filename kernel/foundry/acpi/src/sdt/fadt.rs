@@ -208,10 +208,31 @@ impl<M: driver_api::PhysicalMapper<beskar_core::arch::paging::M4KiB>> Fadt<M> {
             reg::Pm1ControlRegister::new(pm1a_cnt_blk, pm1b_cnt_blk)
         };
 
+        let reset_reg = {
+            const FADT_FLAG_RESET_REG_SUPPORTED: u32 = 1 << 10;
+
+            let reset_reg_supported = minimal_fadt.flags & FADT_FLAG_RESET_REG_SUPPORTED != 0;
+            let reset_reg = GenericAddress::from(minimal_fadt.reset_reg);
+            let reset_reg_is_valid = (reset_reg.address_space() == super::AddressSpace::SystemIO
+                || reset_reg.address_space() == super::AddressSpace::SystemMemory)
+                && reset_reg.address() != 0
+                && reset_reg.bit_width() == 8
+                && reset_reg.bit_offset() == 0
+                && (reset_reg.access_size() == super::AccessSize::Byte
+                    || reset_reg.access_size() == super::AccessSize::Undefined);
+
+            if reset_reg_supported && reset_reg_is_valid {
+                Some(reg::ResetRegister::new(reset_reg, minimal_fadt.reset_value))
+            } else {
+                None
+            }
+        };
+
         ParsedFadt {
             ps2_keyboard,
             dsdt,
             pm1_cnt,
+            reset_reg,
         }
     }
 }
@@ -220,6 +241,7 @@ pub struct ParsedFadt {
     ps2_keyboard: bool,
     dsdt: PhysAddr,
     pm1_cnt: reg::Pm1ControlRegister,
+    reset_reg: Option<reg::ResetRegister>,
 }
 
 impl ParsedFadt {
@@ -239,5 +261,11 @@ impl ParsedFadt {
     #[inline]
     pub const fn pm1_cnt(&self) -> &reg::Pm1ControlRegister {
         &self.pm1_cnt
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn reset_reg(&self) -> Option<&reg::ResetRegister> {
+        self.reset_reg.as_ref()
     }
 }

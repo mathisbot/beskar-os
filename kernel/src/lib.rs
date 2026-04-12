@@ -16,6 +16,7 @@ pub mod drivers;
 pub mod locals;
 mod mem;
 pub mod network;
+pub mod power;
 pub mod process;
 pub mod storage;
 mod syscall;
