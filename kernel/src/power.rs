@@ -1,4 +1,5 @@
 use crate::drivers::acpi;
+use ::acpi::sdt::AddressSpace;
 use beskar_hal::port;
 
 fn acpi_shutdown() {
@@ -22,12 +23,21 @@ fn acpi_reboot() {
         return;
     };
 
-    let reset_port = reset_reg.reset_port();
-    let port = port::Port::<u8, port::WriteOnly>::new(reset_port);
+    let address = reset_reg.register();
+    match address.address_space() {
+        AddressSpace::SystemIO => {
+            let reset_port = u16::try_from(address.address()).unwrap();
 
-    let reset_value = reset_reg.value();
+            let port = port::Port::<u8, port::WriteOnly>::new(reset_port);
+            let reset_value = reset_reg.value();
+            unsafe { port.write(reset_value) };
+        }
+        AddressSpace::SystemMemory => {
+            // TODO: Implement memory-mapped reboot
+        }
+        _ => unreachable!(),
+    }
 
-    unsafe { port.write(reset_value) };
     // Unreachable
 }
 
