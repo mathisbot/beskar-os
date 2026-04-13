@@ -279,7 +279,7 @@ impl<H: VfsHelper> Vfs<H> {
         self.path_to_fs(path, |fs, rel_path| fs.delete(rel_path))
     }
 
-    /// Deletes a file at the given path.
+    /// Checks if a file exists at the given path.
     pub fn exists(&self, path: Path) -> FileResult<bool> {
         self.path_to_fs(path, |fs, rel_path| fs.exists(rel_path))
     }
@@ -300,10 +300,12 @@ impl<H: VfsHelper> Vfs<H> {
         })
     }
 
+    /// Retrieves metadata for a file at the given path.
     pub fn metadata(&self, path: Path) -> FileResult<crate::fs::FileMetadata> {
         self.path_to_fs(path, |fs, rel_path| fs.metadata(rel_path))
     }
 
+    /// Reads the directory at the given path and returns a list of entries.
     pub fn read_dir(&self, path: Path) -> FileResult<Vec<PathBuf>> {
         self.path_to_fs(path, |fs, rel_path| fs.read_dir(rel_path))
     }
