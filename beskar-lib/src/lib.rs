@@ -6,16 +6,11 @@
 extern crate alloc;
 
 pub use beskar_core::{process::ThreadStartBlock, syscall::ExitCode};
-use beskar_core::{
-    process::{SleepHandle, WaitResult},
-    time::Duration,
-};
-use core::sync::atomic::{AtomicBool, Ordering};
 use hyperdrive::call_once;
 
 mod arch;
+pub use arch::{debug_break, debug_break_value};
 pub mod error;
-use error::{SyscallError, SyscallResult};
 pub mod io;
 pub mod mem;
 pub mod prelude;
@@ -23,19 +18,16 @@ pub mod rand;
 pub mod surface;
 pub mod sync;
 mod sys;
+pub mod thread;
 pub mod time;
-
-static PANIC_NESTED: AtomicBool = AtomicBool::new(false);
-
-/// Returns `true` if the current thread is already panicking (i.e., if we're in a nested panic).
-pub fn panicking() -> bool {
-    PANIC_NESTED.load(Ordering::Acquire)
-}
 
 #[panic_handler]
 fn panic(info: &::core::panic::PanicInfo) -> ! {
-    if !panicking() {
-        PANIC_NESTED.store(true, Ordering::Release);
+    use core::sync::atomic::{AtomicBool, Ordering};
+
+    // FIXME: This is process-wide!
+    static PANICKED: AtomicBool = AtomicBool::new(false);
+    if !PANICKED.swap(true, Ordering::SeqCst) {
         println!("Panic occurred: {}", info);
     }
 
@@ -46,20 +38,6 @@ fn panic(info: &::core::panic::PanicInfo) -> ! {
 /// Exit the program with the given exit code.
 pub fn exit(code: ExitCode) -> ! {
     sys::sc_exit(code)
-}
-
-#[inline]
-/// Sleep for **at least** the given duration.
-///
-/// # Errors
-///
-/// Returns an error if the syscall fails.
-pub fn sleep(duration: Duration) -> SyscallResult<()> {
-    let code = sys::sc_wait_on_event(SleepHandle::NONE, duration.total_micros());
-    match code {
-        WaitResult::Timeout => Ok(()),
-        _ => Err(SyscallError::new(-1)),
-    }
 }
 
 #[macro_export]
@@ -96,26 +74,4 @@ pub fn __init() {
         // Time
         time::init();
     });
-}
-
-#[inline]
-/// In debug builds, triggers a breakpoint interrupt (`int3`).
-pub fn debug_break() {
-    if cfg!(debug_assertions) {
-        unsafe {
-            core::arch::asm!("int3", options(nomem, nostack, preserves_flags));
-        }
-    }
-}
-
-#[inline]
-/// In debug builds, triggers a breakpoint interrupt (`int3`).
-///
-/// The provided value `x` is placed in the `RAX` register before triggering the interrupt.
-pub fn debug_break_value(x: u64) {
-    if cfg!(debug_assertions) {
-        unsafe {
-            core::arch::asm!("int3", in("rax") x, options(nomem, nostack, preserves_flags));
-        }
-    }
 }

@@ -50,6 +50,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::SurfaceDirty => SyscallReturnValue::Code(sc_surface_dirty(args)),
         Syscall::SurfacePresent => SyscallReturnValue::Code(sc_surface_present(args)),
         Syscall::QueryConfig => SyscallReturnValue::Code(sc_query_config(args)),
+        Syscall::ThreadSpawn => SyscallReturnValue::ValueU(sc_thread_spawn(args)),
     }
 }
 
@@ -495,4 +496,34 @@ fn sc_query_config(args: &Arguments) -> SyscallExitCode {
 
         _ => SyscallExitCode::Failure,
     }
+}
+
+fn sc_thread_spawn(args: &Arguments) -> u64 {
+    use crate::process::scheduler::{self, thread};
+
+    let entry_point = args.one;
+
+    let entry_point = VirtAddr::try_new(entry_point).unwrap_or_default();
+    if !probe(entry_point, entry_point) {
+        return 0;
+    }
+
+    let start_fn = unsafe {
+        core::mem::transmute::<*const (), extern "C" fn(usize) -> !>(thread::start_user_thread as _)
+    };
+    let thread = thread::Thread::builder_with_arg(
+        scheduler::current_process(),
+        start_fn,
+        entry_point.as_u64().try_into().unwrap(),
+    )
+    .stack_heap(alloc::vec![0; 16 * 1024])
+    .priority(scheduler::Priority::Normal)
+    .build_boxed();
+
+    let tid = thread.id().as_u64();
+    debug_assert_ne!(tid, 0);
+
+    scheduler::spawn_thread(thread);
+
+    tid
 }
