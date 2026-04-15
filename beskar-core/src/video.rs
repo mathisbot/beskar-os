@@ -135,6 +135,12 @@ impl FramebufferConfig {
         Self { info, buffer }
     }
 
+    #[must_use]
+    #[inline]
+    pub const fn from_info(info: Info, buffer: VirtAddr) -> Self {
+        Self { info, buffer }
+    }
+
     /// Get the total size of the framebuffer in bytes
     #[must_use]
     #[inline]

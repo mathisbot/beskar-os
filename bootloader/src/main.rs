@@ -16,7 +16,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     {
         if let Some(location) = panic_info.location() {
             error!(
-                "Panic occured in file '{}' at line {}",
+                "Panic occurred in file '{}' at line {}",
                 location.file(),
                 location.line()
             );
@@ -39,18 +39,17 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         }
     }
 
-    // Check if runtime services are available (they sould be)
+    // Check if runtime services are available (they should be)
     let runtime_services_available = uefi::table::system_table_raw()
         .is_some_and(|system_table| !unsafe { system_table.as_ref() }.runtime_services.is_null());
 
     // If possible, gracefully shutdown.
-    // Otherwise, hang the system.
     if runtime_services_available {
         uefi::runtime::reset(uefi::runtime::ResetType::COLD, uefi::Status::ABORTED, None);
-    } else {
-        loop {
-            beskar_hal::instructions::halt();
-        }
+    }
+
+    loop {
+        beskar_hal::instructions::halt();
     }
 }
 

@@ -35,3 +35,9 @@ pub unsafe fn chg_ctx(
         )
     }
 }
+
+pub fn enable_cpu_features() {
+    use beskar_hal::registers::{Cr0, Efer};
+    unsafe { Efer::insert_flags(Efer::NO_EXECUTE_ENABLE) };
+    unsafe { Cr0::insert_flags(Cr0::WRITE_PROTECT) };
+}
