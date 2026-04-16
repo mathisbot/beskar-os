@@ -204,7 +204,8 @@ fn sc_read(args: &Arguments) -> i64 {
 
     let file_offset = usize::try_from(args.four).unwrap();
 
-    let res = crate::storage::vfs().read(file_handle, buffer, file_offset);
+    let pid = crate::process::scheduler::current_process().pid();
+    let res = crate::storage::vfs().read(pid.as_u64(), file_handle, buffer, file_offset);
     res.map_or(-1, |bytes_read| {
         i64::try_from(bytes_read).unwrap_or(i64::MAX)
     })
@@ -235,7 +236,8 @@ fn sc_write(args: &Arguments) -> i64 {
 
     let file_offset = usize::try_from(args.four).unwrap();
 
-    let res = crate::storage::vfs().write(file_handle, buffer, file_offset);
+    let pid = crate::process::scheduler::current_process().pid();
+    let res = crate::storage::vfs().write(pid.as_u64(), file_handle, buffer, file_offset);
     res.map_or(-1, |bytes_written| {
         i64::try_from(bytes_written).unwrap_or(i64::MAX)
     })
@@ -259,7 +261,8 @@ fn sc_open(args: &Arguments) -> i64 {
         return Handle::INVALID.id();
     };
 
-    let res = crate::storage::vfs().open(Path::from(path));
+    let pid = crate::process::scheduler::current_process().pid();
+    let res = crate::storage::vfs().open(pid.as_u64(), Path::from(path));
     res.map_or(-1, |handle| handle.id())
 }
 
@@ -274,7 +277,9 @@ fn sc_close(args: &Arguments) -> SyscallExitCode {
         // and the given value is positive.
         unsafe { ::storage::vfs::Handle::from_raw(raw) }
     };
-    let res = crate::storage::vfs().close(file_handle);
+
+    let pid = crate::process::scheduler::current_process().pid();
+    let res = crate::storage::vfs().close(pid.as_u64(), file_handle);
 
     match res {
         Ok(()) => SyscallExitCode::Success,

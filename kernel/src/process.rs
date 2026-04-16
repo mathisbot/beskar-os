@@ -147,7 +147,7 @@ impl Process {
 impl Drop for Process {
     fn drop(&mut self) {
         // Close all file descriptors
-        crate::storage::vfs().close_all_from_process(self.pid.as_u64());
+        let _ = crate::storage::vfs().close_all_from_process(self.pid.as_u64());
     }
 }
 

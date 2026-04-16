@@ -1,18 +1,12 @@
 use super::fs::{FileError, FileResult, FileSystem, PathBuf};
 use crate::fs::Path;
 use alloc::{boxed::Box, vec::Vec};
-use core::{
-    marker::PhantomData,
-    sync::atomic::{AtomicI64, Ordering},
-};
-use hashbrown::HashMap;
+use core::sync::atomic::{AtomicI64, Ordering};
+use hashbrown::hash_map::{Entry, HashMap};
 use hyperdrive::locks::rw::RwLock;
 
-pub trait VfsHelper {
-    #[must_use]
-    /// Returns the current process ID.
-    fn get_current_process_id() -> u64;
-}
+// FIXME: TOCTOU issues
+// This requires changing the architecture a lot, so it will wait.
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Handle {
@@ -25,14 +19,14 @@ impl Default for Handle {
     }
 }
 
-static HANDLE_COUNTER: AtomicI64 = AtomicI64::new(0);
-
 impl Handle {
     pub const INVALID: Self = Self { id: -1 };
 
     #[must_use]
     #[inline]
     pub fn new() -> Self {
+        static HANDLE_COUNTER: AtomicI64 = AtomicI64::new(0);
+
         // By opening 1 000 files a second, it would take 3 000 000 centuries to overflow,
         // so we can deliberately not handle the overflow.
         let id = HANDLE_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -50,7 +44,7 @@ impl Handle {
     ///
     /// The given ID should be positive.
     pub const unsafe fn from_raw(id: i64) -> Self {
-        debug_assert!(id >= 1);
+        debug_assert!(id >= 0);
         Self { id }
     }
 
@@ -61,165 +55,154 @@ impl Handle {
     }
 }
 
-type OpenFiles = HashMap<Handle, OpenFileInfo>;
-
-#[derive(Default)]
-pub struct Vfs<H: VfsHelper> {
-    mounts: RwLock<MountIndex>,
-    open_handles: RwLock<OpenFiles>,
-    _helper: PhantomData<H>,
-}
-
+#[derive(Debug, Clone)]
 struct OpenFileInfo {
     process_id: u64,
     path: PathBuf,
 }
+
+type OpenFiles = HashMap<Handle, OpenFileInfo>;
 
 /// Cached sorted mount list for efficient path matching.
 /// Stored as `(path_length, path, filesystem)` sorted by length descending.
 #[derive(Default)]
 struct MountIndex {
     /// Sorted list of mounts by path length (longest first) for prefix matching
-    sorted_mounts: Vec<(usize, PathBuf)>,
+    sorted_mounts: Vec<PathBuf>,
     /// `HashMap` for filesystem lookup
     filesystems: HashMap<PathBuf, RwLock<Box<dyn FileSystem + Send + Sync>>>,
 }
 
-impl<H: VfsHelper> Vfs<H> {
+#[derive(Default)]
+pub struct Vfs {
+    mounts: RwLock<MountIndex>,
+    open_handles: RwLock<OpenFiles>,
+}
+
+impl Vfs {
     #[must_use]
     /// Creates a new VFS instance.
     pub fn new() -> Self {
         Self {
             mounts: RwLock::new(MountIndex::default()),
             open_handles: RwLock::new(HashMap::new()),
-            _helper: PhantomData,
         }
     }
 
     /// Mounts a filesystem at the given path.
-    pub fn mount(&self, path: PathBuf, fs: Box<dyn FileSystem + Send + Sync>) {
+    pub fn mount(&self, path: PathBuf, fs: Box<dyn FileSystem + Send + Sync>) -> FileResult<()> {
         let mut mounts = self.mounts.write();
-        let path_len = path.as_path().len();
+        let path_len = path.len();
 
         // Insert into hashmap
-        mounts.filesystems.insert(path.clone(), RwLock::new(fs));
+        let res = mounts.filesystems.try_insert(path.clone(), RwLock::new(fs));
+        if res.is_err() {
+            return Err(FileError::AlreadyExists);
+        }
 
         // Insert into sorted list maintaining descending order by length
         match mounts
             .sorted_mounts
-            .binary_search_by(|&(len, _)| len.cmp(&path_len).reverse())
+            .binary_search_by(|path| path.len().cmp(&path_len).reverse())
         {
-            Ok(idx) => {
-                // Find the correct position (may have duplicates)
-                mounts.sorted_mounts.insert(idx, (path_len, path));
-            }
-            Err(idx) => mounts.sorted_mounts.insert(idx, (path_len, path)),
+            Ok(idx) | Err(idx) => mounts.sorted_mounts.insert(idx, path),
         }
+
+        Ok(())
     }
 
     /// Unmounts the filesystem at the given path.
     pub fn unmount(&self, path: Path) -> FileResult<Box<dyn FileSystem + Send + Sync>> {
         let mut mounts = self.mounts.write();
 
-        // Remove from sorted list
-        mounts.sorted_mounts.retain(|(_, p)| p.as_path() != path);
+        mounts.sorted_mounts.retain(|p| p.as_path() != path);
 
-        // Remove from hashmap and return the filesystem
-        // Try to find matching PathBuf by string comparison
-        let path_buf = mounts
-            .filesystems
-            .iter()
-            .find(|(p, _)| p.as_path() == path)
-            .map(|(p, _)| p.clone());
-
-        path_buf.map_or(Err(FileError::NotFound), |path_buf| {
-            mounts
-                .filesystems
-                .remove(&path_buf)
-                .map(RwLock::into_inner)
-                .ok_or(FileError::NotFound)
-        })
+        let fs = mounts.filesystems.remove(&path);
+        fs.ok_or(FileError::NotFound).map(RwLock::into_inner)
     }
 
-    /// Creates a new handle.
-    ///
-    /// This function performs checks and adds the handle to the open handles list.
-    fn new_handle(&self, path: Path) -> FileResult<Handle> {
-        let current_pid = H::get_current_process_id();
-
-        // Check if already opened by this process
-        {
-            let open_handles = self.open_handles.read();
-            if open_handles.values().any(|open_file| {
-                open_file.path.as_path() == path && open_file.process_id == current_pid
-            }) {
-                return Err(FileError::PermissionDenied);
-            }
-        }
-
-        let handle = Handle::new();
-        let open_file_info = OpenFileInfo {
-            path: path.to_owned(),
-            process_id: current_pid,
-        };
-        self.open_handles.write().insert(handle, open_file_info);
-        Ok(handle)
-    }
-
-    fn delete_handle(&self, handle: Handle) -> FileResult<()> {
-        self.open_handles
-            .write()
-            .remove(&handle)
-            .ok_or(FileError::InvalidHandle)?;
-        Ok(())
-    }
-
-    /// Converts a handle to a path, checking the handle validity.
-    fn handle_to_path(&self, handle: Handle) -> FileResult<PathBuf> {
-        let open_files = self.open_handles.read();
-        let open_file = open_files.get(&handle).ok_or(FileError::InvalidHandle)?;
-        (open_file.process_id == H::get_current_process_id())
-            .then(|| open_file.path.clone())
-            .ok_or(FileError::PermissionDenied)
-    }
-
-    /// Converts a path to a filesystem, checking the path validity.
-    ///
-    /// The given function `f` is called with the filesystem and the relative path.
-    /// The function returns the result of `f`.
+    /// Resolves a path to the corresponding filesystem and relative path, then applies the given function.
     fn path_to_fs<T>(
         &self,
         path: Path,
         f: impl FnOnce(&mut (dyn FileSystem + Send + Sync), Path) -> FileResult<T>,
     ) -> FileResult<T> {
         let mounts = self.mounts.read();
-        let path_str = path.as_str();
+        let path = path.as_str();
 
-        for &(mount_len, ref mount_path) in &mounts.sorted_mounts {
-            if mount_len > path_str.len() {
-                continue;
-            }
+        for mount_path in &mounts.sorted_mounts {
+            let mount_len = mount_path.len();
 
-            // Check if path starts with mount point
-            if &path_str[..mount_len] == mount_path.as_path().as_str() {
-                // Ensure we match at path boundaries to avoid partial matches
-                // e.g., /dev should not match /device
-                if mount_len == path_str.len()
-                    || path_str.as_bytes().get(mount_len) == Some(&b'/')
-                    || mount_path.as_path().as_str().ends_with('/')
-                {
-                    // Found match - get filesystem from hashmap for O(1) lookup
-                    let fs = mounts
-                        .filesystems
-                        .get(mount_path)
-                        .ok_or(FileError::InvalidPath)?;
-                    let rel_path = Path::from(&path_str[mount_len..]);
-                    return f(&mut **fs.write(), rel_path);
-                }
+            if path.get(..mount_len) == Some(mount_path.as_path().as_str())
+                && (mount_len == path.len()
+                    || path.as_bytes().get(mount_len) == Some(&b'/')
+                    || mount_path.as_path().as_str().ends_with('/'))
+            {
+                let fs = mounts
+                    .filesystems
+                    .get(mount_path)
+                    .ok_or(FileError::InvalidPath)?;
+                let rel_path = Path::from(&path[mount_len..]);
+                return f(&mut **fs.write(), rel_path);
             }
         }
 
         Err(FileError::InvalidPath)
+    }
+
+    /// Inserts a new handle for the given process and path, ensuring no duplicate opens.
+    fn insert_handle(&self, pid: u64, path: Path) -> FileResult<Handle> {
+        let mut open = self.open_handles.write();
+
+        let already_opened_info = open.iter().find(|(_, info)| info.path.as_path() == path);
+        if let Some((_, info)) = already_opened_info {
+            let err = if info.process_id == pid {
+                FileError::AlreadyExists
+            } else {
+                FileError::PermissionDenied
+            };
+            return Err(err);
+        }
+
+        let handle = Handle::new();
+        open.insert(
+            handle,
+            OpenFileInfo {
+                process_id: pid,
+                path: path.to_owned(),
+            },
+        );
+        Ok(handle)
+    }
+
+    /// Retrieves the open file info for a given handle, ensuring it belongs to the requesting process.
+    fn get_open_info(&self, pid: u64, handle: Handle) -> FileResult<OpenFileInfo> {
+        let open_handles = self.open_handles.read();
+        let info = open_handles.get(&handle).ok_or(FileError::InvalidHandle)?;
+
+        if info.process_id != pid {
+            return Err(FileError::PermissionDenied);
+        }
+
+        // FIXME: Avoid cloning here
+        Ok(info.clone())
+    }
+
+    /// Removes a handle from the open handles, ensuring it belongs to the requesting process.
+    fn remove_handle(&self, pid: u64, handle: Handle) -> FileResult<()> {
+        let mut open = self.open_handles.write();
+
+        let entry = open.entry(handle);
+        match entry {
+            Entry::Occupied(e) => {
+                if e.get().process_id != pid {
+                    return Err(FileError::PermissionDenied);
+                }
+                e.remove();
+                Ok(())
+            }
+            Entry::Vacant(_) => Err(FileError::InvalidHandle),
+        }
     }
 
     #[inline]
@@ -229,53 +212,61 @@ impl<H: VfsHelper> Vfs<H> {
     }
 
     #[inline]
-    /// Opens a file at the given path.
-    pub fn open(&self, path: Path) -> FileResult<Handle> {
-        let handle = self.new_handle(path)?;
+    /// Opens a file at the given path for the specified process, returning a handle.
+    pub fn open(&self, pid: u64, path: Path) -> FileResult<Handle> {
+        let handle = self.insert_handle(pid, path)?;
         self.path_to_fs(path, |fs, rel_path| fs.open(rel_path))?;
         Ok(handle)
     }
 
     #[inline]
-    /// Closes a file associated with the given handle.
-    pub fn close(&self, handle: Handle) -> FileResult<()> {
-        let path = self.handle_to_path(handle)?;
-        self.delete_handle(handle)?;
-        self.path_to_fs(path.as_path(), |fs, rel_path| fs.close(rel_path))?;
-        Ok(())
+    /// Closes a file handle for the specified process.
+    pub fn close(&self, pid: u64, handle: Handle) -> FileResult<()> {
+        let info = self.get_open_info(pid, handle)?;
+        self.path_to_fs(info.path.as_path(), |fs, rel_path| fs.close(rel_path))?;
+        self.remove_handle(pid, handle)
+    }
+
+    /// Closes all file handles associated with the specified process.
+    fn close_all_with<F: Fn(&OpenFileInfo) -> bool>(&self, f: F) -> FileResult<()> {
+        let paths_to_close: Vec<PathBuf> = {
+            let mut open = self.open_handles.write();
+            open.extract_if(|_, info| f(info))
+                .map(|(_, info)| info.path)
+                .collect()
+        };
+
+        let mut error_encountered = false;
+
+        for path in paths_to_close {
+            let close_res = self.path_to_fs(path.as_path(), |fs, rel_path| fs.close(rel_path));
+            if close_res.is_err() {
+                error_encountered = true;
+            }
+        }
+
+        if error_encountered {
+            Err(FileError::CorruptedFS)
+        } else {
+            Ok(())
+        }
     }
 
     #[inline]
-    /// Closes all files opened by the given process ID.
-    ///
-    /// This function should only be called with a `u64` of a process that has completed its execution.
-    pub fn close_all_from_process(&self, pid: u64) {
-        self.open_handles.write().retain(|_handle, open_file| {
-            let retained = open_file.process_id != pid;
-            if !retained {
-                let res =
-                    self.path_to_fs(open_file.path.as_path(), |fs, rel_path| fs.close(rel_path));
-                debug_assert!(res.is_ok(), "Failed to close file during process cleanup");
-            }
-            retained
-        });
+    /// Closes all file handles associated with the specified process.
+    pub fn close_all_from_process(&self, pid: u64) -> FileResult<()> {
+        self.close_all_with(|info| info.process_id == pid)
     }
 
-    /// Deletes a file at the given path.
-    pub fn delete(&self, path: Path) -> FileResult<()> {
-        let current_pid = H::get_current_process_id();
-
-        // Check if file is opened with lock to prevent TOCTOU issues
+    /// Deletes a file at the given path, ensuring no open handles exist for it.
+    pub fn delete(&self, _pid: u64, path: Path) -> FileResult<()> {
         {
-            let open_handles = self.open_handles.read();
-            if open_handles.values().any(|open_file| {
-                open_file.path.as_path() == path && open_file.process_id == current_pid
-            }) {
+            let open = self.open_handles.read();
+            if open.values().any(|info| info.path.as_path() == path) {
                 return Err(FileError::PermissionDenied);
             }
         }
 
-        // Delete the file from the filesystem
         self.path_to_fs(path, |fs, rel_path| fs.delete(rel_path))
     }
 
@@ -284,18 +275,30 @@ impl<H: VfsHelper> Vfs<H> {
         self.path_to_fs(path, |fs, rel_path| fs.exists(rel_path))
     }
 
-    /// Reads from a file associated with the given handle into the given buffer.
-    pub fn read(&self, handle: Handle, buffer: &mut [u8], offset: usize) -> FileResult<usize> {
-        let path = self.handle_to_path(handle)?;
-        self.path_to_fs(path.as_path(), |fs, rel_path| {
+    /// Reads from a file handle for the specified process into the provided buffer, starting at the given offset.
+    pub fn read(
+        &self,
+        pid: u64,
+        handle: Handle,
+        buffer: &mut [u8],
+        offset: usize,
+    ) -> FileResult<usize> {
+        let info = self.get_open_info(pid, handle)?;
+        self.path_to_fs(info.path.as_path(), |fs, rel_path| {
             fs.read(rel_path, buffer, offset)
         })
     }
 
-    /// Writes the given buffer to a file at the given path.
-    pub fn write(&self, handle: Handle, buffer: &[u8], offset: usize) -> FileResult<usize> {
-        let path = self.handle_to_path(handle)?;
-        self.path_to_fs(path.as_path(), |fs, rel_path| {
+    /// Writes to a file handle for the specified process from the provided buffer, starting at the given offset.
+    pub fn write(
+        &self,
+        pid: u64,
+        handle: Handle,
+        buffer: &[u8],
+        offset: usize,
+    ) -> FileResult<usize> {
+        let info = self.get_open_info(pid, handle)?;
+        self.path_to_fs(info.path.as_path(), |fs, rel_path| {
             fs.write(rel_path, buffer, offset)
         })
     }
@@ -305,7 +308,7 @@ impl<H: VfsHelper> Vfs<H> {
         self.path_to_fs(path, |fs, rel_path| fs.metadata(rel_path))
     }
 
-    /// Reads the directory at the given path and returns a list of entries.
+    /// Reads the contents of a directory at the given path, returning a list of entries.
     pub fn read_dir(&self, path: Path) -> FileResult<Vec<PathBuf>> {
         self.path_to_fs(path, |fs, rel_path| fs.read_dir(rel_path))
     }

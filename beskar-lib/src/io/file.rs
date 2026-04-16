@@ -1,7 +1,6 @@
 use super::traits::{Read, Seek, SeekFrom, Write};
 use crate::error::{FileError, FileErrorKind, FileResult, IoError, IoErrorKind, IoResult};
 use alloc::string::String;
-use beskar_core::syscall::SyscallExitCode;
 use core::convert::TryFrom;
 
 type Handle = i64;
@@ -54,21 +53,6 @@ impl File {
     /// Returns an error if the file cannot be created
     pub fn create(_path: &str) -> FileResult<Self> {
         todo!("Implement when syscalls support file creation")
-    }
-
-    #[inline]
-    /// Close the file
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the file cannot be closed
-    pub fn close(self) -> FileResult<()> {
-        let code = crate::sys::sc_close(self.handle);
-        if code == SyscallExitCode::Success {
-            Ok(())
-        } else {
-            Err(FileError::new(FileErrorKind::Other))
-        }
     }
 }
 

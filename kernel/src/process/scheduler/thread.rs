@@ -1,7 +1,10 @@
 use crate::{
     arch::{context::ThreadRegisters, fpu::FpuState},
     mem::vmm,
-    process::binary::{Binary, BinaryType, LoadedBinary},
+    process::{
+        ProcessId,
+        binary::{Binary, BinaryType, LoadedBinary},
+    },
     storage::vfs,
 };
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
@@ -594,8 +597,8 @@ impl ThreadId {
     }
 }
 
-fn thread_load_binary(path: Path) -> LoadedBinary {
-    let handle = vfs().open(path).unwrap();
+fn thread_load_binary(path: Path, pid: ProcessId) -> LoadedBinary {
+    let handle = vfs().open(pid.as_u64(), path).unwrap();
 
     let file_info = vfs().metadata(path).unwrap();
 
@@ -611,10 +614,10 @@ fn thread_load_binary(path: Path) -> LoadedBinary {
             file_info.size(),
         )
     };
-    let input_bytes = vfs().read(handle, input_buffer, 0).unwrap();
+    let input_bytes = vfs().read(pid.as_u64(), handle, input_buffer, 0).unwrap();
     assert_eq!(input_bytes, input_buffer.len());
 
-    vfs().close(handle).unwrap();
+    vfs().close(pid.as_u64(), handle).unwrap();
 
     let binary = Binary::new(input_buffer, BinaryType::Elf);
     let loaded_binary = binary.load().unwrap();
@@ -636,7 +639,7 @@ pub extern "C" fn start_user_process(user_stack_size: usize) -> ! {
     };
 
     let root_proc = super::current_process();
-    let loaded_binary = thread_load_binary(root_proc.binary().unwrap());
+    let loaded_binary = thread_load_binary(root_proc.binary().unwrap(), root_proc.pid());
 
     // Allocate a user stack
     let rsp = super::with_scheduler(|scheduler| {
