@@ -1,7 +1,7 @@
 use storage::{
     BlockDevice,
     fs::{FileError, FileResult, FileSystem, Path, PathBuf},
-    vfs::{Vfs, VfsHelper},
+    vfs::Vfs,
 };
 
 struct MockBlockDevice {
@@ -193,23 +193,14 @@ impl<B: BlockDevice> MockFS<B> {
     }
 }
 
-struct MockVFSHelper;
-
-impl VfsHelper for MockVFSHelper {
-    fn get_current_process_id() -> u64 {
-        // Mock implementation, returning a dummy process ID.
-        0
-    }
-}
-
 #[test]
 fn mock() {
-    let vfs = Vfs::<MockVFSHelper>::new();
+    let vfs = Vfs::new();
 
     // Initialize the VFS with a mock filesystem.
     let device = MockBlockDevice::new(1024);
     let fs = MockFS::new(device);
-    vfs.mount(PathBuf::new("/"), Box::new(fs));
+    vfs.mount(PathBuf::new("/"), Box::new(fs)).unwrap();
 
     // Create files.
     vfs.create(Path::from("/test.txt")).unwrap();
@@ -221,40 +212,40 @@ fn mock() {
     assert!(!vfs.exists(Path::from("/nonexistent.txt")).unwrap());
 
     // Open the files.
-    let handle1 = vfs.open(Path::from("/test.txt")).unwrap();
-    assert!(vfs.open(Path::from("/test.txt")).is_err());
-    let handle2 = vfs.open(Path::from("/sw.txt")).unwrap();
+    let handle1 = vfs.open(0, Path::from("/test.txt")).unwrap();
+    assert!(vfs.open(0, Path::from("/test.txt")).is_err());
+    let handle2 = vfs.open(0, Path::from("/sw.txt")).unwrap();
 
     // Write to the files.
     let data1 = b"Hello, world!";
-    assert_eq!(vfs.write(handle1, data1, 0).unwrap(), 13);
+    assert_eq!(vfs.write(0, handle1, data1, 0).unwrap(), 13);
     let data2 = b"May the force be with you!";
-    assert_eq!(vfs.write(handle2, data2, 0).unwrap(), 26);
+    assert_eq!(vfs.write(0, handle2, data2, 0).unwrap(), 26);
 
     // Read from the files.
     let mut buffer1 = [0; 13];
-    assert_eq!(vfs.read(handle1, &mut buffer1, 0).unwrap(), 13);
+    assert_eq!(vfs.read(0, handle1, &mut buffer1, 0).unwrap(), 13);
     assert_eq!(&buffer1, data1);
     let mut buffer2 = [0; 26];
-    assert_eq!(vfs.read(handle2, &mut buffer2, 0).unwrap(), 26);
+    assert_eq!(vfs.read(0, handle2, &mut buffer2, 0).unwrap(), 26);
     assert_eq!(&buffer2, data2);
 
     // Try to delete the files.
-    assert!(vfs.delete(Path::from("/test.txt")).is_err());
-    assert!(vfs.delete(Path::from("/sw.txt")).is_err());
+    assert!(vfs.delete(0, Path::from("/test.txt")).is_err());
+    assert!(vfs.delete(0, Path::from("/sw.txt")).is_err());
 
     // Close the files.
-    vfs.close(handle1).unwrap();
-    assert!(vfs.close(handle1).is_err());
-    vfs.close(handle2).unwrap();
+    vfs.close(0, handle1).unwrap();
+    assert!(vfs.close(0, handle1).is_err());
+    vfs.close(0, handle2).unwrap();
 
     // Check if the files exist.
     assert!(vfs.exists(Path::from("/test.txt")).unwrap());
     assert!(vfs.exists(Path::from("/sw.txt")).unwrap());
 
     // Delete the files.
-    vfs.delete(Path::from("/test.txt")).unwrap();
-    vfs.delete(Path::from("/sw.txt")).unwrap();
+    vfs.delete(0, Path::from("/test.txt")).unwrap();
+    vfs.delete(0, Path::from("/sw.txt")).unwrap();
     assert!(!vfs.exists(Path::from("/test.txt")).unwrap());
-    assert!(vfs.delete(Path::from("/test.txt")).is_err());
+    assert!(vfs.delete(0, Path::from("/test.txt")).is_err());
 }
