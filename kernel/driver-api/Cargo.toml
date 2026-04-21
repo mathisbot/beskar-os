@@ -1,8 +1,12 @@
 [package]
 name = "driver-api"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 beskar-core = { workspace = true }
 beskar-hal = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,6 +1,5 @@
 #![no_main]
 #![no_std]
-#![warn(clippy::pedantic, clippy::nursery)]
 
 use bootloader::{debug, error, info, warn};
 use uefi::{mem::memory_map::MemoryMapMut as _, prelude::*};

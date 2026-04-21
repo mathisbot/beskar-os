@@ -1,9 +1,13 @@
 [package]
 name = "beskar-lib"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 beskar-core = { workspace = true }
 hyperdrive = { workspace = true }
 heaperion = { path = "../heaperion" }
+
+[lints]
+workspace = true

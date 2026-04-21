@@ -10,8 +10,6 @@
 //! - `sync`: Provides a set of synchronization primitives that can be used to synchronize threads.
 //! - `ptrs`: Provides a set of smart pointer utilities.
 #![cfg_attr(not(test), no_std)]
-#![forbid(unsafe_op_in_unsafe_fn)]
-#![warn(clippy::pedantic, clippy::nursery)]
 
 pub mod locks;
 pub mod once;

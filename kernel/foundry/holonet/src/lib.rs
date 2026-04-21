@@ -1,6 +1,4 @@
 #![no_std]
-#![forbid(unsafe_op_in_unsafe_fn)]
-#![warn(clippy::pedantic, clippy::nursery)]
 //! Holonet is the galactic network stack for the kernel.
 
 extern crate alloc;

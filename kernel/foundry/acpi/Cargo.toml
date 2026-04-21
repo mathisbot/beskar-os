@@ -1,9 +1,13 @@
 [package]
 name = "acpi"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 beskar-core = { workspace = true }
 beskar-hal = { workspace = true }
 driver-api = { path = "../../driver-api" }
+
+[lints]
+workspace = true

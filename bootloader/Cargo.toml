@@ -1,7 +1,8 @@
 [package]
 name = "bootloader"
 version = "1.0.1"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 beskar-core = { workspace = true }
@@ -10,3 +11,6 @@ bootloader-api = { workspace = true }
 hyperdrive = { workspace = true }
 uefi = { version = "0.37.0", default-features = false }
 xmas-elf = "0.10.0"
+
+[lints]
+workspace = true

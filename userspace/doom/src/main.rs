@@ -1,6 +1,4 @@
 #![no_std]
-#![forbid(unsafe_op_in_unsafe_fn)]
-#![warn(clippy::pedantic, clippy::nursery)]
 #![no_main]
 use core::ffi::c_char;
 

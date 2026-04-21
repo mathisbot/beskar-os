@@ -1,7 +1,8 @@
 [package]
 name = "kernel"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 acpi = { path = "foundry/acpi" }
@@ -19,3 +20,6 @@ storage = { path = "foundry/storage" }
 thiserror = { workspace = true }
 video = { path = "foundry/video" }
 wait = { path = "src/process/scheduler/wait" }
+
+[lints]
+workspace = true

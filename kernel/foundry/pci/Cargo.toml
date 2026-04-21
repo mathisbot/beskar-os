@@ -1,7 +1,8 @@
 [package]
 name = "pci"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 acpi = { path = "../acpi" }
@@ -9,3 +10,6 @@ beskar-core = { workspace = true }
 beskar-hal = { workspace = true }
 driver-api = { path = "../../driver-api" }
 hyperdrive = { workspace = true }
+
+[lints]
+workspace = true
