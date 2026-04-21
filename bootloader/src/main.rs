@@ -1,7 +1,7 @@
 #![no_main]
 #![no_std]
 
-use bootloader::{debug, error, info, warn};
+use bootloader::{debug, error, info};
 use uefi::{mem::memory_map::MemoryMapMut as _, prelude::*};
 
 #[panic_handler]
