@@ -55,8 +55,9 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
 #[entry]
 fn efi_entry() -> Status {
     // In debug mode, disable the watchdog timer
-    #[cfg(debug_assertions)]
-    let _ = boot::set_watchdog_timer(0, 0, None);
+    if cfg!(debug_assertions) {
+        let _ = boot::set_watchdog_timer(0, 0, None);
+    }
 
     bootloader::video::log::init_serial();
 
@@ -71,9 +72,6 @@ fn efi_entry() -> Status {
     bootloader::video::log::init_screen();
 
     info!("BeskarOS bootloader started");
-
-    #[cfg(debug_assertions)]
-    debug!("Bootloader running in debug mode");
 
     bootloader::system::init();
 

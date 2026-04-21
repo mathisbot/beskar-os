@@ -15,15 +15,14 @@ static TSC_MHZ: AtomicU64 = AtomicU64::new(0);
 #[must_use]
 #[inline]
 fn read_tsc_fenced() -> u64 {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::x86_64::_mm_mfence();
-        let tsc = core::arch::x86_64::_rdtsc();
-        core::arch::x86_64::_mm_lfence();
-        tsc
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
+    if cfg!(target_arch = "x86_64") {
+        unsafe {
+            core::arch::x86_64::_mm_mfence();
+            let tsc = core::arch::x86_64::_rdtsc();
+            core::arch::x86_64::_mm_lfence();
+            tsc
+        }
+    } else {
         unimplemented!()
     }
 }

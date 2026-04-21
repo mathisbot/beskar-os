@@ -15,10 +15,11 @@ use xmas_elf::{
     sections::Rela,
 };
 
-#[cfg(target_arch = "x86_64")]
-const R_RELATIVE: u32 = 8;
-#[cfg(target_arch = "aarch64")]
-const R_RELATIVE: u32 = 1027;
+const R_RELATIVE: u32 = cfg_select! {
+    target_arch = "x86_64" => 8,
+    target_arch = "aarch64" => 1027,
+    _ => compile_error!("Unsupported architecture"),
+};
 
 const PAGE_SIZE: u64 = 4096;
 

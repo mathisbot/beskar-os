@@ -7,16 +7,21 @@
     clippy::doc_markdown
 )]
 
-#[cfg(target_arch = "aarch64")]
-mod aarch64;
-#[cfg(target_arch = "x86_64")]
-mod x86_64;
+cfg_select! {
+    target_arch = "aarch64" => {
+        mod aarch64;
+        pub use aarch64::*;
+    }
+    target_arch = "x86_64" => {
+        mod x86_64;
+        pub use x86_64::*;
+    }
+    _ => {
+        compile_error!("Unsupported architecture");
+    }
+}
 
-#[cfg(target_arch = "aarch64")]
-pub use aarch64::*;
-#[cfg(target_arch = "x86_64")]
-pub use x86_64::*;
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Architecture {
     X86_64,
     AArch64,
@@ -25,11 +30,15 @@ pub enum Architecture {
 #[must_use]
 #[inline]
 pub const fn current_arch() -> Architecture {
-    if cfg!(target_arch = "x86_64") {
-        Architecture::X86_64
-    } else if cfg!(target_arch = "aarch64") {
-        Architecture::AArch64
-    } else {
-        unimplemented!()
+    cfg_select! {
+        target_arch = "aarch64" => {
+            Architecture::AArch64
+        }
+        target_arch = "x86_64" => {
+            Architecture::X86_64
+        }
+        _ => {
+            unimplemented!()
+        }
     }
 }
