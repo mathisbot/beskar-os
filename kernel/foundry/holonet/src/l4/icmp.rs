@@ -1,16 +1,21 @@
 use crate::{
     NetworkError, NetworkResult,
-    utils::{checksum, u16_from_inet_bytes, u16_to_inet_bytes},
+    utils::{
+        checksum, ensure_len, read_u8, read_u16, read_u32, slice, slice_mut, write_u8, write_u16,
+        write_u32,
+    },
 };
 
 /// Range of bytes for the type field.
-const TYPE: core::ops::Range<usize> = 0..1;
+const TYPE: usize = 0;
 /// Range of bytes for the code field.
-const CODE: core::ops::Range<usize> = 1..2;
+const CODE: usize = 1;
 /// Range of bytes for the checksum field.
-const CHECKSUM: core::ops::Range<usize> = 2..4;
+const CHECKSUM: usize = 2;
 /// Range of bytes for the rest of header field.
-const REST_OF_HEADER: core::ops::Range<usize> = 4..8;
+const REST_OF_HEADER: usize = 4;
+const ECHO_IDENT: usize = 4;
+const ECHO_SEQ: usize = 6;
 /// Length of the ICMP header (fixed).
 const HEADER_LEN: usize = 8;
 
@@ -90,9 +95,7 @@ impl<T: AsRef<[u8]>> Packet<T> {
     ///
     /// Returns `Invalid` if the buffer is too short.
     pub fn check_len(&self) -> NetworkResult<()> {
-        (self.buffer.as_ref().len() >= HEADER_LEN)
-            .then_some(())
-            .ok_or(NetworkError::Invalid)
+        ensure_len(self.buffer.as_ref(), HEADER_LEN)
     }
 
     #[must_use]
@@ -104,55 +107,59 @@ impl<T: AsRef<[u8]>> Packet<T> {
 
     #[must_use]
     #[inline]
+    /// Return the raw message type field.
+    pub fn msg_type_raw(&self) -> NetworkResult<u8> {
+        read_u8(self.buffer.as_ref(), TYPE)
+    }
+
+    #[must_use]
+    #[inline]
     /// Return the message type field.
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
-    pub fn msg_type(&self) -> MessageType {
-        MessageType::try_from(self.buffer.as_ref()[TYPE.start]).unwrap()
+    ///
+    /// # Errors
+    ///
+    /// Returns `Invalid` if the value does not map to a known message type.
+    pub fn msg_type(&self) -> NetworkResult<MessageType> {
+        MessageType::try_from(self.msg_type_raw()?)
     }
 
     #[must_use]
     #[inline]
     /// Return the code field.
-    pub fn code(&self) -> u8 {
-        self.buffer.as_ref()[CODE.start]
+    pub fn code(&self) -> NetworkResult<u8> {
+        read_u8(self.buffer.as_ref(), CODE)
     }
 
     #[must_use]
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the checksum field.
-    pub fn checksum(&self) -> u16 {
-        let data = self.buffer.as_ref();
-        u16_from_inet_bytes(data[CHECKSUM].try_into().unwrap())
+    pub fn checksum(&self) -> NetworkResult<u16> {
+        read_u16(self.buffer.as_ref(), CHECKSUM)
     }
 
     #[must_use]
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the rest of header field.
-    pub fn rest_of_header(&self) -> u32 {
-        let data = self.buffer.as_ref();
-        u32::from_be_bytes(data[REST_OF_HEADER].try_into().unwrap())
+    pub fn rest_of_header(&self) -> NetworkResult<u32> {
+        read_u32(self.buffer.as_ref(), REST_OF_HEADER)
     }
 
     #[must_use]
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return identifier and sequence number for echo messages.
     /// Returns `(identifier, sequence)` as a tuple.
-    pub fn echo_identity(&self) -> (u16, u16) {
-        let data = self.buffer.as_ref();
-        let ident = u16_from_inet_bytes(data[4..6].try_into().unwrap());
-        let seq = u16_from_inet_bytes(data[6..8].try_into().unwrap());
-        (ident, seq)
+    pub fn echo_identity(&self) -> NetworkResult<(u16, u16)> {
+        Ok((
+            read_u16(self.buffer.as_ref(), ECHO_IDENT)?,
+            read_u16(self.buffer.as_ref(), ECHO_SEQ)?,
+        ))
     }
 
     #[must_use]
     #[inline]
     /// Return the payload (data after the header).
-    pub fn payload(&self) -> &[u8] {
-        let data = self.buffer.as_ref();
-        &data[HEADER_LEN..]
+    pub fn payload(&self) -> NetworkResult<&[u8]> {
+        slice(self.buffer.as_ref(), HEADER_LEN..)
     }
 
     #[must_use]
@@ -166,52 +173,47 @@ impl<T: AsRef<[u8]>> Packet<T> {
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     #[inline]
     /// Set the message type field.
-    pub fn set_msg_type(&mut self, value: MessageType) {
-        self.buffer.as_mut()[TYPE.start] = value.into();
+    pub fn set_msg_type(&mut self, value: MessageType) -> NetworkResult<()> {
+        write_u8(self.buffer.as_mut(), TYPE, value.into())
     }
 
     #[inline]
     /// Set the code field.
-    pub fn set_code(&mut self, value: u8) {
-        self.buffer.as_mut()[CODE.start] = value;
+    pub fn set_code(&mut self, value: u8) -> NetworkResult<()> {
+        write_u8(self.buffer.as_mut(), CODE, value)
     }
 
     #[inline]
     /// Set the checksum field.
-    pub fn set_checksum(&mut self, value: u16) {
-        let data = self.buffer.as_mut();
-        data[CHECKSUM].copy_from_slice(&u16_to_inet_bytes(value));
+    pub fn set_checksum(&mut self, value: u16) -> NetworkResult<()> {
+        write_u16(self.buffer.as_mut(), CHECKSUM, value)
     }
 
     #[inline]
     /// Set the rest of header field.
-    pub fn set_rest_of_header(&mut self, value: u32) {
-        let data = self.buffer.as_mut();
-        data[REST_OF_HEADER].copy_from_slice(&value.to_be_bytes());
+    pub fn set_rest_of_header(&mut self, value: u32) -> NetworkResult<()> {
+        write_u32(self.buffer.as_mut(), REST_OF_HEADER, value)
     }
 
     /// Set identifier and sequence number for echo messages.
     #[inline]
-    pub fn set_echo_identity(&mut self, ident: u16, seq: u16) {
-        let data = self.buffer.as_mut();
-        data[4..6].copy_from_slice(&u16_to_inet_bytes(ident));
-        data[6..8].copy_from_slice(&u16_to_inet_bytes(seq));
+    pub fn set_echo_identity(&mut self, ident: u16, seq: u16) -> NetworkResult<()> {
+        write_u16(self.buffer.as_mut(), ECHO_IDENT, ident)?;
+        write_u16(self.buffer.as_mut(), ECHO_SEQ, seq)
     }
 
     #[inline]
     /// Get a mutable reference to the payload.
-    pub fn payload_mut(&mut self) -> &mut [u8] {
-        let data = self.buffer.as_mut();
-        &mut data[HEADER_LEN..]
+    pub fn payload_mut(&mut self) -> NetworkResult<&mut [u8]> {
+        slice_mut(self.buffer.as_mut(), HEADER_LEN..)
     }
 
     /// Recalculate and set the checksum.
-    pub fn fill_checksum(&mut self) {
-        self.set_checksum(0);
+    pub fn fill_checksum(&mut self) -> NetworkResult<()> {
+        self.set_checksum(0)?;
         let data = self.buffer.as_ref();
         let cksum = checksum(data);
-        let _ = data;
-        self.set_checksum(cksum);
+        self.set_checksum(cksum)
     }
 }
 
@@ -238,11 +240,12 @@ impl Repr {
     /// Returns `Invalid` if the packet is too short.
     pub fn parse<T: AsRef<[u8]> + ?Sized>(packet: &Packet<&T>) -> NetworkResult<Self> {
         packet.check_len()?;
+        let msg_type = packet.msg_type()?;
 
         Ok(Self {
-            msg_type: packet.msg_type(),
-            code: packet.code(),
-            payload_len: packet.payload().len(),
+            msg_type,
+            code: packet.code()?,
+            payload_len: packet.payload()?.len(),
         })
     }
 
@@ -255,15 +258,15 @@ impl Repr {
 
     /// Emit a high-level representation into an ICMP packet.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the packet buffer is too short.
-    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, packet: &mut Packet<T>) {
-        assert!(packet.buffer.as_ref().len() >= self.buffer_len());
-        packet.set_msg_type(self.msg_type);
-        packet.set_code(self.code);
-        packet.set_rest_of_header(0);
-        packet.fill_checksum();
+    /// Returns `Truncated` if the packet buffer is too short.
+    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, packet: &mut Packet<T>) -> NetworkResult<()> {
+        ensure_len(packet.buffer.as_ref(), self.buffer_len())?;
+        packet.set_msg_type(self.msg_type)?;
+        packet.set_code(self.code)?;
+        packet.set_rest_of_header(0)?;
+        packet.fill_checksum()
     }
 }
 
@@ -277,9 +280,9 @@ mod test {
     #[test]
     fn test_echo_request() {
         let packet = Packet::new_unchecked(&ECHO_REQUEST[..]);
-        assert_eq!(packet.msg_type(), MessageType::EchoRequest);
-        assert_eq!(packet.code(), 0);
-        let (ident, seq) = packet.echo_identity();
+        assert_eq!(packet.msg_type(), Ok(MessageType::EchoRequest));
+        assert_eq!(packet.code(), Ok(0));
+        let (ident, seq) = packet.echo_identity().unwrap();
         assert_eq!(ident, 1);
         assert_eq!(seq, 2);
     }
@@ -288,15 +291,23 @@ mod test {
     fn test_construct_echo_reply() {
         let mut bytes = vec![0u8; 8];
         let mut packet = Packet::new_unchecked(&mut bytes);
-        packet.set_msg_type(MessageType::EchoReply);
-        packet.set_code(0);
-        packet.set_echo_identity(1, 2);
-        packet.fill_checksum();
+        packet.set_msg_type(MessageType::EchoReply).unwrap();
+        packet.set_code(0).unwrap();
+        packet.set_echo_identity(1, 2).unwrap();
+        packet.fill_checksum().unwrap();
 
-        assert_eq!(packet.msg_type(), MessageType::EchoReply);
-        assert_eq!(packet.code(), 0);
-        let (ident, seq) = packet.echo_identity();
+        assert_eq!(packet.msg_type(), Ok(MessageType::EchoReply));
+        assert_eq!(packet.code(), Ok(0));
+        let (ident, seq) = packet.echo_identity().unwrap();
         assert_eq!(ident, 1);
         assert_eq!(seq, 2);
+    }
+
+    #[test]
+    fn test_parse_invalid_message_type() {
+        let mut bytes = ECHO_REQUEST;
+        bytes[0] = 0xFF;
+        let packet = Packet::new_unchecked(&bytes[..]);
+        assert_eq!(Repr::parse(&packet), Err(NetworkError::Invalid));
     }
 }

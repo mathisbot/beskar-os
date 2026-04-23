@@ -1,9 +1,12 @@
-#![no_std]
 //! Holonet is the galactic network stack for the kernel.
+#![no_std]
+#![allow(clippy::double_must_use, clippy::missing_errors_doc)]
 
 extern crate alloc;
+
 use thiserror::Error;
 
+pub mod ingress;
 pub mod l2;
 pub mod l3;
 pub mod l4;
@@ -39,15 +42,21 @@ pub enum NetworkError {
     #[error("Network controller is not available")]
     /// The network controller is not available
     Absent,
-    #[error("Input is invalid")]
-    /// The input is invalid
+    #[error("Input is malformed")]
+    /// The input is malformed
     Invalid,
+    #[error("Buffer is too short")]
+    /// The provided buffer is too short for the requested operation
+    Truncated,
     #[error("Network controller is not initialized")]
     /// The network controller is not initialized
     Uninitialized,
     #[error("Unsupported operation")]
     /// The operation is not supported
     Unsupported,
+    #[error("Value exceeds protocol limits")]
+    /// The requested operation exceeds the protocol field width
+    Oversized,
     #[error("Resources exhausted")]
     /// All available resources of this type are in use
     Exhausted,
