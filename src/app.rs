@@ -5,7 +5,7 @@ use crate::{
 };
 use std::{path::PathBuf, sync::mpsc::Receiver, thread::JoinHandle};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     MainMenu,
     BuildDossier,
@@ -67,14 +67,12 @@ impl BuildForm {
             .iter()
             .position(|a| a == &qemu_cfg.accel)
             .unwrap_or(0);
-        let display_idx = match &qemu_cfg.display {
-            None => 0,
-            Some(d) => DisplayBackend::ALL
+        let display_idx = qemu_cfg.display.as_ref().map_or(0, |d| {
+            DisplayBackend::ALL
                 .iter()
                 .position(|x| x == d)
-                .map(|i| i + 1)
-                .unwrap_or(0),
-        };
+                .map_or(0, |i| i + 1)
+        });
 
         Self {
             output_dir: build_cfg.output_dir.clone(),
@@ -97,12 +95,12 @@ impl BuildForm {
     }
 
     /// Total navigable field count (including dynamic app entries).
-    pub fn field_count(&self) -> usize {
+    pub const fn field_count(&self) -> usize {
         14 + self.apps.len()
     }
 
     /// Returns which kind of field `idx` represents.
-    pub fn field_at(&self, idx: usize) -> FormField {
+    pub const fn field_at(&self, idx: usize) -> FormField {
         let n = self.apps.len();
         match idx {
             0 => FormField::OutputDir,
@@ -159,7 +157,7 @@ impl BuildForm {
 }
 
 /// Semantic field type derived from field index.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FormField {
     OutputDir,
     Profile,
@@ -179,24 +177,25 @@ pub enum FormField {
 }
 
 impl FormField {
-    pub fn is_text(&self) -> bool {
+    #[must_use]
+    #[inline]
+    pub const fn is_text(&self) -> bool {
+        matches!(self, Self::OutputDir | Self::Ovmf | Self::Cores | Self::Ram)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_checkbox(&self) -> bool {
         matches!(
             self,
-            FormField::OutputDir | FormField::Ovmf | FormField::Cores | FormField::Ram
+            Self::App(_) | Self::Nic | Self::Nvme | Self::Xhci | Self::VirtioVga
         )
     }
-    pub fn is_checkbox(&self) -> bool {
-        matches!(
-            self,
-            FormField::App(_)
-                | FormField::Nic
-                | FormField::Nvme
-                | FormField::Xhci
-                | FormField::VirtioVga
-        )
-    }
-    pub fn is_action(&self) -> bool {
-        matches!(self, FormField::ActionBuild | FormField::ActionQemu)
+
+    #[must_use]
+    #[inline]
+    pub const fn is_action(&self) -> bool {
+        matches!(self, Self::ActionBuild | Self::ActionQemu)
     }
 }
 
@@ -232,8 +231,8 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(_workspace_root: PathBuf, build_cfg: BuildConfig, qemu_cfg: QemuConfig) -> Self {
-        let build_form = BuildForm::new(&build_cfg, &qemu_cfg);
+    pub fn new(_workspace_root: PathBuf, build_cfg: &BuildConfig, qemu_cfg: &QemuConfig) -> Self {
+        let build_form = BuildForm::new(build_cfg, qemu_cfg);
         Self {
             screen: Screen::MainMenu,
             main_sel: 0,
@@ -266,7 +265,7 @@ impl App {
         }
     }
 
-    pub fn is_running(&self) -> bool {
+    pub const fn is_running(&self) -> bool {
         self.running.is_some()
     }
 
@@ -282,19 +281,19 @@ impl App {
         self.dev_form.log_scroll = usize::MAX;
     }
 
-    pub fn main_menu_up(&mut self) {
+    pub const fn main_menu_up(&mut self) {
         if self.main_sel > 0 {
             self.main_sel -= 1;
         }
     }
 
-    pub fn main_menu_down(&mut self) {
+    pub const fn main_menu_down(&mut self) {
         if self.main_sel + 1 < MAIN_ITEMS.len() {
             self.main_sel += 1;
         }
     }
 
-    pub fn main_menu_select(&mut self) {
+    pub const fn main_menu_select(&mut self) {
         match self.main_sel {
             0 => self.screen = Screen::BuildDossier,
             1 => self.screen = Screen::DevTools,
@@ -302,14 +301,14 @@ impl App {
         }
     }
 
-    pub fn form_next(&mut self) {
+    pub const fn form_next(&mut self) {
         let max = self.build_form.field_count().saturating_sub(1);
         if self.build_form.selected < max {
             self.build_form.selected += 1;
         }
     }
 
-    pub fn form_prev(&mut self) {
+    pub const fn form_prev(&mut self) {
         if self.build_form.selected > 0 {
             self.build_form.selected -= 1;
         }
@@ -348,7 +347,7 @@ impl App {
     }
 
     /// Handles Left key on the focused build form field (cycle selector backwards).
-    pub fn form_cycle_left(&mut self) {
+    pub const fn form_cycle_left(&mut self) {
         let field = self.build_form.field_at(self.build_form.selected);
         match field {
             FormField::Profile => {
@@ -372,7 +371,7 @@ impl App {
     }
 
     /// Handles Right key on the focused build form field (cycle selector forwards).
-    pub fn form_cycle_right(&mut self) {
+    pub const fn form_cycle_right(&mut self) {
         let field = self.build_form.field_at(self.build_form.selected);
         match field {
             FormField::Profile => {
@@ -423,13 +422,13 @@ impl App {
         text.pop();
     }
 
-    pub fn dev_op_up(&mut self) {
+    pub const fn dev_op_up(&mut self) {
         if self.dev_form.op_selected > 0 {
             self.dev_form.op_selected -= 1;
         }
     }
 
-    pub fn dev_op_down(&mut self) {
+    pub const fn dev_op_down(&mut self) {
         if self.dev_form.op_selected + 1 < DevOp::ALL.len() {
             self.dev_form.op_selected += 1;
         }

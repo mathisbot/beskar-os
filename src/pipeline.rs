@@ -113,7 +113,7 @@ fn run_cargo(args: &[&str], workspace_root: &Path, tx: &Sender<LogMsg>) -> bool 
         }
     });
 
-    let success = child.wait().map(|s| s.success()).unwrap_or(false);
+    let success = child.wait().is_ok_and(|s| s.success());
     let _ = stderr_thread.join();
     let _ = stdout_thread.join();
     success
@@ -248,7 +248,7 @@ pub fn start_build(
     thread::spawn(move || build_pipeline(&config, &workspace_root, &tx))
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DevOp {
     QuickBuild,
     LaunchQemu,
@@ -258,22 +258,22 @@ pub enum DevOp {
 }
 
 impl DevOp {
-    pub fn label(&self) -> &'static str {
+    pub const fn label(&self) -> &'static str {
         match self {
-            DevOp::QuickBuild => "Quick Build  [full OS, debug]",
-            DevOp::LaunchQemu => "Launch QEMU",
-            DevOp::Clippy => "Run Clippy   [uses package]",
-            DevOp::Test => "Run Tests    [uses package]",
-            DevOp::DepCheck => "Check Dependencies  [workspace]",
+            Self::QuickBuild => "Quick Build  [full OS, debug]",
+            Self::LaunchQemu => "Launch QEMU",
+            Self::Clippy => "Run Clippy   [uses package]",
+            Self::Test => "Run Tests    [uses package]",
+            Self::DepCheck => "Check Dependencies  [workspace]",
         }
     }
 
-    pub const ALL: &'static [DevOp] = &[
-        DevOp::QuickBuild,
-        DevOp::LaunchQemu,
-        DevOp::Clippy,
-        DevOp::Test,
-        DevOp::DepCheck,
+    pub const ALL: &'static [Self] = &[
+        Self::QuickBuild,
+        Self::LaunchQemu,
+        Self::Clippy,
+        Self::Test,
+        Self::DepCheck,
     ];
 }
 
@@ -334,7 +334,7 @@ impl RawHeader {
         Self { name: n, size }
     }
 
-    fn as_bytes(&self) -> &[u8] {
+    const fn as_bytes(&self) -> &[u8] {
         let ptr: *const Self = self;
         let len = std::mem::size_of::<Self>();
         // SAFETY: RawHeader is repr(C, packed) — no padding, safe to read as bytes.

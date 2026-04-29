@@ -1,5 +1,8 @@
-﻿//! QEMU command generation and launcher.
-use crate::{config::QemuConfig, pipeline::LogMsg};
+//! QEMU command generation and launcher.
+use crate::{
+    config::{DisplayBackend, QemuConfig},
+    pipeline::LogMsg,
+};
 use std::{
     io::{BufRead, BufReader},
     path::Path,
@@ -25,7 +28,8 @@ pub fn build_args(config: &QemuConfig, output_dir: &str) -> Vec<String> {
     args.push("-M q35".to_string());
 
     if config.nic {
-        args.push("-nic user,model=e1000e".to_string());
+        args.push("-netdev user,id=net0,net=192.168.1.0/24,host=192.168.1.1".to_string());
+        args.push("-device e1000e,netdev=net0,mac=52:54:00:12:34:56".to_string());
     }
     if config.nvme {
         args.push("-device nvme,serial=beskar0".to_string());
@@ -34,7 +38,10 @@ pub fn build_args(config: &QemuConfig, output_dir: &str) -> Vec<String> {
         args.push("-device qemu-xhci".to_string());
     }
     if config.virtio_vga {
-        let display = config.display.as_ref().map(|d| d.as_str()).unwrap_or("sdl");
+        let display = config
+            .display
+            .as_ref()
+            .map_or("sdl", DisplayBackend::as_str);
         args.push("-device virtio-vga".to_string());
         args.push(format!("-display {display},gl=on"));
     }
@@ -104,7 +111,7 @@ pub fn start_qemu(
             }
         });
 
-        let success = child.wait().map(|s| s.success()).unwrap_or(false);
+        let success = child.wait().is_ok_and(|status| status.success());
         let _ = stderr_thread.join();
         let _ = stdout_thread.join();
         let _ = tx.send(LogMsg::Done(success));

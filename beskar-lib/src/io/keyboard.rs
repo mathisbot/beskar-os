@@ -102,6 +102,7 @@ fn cached_handle() -> SleepHandle {
             // Safety: We just initialized the payload
             break unsafe { payload.assume_init() };
         }
+        core::hint::spin_loop();
     };
     let raw = handle.raw();
 

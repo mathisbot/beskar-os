@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+hyperdrive = { workspace = true }
 thiserror = { workspace = true }
 
 [lints]

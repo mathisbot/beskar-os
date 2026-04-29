@@ -172,7 +172,7 @@ fn render_main_menu(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_stateful_widget(List::new(items).block(block), list_area, &mut state);
 
     // Description of selected item.
-    let desc = MAIN_ITEMS.get(app.main_sel).map(|(_, d)| *d).unwrap_or("");
+    let desc = MAIN_ITEMS.get(app.main_sel).map_or("", |(_, d)| *d);
     let desc_block = Block::default()
         .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
         .border_style(s_border());
@@ -274,7 +274,7 @@ fn render_build_form(frame: &mut Frame, app: &App, area: Rect) {
         text_field("Output Dir", &form.output_dir, 0),
         selector_field(
             "Profile",
-            &Profile::ALL.iter().map(|p| p.label()).collect::<Vec<_>>(),
+            &Profile::ALL.iter().map(Profile::label).collect::<Vec<_>>(),
             form.profile_idx,
             1,
         ),
@@ -294,7 +294,7 @@ fn render_build_form(frame: &mut Frame, app: &App, area: Rect) {
     lines.push(text_field("RAM (MiB)", &form.ram, 4 + n));
     lines.push(selector_field(
         "CPU",
-        &CpuType::ALL.iter().map(|c| c.as_str()).collect::<Vec<_>>(),
+        &CpuType::ALL.iter().map(CpuType::as_str).collect::<Vec<_>>(),
         form.cpu_idx,
         5 + n,
     ));
@@ -302,7 +302,7 @@ fn render_build_form(frame: &mut Frame, app: &App, area: Rect) {
         "Accel",
         &AccelBackend::ALL
             .iter()
-            .map(|a| a.as_str())
+            .map(AccelBackend::as_str)
             .collect::<Vec<_>>(),
         form.accel_idx,
         6 + n,
@@ -316,7 +316,7 @@ fn render_build_form(frame: &mut Frame, app: &App, area: Rect) {
     // Display is only meaningful with virtio-vga.
     let display_opts = {
         let mut opts = vec!["default"];
-        opts.extend(DisplayBackend::ALL.iter().map(|d| d.as_str()));
+        opts.extend(DisplayBackend::ALL.iter().map(DisplayBackend::as_str));
         opts
     };
     let disp_style = if form.virtio_vga {
@@ -503,23 +503,20 @@ fn render_dev_form(frame: &mut Frame, app: &App, area: Rect) {
         )));
     }
 
-    // Status.
-    if !app.is_running() {
-        if let Some(ok) = app.last_op_success {
-            lines.push(Line::raw(""));
-            let (msg, style) = if ok {
-                ("  ✓ Completed successfully.", s_ok())
-            } else {
-                ("  ✗ Operation failed.", s_err())
-            };
-            lines.push(Line::from(Span::styled(msg, style)));
-        }
-    } else {
+    if app.is_running() {
         lines.push(Line::raw(""));
         lines.push(Line::from(Span::styled(
             "  Running…",
             Style::default().fg(Color::Cyan),
         )));
+    } else if let Some(ok) = app.last_op_success {
+        lines.push(Line::raw(""));
+        let (msg, style) = if ok {
+            ("  ✓ Completed successfully.", s_ok())
+        } else {
+            ("  ✗ Operation failed.", s_err())
+        };
+        lines.push(Line::from(Span::styled(msg, style)));
     }
 
     let block = Block::default()
