@@ -5,6 +5,8 @@ use crate::{
     utils::{ensure_len, read_u8, read_u16, slice, write_slice, write_u8, write_u16},
 };
 
+pub mod state;
+
 /// Range of bytes for the hardware type field.
 const HARDWARE_TYPE: usize = 0;
 /// Range of bytes for the protocol type field.

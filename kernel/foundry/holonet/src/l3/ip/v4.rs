@@ -24,39 +24,64 @@ const HEADER_CHECKSUM: usize = 10;
 const SOURCE_ADDR: usize = 12;
 /// Range of bytes for the destination address field.
 const DEST_ADDR: usize = 16;
+
 /// Length of the IPv4 header (minimum)
-const HEADER_LEN: usize = 20;
+pub const HEADER_LEN: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// IPv4 header flags.
-pub struct Flags {
-    /// Don't fragment flag
-    pub dont_fragment: bool,
-    /// More fragments flag
-    pub more_fragments: bool,
-}
+pub struct Flags(u8);
 
 impl Flags {
+    // const RESERVED_MBZ_BIT: u8 = 0x80;
+    /// Router must not fragment the packet.
+    const DONT_FRAGMENT_BIT: u8 = 0x40;
+    /// More fragments follow this one.
+    const MORE_FRAGMENTS_BIT: u8 = 0x20;
+
+    const ALL: u8 = Self::DONT_FRAGMENT_BIT | Self::MORE_FRAGMENTS_BIT;
+
+    #[must_use]
+    #[inline]
+    pub const fn new(dont_fragment: bool, more_fragments: bool) -> Self {
+        let mut raw = 0;
+
+        if dont_fragment {
+            raw |= Self::DONT_FRAGMENT_BIT;
+        }
+        if more_fragments {
+            raw |= Self::MORE_FRAGMENTS_BIT;
+        }
+
+        Self(raw)
+    }
+
     /// Parse flags from the flags/fragment offset byte.
     #[must_use]
+    #[inline]
     pub const fn from_bits(value: u8) -> Self {
-        Self {
-            dont_fragment: (value & 0x40) != 0,
-            more_fragments: (value & 0x20) != 0,
-        }
+        Self(value & Self::ALL)
     }
 
     /// Convert flags to byte representation.
     #[must_use]
+    #[inline]
     pub const fn to_bits(self) -> u8 {
-        let mut bits = 0;
-        if self.dont_fragment {
-            bits |= 0x40;
-        }
-        if self.more_fragments {
-            bits |= 0x20;
-        }
-        bits
+        self.0
+    }
+
+    /// Return true if the "Don't Fragment" flag is set.
+    #[must_use]
+    #[inline]
+    pub const fn dont_fragment(self) -> bool {
+        self.0 & Self::DONT_FRAGMENT_BIT != 0
+    }
+
+    /// Return true if the "More Fragments" flag is set.
+    #[must_use]
+    #[inline]
+    pub const fn more_fragments(self) -> bool {
+        self.0 & Self::MORE_FRAGMENTS_BIT != 0
     }
 }
 
@@ -431,8 +456,8 @@ mod test {
     fn test_flags() {
         let packet = Packet::new_unchecked(&PACKET_BYTES[..]);
         let flags = packet.flags().unwrap();
-        assert!(flags.dont_fragment);
-        assert!(!flags.more_fragments);
+        assert!(flags.dont_fragment());
+        assert!(!flags.more_fragments());
     }
 
     #[test]
@@ -444,13 +469,7 @@ mod test {
         packet.set_total_len(20).unwrap();
         packet.set_identification(0x1234).unwrap();
         packet
-            .set_flags_and_fragment_offset(
-                Flags {
-                    dont_fragment: true,
-                    more_fragments: false,
-                },
-                0,
-            )
+            .set_flags_and_fragment_offset(Flags::new(true, false), 0)
             .unwrap();
         packet.set_ttl(64).unwrap();
         packet.set_protocol(Protocol::Tcp).unwrap();
