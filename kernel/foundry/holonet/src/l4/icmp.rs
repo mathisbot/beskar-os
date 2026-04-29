@@ -6,6 +6,8 @@ use crate::{
     },
 };
 
+pub mod echo;
+
 /// Range of bytes for the type field.
 const TYPE: usize = 0;
 /// Range of bytes for the code field.
@@ -16,8 +18,9 @@ const CHECKSUM: usize = 2;
 const REST_OF_HEADER: usize = 4;
 const ECHO_IDENT: usize = 4;
 const ECHO_SEQ: usize = 6;
-/// Length of the ICMP header (fixed).
-const HEADER_LEN: usize = 8;
+
+/// Length of the ICMP header.
+pub const HEADER_LEN: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]

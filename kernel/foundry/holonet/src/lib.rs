@@ -6,6 +6,7 @@ extern crate alloc;
 
 use thiserror::Error;
 
+pub mod egress;
 pub mod ingress;
 pub mod l2;
 pub mod l3;
@@ -54,12 +55,18 @@ pub enum NetworkError {
     #[error("Unsupported operation")]
     /// The operation is not supported
     Unsupported,
+    #[error("Destination is unreachable")]
+    /// No route or neighbor path is currently available for the destination
+    Unreachable,
     #[error("Value exceeds protocol limits")]
     /// The requested operation exceeds the protocol field width
     Oversized,
     #[error("Resources exhausted")]
     /// All available resources of this type are in use
     Exhausted,
+    #[error("Resource already exists")]
+    /// A conflicting resource already exists
+    AlreadyExists,
 }
 
 pub type NetworkResult<T> = Result<T, NetworkError>;

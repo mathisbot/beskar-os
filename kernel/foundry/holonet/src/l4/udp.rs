@@ -2,6 +2,7 @@ pub use core::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 
 use crate::{
     NetworkError, NetworkResult,
+    egress::EthernetIpv4Envelope,
     l3::ip::v4::Ipv4Addr,
     utils::{
         checksum_with_pseudo, ensure_len, read_u16, slice, slice_mut, usize_to_u16, write_u16,
@@ -17,7 +18,17 @@ const LENGTH: usize = 4;
 /// Range of bytes for the checksum field.
 const CHECKSUM: usize = 6;
 /// Length of the UDP header (fixed).
-const HEADER_LEN: usize = 8;
+pub const HEADER_LEN: usize = 8;
+
+/// Borrowed UDP datagram metadata and payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Datagram<'a> {
+    pub source_addr: Ipv4Addr,
+    pub destination_addr: Ipv4Addr,
+    pub source_port: u16,
+    pub destination_port: u16,
+    pub payload: &'a [u8],
+}
 
 /// A read/write wrapper around a UDP packet buffer.
 #[derive(Debug, Clone)]
@@ -218,6 +229,13 @@ impl Repr {
         HEADER_LEN + self.payload_len
     }
 
+    #[inline]
+    pub fn packet_len(&self) -> NetworkResult<usize> {
+        self.payload_len
+            .checked_add(HEADER_LEN)
+            .ok_or(NetworkError::Oversized)
+    }
+
     /// Emit a high-level representation into a UDP packet.
     ///
     /// # Errors
@@ -225,11 +243,41 @@ impl Repr {
     /// Returns `Truncated` if the packet buffer is too short.
     /// Returns `Oversized` if the payload length does not fit into the UDP length field.
     pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, packet: &mut Packet<T>) -> NetworkResult<()> {
-        ensure_len(packet.buffer.as_ref(), self.buffer_len())?;
+        let packet_len = self.packet_len()?;
+        ensure_len(packet.buffer.as_ref(), packet_len)?;
         packet.set_src_port(self.src_port)?;
         packet.set_dst_port(self.dst_port)?;
-        packet.set_len(usize_to_u16(HEADER_LEN + self.payload_len)?)
+        packet.set_len(usize_to_u16(packet_len)?)
     }
+}
+
+/// Emit a UDP datagram inside an Ethernet + IPv4 frame.
+///
+/// `destination_hardware_addr` is the resolved next-hop Ethernet address.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_ipv4(
+    mut envelope: EthernetIpv4Envelope,
+    buffer: &mut [u8],
+    source_port: u16,
+    destination_port: u16,
+    payload: &[u8],
+) -> NetworkResult<usize> {
+    let udp_len = payload
+        .len()
+        .checked_add(HEADER_LEN)
+        .ok_or(NetworkError::Oversized)?;
+    envelope.payload_len = udp_len;
+    envelope.emit_with(buffer, |payload_buffer| {
+        let mut packet = Packet::new_unchecked(payload_buffer);
+        Repr {
+            src_port: source_port,
+            dst_port: destination_port,
+            payload_len: payload.len(),
+        }
+        .emit(&mut packet)?;
+        packet.payload_mut()?.copy_from_slice(payload);
+        packet.fill_checksum(envelope.source_addr, envelope.destination_addr)
+    })
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@ pub use core::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 
 use crate::{
     NetworkError, NetworkResult,
+    egress::EthernetIpv4Envelope,
     l3::ip::v4::Ipv4Addr,
     utils::{
         checksum_with_pseudo, ensure_len, read_u8, read_u16, read_u32, slice, slice_mut,
@@ -26,7 +27,7 @@ const CHECKSUM: usize = 16;
 /// Range of bytes for the urgent pointer field.
 const URGENT_PTR: usize = 18;
 /// Length of the TCP header (minimum).
-const HEADER_LEN: usize = 20;
+pub const HEADER_LEN: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// TCP packet flags.
@@ -39,6 +40,12 @@ impl Flags {
     pub const PSH: u8 = 0x08;
     pub const ACK: u8 = 0x10;
     pub const URG: u8 = 0x20;
+
+    #[must_use]
+    #[inline]
+    pub const fn new(raw: u8) -> Self {
+        Self::from_bits(raw)
+    }
 
     #[must_use]
     #[inline]
@@ -89,6 +96,20 @@ impl Flags {
     pub const fn urg(&self) -> bool {
         (self.0 & Self::URG) != 0
     }
+}
+
+/// Borrowed TCP segment metadata and payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Segment<'a> {
+    pub source_addr: Ipv4Addr,
+    pub destination_addr: Ipv4Addr,
+    pub source_port: u16,
+    pub destination_port: u16,
+    pub sequence_number: u32,
+    pub acknowledgment_number: u32,
+    pub flags: Flags,
+    pub window_size: u16,
+    pub payload: &'a [u8],
 }
 
 /// A read/write wrapper around a TCP packet buffer.
@@ -400,13 +421,20 @@ impl Repr {
         HEADER_LEN + self.payload_len
     }
 
+    #[inline]
+    pub fn packet_len(&self) -> NetworkResult<usize> {
+        self.payload_len
+            .checked_add(HEADER_LEN)
+            .ok_or(NetworkError::Oversized)
+    }
+
     /// Emit a high-level representation into a TCP packet.
     ///
     /// # Errors
     ///
     /// Returns `Truncated` if the packet buffer is too short.
     pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, packet: &mut Packet<T>) -> NetworkResult<()> {
-        ensure_len(packet.buffer.as_ref(), self.buffer_len())?;
+        ensure_len(packet.buffer.as_ref(), self.packet_len()?)?;
         packet.set_src_port(self.src_port)?;
         packet.set_dst_port(self.dst_port)?;
         packet.set_seq_num(self.seq_num)?;
@@ -418,10 +446,57 @@ impl Repr {
     }
 }
 
+/// Emit a TCP segment inside an Ethernet + IPv4 frame.
+///
+/// `destination_hardware_addr` is the resolved next-hop Ethernet address.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_ipv4(
+    mut envelope: EthernetIpv4Envelope,
+    buffer: &mut [u8],
+    source_port: u16,
+    destination_port: u16,
+    sequence_number: u32,
+    acknowledgment_number: u32,
+    flags: Flags,
+    window_size: u16,
+    payload: &[u8],
+) -> NetworkResult<usize> {
+    let tcp_len = payload
+        .len()
+        .checked_add(HEADER_LEN)
+        .ok_or(NetworkError::Oversized)?;
+    envelope.payload_len = tcp_len;
+    envelope.emit_with(buffer, |payload_buffer| {
+        let mut packet = Packet::new_unchecked(payload_buffer);
+        Repr {
+            src_port: source_port,
+            dst_port: destination_port,
+            seq_num: sequence_number,
+            ack_num: acknowledgment_number,
+            flags,
+            window_size,
+            payload_len: payload.len(),
+        }
+        .emit(&mut packet)?;
+        packet.payload_mut()?.copy_from_slice(payload);
+        packet.fill_checksum(envelope.source_addr, envelope.destination_addr)
+    })
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::{
+        ingress::{EthernetPayload, IngressFrame, Ipv4Payload},
+        l2::ethernet::{self, MacAddress},
+        l3::ip,
+    };
     use alloc::vec;
+
+    const LOCAL_MAC: MacAddress = MacAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]);
+    const PEER_MAC: MacAddress = MacAddress::new([0x20, 0x21, 0x22, 0x23, 0x24, 0x25]);
+    const LOCAL_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 10);
+    const REMOTE_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
 
     static PACKET_BYTES: [u8; 20] = [
         0x00, 0x50, // Source port 80
@@ -496,5 +571,54 @@ mod test {
         bytes[12] = 0x40;
         let packet = Packet::new_unchecked(bytes);
         assert_eq!(packet.check_len(), Err(NetworkError::Invalid));
+    }
+
+    #[test]
+    fn test_emit_ipv4_tcp_segment() {
+        let payload = [1, 2, 3, 4];
+        let mut bytes = [0u8; ethernet::HEADER_LEN + ip::v4::HEADER_LEN + HEADER_LEN + 4];
+
+        let envelope = EthernetIpv4Envelope {
+            source_hardware_addr: LOCAL_MAC,
+            destination_hardware_addr: PEER_MAC,
+            source_addr: LOCAL_IP,
+            destination_addr: REMOTE_IP,
+            protocol: ip::Protocol::Tcp,
+            payload_len: 0, // will be set by emit_ipv4
+            ttl: 64,
+            flags: ip::v4::Flags::new(true, false),
+        };
+
+        let len = emit_ipv4(
+            envelope,
+            &mut bytes,
+            1234,
+            80,
+            10,
+            20,
+            Flags::new(Flags::ACK | Flags::PSH),
+            4096,
+            &payload,
+        )
+        .unwrap();
+
+        assert_eq!(len, bytes.len());
+
+        let frame = IngressFrame::parse(&bytes).unwrap();
+        match frame.payload {
+            EthernetPayload::Ipv4(ipv4) => match ipv4.payload {
+                Ipv4Payload::Tcp { packet, repr } => {
+                    assert_eq!(repr.src_port, 1234);
+                    assert_eq!(repr.dst_port, 80);
+                    assert_eq!(repr.seq_num, 10);
+                    assert_eq!(repr.ack_num, 20);
+                    assert!(repr.flags.ack());
+                    assert!(repr.flags.psh());
+                    assert_eq!(packet.payload(), Ok(&payload[..]));
+                }
+                _ => panic!("expected TCP payload"),
+            },
+            _ => panic!("expected IPv4 frame"),
+        }
     }
 }
