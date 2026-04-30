@@ -266,9 +266,13 @@ impl<S: MemSize> DoubleEndedIterator for PageIterator<S> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.start <= self.end {
             let page = self.end;
-            // This cannot underflow, as Page(0) is VirtAddr(0),
-            // which is invalid in Rust.
-            self.end = page - 1;
+
+            // Avoid underflow
+            if self.end.start_address().as_u64() == 0 {
+                self.start = page + 1;
+            } else {
+                self.end = page - 1;
+            }
             Some(page)
         } else {
             None

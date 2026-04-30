@@ -121,7 +121,7 @@ impl IdtEntry {
     ///
     /// The caller ensures the stack index is valid.
     pub unsafe fn set_stack_index(&mut self, stack_index: u8) {
-        assert!(stack_index < 7, "Stack index must be less than 8");
+        assert!(stack_index < 7, "Stack index must be less than 7");
         let real_index = stack_index + 1; // IST index starts at 1
         self.options = (self.options & 0xFFF8) | u16::from(real_index);
     }
@@ -540,12 +540,17 @@ macro_rules! isr {
                     "push r9",
                     "push r10",
                     "push r11",
+                    "push rbx",
 
                     "cld",
 
                     "lea rdi, [rsp + {isf_offset}]",
+                    "mov rbx, rsp",
+                    "and rsp, -16",
                     "call {inner}",
+                    "mov rsp, rbx",
 
+                    "pop rbx",
                     "pop r11",
                     "pop r10",
                     "pop r9",
@@ -563,7 +568,7 @@ macro_rules! isr {
                     // "2:",
                     "iretq",
 
-                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    isf_offset = const { 10 * ::core::mem::size_of::<u64>() } ,
                     inner = sym $inner,
                 );
             }
@@ -591,15 +596,18 @@ macro_rules! isr {
                     "push r9",
                     "push r10",
                     "push r11",
+                    "push rbx",
 
                     "cld",
 
                     "lea rdi, [rsp + {isf_offset}]",
+                    "mov rbx, rsp",
+                    "and rsp, -16",
                     "call {inner}",
                     #[cfg(debug_assertions)]
                     "ud2",
 
-                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    isf_offset = const { 10 * ::core::mem::size_of::<u64>() } ,
                     inner = sym $inner,
                 );
             }
@@ -627,13 +635,18 @@ macro_rules! isr {
                     "push r9",
                     "push r10",
                     "push r11",
+                    "push rbx",
 
                     "cld",
 
                     "lea rdi, [rsp + {isf_offset}]",
                     "mov rsi, qword ptr [rsp + {err_offset}]",
+                    "mov rbx, rsp",
+                    "and rsp, -16",
                     "call {inner}",
+                    "mov rsp, rbx",
 
+                    "pop rbx",
                     "pop r11",
                     "pop r10",
                     "pop r9",
@@ -654,8 +667,8 @@ macro_rules! isr {
                     // "2:",
                     "iretq",
 
-                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
-                    err_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    isf_offset = const { 10 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
+                    err_offset = const { 10 * ::core::mem::size_of::<u64>() } ,
                     inner = sym $inner,
                 );
             }
@@ -683,17 +696,20 @@ macro_rules! isr {
                     "push r9",
                     "push r10",
                     "push r11",
+                    "push rbx",
 
                     "cld",
 
                     "lea rdi, [rsp + {isf_offset}]",
                     "mov rsi, qword ptr [rsp + {err_offset}]",
+                    "mov rbx, rsp",
+                    "and rsp, -16",
                     "call {inner}",
                     #[cfg(debug_assertions)]
                     "ud2",
 
-                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
-                    err_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    isf_offset = const { 10 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
+                    err_offset = const { 10 * ::core::mem::size_of::<u64>() } ,
                     inner = sym $inner,
                 );
             }
@@ -715,13 +731,18 @@ macro_rules! isr {
                     "push r9",
                     "push r10",
                     "push r11",
+                    "push rbx",
 
                     "cld",
 
                     "lea rdi, [rsp + {isf_offset}]",
                     "mov rsi, qword ptr [rsp + {err_offset}]",
+                    "mov rbx, rsp",
+                    "and rsp, -16",
                     "call {inner}",
+                    "mov rsp, rbx",
 
+                    "pop rbx",
                     "pop r11",
                     "pop r10",
                     "pop r9",
@@ -736,8 +757,8 @@ macro_rules! isr {
                     "add rsp, 8",
                     "iretq",
 
-                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
-                    err_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    isf_offset = const { 10 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
+                    err_offset = const { 10 * ::core::mem::size_of::<u64>() } ,
                     inner = sym $inner,
                 );
             }
@@ -759,17 +780,20 @@ macro_rules! isr {
                     "push r9",
                     "push r10",
                     "push r11",
+                    "push rbx",
 
                     "cld",
 
                     "lea rdi, [rsp + {isf_offset}]",
                     "mov rsi, qword ptr [rsp + {err_offset}]",
+                    "mov rbx, rsp",
+                    "and rsp, -16",
                     "call {inner}",
                     #[cfg(debug_assertions)]
                     "ud2",
 
-                    isf_offset = const { 9 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
-                    err_offset = const { 9 * ::core::mem::size_of::<u64>() } ,
+                    isf_offset = const { 10 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
+                    err_offset = const { 10 * ::core::mem::size_of::<u64>() } ,
                     inner = sym $inner,
                 );
             }
@@ -1092,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Stack index must be less than 8")]
+    #[should_panic(expected = "Stack index must be less than 7")]
     fn test_idt_entry_set_stack_index_invalid() {
         let mut entry: IdtEntry = IdtEntry::empty();
         unsafe { entry.set_stack_index(8) };

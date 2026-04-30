@@ -129,11 +129,8 @@ pub struct LocalApic {
 impl LocalApic {
     #[must_use]
     fn get_paddr_from_msr() -> PhysAddr {
-        let msr = Msr::<0x1B>;
-        let base = msr.read();
-
+        let base = unsafe { Msr::<0x1B>.read() };
         assert!((base >> 11) & 1 == 1, "APIC not enabled");
-
         PhysAddr::new_truncate(base & 0xF_FFFF_F000)
     }
 

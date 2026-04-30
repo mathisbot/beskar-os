@@ -548,8 +548,7 @@ impl Mapper<M2MiB, Flags> for PageTable<'_> {
         let p2 = p3_entry.next::<M4KiB>().ok()?;
         let p2_entry = &p2[usize::from(page.p2_index())];
 
-        p2_entry
-            .is_present()
+        (p2_entry.is_present() && p2_entry.is_large())
             .then(|| (Frame::containing_address(p2_entry.addr()), p2_entry.flags()))
     }
 }
@@ -634,8 +633,7 @@ impl Mapper<M1GiB, Flags> for PageTable<'_> {
         let p3 = p4_entry.next::<M4KiB>().ok()?;
         let p3_entry = &p3[usize::from(page.p3_index())];
 
-        p3_entry
-            .is_present()
+        (p3_entry.is_present() && p3_entry.is_large())
             .then(|| (Frame::containing_address(p3_entry.addr()), p3_entry.flags()))
     }
 }
