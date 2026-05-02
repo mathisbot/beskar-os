@@ -101,7 +101,7 @@ impl<T, const SIZE: usize> Slot<T, SIZE> {
 
 // Safety: Data races are avoided by using atomic operations for the indices.
 unsafe impl<const SIZE: usize, T> Send for MpmcQueue<SIZE, T> where T: Send {}
-unsafe impl<const SIZE: usize, T> Sync for MpmcQueue<SIZE, T> where T: Sync {}
+unsafe impl<const SIZE: usize, T> Sync for MpmcQueue<SIZE, T> where T: Send {}
 
 impl<const SIZE: usize, T> Default for MpmcQueue<SIZE, T> {
     fn default() -> Self {

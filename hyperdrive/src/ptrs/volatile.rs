@@ -237,7 +237,7 @@ impl<A: ReadAccess + WriteAccess, T> Volatile<A, T> {
     ///
     /// The inner pointer must be valid.
     pub unsafe fn update(&self, f: impl FnOnce(T) -> T) {
-        let old = unsafe { self.ptr.read() };
+        let old = unsafe { self.ptr.read_volatile() };
         let new = f(old);
         unsafe { self.ptr.write_volatile(new) };
     }
