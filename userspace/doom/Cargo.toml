@@ -1,7 +1,8 @@
 [package]
 name = "doom"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 beskar-core = { workspace = true }
@@ -10,3 +11,6 @@ hyperdrive = { workspace = true }
 
 [build-dependencies]
 cc = "1.2.54"
+
+[lints]
+workspace = true

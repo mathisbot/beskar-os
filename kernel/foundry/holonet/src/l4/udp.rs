@@ -1,21 +1,22 @@
-pub use core::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
-
 use crate::{
     NetworkError, NetworkResult,
-    l3::ip::Ipv4Addr,
-    utils::{checksum_with_pseudo, u16_from_inet_bytes, u16_to_inet_bytes},
+    egress::EthernetIpv4Envelope,
+    l3::ip::v4::Ipv4Addr,
+    utils::{
+        checksum_with_pseudo, ensure_len, read_u16, slice, slice_mut, usize_to_u16, write_u16,
+    },
 };
 
 /// Range of bytes for the source port field.
-const SOURCE_PORT: core::ops::Range<usize> = 0..2;
+const SOURCE_PORT: usize = 0;
 /// Range of bytes for the destination port field.
-const DEST_PORT: core::ops::Range<usize> = 2..4;
+const DEST_PORT: usize = 2;
 /// Range of bytes for the length field.
-const LENGTH: core::ops::Range<usize> = 4..6;
+const LENGTH: usize = 4;
 /// Range of bytes for the checksum field.
-const CHECKSUM: core::ops::Range<usize> = 6..8;
+const CHECKSUM: usize = 6;
 /// Length of the UDP header (fixed).
-const HEADER_LEN: usize = 8;
+pub const HEADER_LEN: usize = 8;
 
 /// A read/write wrapper around a UDP packet buffer.
 #[derive(Debug, Clone)]
@@ -43,11 +44,17 @@ impl<T: AsRef<[u8]>> Packet<T> {
 
     /// # Errors
     ///
-    /// Returns `Invalid` if the buffer is too short.
+    /// Returns `Invalid` if the buffer is too short or if the length field is inconsistent.
     pub fn check_len(&self) -> NetworkResult<()> {
-        (self.buffer.as_ref().len() >= HEADER_LEN)
-            .then_some(())
-            .ok_or(NetworkError::Invalid)
+        let data = self.buffer.as_ref();
+        ensure_len(data, HEADER_LEN)?;
+
+        let len = usize::from(read_u16(data, LENGTH)?);
+        if len < HEADER_LEN || len > data.len() {
+            return Err(NetworkError::Invalid);
+        }
+
+        Ok(())
     }
 
     #[must_use]
@@ -59,119 +66,116 @@ impl<T: AsRef<[u8]>> Packet<T> {
 
     #[must_use]
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the source port field.
-    pub fn src_port(&self) -> u16 {
-        let data = self.buffer.as_ref();
-        u16_from_inet_bytes(data[SOURCE_PORT].try_into().unwrap())
+    pub fn src_port(&self) -> NetworkResult<u16> {
+        read_u16(self.buffer.as_ref(), SOURCE_PORT)
     }
 
     #[must_use]
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the destination port field.
-    pub fn dst_port(&self) -> u16 {
-        let data = self.buffer.as_ref();
-        u16_from_inet_bytes(data[DEST_PORT].try_into().unwrap())
+    pub fn dst_port(&self) -> NetworkResult<u16> {
+        read_u16(self.buffer.as_ref(), DEST_PORT)
     }
 
     #[must_use]
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the length field.
-    pub fn len(&self) -> u16 {
-        let data = self.buffer.as_ref();
-        u16_from_inet_bytes(data[LENGTH].try_into().unwrap())
+    pub fn len(&self) -> NetworkResult<u16> {
+        read_u16(self.buffer.as_ref(), LENGTH)
     }
 
     #[must_use]
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
     /// Return the checksum field.
-    pub fn checksum(&self) -> u16 {
-        let data = self.buffer.as_ref();
-        u16_from_inet_bytes(data[CHECKSUM].try_into().unwrap())
+    pub fn checksum(&self) -> NetworkResult<u16> {
+        read_u16(self.buffer.as_ref(), CHECKSUM)
     }
 
     #[must_use]
     #[inline]
     /// Return whether the packet has a valid checksum (non-zero for UDP/IPv4).
-    pub fn has_checksum(&self) -> bool {
-        self.checksum() != 0
+    pub fn has_checksum(&self) -> NetworkResult<bool> {
+        Ok(self.checksum()? != 0)
     }
 
     #[must_use]
     #[inline]
     /// Return the payload.
-    pub fn payload(&self) -> &[u8] {
+    pub fn payload(&self) -> NetworkResult<&[u8]> {
         let data = self.buffer.as_ref();
-        data[HEADER_LEN..]
-            .split_at(usize::from(self.len()).saturating_sub(HEADER_LEN))
-            .0
+        let len = usize::from(self.len()?);
+        slice(data, HEADER_LEN..len)
     }
 
     #[must_use]
     #[inline]
     /// Return whether this packet is empty (only contains the header).
-    pub fn is_empty(&self) -> bool {
-        usize::from(self.len()) <= HEADER_LEN
+    pub fn is_empty(&self) -> NetworkResult<bool> {
+        Ok(usize::from(self.len()?) <= HEADER_LEN)
     }
 }
 
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     #[inline]
     /// Set the source port field.
-    pub fn set_src_port(&mut self, value: u16) {
-        let data = self.buffer.as_mut();
-        data[SOURCE_PORT].copy_from_slice(&u16_to_inet_bytes(value));
+    pub fn set_src_port(&mut self, value: u16) -> NetworkResult<()> {
+        write_u16(self.buffer.as_mut(), SOURCE_PORT, value)
     }
 
     #[inline]
     /// Set the destination port field.
-    pub fn set_dst_port(&mut self, value: u16) {
-        let data = self.buffer.as_mut();
-        data[DEST_PORT].copy_from_slice(&u16_to_inet_bytes(value));
+    pub fn set_dst_port(&mut self, value: u16) -> NetworkResult<()> {
+        write_u16(self.buffer.as_mut(), DEST_PORT, value)
     }
 
     #[inline]
     /// Set the length field.
-    pub fn set_len(&mut self, value: u16) {
-        let data = self.buffer.as_mut();
-        data[LENGTH].copy_from_slice(&u16_to_inet_bytes(value));
+    pub fn set_len(&mut self, value: u16) -> NetworkResult<()> {
+        write_u16(self.buffer.as_mut(), LENGTH, value)
     }
 
     #[inline]
     /// Set the checksum field.
-    pub fn set_checksum(&mut self, value: u16) {
-        let data = self.buffer.as_mut();
-        data[CHECKSUM].copy_from_slice(&u16_to_inet_bytes(value));
+    pub fn set_checksum(&mut self, value: u16) -> NetworkResult<()> {
+        write_u16(self.buffer.as_mut(), CHECKSUM, value)
     }
 
     #[inline]
     /// Get a mutable reference to the payload.
-    pub fn payload_mut(&mut self) -> &mut [u8] {
-        let len = usize::from(self.len()).saturating_sub(HEADER_LEN);
-        let data = self.buffer.as_mut();
-        &mut data[HEADER_LEN..][..len]
+    pub fn payload_mut(&mut self) -> NetworkResult<&mut [u8]> {
+        let len = usize::from(self.len()?);
+        ensure_len(self.buffer.as_ref(), len)?;
+        slice_mut(self.buffer.as_mut(), HEADER_LEN..len)
     }
 
     /// Recalculate and set the UDP checksum with pseudo-header (IPv4).
-    pub fn fill_checksum(&mut self, src_addr: Ipv4Addr, dst_addr: Ipv4Addr) {
+    ///
+    /// # Errors
+    ///
+    /// Returns `Invalid` if the packet length field is inconsistent.
+    /// Returns `Oversized` if the UDP length does not fit into the pseudo-header.
+    pub fn fill_checksum(&mut self, src_addr: Ipv4Addr, dst_addr: Ipv4Addr) -> NetworkResult<()> {
+        let len = usize::from(self.len()?);
+        if len < HEADER_LEN {
+            return Err(NetworkError::Invalid);
+        }
+        ensure_len(self.buffer.as_ref(), len)?;
+
         // Build pseudo-header
         let mut pseudo = [0u8; 12];
         pseudo[0..4].copy_from_slice(&src_addr.octets());
         pseudo[4..8].copy_from_slice(&dst_addr.octets());
         pseudo[8] = 0; // Reserved
         pseudo[9] = 17; // Protocol (UDP)
-        pseudo[10..12].copy_from_slice(&u16_to_inet_bytes(self.len()));
+        pseudo[10..12].copy_from_slice(&usize_to_u16(len)?.to_be_bytes());
 
-        self.set_checksum(0);
+        self.set_checksum(0)?;
         let data = self.buffer.as_ref();
-        let cksum = checksum_with_pseudo(&pseudo, data);
-        let _ = data;
+        let cksum = checksum_with_pseudo(&pseudo, &data[..len]);
 
         // UDP checksum should never be 0 in IPv4
-        self.set_checksum(if cksum == 0 { 0xFFFF } else { cksum });
+        self.set_checksum(if cksum == 0 { 0xFFFF } else { cksum })
     }
 }
 
@@ -200,9 +204,9 @@ impl Repr {
         packet.check_len()?;
 
         Ok(Self {
-            src_port: packet.src_port(),
-            dst_port: packet.dst_port(),
-            payload_len: packet.payload().len(),
+            src_port: packet.src_port()?,
+            dst_port: packet.dst_port()?,
+            payload_len: packet.payload()?.len(),
         })
     }
 
@@ -213,17 +217,55 @@ impl Repr {
         HEADER_LEN + self.payload_len
     }
 
+    #[inline]
+    pub fn packet_len(&self) -> NetworkResult<usize> {
+        self.payload_len
+            .checked_add(HEADER_LEN)
+            .ok_or(NetworkError::Oversized)
+    }
+
     /// Emit a high-level representation into a UDP packet.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the packet buffer is too short.
-    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, packet: &mut Packet<T>) {
-        assert!(packet.buffer.as_ref().len() >= self.buffer_len());
-        packet.set_src_port(self.src_port);
-        packet.set_dst_port(self.dst_port);
-        packet.set_len(u16::try_from(HEADER_LEN + self.payload_len).unwrap());
+    /// Returns `Truncated` if the packet buffer is too short.
+    /// Returns `Oversized` if the payload length does not fit into the UDP length field.
+    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, packet: &mut Packet<T>) -> NetworkResult<()> {
+        let packet_len = self.packet_len()?;
+        ensure_len(packet.buffer.as_ref(), packet_len)?;
+        packet.set_src_port(self.src_port)?;
+        packet.set_dst_port(self.dst_port)?;
+        packet.set_len(usize_to_u16(packet_len)?)
     }
+}
+
+/// Emit a UDP datagram inside an Ethernet + IPv4 frame.
+///
+/// `destination_hardware_addr` is the resolved next-hop Ethernet address.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_ipv4(
+    mut envelope: EthernetIpv4Envelope,
+    buffer: &mut [u8],
+    source_port: u16,
+    destination_port: u16,
+    payload: &[u8],
+) -> NetworkResult<usize> {
+    let udp_len = payload
+        .len()
+        .checked_add(HEADER_LEN)
+        .ok_or(NetworkError::Oversized)?;
+    envelope.payload_len = udp_len;
+    envelope.emit_with(buffer, |payload_buffer| {
+        let mut packet = Packet::new_unchecked(payload_buffer);
+        Repr {
+            src_port: source_port,
+            dst_port: destination_port,
+            payload_len: payload.len(),
+        }
+        .emit(&mut packet)?;
+        packet.payload_mut()?.copy_from_slice(payload);
+        packet.fill_checksum(envelope.source_addr, envelope.destination_addr)
+    })
 }
 
 #[cfg(test)]
@@ -241,27 +283,45 @@ mod test {
     #[test]
     fn test_src_dst_port() {
         let packet = Packet::new_unchecked(&PACKET_BYTES[..]);
-        assert_eq!(packet.src_port(), 53);
-        assert_eq!(packet.dst_port(), 4660);
+        assert_eq!(packet.src_port(), Ok(53));
+        assert_eq!(packet.dst_port(), Ok(4660));
     }
 
     #[test]
     fn test_len() {
         let packet = Packet::new_unchecked(&PACKET_BYTES[..]);
-        assert_eq!(packet.len(), 8);
+        assert_eq!(packet.len(), Ok(8));
     }
 
     #[test]
     fn test_construct() {
         let mut bytes = vec![0u8; 8];
         let mut packet = Packet::new_unchecked(&mut bytes);
-        packet.set_src_port(53);
-        packet.set_dst_port(4660);
-        packet.set_len(8);
-        packet.set_checksum(0);
+        packet.set_src_port(53).unwrap();
+        packet.set_dst_port(4660).unwrap();
+        packet.set_len(8).unwrap();
+        packet.set_checksum(0).unwrap();
 
-        assert_eq!(packet.src_port(), 53);
-        assert_eq!(packet.dst_port(), 4660);
-        assert_eq!(packet.len(), 8);
+        assert_eq!(packet.src_port(), Ok(53));
+        assert_eq!(packet.dst_port(), Ok(4660));
+        assert_eq!(packet.len(), Ok(8));
+    }
+
+    #[test]
+    fn test_check_len_rejects_invalid_length_field() {
+        let mut bytes = PACKET_BYTES;
+        bytes[4] = 0x00;
+        bytes[5] = 0x07;
+        let packet = Packet::new_unchecked(bytes);
+        assert_eq!(packet.check_len(), Err(NetworkError::Invalid));
+    }
+
+    #[test]
+    fn test_check_len_rejects_length_larger_than_buffer() {
+        let mut bytes = PACKET_BYTES;
+        bytes[4] = 0x00;
+        bytes[5] = 0x20;
+        let packet = Packet::new_unchecked(bytes);
+        assert_eq!(packet.check_len(), Err(NetworkError::Invalid));
     }
 }

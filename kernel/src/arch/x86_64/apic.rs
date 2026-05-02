@@ -129,11 +129,8 @@ pub struct LocalApic {
 impl LocalApic {
     #[must_use]
     fn get_paddr_from_msr() -> PhysAddr {
-        let msr = Msr::<0x1B>;
-        let base = msr.read();
-
+        let base = unsafe { Msr::<0x1B>.read() };
         assert!((base >> 11) & 1 == 1, "APIC not enabled");
-
         PhysAddr::new_truncate(base & 0xF_FFFF_F000)
     }
 
@@ -475,10 +472,10 @@ impl IoApic {
         );
         self.set_id(u8::try_from(cpu_count).unwrap() + id_offset);
 
-        let isos = ACPI.get().unwrap().madt().io_iso().iter().filter(|iso| {
-            iso.gsi() >= self.gsi_base && iso.gsi() < self.gsi_base + u32::from(self.max_red_ent())
-        });
-        let nmi_sources = ACPI.get().unwrap().madt().io_nmi_sources();
+        let madt = ACPI.get().unwrap().madt();
+        let isos = madt.io_iso().iter().filter(|iso| self.owns_gsi(iso.gsi()));
+        let nmi_sources = madt.io_nmi_sources();
+        let irq1_has_iso = madt.io_iso().iter().any(|iso| iso.source() == 1);
 
         for iso in isos {
             let (is_nmi, flags) = nmi_sources
@@ -517,19 +514,20 @@ impl IoApic {
             self.set_redirection(idx.try_into().unwrap(), red);
         }
 
-        // Manually map IRQ1 (PS/2 keyboard) if not present in ISOs
-        let idx = 1_u32.checked_sub(self.gsi_base).unwrap();
-        let (irq, core_id) = super::interrupts::new_irq(ps2_keyboard_interrupt_handler, None);
-        let red = Redirection {
-            delivery_mode: DeliveryMode::Fixed,
-            trigger_mode: TriggerMode::Edge,
-            pin_polarity: PinPolarity::High,
-            remote_irr: false,
-            int_vec: irq,
-            interrupt_mask: false,
-            destination: Destination::Physical(u8::try_from(core_id).unwrap()),
-        };
-        self.set_redirection(idx.try_into().unwrap(), red);
+        if !irq1_has_iso && self.owns_gsi(1) {
+            let idx = 1_u32 - self.gsi_base;
+            let (irq, core_id) = super::interrupts::new_irq(ps2_keyboard_interrupt_handler, None);
+            let red = Redirection {
+                delivery_mode: DeliveryMode::Fixed,
+                trigger_mode: TriggerMode::Edge,
+                pin_polarity: PinPolarity::High,
+                remote_irr: false,
+                int_vec: irq,
+                interrupt_mask: false,
+                destination: Destination::Physical(u8::try_from(core_id).unwrap()),
+            };
+            self.set_redirection(idx.try_into().unwrap(), red);
+        }
 
         enable_disable_interrupts(true);
     }
@@ -584,6 +582,19 @@ impl IoApic {
     }
 
     #[must_use]
+    #[inline]
+    fn redirection_entry_count(&self) -> u32 {
+        u32::from(self.max_red_ent()) + 1
+    }
+
+    #[must_use]
+    #[inline]
+    fn owns_gsi(&self, gsi: u32) -> bool {
+        let offset = gsi.saturating_sub(self.gsi_base);
+        gsi >= self.gsi_base && offset < self.redirection_entry_count()
+    }
+
+    #[must_use]
     pub fn _arbitration_id(&self) -> u8 {
         let arb = self.read_reg(IoApicReg::Arbitration);
         u8::try_from((arb >> 24) & 0xF).unwrap()
@@ -591,7 +602,7 @@ impl IoApic {
 
     pub fn set_redirection(&self, index: u8, redirection: Redirection) {
         assert!(
-            index < self.max_red_ent(),
+            index <= self.max_red_ent(),
             "Redirection index must be less than the max redirection entries"
         );
 

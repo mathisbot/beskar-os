@@ -204,6 +204,7 @@ pub mod kernel {
                             mapped_end = Some(page);
                         }
                         Err(err) => {
+                            core::hint::cold_path();
                             frame_allocator.free(frame);
                             return Err(err);
                         }
@@ -274,6 +275,7 @@ pub mod kernel {
                             mapped_end = Some(page);
                         }
                         Err(err) => {
+                            core::hint::cold_path();
                             frame_allocator.free(frame);
                             return Err(err);
                         }
@@ -284,6 +286,8 @@ pub mod kernel {
         });
 
         if mapping_result.is_err() {
+            core::hint::cold_path();
+
             if let Some(last_mapped_page) = mapped_end {
                 for page in Page::range_inclusive(start_page, last_mapped_page) {
                     if let Ok(frame) = unmap_page(page) {
@@ -378,6 +382,7 @@ pub mod process_local {
                             mapped_end = Some(page);
                         }
                         Err(err) => {
+                            core::hint::cold_path();
                             frame_allocator.free(frame);
                             return Err(err);
                         }

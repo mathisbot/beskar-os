@@ -1,3 +1,5 @@
+use core::mem::MaybeUninit;
+
 use beskar_core::{
     arch::{
         PhysAddr, VirtAddr,
@@ -98,15 +100,18 @@ impl EarlyFrameAllocator {
     ///
     /// # Safety
     ///
-    /// `start_vaddr` and `max_regions` must be valid for creating a slice.
+    /// `start_vaddr` and `max_regions` must describe a mapped memory region.
     pub unsafe fn construct_memory_map(
         self,
         start_vaddr: VirtAddr,
         max_regions: usize,
     ) -> &'static mut [MemoryRange] {
         // Safety: Function safety guards.
-        let regions =
-            unsafe { core::slice::from_raw_parts_mut(start_vaddr.as_mut_ptr(), max_regions) };
+        let regions_uninit = {
+            let data = start_vaddr.as_mut_ptr::<MaybeUninit<MemoryRange>>();
+            let len = max_regions;
+            unsafe { core::slice::from_raw_parts_mut(data, len) }
+        };
 
         let allocated_slice = (
             self.min_frame.start_address().as_u64(), // Is aligned to 0x1000
@@ -115,64 +120,68 @@ impl EarlyFrameAllocator {
 
         let mut next_index = 0;
         for descriptor in self.memory_map.entries() {
-            let start = PhysAddr::new_truncate(descriptor.phys_start);
-            let end =
-                PhysAddr::new_truncate(descriptor.phys_start) + descriptor.page_count * M4KiB::SIZE;
-
-            let region = MemoryRange::new(start.as_u64(), end.as_u64().checked_sub(1).unwrap());
-
-            if usable_after_bootloader_exit(descriptor) {
-                Self::split_region(region, regions, &mut next_index, allocated_slice);
+            if !usable_after_bootloader_exit(descriptor) || descriptor.page_count == 0 {
+                continue;
             }
+
+            let start = descriptor.phys_start;
+            let end = descriptor.phys_start + descriptor.page_count * M4KiB::SIZE;
+
+            let region = MemoryRange::new(start, end - 1);
+            Self::split_region(region, regions_uninit, &mut next_index, allocated_slice);
         }
 
-        &mut regions[..next_index]
+        let valid_regions = &mut regions_uninit[..next_index];
+        // Safety: We just initialized the first `next_index` entries.
+        unsafe { valid_regions.assume_init_mut() }
     }
 
     fn split_region(
         region: MemoryRange,
-        regions: &mut [MemoryRange],
+        regions_uninit: &mut [MaybeUninit<MemoryRange>],
         next_index: &mut usize,
         allocated_slice: (u64, u64),
     ) {
         let overlap_start = region.start().max(allocated_slice.0);
         let overlap_end = region.end().min(allocated_slice.1);
         if overlap_start < overlap_end {
-            if region.start() < overlap_start.checked_sub(1).unwrap() {
+            if region.start() < overlap_start.saturating_sub(1) {
                 // Add the region before the overlap.
                 Self::add_region(
-                    MemoryRange::new(region.start(), overlap_start.checked_sub(1).unwrap()),
-                    regions,
+                    MemoryRange::new(region.start(), overlap_start - 1),
+                    regions_uninit,
                     next_index,
                 );
             }
-            if overlap_end.checked_add(1).unwrap() < region.end() {
+            if overlap_end.saturating_add(1) < region.end() {
                 // Add the region after the overlap.
                 Self::add_region(
-                    MemoryRange::new(overlap_end.checked_add(1).unwrap(), region.end()),
-                    regions,
+                    MemoryRange::new(overlap_end + 1, region.end()),
+                    regions_uninit,
                     next_index,
                 );
             }
         } else {
             // No overlap, add the region as is.
-            Self::add_region(region, regions, next_index);
+            Self::add_region(region, regions_uninit, next_index);
         }
     }
 
-    fn add_region(region: MemoryRange, regions: &mut [MemoryRange], next_index: &mut usize) {
-        if region.start() == region.end() {
+    fn add_region(
+        region: MemoryRange,
+        regions_uninit: &mut [MaybeUninit<MemoryRange>],
+        next_index: &mut usize,
+    ) {
+        if region.start() > region.end() {
             return;
         }
 
-        assert!(
-            *next_index < regions.len(),
-            "Memory range array is too small to hold all regions"
-        );
-
-        regions[*next_index] = region;
-
-        *next_index += 1;
+        if *next_index < regions_uninit.len() {
+            regions_uninit[*next_index].write(region);
+            *next_index += 1;
+        } else {
+            beskar_core::debug_panic!("Could not add memory region to memory map.");
+        }
     }
 }
 

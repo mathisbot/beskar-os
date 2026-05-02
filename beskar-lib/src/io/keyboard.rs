@@ -85,21 +85,26 @@ fn cached_handle() -> SleepHandle {
     if raw != 0 {
         return SleepHandle::from_raw(raw);
     }
+    core::hint::cold_path();
+
+    // FIXME: Maybe synchronize in the kernel, or init drivers before allowing user processes to run
 
     // Not cached, query the kernel for the wait handle
-    let mut payload = MaybeUninit::<SleepHandle>::uninit();
-    let code = crate::sys::sc_query_config(
-        beskar_core::syscall::consts::QUERY_KEYBOARD_WAIT_HANDLE,
-        payload.as_mut_ptr().cast(),
-        size_of_val(&payload) as u64,
-    );
+    let handle = loop {
+        let mut payload = MaybeUninit::<SleepHandle>::uninit();
+        let code = crate::sys::sc_query_config(
+            beskar_core::syscall::consts::QUERY_KEYBOARD_WAIT_HANDLE,
+            payload.as_mut_ptr().cast(),
+            size_of::<SleepHandle>() as u64,
+        );
 
-    // This should never fail
-    assert!(code.is_success(), "Failed to query keyboard wait handle");
-
-    // Safety: We just initialized the payload
-    let payload = unsafe { payload.assume_init() };
-    let raw = payload.raw();
+        if code.is_success() {
+            // Safety: We just initialized the payload
+            break unsafe { payload.assume_init() };
+        }
+        core::hint::spin_loop();
+    };
+    let raw = handle.raw();
 
     if cfg!(debug_assertions) {
         let previous = WAIT_HANDLE_CACHE.swap(raw, Ordering::Release);
@@ -110,5 +115,6 @@ fn cached_handle() -> SleepHandle {
     } else {
         WAIT_HANDLE_CACHE.store(raw, Ordering::Release);
     }
-    SleepHandle::from_raw(raw)
+
+    handle
 }

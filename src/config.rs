@@ -3,33 +3,33 @@
 /// Userspace applications that are selected by default to be included in the RAM disk.
 const DEFAULT_SELECTED: &[&str] = &["bashkar"];
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Profile {
     Debug,
     Release,
 }
 
 impl Profile {
-    pub const ALL: &'static [Profile] = &[Profile::Debug, Profile::Release];
+    pub const ALL: &'static [Self] = &[Self::Debug, Self::Release];
 
-    pub fn label(&self) -> &'static str {
+    pub const fn label(&self) -> &'static str {
         match self {
-            Profile::Debug => "Debug",
-            Profile::Release => "Release",
+            Self::Debug => "Debug",
+            Self::Release => "Release",
         }
     }
 
-    pub fn cargo_flag(&self) -> Option<&'static str> {
+    pub const fn cargo_flag(&self) -> Option<&'static str> {
         match self {
-            Profile::Debug => None,
-            Profile::Release => Some("--release"),
+            Self::Debug => None,
+            Self::Release => Some("--release"),
         }
     }
 
-    pub fn dir_name(&self) -> &'static str {
+    pub const fn dir_name(&self) -> &'static str {
         match self {
-            Profile::Debug => "debug",
-            Profile::Release => "release",
+            Self::Debug => "debug",
+            Self::Release => "release",
         }
     }
 }
@@ -60,24 +60,24 @@ impl BuildConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CpuType {
     Max,
     Host,
 }
 
 impl CpuType {
-    pub const ALL: &'static [CpuType] = &[CpuType::Max, CpuType::Host];
+    pub const ALL: &'static [Self] = &[Self::Max, Self::Host];
 
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            CpuType::Max => "max",
-            CpuType::Host => "host",
+            Self::Max => "max",
+            Self::Host => "host",
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccelBackend {
     Tcg,
     Kvm,
@@ -86,36 +86,31 @@ pub enum AccelBackend {
 }
 
 impl AccelBackend {
-    pub const ALL: &'static [AccelBackend] = &[
-        AccelBackend::Tcg,
-        AccelBackend::Kvm,
-        AccelBackend::Whpx,
-        AccelBackend::Hvf,
-    ];
+    pub const ALL: &'static [Self] = &[Self::Tcg, Self::Kvm, Self::Whpx, Self::Hvf];
 
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            AccelBackend::Tcg => "tcg",
-            AccelBackend::Kvm => "kvm",
-            AccelBackend::Whpx => "whpx",
-            AccelBackend::Hvf => "hvf",
+            Self::Tcg => "tcg",
+            Self::Kvm => "kvm",
+            Self::Whpx => "whpx",
+            Self::Hvf => "hvf",
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DisplayBackend {
     Sdl,
     Gtk,
 }
 
 impl DisplayBackend {
-    pub const ALL: &'static [DisplayBackend] = &[DisplayBackend::Sdl, DisplayBackend::Gtk];
+    pub const ALL: &'static [Self] = &[Self::Sdl, Self::Gtk];
 
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            DisplayBackend::Sdl => "sdl",
-            DisplayBackend::Gtk => "gtk",
+            Self::Sdl => "sdl",
+            Self::Gtk => "gtk",
         }
     }
 }

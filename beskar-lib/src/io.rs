@@ -91,7 +91,7 @@ impl<R: Read> BufRead for BufReader<R> {
 }
 
 /// A buffered writer
-pub struct BufWriter<W> {
+pub struct BufWriter<W: Write> {
     inner: W,
     buf: Vec<u8>,
     pos: usize,
@@ -129,17 +129,6 @@ impl<W: Write> BufWriter<W> {
     pub const fn get_mut(&mut self) -> &mut W {
         &mut self.inner
     }
-
-    /// Unwraps this `BufWriter`, returning the underlying writer
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if flushing the buffer fails
-    #[inline]
-    pub fn into_inner(mut self) -> IoResult<W> {
-        self.flush()?;
-        Ok(self.inner)
-    }
 }
 
 impl<W: Write> Write for BufWriter<W> {
@@ -164,6 +153,12 @@ impl<W: Write> Write for BufWriter<W> {
             self.pos = 0;
         }
         self.inner.flush()
+    }
+}
+
+impl<W: Write> Drop for BufWriter<W> {
+    fn drop(&mut self) {
+        let _ = self.flush();
     }
 }
 

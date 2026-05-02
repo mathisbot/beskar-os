@@ -4,7 +4,7 @@
 //!
 //! On a physical machine, the serial port can be connected to another machine
 //! to capture early debug messages in case of hard failure.
-use super::{Access, Port, ReadAccess, ReadWrite, WriteAccess, WriteOnly};
+use super::{Access, Port, ReadAccess, ReadOnly, ReadWrite, WriteAccess, WriteOnly};
 use core::marker::PhantomData;
 use thiserror::Error;
 
@@ -18,10 +18,17 @@ pub struct SerialPort<A: Access> {
     fifo_control: Port<u8, WriteOnly>,
     line_control: Port<u8, WriteOnly>,
     modem_control: Port<u8, WriteOnly>,
+    line_status: Port<u8, ReadOnly>,
     phantom: PhantomData<A>,
 }
 
 impl<A: Access> SerialPort<A> {
+    /// Indicates that data is available to read from the serial port
+    const LINE_STATUS_DATA_READY: u8 = 1 << 0;
+    /// Indicates that the transmitter holding register is empty and ready for new data
+    const LINE_STATUS_THR_EMPTY: u8 = 1 << 5;
+    const SPIN_LIMIT: usize = 10_000;
+
     #[must_use]
     #[inline]
     pub const fn new(base: u16) -> Self {
@@ -31,8 +38,37 @@ impl<A: Access> SerialPort<A> {
             fifo_control: Port::new(base + 2),
             line_control: Port::new(base + 3),
             modem_control: Port::new(base + 4),
+            line_status: Port::new(base + 5),
             phantom: PhantomData,
         }
+    }
+
+    #[must_use]
+    #[inline]
+    fn line_status(&self) -> u8 {
+        unsafe { self.line_status.read() }
+    }
+
+    #[must_use]
+    #[inline]
+    fn test_line_status(&self, mask: u8) -> bool {
+        self.line_status() & mask != 0
+    }
+
+    fn wait_for_line_status(&self, mask: u8) {
+        while !self.test_line_status(mask) {
+            core::hint::spin_loop();
+        }
+    }
+
+    fn try_wait_for_line_status(&self, mask: u8) -> bool {
+        for _ in 0..Self::SPIN_LIMIT {
+            if self.test_line_status(mask) {
+                return true;
+            }
+            core::hint::spin_loop();
+        }
+        false
     }
 
     pub fn init(&mut self) -> SerialResult<()> {
@@ -77,7 +113,13 @@ impl<A: Access> SerialPort<A> {
 impl<A: ReadAccess> SerialPort<A> {
     /// Receive a single byte of data from the serial port.
     pub fn recv(&mut self) -> u8 {
+        self.wait_for_line_status(Self::LINE_STATUS_DATA_READY);
         unsafe { self.data.read() }
+    }
+
+    pub fn try_recv(&mut self) -> Option<u8> {
+        self.try_wait_for_line_status(Self::LINE_STATUS_DATA_READY)
+            .then(|| unsafe { self.data.read() })
     }
 }
 
@@ -87,14 +129,36 @@ impl<A: WriteAccess> SerialPort<A> {
         match data {
             8 | 0x7F => {
                 // Handle backspace/delete
-                unsafe {
-                    self.data.write(8);
-                    self.data.write(b' ');
-                    self.data.write(8);
-                }
+                self.send_byte(8);
+                self.send_byte(b' ');
+                self.send_byte(8);
             }
-            _ => unsafe { self.data.write(data) },
+            _ => self.send_byte(data),
         }
+    }
+
+    /// Tries  to send a single byte of data through the serial port.
+    pub fn try_send(&mut self, data: u8) -> bool {
+        match data {
+            8 | 0x7F => {
+                // Handle backspace/delete
+                self.try_send_byte(8) && self.try_send_byte(b' ') && self.try_send_byte(8)
+            }
+            _ => self.try_send_byte(data),
+        }
+    }
+
+    fn send_byte(&mut self, data: u8) {
+        self.wait_for_line_status(Self::LINE_STATUS_THR_EMPTY);
+        unsafe { self.data.write(data) };
+    }
+
+    fn try_send_byte(&mut self, data: u8) -> bool {
+        if !self.try_wait_for_line_status(Self::LINE_STATUS_THR_EMPTY) {
+            return false;
+        }
+        unsafe { self.data.write(data) };
+        true
     }
 }
 

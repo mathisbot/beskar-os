@@ -17,7 +17,7 @@ pub fn get_tsc_frequency() -> crate::error::SyscallResult<u64> {
     const QUANTUM_PER_SEC: u64 = MILLIS_PER_SEC / MEASURE_TIME_MS;
 
     let start = read_tsc_fenced();
-    crate::sleep(Duration::from_millis(MEASURE_TIME_MS))?;
+    crate::thread::sleep(Duration::from_millis(MEASURE_TIME_MS))?;
     let end = read_tsc_fenced();
 
     let delta = end - start;

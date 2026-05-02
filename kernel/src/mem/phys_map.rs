@@ -59,6 +59,8 @@ where
             let res = vmm::kernel::map_frame(page, frame, flags);
 
             if let Err(e) = res {
+                core::hint::cold_path();
+
                 // Unmap any pages that were successfully mapped before the failure.
                 for (_prev_frame, prev_page) in frame_range
                     .into_iter()

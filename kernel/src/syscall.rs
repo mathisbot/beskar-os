@@ -50,6 +50,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::SurfaceDirty => SyscallReturnValue::Code(sc_surface_dirty(args)),
         Syscall::SurfacePresent => SyscallReturnValue::Code(sc_surface_present(args)),
         Syscall::QueryConfig => SyscallReturnValue::Code(sc_query_config(args)),
+        Syscall::ThreadSpawn => SyscallReturnValue::ValueU(sc_thread_spawn(args)),
     }
 }
 
@@ -73,14 +74,18 @@ fn sc_exit(args: &Arguments) -> ! {
 #[must_use]
 /// Build page table flags from user-space protection flags constants.
 fn build_flags_from_us(raw: u64) -> Flags {
+    let readable = raw & beskar_core::syscall::consts::MFLAGS_READ != 0;
+    let writable = raw & beskar_core::syscall::consts::MFLAGS_WRITE != 0;
+    let executable = raw & beskar_core::syscall::consts::MFLAGS_EXECUTE != 0;
+
     let mut flags = Flags::USER_ACCESSIBLE;
-    if raw & beskar_core::syscall::consts::MFLAGS_READ != 0 {
+    if readable || writable || executable {
         flags |= Flags::PRESENT;
     }
-    if raw & beskar_core::syscall::consts::MFLAGS_WRITE != 0 {
+    if writable {
         flags |= Flags::WRITABLE;
     }
-    if raw & beskar_core::syscall::consts::MFLAGS_EXECUTE == 0 {
+    if !executable {
         flags |= Flags::NO_EXECUTE;
     }
     flags
@@ -124,8 +129,8 @@ fn sc_munmap(args: &Arguments) -> SyscallExitCode {
     let end = va + (size - 1);
 
     if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
-        && !size.is_multiple_of(M4KiB::SIZE)
-        && !probe(va, end)
+        || !size.is_multiple_of(M4KiB::SIZE)
+        || !probe(va, end)
     {
         return SyscallExitCode::Failure;
     }
@@ -156,8 +161,8 @@ fn sc_mprotect(args: &Arguments) -> SyscallExitCode {
     let end = va + (size - 1);
 
     if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
-        && !size.is_multiple_of(M4KiB::SIZE)
-        && !probe(va, end)
+        || !size.is_multiple_of(M4KiB::SIZE)
+        || !probe(va, end)
     {
         return SyscallExitCode::Failure;
     }
@@ -203,7 +208,8 @@ fn sc_read(args: &Arguments) -> i64 {
 
     let file_offset = usize::try_from(args.four).unwrap();
 
-    let res = crate::storage::vfs().read(file_handle, buffer, file_offset);
+    let pid = crate::process::scheduler::current_process().pid();
+    let res = crate::storage::vfs().read(pid.as_u64(), file_handle, buffer, file_offset);
     res.map_or(-1, |bytes_read| {
         i64::try_from(bytes_read).unwrap_or(i64::MAX)
     })
@@ -234,7 +240,8 @@ fn sc_write(args: &Arguments) -> i64 {
 
     let file_offset = usize::try_from(args.four).unwrap();
 
-    let res = crate::storage::vfs().write(file_handle, buffer, file_offset);
+    let pid = crate::process::scheduler::current_process().pid();
+    let res = crate::storage::vfs().write(pid.as_u64(), file_handle, buffer, file_offset);
     res.map_or(-1, |bytes_written| {
         i64::try_from(bytes_written).unwrap_or(i64::MAX)
     })
@@ -258,7 +265,8 @@ fn sc_open(args: &Arguments) -> i64 {
         return Handle::INVALID.id();
     };
 
-    let res = crate::storage::vfs().open(Path::from(path));
+    let pid = crate::process::scheduler::current_process().pid();
+    let res = crate::storage::vfs().open(pid.as_u64(), Path::from(path));
     res.map_or(-1, |handle| handle.id())
 }
 
@@ -273,7 +281,9 @@ fn sc_close(args: &Arguments) -> SyscallExitCode {
         // and the given value is positive.
         unsafe { ::storage::vfs::Handle::from_raw(raw) }
     };
-    let res = crate::storage::vfs().close(file_handle);
+
+    let pid = crate::process::scheduler::current_process().pid();
+    let res = crate::storage::vfs().close(pid.as_u64(), file_handle);
 
     match res {
         Ok(()) => SyscallExitCode::Success,
@@ -495,4 +505,34 @@ fn sc_query_config(args: &Arguments) -> SyscallExitCode {
 
         _ => SyscallExitCode::Failure,
     }
+}
+
+fn sc_thread_spawn(args: &Arguments) -> u64 {
+    use crate::process::scheduler::{self, thread};
+
+    let entry_point = args.one;
+
+    let entry_point = VirtAddr::try_new(entry_point).unwrap_or_default();
+    if !probe(entry_point, entry_point) {
+        return 0;
+    }
+
+    let start_fn = unsafe {
+        core::mem::transmute::<*const (), extern "C" fn(usize) -> !>(thread::start_user_thread as _)
+    };
+    let thread = thread::Thread::builder_with_arg(
+        scheduler::current_process(),
+        start_fn,
+        entry_point.as_u64().try_into().unwrap(),
+    )
+    .stack_heap(alloc::vec![0; 16 * 1024])
+    .priority(scheduler::Priority::Normal)
+    .build_boxed();
+
+    let tid = thread.id().as_u64();
+    debug_assert_ne!(tid, 0);
+
+    scheduler::spawn_thread(thread);
+
+    tid
 }

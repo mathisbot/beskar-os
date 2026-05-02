@@ -118,6 +118,18 @@ impl PathBuf {
         new_path.push_str(path);
         Self(new_path)
     }
+
+    #[must_use]
+    #[inline]
+    pub const fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl core::borrow::Borrow<str> for PathBuf {
@@ -164,6 +176,13 @@ impl core::ops::Deref for Path<'_> {
     #[inline]
     fn deref(&self) -> &Self::Target {
         self.0
+    }
+}
+
+impl hashbrown::Equivalent<PathBuf> for Path<'_> {
+    #[inline]
+    fn equivalent(&self, other: &PathBuf) -> bool {
+        self.0 == other.0
     }
 }
 

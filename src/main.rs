@@ -38,7 +38,7 @@ struct Cli {
 enum Commands {
     /// Headless build: assemble a disk image with default configuration.
     Build {
-        /// Output directory (default: efi_disk).
+        /// Output directory (default: `efi_disk`).
         #[arg(short, long, default_value = "efi_disk")]
         output: String,
         /// Build in release mode.
@@ -51,7 +51,7 @@ enum Commands {
 
     /// Headless build + launch QEMU.
     Qemu {
-        /// Output directory (default: efi_disk).
+        /// Output directory (default: `efi_disk`).
         #[arg(short, long, default_value = "efi_disk")]
         output: String,
         /// Build in release mode.
@@ -75,14 +75,14 @@ fn main() -> Result<()> {
             output,
             release,
             app,
-        }) => run_headless_build(workspace_root, output, release, app),
+        }) => run_headless_build(workspace_root, output, release, &app),
         Some(Commands::Qemu {
             output,
             release,
             cores,
             ram,
-        }) => run_headless_qemu(workspace_root, output, release, cores, ram),
-        None => run_tui(workspace_root),
+        }) => run_headless_qemu(&workspace_root, output, release, cores, ram),
+        None => run_tui(&workspace_root),
     }
 }
 
@@ -94,7 +94,7 @@ fn run_headless_build(
     workspace_root: PathBuf,
     output: String,
     release: bool,
-    selected_apps: Vec<String>,
+    selected_apps: &[String],
 ) -> Result<()> {
     let available = discover_userspace_apps(&workspace_root);
     let apps: Vec<(String, bool)> = available
@@ -130,9 +130,8 @@ fn run_headless_build(
                 if ok {
                     println!("\nBuild complete.");
                     return Ok(());
-                } else {
-                    anyhow::bail!("Build failed.");
                 }
+                anyhow::bail!("Build failed.");
             }
         }
     }
@@ -141,13 +140,13 @@ fn run_headless_build(
 }
 
 fn run_headless_qemu(
-    workspace_root: PathBuf,
+    workspace_root: &Path,
     output: String,
     release: bool,
     cores: u32,
     ram: u32,
 ) -> Result<()> {
-    run_headless_build(workspace_root.clone(), output.clone(), release, vec![])?;
+    run_headless_build(workspace_root.to_path_buf(), output.clone(), release, &[])?;
 
     let qemu_cfg = QemuConfig {
         cores,
@@ -159,7 +158,7 @@ fn run_headless_qemu(
     println!("\nLaunching QEMU...");
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let handle = qemu::start_qemu(qemu_cfg, output, &workspace_root, tx);
+    let handle = qemu::start_qemu(qemu_cfg, output, workspace_root, tx);
 
     for msg in rx {
         match msg {
@@ -173,11 +172,11 @@ fn run_headless_qemu(
     Ok(())
 }
 
-fn run_tui(workspace_root: PathBuf) -> Result<()> {
-    let available_apps = discover_userspace_apps(&workspace_root);
+fn run_tui(workspace_root: &Path) -> Result<()> {
+    let available_apps = discover_userspace_apps(workspace_root);
     let build_cfg = BuildConfig::new(available_apps);
     let qemu_cfg = QemuConfig::default();
-    let mut app = App::new(workspace_root.clone(), build_cfg, qemu_cfg);
+    let mut app = App::new(workspace_root.to_path_buf(), &build_cfg, &qemu_cfg);
 
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -185,7 +184,7 @@ fn run_tui(workspace_root: PathBuf) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = tui_loop(&mut terminal, &mut app, &workspace_root);
+    let result = tui_loop(&mut terminal, &mut app, workspace_root);
 
     disable_raw_mode()?;
     execute!(
@@ -201,7 +200,7 @@ fn run_tui(workspace_root: PathBuf) -> Result<()> {
 fn tui_loop(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     app: &mut App,
-    workspace_root: &PathBuf,
+    workspace_root: &Path,
 ) -> Result<()> {
     loop {
         terminal.draw(|f| ui::render(f, app))?;
@@ -273,10 +272,10 @@ fn handle_build_form(app: &mut App, code: KeyCode, mods: KeyModifiers) -> TuiAct
 
     match code {
         KeyCode::Tab | KeyCode::Down => {
-            if !mods.contains(KeyModifiers::SHIFT) {
-                app.form_next();
-            } else {
+            if mods.contains(KeyModifiers::SHIFT) {
                 app.form_prev();
+            } else {
+                app.form_next();
             }
         }
         KeyCode::BackTab | KeyCode::Up => app.form_prev(),
@@ -314,7 +313,7 @@ fn trigger_build(app: &mut App, workspace_root: &Path) {
 /// Suspends the TUI, runs QEMU with an inherited terminal, then restores the TUI.
 fn launch_qemu_foreground(
     app: &mut App,
-    workspace_root: &PathBuf,
+    workspace_root: &Path,
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
 ) -> Result<()> {
     let qcfg = app.build_form.to_qemu_config();
@@ -348,7 +347,7 @@ fn launch_qemu_foreground(
     )?;
     terminal.clear()?;
 
-    let ok = status.map(|s| s.success()).unwrap_or(false);
+    let ok = status.is_ok_and(|s| s.success());
     let msg = if ok {
         "  ✓ QEMU exited.".to_string()
     } else {

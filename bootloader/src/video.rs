@@ -61,13 +61,7 @@ impl PhysicalFrameBuffer {
     ///
     /// The provided framebuffer must only be used to transfer the framebuffer to the kernel.
     pub const unsafe fn to_framebuffer(&self, vaddr: VirtAddr) -> FramebufferConfig {
-        FramebufferConfig::new(
-            self.info().width(),
-            self.info().height(),
-            self.info().stride(),
-            self.info().pixel_format(),
-            vaddr,
-        )
+        FramebufferConfig::from_info(self.info(), vaddr)
     }
 }
 

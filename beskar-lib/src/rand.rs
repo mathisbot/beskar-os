@@ -17,9 +17,6 @@ pub fn rand_fill(buf: &mut [u8]) -> IoResult<()> {
     file.read_exact(buf)
         .map_err(|_| IoError::new(IoErrorKind::UnexpectedEof))?;
 
-    // Close the device (best-effort)
-    let _ = file.close();
-
     Ok(())
 }
 
@@ -37,9 +34,6 @@ pub fn rand_seed(buf: &mut [u8]) -> IoResult<()> {
     // Use read_exact semantics to ensure buffer is fully filled
     file.read_exact(buf)
         .map_err(|_| IoError::new(IoErrorKind::UnexpectedEof))?;
-
-    // Close the device (best-effort)
-    let _ = file.close();
 
     Ok(())
 }

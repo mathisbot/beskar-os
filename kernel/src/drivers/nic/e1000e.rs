@@ -28,9 +28,12 @@ use beskar_core::{
     drivers::{DriverError, DriverResult},
 };
 use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
-use core::ptr::NonNull;
+use core::{
+    ptr::NonNull,
+    sync::atomic::{Ordering, fence},
+};
 use driver_shared::mmio::MmioRegister;
-use holonet::l2::ethernet::MacAddress;
+use holonet::{NetworkError, NetworkResult, l2::ethernet::MacAddress};
 use hyperdrive::{locks::mcs::MUMcsLock, ptrs::volatile::ReadWrite};
 
 const RX_BUFFERS: usize = 32;
@@ -271,13 +274,15 @@ extern "C" fn nic_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
 beskar_hal::isr!(nic_interrupt_handler, nic_interrupt_handler_inner);
 
 impl Nic for E1000e<'_> {
-    fn poll_frame(&self) -> Option<&[u8]> {
+    fn poll_frame(&mut self) -> Option<&[u8]> {
         let rx_idx = self.rx_curr.get();
         let desc = self.buffer_set.rx_desc(rx_idx);
 
         if !desc.is_done() || !desc.is_end_of_packet() {
             return None;
         }
+
+        fence(Ordering::Acquire);
 
         let packet_len = desc.packet_length() as usize;
         if packet_len == 0 || packet_len > 4096 {
@@ -295,10 +300,10 @@ impl Nic for E1000e<'_> {
         self.advance_rx();
     }
 
-    fn send_frame(&mut self, frame: &[u8]) {
+    fn send_frame(&mut self, frame: &[u8]) -> NetworkResult<()> {
         if frame.is_empty() || frame.len() > 4096 {
             crate::warn!("Invalid frame size: {}", frame.len());
-            return;
+            return Err(NetworkError::Invalid);
         }
 
         let tx_idx = self.tx_curr.get();
@@ -307,7 +312,7 @@ impl Nic for E1000e<'_> {
         let desc = self.buffer_set.tx_desc(tx_idx);
         if !desc.is_done() {
             crate::warn!("No free TX descriptor available");
-            return;
+            return Err(NetworkError::Exhausted);
         }
 
         // Copy frame to TX buffer
@@ -317,6 +322,7 @@ impl Nic for E1000e<'_> {
         // Prepare descriptor for transmission
         let desc = self.buffer_set.tx_desc_mut(tx_idx);
         desc.prepare_for_send(u16::try_from(frame.len()).unwrap());
+        fence(Ordering::Release);
 
         // Advance to next descriptor
         let next = (tx_idx + 1) % TX_BUFFERS;
@@ -324,6 +330,8 @@ impl Nic for E1000e<'_> {
 
         // Update TDT register to notify hardware
         self.write_reg(Registers::TDT, u32::try_from(next).unwrap());
+
+        Ok(())
     }
 
     fn mac_address(&self) -> MacAddress {

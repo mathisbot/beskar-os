@@ -1,15 +1,16 @@
 use crate::{
     NetworkError, NetworkResult,
-    utils::{u16_from_inet_bytes, u16_to_inet_bytes},
+    utils::{ensure_len, read_array, read_u16, slice, slice_mut, write_slice, write_u16},
 };
 
-const DESTINATION: core::ops::Range<usize> = 0..6;
-const SOURCE: core::ops::Range<usize> = 6..12;
-const ETHERTYPE: core::ops::Range<usize> = 12..14;
-const PAYLOAD: core::ops::RangeFrom<usize> = 14..;
+const DESTINATION: usize = 0;
+const SOURCE: usize = 6;
+const ETHERTYPE: usize = 12;
+const PAYLOAD: usize = 14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
+#[non_exhaustive]
 /// Ethernet protocol type.
 pub enum EtherType {
     IpV4 = 0x0800,
@@ -42,7 +43,7 @@ pub struct MacAddress(pub [u8; 6]);
 
 impl MacAddress {
     /// The broadcast address.
-    pub const BROADCAST: Self = Self([0xff; 6]);
+    pub const BROADCAST: Self = Self([0xFF; _]);
 
     #[must_use]
     #[inline]
@@ -52,25 +53,24 @@ impl MacAddress {
     }
 
     #[must_use]
-    /// # Panics
+    /// # Errors
     ///
-    /// The function panics if `data` is not six octets long.
-    pub const fn from_bytes(data: &[u8]) -> Self {
-        let mut bytes = [0; 6];
-        bytes.copy_from_slice(data);
-        Self::new(bytes)
+    /// Returns `Truncated` if `data` is not six bytes long.
+    pub fn from_bytes(data: &[u8]) -> NetworkResult<Self> {
+        let bytes: [u8; 6] = data.try_into().map_err(|_| NetworkError::Truncated)?;
+        Ok(Self::new(bytes))
     }
 
     #[must_use]
     #[inline]
-    /// Return an Ethernet address as a sequence of octets, in big-endian.
+    /// Return an Ethernet address as a sequence of bytes, in big-endian.
     pub const fn as_bytes(&self) -> [u8; 6] {
         self.0
     }
 
     #[must_use]
     #[inline]
-    /// Whether the address is an unicast address.
+    /// Whether the address is a unicast address.
     pub fn is_unicast(&self) -> bool {
         !(self.is_broadcast() || self.is_multicast())
     }
@@ -115,7 +115,7 @@ pub struct Frame<T: AsRef<[u8]>> {
 }
 
 /// The Ethernet header length
-pub const HEADER_LEN: usize = PAYLOAD.start;
+pub const HEADER_LEN: usize = PAYLOAD;
 
 impl<T: AsRef<[u8]>> Frame<T> {
     #[must_use]
@@ -128,7 +128,7 @@ impl<T: AsRef<[u8]>> Frame<T> {
     #[inline]
     /// # Errors
     ///
-    /// Returns `Invalid` if the buffer is too short.
+    /// Returns `Truncated` if the buffer is too short.
     pub fn new(buffer: T) -> NetworkResult<Self> {
         let packet = Self::new_unchecked(buffer);
         packet.check_len()?;
@@ -137,11 +137,9 @@ impl<T: AsRef<[u8]>> Frame<T> {
 
     /// # Errors
     ///
-    /// Returns `Invalid` if the buffer is too short.
+    /// Returns `Truncated` if the buffer is too short.
     pub fn check_len(&self) -> NetworkResult<()> {
-        (self.buffer.as_ref().len() >= HEADER_LEN)
-            .then_some(())
-            .ok_or(NetworkError::Invalid)
+        ensure_len(self.buffer.as_ref(), HEADER_LEN)
     }
 
     #[must_use]
@@ -169,27 +167,38 @@ impl<T: AsRef<[u8]>> Frame<T> {
     #[must_use]
     #[inline]
     /// Return the destination address field.
-    pub fn dst_addr(&self) -> MacAddress {
+    pub fn dst_addr(&self) -> NetworkResult<MacAddress> {
         let data = self.buffer.as_ref();
-        MacAddress::from_bytes(&data[DESTINATION])
+        let raw = read_array(data, DESTINATION)?;
+        Ok(MacAddress::new(raw))
     }
 
     #[must_use]
     #[inline]
     /// Return the source address field.
-    pub fn src_addr(&self) -> MacAddress {
+    pub fn src_addr(&self) -> NetworkResult<MacAddress> {
         let data = self.buffer.as_ref();
-        MacAddress::from_bytes(&data[SOURCE])
+        let raw = read_array(data, SOURCE)?;
+        Ok(MacAddress::new(raw))
     }
 
     #[must_use]
     #[inline]
-    #[expect(clippy::missing_panics_doc, reason = "Never panics")]
+    /// Return the raw `EtherType` field value.
+    pub fn ethertype_raw(&self) -> NetworkResult<u16> {
+        read_u16(self.buffer.as_ref(), ETHERTYPE)
+    }
+
+    #[must_use]
+    #[inline]
     /// Return the `EtherType` field, without checking for 802.1Q.
-    pub fn ethertype(&self) -> EtherType {
-        let data = self.buffer.as_ref();
-        let raw = u16_from_inet_bytes(data[ETHERTYPE].try_into().unwrap());
-        EtherType::try_from(raw).unwrap()
+    /// Return the `EtherType` field, without checking for 802.1Q.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Invalid` if the value does not map to a known `EtherType`.
+    pub fn ethertype(&self) -> NetworkResult<EtherType> {
+        EtherType::try_from(self.ethertype_raw()?)
     }
 }
 
@@ -197,40 +206,35 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Frame<&'a T> {
     #[must_use]
     #[inline]
     /// Return a pointer to the payload, without checking for IEEE 802.1Q.
-    pub fn payload(&self) -> &'a [u8] {
-        let data = self.buffer.as_ref();
-        &data[PAYLOAD]
+    pub fn payload(&self) -> NetworkResult<&'a [u8]> {
+        slice(self.buffer.as_ref(), PAYLOAD..)
     }
 }
 
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Frame<T> {
     #[inline]
     /// Set the destination address field.
-    pub fn set_dst_addr(&mut self, value: MacAddress) {
-        let data = self.buffer.as_mut();
-        data[DESTINATION].copy_from_slice(&value.as_bytes());
+    pub fn set_dst_addr(&mut self, value: MacAddress) -> NetworkResult<()> {
+        write_slice(self.buffer.as_mut(), DESTINATION, &value.as_bytes())
     }
 
     #[inline]
     /// Set the source address field.
-    pub fn set_src_addr(&mut self, value: MacAddress) {
-        let data = self.buffer.as_mut();
-        data[SOURCE].copy_from_slice(&value.as_bytes());
+    pub fn set_src_addr(&mut self, value: MacAddress) -> NetworkResult<()> {
+        write_slice(self.buffer.as_mut(), SOURCE, &value.as_bytes())
     }
 
     #[inline]
     /// Set the `EtherType` field.
-    pub fn set_ethertype(&mut self, value: EtherType) {
-        let data = self.buffer.as_mut();
-        data[ETHERTYPE].copy_from_slice(&u16_to_inet_bytes(value.into()));
+    pub fn set_ethertype(&mut self, value: EtherType) -> NetworkResult<()> {
+        write_u16(self.buffer.as_mut(), ETHERTYPE, value.into())
     }
 
     #[must_use]
     #[inline]
     /// Return a mutable pointer to the payload.
-    pub fn payload_mut(&mut self) -> &mut [u8] {
-        let data = self.buffer.as_mut();
-        &mut data[PAYLOAD]
+    pub fn payload_mut(&mut self) -> NetworkResult<&mut [u8]> {
+        slice_mut(self.buffer.as_mut(), PAYLOAD..)
     }
 }
 
@@ -256,11 +260,10 @@ impl Repr {
     ///
     /// Returns `Invalid` if the frame is too short.
     pub fn parse<T: AsRef<[u8]> + ?Sized>(frame: &Frame<&T>) -> NetworkResult<Self> {
-        frame.check_len()?;
         Ok(Self {
-            src_addr: frame.src_addr(),
-            dst_addr: frame.dst_addr(),
-            ethertype: frame.ethertype(),
+            src_addr: frame.src_addr()?,
+            dst_addr: frame.dst_addr()?,
+            ethertype: frame.ethertype()?,
         })
     }
 
@@ -271,14 +274,13 @@ impl Repr {
         HEADER_LEN
     }
 
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the frame buffer is too short.
-    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, frame: &mut Frame<T>) {
-        assert!(frame.buffer.as_ref().len() >= self.buffer_len());
-        frame.set_src_addr(self.src_addr);
-        frame.set_dst_addr(self.dst_addr);
-        frame.set_ethertype(self.ethertype);
+    /// Returns `Truncated` if the frame buffer is too short.
+    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, frame: &mut Frame<T>) -> NetworkResult<()> {
+        frame.set_src_addr(self.src_addr)?;
+        frame.set_dst_addr(self.dst_addr)?;
+        frame.set_ethertype(self.ethertype)
     }
 }
 
@@ -328,24 +330,31 @@ mod test {
         let frame = Frame::new_unchecked(&FRAME_BYTES_V4[..]);
         assert_eq!(
             frame.dst_addr(),
-            MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+            Ok(MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
         );
         assert_eq!(
             frame.src_addr(),
-            MacAddress([0x11, 0x12, 0x13, 0x14, 0x15, 0x16])
+            Ok(MacAddress([0x11, 0x12, 0x13, 0x14, 0x15, 0x16]))
         );
-        assert_eq!(frame.ethertype(), EtherType::IpV4);
-        assert_eq!(frame.payload(), &PAYLOAD_BYTES_V4[..]);
+        assert_eq!(frame.ethertype(), Ok(EtherType::IpV4));
+        assert_eq!(frame.payload(), Ok(&PAYLOAD_BYTES_V4[..]));
     }
 
     #[test]
     fn test_v4_construct() {
         let mut bytes = vec![0xa5; 64];
         let mut frame = Frame::new_unchecked(&mut bytes);
-        frame.set_dst_addr(MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]));
-        frame.set_src_addr(MacAddress([0x11, 0x12, 0x13, 0x14, 0x15, 0x16]));
-        frame.set_ethertype(EtherType::IpV4);
-        frame.payload_mut().copy_from_slice(&PAYLOAD_BYTES_V4[..]);
+        frame
+            .set_dst_addr(MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
+            .unwrap();
+        frame
+            .set_src_addr(MacAddress([0x11, 0x12, 0x13, 0x14, 0x15, 0x16]))
+            .unwrap();
+        frame.set_ethertype(EtherType::IpV4).unwrap();
+        frame
+            .payload_mut()
+            .unwrap()
+            .copy_from_slice(&PAYLOAD_BYTES_V4[..]);
         assert_eq!(&frame.into_inner()[..], &FRAME_BYTES_V4[..]);
     }
 
@@ -354,25 +363,41 @@ mod test {
         let frame = Frame::new_unchecked(&FRAME_BYTES_V6[..]);
         assert_eq!(
             frame.dst_addr(),
-            MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+            Ok(MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
         );
         assert_eq!(
             frame.src_addr(),
-            MacAddress([0x11, 0x12, 0x13, 0x14, 0x15, 0x16])
+            Ok(MacAddress([0x11, 0x12, 0x13, 0x14, 0x15, 0x16]))
         );
-        assert_eq!(frame.ethertype(), EtherType::IpV6);
-        assert_eq!(frame.payload(), &PAYLOAD_BYTES_V6[..]);
+        assert_eq!(frame.ethertype(), Ok(EtherType::IpV6));
+        assert_eq!(frame.payload(), Ok(&PAYLOAD_BYTES_V6[..]));
     }
 
     #[test]
     fn test_v6_construct() {
         let mut bytes = vec![0xa5; 54];
         let mut frame = Frame::new_unchecked(&mut bytes);
-        frame.set_dst_addr(MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]));
-        frame.set_src_addr(MacAddress([0x11, 0x12, 0x13, 0x14, 0x15, 0x16]));
-        frame.set_ethertype(EtherType::IpV6);
-        assert_eq!(PAYLOAD_BYTES_V6.len(), frame.payload_mut().len());
-        frame.payload_mut().copy_from_slice(&PAYLOAD_BYTES_V6[..]);
+        frame
+            .set_dst_addr(MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
+            .unwrap();
+        frame
+            .set_src_addr(MacAddress([0x11, 0x12, 0x13, 0x14, 0x15, 0x16]))
+            .unwrap();
+        frame.set_ethertype(EtherType::IpV6).unwrap();
+        assert_eq!(PAYLOAD_BYTES_V6.len(), frame.payload_mut().unwrap().len());
+        frame
+            .payload_mut()
+            .unwrap()
+            .copy_from_slice(&PAYLOAD_BYTES_V6[..]);
         assert_eq!(&frame.into_inner()[..], &FRAME_BYTES_V6[..]);
+    }
+
+    #[test]
+    fn test_parse_unknown_ethertype_is_error() {
+        let mut bytes = FRAME_BYTES_V4;
+        bytes[12] = 0x12;
+        bytes[13] = 0x34;
+        let frame = Frame::new_unchecked(&bytes[..]);
+        assert_eq!(Repr::parse(&frame), Err(NetworkError::Invalid));
     }
 }

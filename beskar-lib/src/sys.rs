@@ -132,3 +132,9 @@ pub fn sc_query_config(info_type: u64, buffer: *mut (), buffer_size: u64) -> Sys
     let res = syscalls::syscall_3(Syscall::QueryConfig, info_type, buffer as u64, buffer_size);
     SyscallExitCode::try_from(res).unwrap()
 }
+
+#[inline]
+pub fn sc_thread_spawn(entry_point: extern "C" fn() -> !) -> u64 {
+    let entry = entry_point as *const () as u64;
+    syscalls::syscall_1(Syscall::ThreadSpawn, entry)
+}

@@ -1,7 +1,10 @@
 use crate::{
     arch::{context::ThreadRegisters, fpu::FpuState},
     mem::vmm,
-    process::binary::{Binary, BinaryType, LoadedBinary},
+    process::{
+        ProcessId,
+        binary::{Binary, BinaryType, LoadedBinary},
+    },
     storage::vfs,
 };
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
@@ -31,7 +34,7 @@ use super::{super::Process, priority::Priority};
 const MINIMUM_LEFTOVER_STACK: usize = 0x100; // 256 bytes
 
 /// Default stack size used by [`ThreadBuilder`] when no explicit size is set.
-const DEFAULT_THREAD_STACK_SIZE: usize = 128 * 1024;
+const DEFAULT_THREAD_STACK_SIZE: usize = 64 * 1024;
 
 /// Default user stack size for user process startup.
 const DEFAULT_USER_STACK_SIZE: u64 = 16 * M4KiB::SIZE;
@@ -123,17 +126,6 @@ impl PartialEq for Thread {
     }
 }
 impl Eq for Thread {}
-
-impl PartialOrd for Thread {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for Thread {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.id.cmp(&other.id)
-    }
-}
 
 impl Queueable for Thread {
     type Handle = Box<Self>;
@@ -585,14 +577,6 @@ static TID_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
 pub struct ThreadId(u64);
 
-impl core::ops::Deref for ThreadId {
-    type Target = u64;
-
-    fn deref(&self) -> &u64 {
-        &self.0
-    }
-}
-
 impl Default for ThreadId {
     fn default() -> Self {
         Self::new()
@@ -613,8 +597,8 @@ impl ThreadId {
     }
 }
 
-fn thread_load_binary(path: Path) -> LoadedBinary {
-    let handle = vfs().open(path).unwrap();
+fn thread_load_binary(path: Path, pid: ProcessId) -> LoadedBinary {
+    let handle = vfs().open(pid.as_u64(), path).unwrap();
 
     let file_info = vfs().metadata(path).unwrap();
 
@@ -630,10 +614,10 @@ fn thread_load_binary(path: Path) -> LoadedBinary {
             file_info.size(),
         )
     };
-    let input_bytes = vfs().read(handle, input_buffer, 0).unwrap();
+    let input_bytes = vfs().read(pid.as_u64(), handle, input_buffer, 0).unwrap();
     assert_eq!(input_bytes, input_buffer.len());
 
-    vfs().close(handle).unwrap();
+    vfs().close(pid.as_u64(), handle).unwrap();
 
     let binary = Binary::new(input_buffer, BinaryType::Elf);
     let loaded_binary = binary.load().unwrap();
@@ -655,7 +639,7 @@ pub extern "C" fn start_user_process(user_stack_size: usize) -> ! {
     };
 
     let root_proc = super::current_process();
-    let loaded_binary = thread_load_binary(root_proc.binary().unwrap());
+    let loaded_binary = thread_load_binary(root_proc.binary().unwrap(), root_proc.pid());
 
     // Allocate a user stack
     let rsp = super::with_scheduler(|scheduler| {
@@ -689,6 +673,22 @@ pub extern "C" fn start_user_process(user_stack_size: usize) -> ! {
             start_block_ptr,
         )
     };
+}
+
+pub extern "C" fn start_user_thread(entry_point: extern "C" fn(*const ThreadStartBlock)) -> ! {
+    // Allocate a user stack
+    let rsp = super::with_scheduler(|scheduler| {
+        scheduler.current.with_locked(|thread| {
+            thread.stack.as_mut().map(|ts| {
+                ts.allocate_all(DEFAULT_USER_STACK_SIZE);
+                ts.user_stack_top().unwrap()
+            })
+        })
+    })
+    .expect("Current thread stack allocation failed")
+    .as_ptr();
+
+    unsafe { crate::arch::userspace::enter_usermode(entry_point, rsp, core::ptr::null()) };
 }
 
 struct ThreadStacks {

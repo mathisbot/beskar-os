@@ -1,6 +1,4 @@
 #![no_std]
-#![forbid(unsafe_op_in_unsafe_fn)]
-#![warn(clippy::pedantic, clippy::nursery)]
 
 extern crate alloc;
 
@@ -228,14 +226,9 @@ impl<T: WaitableThread> WaitDb<T> {
     pub fn collect_timed_out(&mut self, now: Instant) -> Vec<T> {
         let mut ready = Vec::new();
 
-        loop {
-            let Some(Reverse(timer)) = self.timers.peek() else {
-                break;
-            };
-            if timer.deadline > now {
-                break;
-            }
-
+        while let Some(Reverse(timer)) = self.timers.peek()
+            && timer.deadline <= now
+        {
             let tid = timer.tid;
             let token = timer.token;
             self.timers.pop();

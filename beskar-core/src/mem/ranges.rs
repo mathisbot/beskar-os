@@ -24,7 +24,7 @@ impl MemoryRange {
     #[inline]
     pub const fn overlaps(&self, other: &Self) -> Option<Self> {
         // 0-sized overlaps are useless
-        if self.start >= other.end || self.end <= other.start {
+        if self.start > other.end || self.end < other.start {
             None
         } else {
             // The assumption that start <= end is valid:
@@ -287,25 +287,21 @@ impl<const N: usize> MemoryRanges<N> {
 
         for (index, range) in self.ranges[..self.used].iter().enumerate() {
             for req_range in &req_ranges.ranges[..req_ranges.used] {
-                // Calculate overlap
-                let overlap_start = range.start.max(req_range.start);
-                let overlap_end = range.end.min(req_range.end);
-
-                if overlap_start >= overlap_end {
+                let Some(overlap) = range.overlaps(req_range) else {
                     continue;
-                }
+                };
 
                 // Calculate aligned start within overlap
-                let offset = overlap_start & alignment_mask;
+                let offset = overlap.start() & alignment_mask;
                 let alignment_offset = (alignment.as_u64() - offset) & alignment_mask;
-                let aligned_start = match overlap_start.checked_add(alignment_offset) {
-                    Some(a) if a <= overlap_end => a,
+                let aligned_start = match overlap.start().checked_add(alignment_offset) {
+                    Some(a) if a <= overlap.end() => a,
                     _ => continue,
                 };
 
                 // Check if allocation fits
                 let end = match aligned_start.checked_add(size - 1) {
-                    Some(e) if e <= overlap_end => e,
+                    Some(e) if e <= overlap.end() => e,
                     _ => continue,
                 };
 

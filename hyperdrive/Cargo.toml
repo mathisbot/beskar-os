@@ -1,9 +1,13 @@
 [package]
 name = "hyperdrive"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 description = "Utility structures for BeskarOS"
 license = "MIT"
 categories = ["no_std","no_alloc"]
 
 [dependencies]
+
+[lints]
+workspace = true

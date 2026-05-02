@@ -1,7 +1,8 @@
 [package]
 name = "beskar-core"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 noto-sans-mono-bitmap = { version = "0.3.2", default-features = false, features = [
@@ -11,3 +12,6 @@ noto-sans-mono-bitmap = { version = "0.3.2", default-features = false, features 
 ] }
 num_enum = { version = "0.7.5", default-features = false }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

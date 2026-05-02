@@ -238,6 +238,12 @@ impl EventRingSegment {
     pub const fn phys_addr(&self) -> PhysAddr {
         self.ring.phys_addr()
     }
+
+    #[must_use]
+    #[inline]
+    pub const fn entries(&self) -> u16 {
+        self.ring.capacity() as u16
+    }
 }
 
 /// Event Ring Segment Table Entry
@@ -247,14 +253,22 @@ impl EventRingSegment {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct EventRingSegmentTableEntry {
-    // TODO:
+    ring_segment_base: u64,
+    ring_segment_size: u16,
+    _reserved0: u16,
+    _reserved1: u32,
 }
 
 impl EventRingSegmentTableEntry {
     #[must_use]
     #[inline]
-    pub const fn new(_segment: &EventRingSegment) -> Self {
-        Self {}
+    pub const fn new(segment: &EventRingSegment) -> Self {
+        Self {
+            ring_segment_base: segment.phys_addr().as_u64(),
+            ring_segment_size: segment.entries(),
+            _reserved0: 0,
+            _reserved1: 0,
+        }
     }
 }
 

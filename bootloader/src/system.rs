@@ -7,7 +7,7 @@ static CORE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub fn init() {
     enable_and_count_cores();
-    enable_cpu_features();
+    crate::arch::enable_cpu_features();
 }
 
 /// Print firmware information and check for compatibility.
@@ -32,40 +32,38 @@ fn enable_and_count_cores() {
         uefi::boot::open_protocol_exclusive::<MpServices>(mp_handle).unwrap()
     };
 
-    for i in 0..mps.get_number_of_processors().unwrap().total {
-        if i != mps.who_am_i().unwrap() {
-            let info = mps.get_processor_info(i).unwrap();
-            if info.is_healthy() {
-                mps.enable_disable_ap(i, true, Some(true)).unwrap();
-            } else {
-                warn!("Processor {} is not healthy, skipping it.", i);
-                // Make sure it is disabled
-                mps.enable_disable_ap(i, false, Some(false)).unwrap();
-            }
+    let who_am_i = mps.who_am_i().unwrap();
+    let total_cores = mps.get_number_of_processors().unwrap().total;
+
+    for i in 0..total_cores {
+        if i == who_am_i {
+            continue;
+        }
+
+        let info = mps.get_processor_info(i);
+        if let Ok(info) = info
+            && info.is_healthy()
+        {
+            mps.enable_disable_ap(i, true, Some(true)).unwrap();
+        } else {
+            warn!("Processor {} is not healthy, skipping it.", i);
+            // Make sure it is disabled
+            mps.enable_disable_ap(i, false, Some(false)).unwrap();
         }
     }
 
-    let proc_count = mps.get_number_of_processors().unwrap();
-    if proc_count.enabled != proc_count.total {
+    let enabled_cores = mps.get_number_of_processors().unwrap().enabled;
+    if enabled_cores != total_cores {
         warn!(
             "Only {} out of {} processors could be enabled",
-            proc_count.enabled, proc_count.total
+            enabled_cores, total_cores
         );
     }
-    debug!("Enabled cores: {}", proc_count.enabled);
+    debug!("Enabled cores: {}", enabled_cores);
 
-    CORE_COUNT.store(proc_count.enabled, Ordering::Relaxed);
+    CORE_COUNT.store(enabled_cores, Ordering::Relaxed);
 }
 
 pub fn core_count() -> usize {
     CORE_COUNT.load(Ordering::Relaxed)
-}
-
-fn enable_cpu_features() {
-    #[cfg(target_arch = "x86_64")]
-    {
-        use beskar_hal::registers::{Cr0, Efer};
-        unsafe { Efer::insert_flags(Efer::NO_EXECUTE_ENABLE) };
-        unsafe { Cr0::insert_flags(Cr0::WRITE_PROTECT) };
-    }
 }

@@ -70,8 +70,6 @@
 //! }
 //! ```
 
-#![forbid(unsafe_op_in_unsafe_fn)]
-#![warn(clippy::pedantic, clippy::nursery)]
 #![no_std]
 
 mod error;

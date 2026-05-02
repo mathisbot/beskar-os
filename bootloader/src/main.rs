@@ -1,8 +1,7 @@
 #![no_main]
 #![no_std]
-#![warn(clippy::pedantic, clippy::nursery)]
 
-use bootloader::{debug, error, info, warn};
+use bootloader::{debug, error, info};
 use uefi::{mem::memory_map::MemoryMapMut as _, prelude::*};
 
 #[panic_handler]
@@ -16,7 +15,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     {
         if let Some(location) = panic_info.location() {
             error!(
-                "Panic occured in file '{}' at line {}",
+                "Panic occurred in file '{}' at line {}",
                 location.file(),
                 location.line()
             );
@@ -39,26 +38,26 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         }
     }
 
-    // Check if runtime services are available (they sould be)
+    // Check if runtime services are available (they should be)
     let runtime_services_available = uefi::table::system_table_raw()
         .is_some_and(|system_table| !unsafe { system_table.as_ref() }.runtime_services.is_null());
 
     // If possible, gracefully shutdown.
-    // Otherwise, hang the system.
     if runtime_services_available {
         uefi::runtime::reset(uefi::runtime::ResetType::COLD, uefi::Status::ABORTED, None);
-    } else {
-        loop {
-            beskar_hal::instructions::halt();
-        }
+    }
+
+    loop {
+        beskar_hal::instructions::halt();
     }
 }
 
 #[entry]
 fn efi_entry() -> Status {
     // In debug mode, disable the watchdog timer
-    #[cfg(debug_assertions)]
-    let _ = boot::set_watchdog_timer(0, 0, None);
+    if cfg!(debug_assertions) {
+        let _ = boot::set_watchdog_timer(0, 0, None);
+    }
 
     bootloader::video::log::init_serial();
 
@@ -73,9 +72,6 @@ fn efi_entry() -> Status {
     bootloader::video::log::init_screen();
 
     info!("BeskarOS bootloader started");
-
-    #[cfg(debug_assertions)]
-    debug!("Bootloader running in debug mode");
 
     bootloader::system::init();
 

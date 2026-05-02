@@ -1,6 +1,7 @@
 //! E1000e descriptors structures and implementation.
 
 use beskar_core::arch::PhysAddr;
+use core::ptr::{read_volatile, write_volatile};
 
 /// Receive descriptor for the e1000e NIC.
 #[repr(C, packed)]
@@ -36,37 +37,45 @@ impl RxDescriptor {
     /// Check if the hardware has finished processing this descriptor.
     #[must_use]
     #[inline]
-    pub const fn is_done(&self) -> bool {
-        self.status & Self::STATUS_DD != 0
+    pub fn is_done(&self) -> bool {
+        self.status() & Self::STATUS_DD != 0
     }
 
     /// Check if this descriptor contains the end of a packet.
     #[must_use]
     #[inline]
-    pub const fn is_end_of_packet(&self) -> bool {
-        self.status & Self::STATUS_EOP != 0
+    pub fn is_end_of_packet(&self) -> bool {
+        self.status() & Self::STATUS_EOP != 0
     }
 
     /// Get the length of the received packet.
     #[must_use]
     #[inline]
-    pub const fn packet_length(&self) -> u16 {
-        self.length
+    pub fn packet_length(&self) -> u16 {
+        unsafe { read_volatile(&raw const self.length) }
     }
 
     /// Check if there are any errors in the received packet.
     #[must_use]
     #[inline]
-    pub const fn has_errors(&self) -> bool {
-        self.errors != 0
+    pub fn has_errors(&self) -> bool {
+        unsafe { read_volatile(&raw const self.errors) != 0 }
     }
 
     /// Reset the descriptor for reuse.
     #[inline]
-    pub const fn reset(&mut self) {
-        self.status = 0;
-        self.errors = 0;
-        self.length = 0;
+    pub fn reset(&mut self) {
+        unsafe {
+            write_volatile(&raw mut self.status, 0);
+            write_volatile(&raw mut self.errors, 0);
+            write_volatile(&raw mut self.length, 0);
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    fn status(&self) -> u8 {
+        unsafe { read_volatile(&raw const self.status) }
     }
 }
 
@@ -111,8 +120,8 @@ impl TxDescriptor {
     /// Check if the hardware has finished transmitting this descriptor.
     #[must_use]
     #[inline]
-    pub const fn is_done(&self) -> bool {
-        self.status & Self::STATUS_DD != 0
+    pub fn is_done(&self) -> bool {
+        unsafe { read_volatile(&raw const self.status) & Self::STATUS_DD != 0 }
     }
 
     /// Prepare the descriptor for sending a packet of the given length.
@@ -122,11 +131,16 @@ impl TxDescriptor {
     /// - IFCS (Insert FCS/CRC)
     /// - RS (Report Status)
     #[inline]
-    pub const fn prepare_for_send(&mut self, length: u16) {
-        self.length = length;
-        self.cmd = Self::CMD_EOP | Self::CMD_IFCS | Self::CMD_RS;
-        self.status = 0;
-        self.cso = 0;
-        self.css = 0;
+    pub fn prepare_for_send(&mut self, length: u16) {
+        unsafe {
+            write_volatile(&raw mut self.length, length);
+            write_volatile(&raw mut self.cso, 0);
+            write_volatile(&raw mut self.css, 0);
+            write_volatile(
+                &raw mut self.cmd,
+                Self::CMD_EOP | Self::CMD_IFCS | Self::CMD_RS,
+            );
+            write_volatile(&raw mut self.status, 0);
+        }
     }
 }

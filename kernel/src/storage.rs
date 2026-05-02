@@ -1,20 +1,11 @@
 use ::storage::{
     fs::{PathBuf, dev::DeviceFS},
-    vfs::{Vfs, VfsHelper},
+    vfs::Vfs,
 };
 use alloc::boxed::Box;
 use hyperdrive::once::Once;
 
-struct VfsHelperStruct;
-
-impl VfsHelper for VfsHelperStruct {
-    #[inline]
-    fn get_current_process_id() -> u64 {
-        crate::process::current().pid().as_u64()
-    }
-}
-
-static VFS: Once<Vfs<VfsHelperStruct>> = Once::uninit();
+static VFS: Once<Vfs> = Once::uninit();
 
 pub fn init() {
     let vfs = Vfs::new();
@@ -29,7 +20,10 @@ pub fn init() {
         PathBuf::new("/randseed"),
         Box::new(crate::process::SeedFile),
     );
-    vfs.mount(PathBuf::new("/dev"), Box::new(device_fs));
+    let dev_mount_res = vfs.mount(PathBuf::new("/dev"), Box::new(device_fs));
+    if dev_mount_res.is_err() {
+        crate::warn!("Failed to mount /dev filesystem");
+    }
 
     VFS.call_once(|| vfs);
 }
@@ -37,6 +31,6 @@ pub fn init() {
 #[must_use]
 #[inline]
 /// Returns a reference to the global VFS instance.
-pub fn vfs() -> &'static Vfs<impl VfsHelper> {
+pub fn vfs() -> &'static Vfs {
     VFS.get().expect("VFS not initialized")
 }

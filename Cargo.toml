@@ -2,13 +2,32 @@
 name = "beskar-os"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.95"
 authors = ["mathisbot"]
 description = "Basic 64-bit hobby OS that supports SMP and UEFI 2 booting"
 license = "MIT"
 repository = "https://github.com/mathisbot/beskar-os/"
 
 [workspace]
-members = ["bootloader", "kernel", "userspace/*"]
+members = [
+    "beskar-core",
+    "beskar-hal",
+    "beskar-lib",
+    "bootloader",
+    "bootloader/bootloader-api",
+    "heaperion",
+    "hyperdrive",
+    "kernel",
+    "kernel/driver-api",
+    "kernel/foundry/*",
+    "kernel/src/process/binary/elf",
+    "kernel/src/process/scheduler/wait",
+    "userspace/*",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.95"
 
 [workspace.dependencies]
 beskar-core = { path = "beskar-core" }
@@ -18,11 +37,20 @@ bootloader-api = { path = "bootloader/bootloader-api" }
 hyperdrive = { path = "hyperdrive" }
 thiserror = { version = "2.0.18", default-features = false }
 
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "forbid"
+[workspace.lints.clippy]
+pedantic = "warn"
+nursery = "warn"
+
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.6.0", features = ["derive"] }
 ratatui = "0.30.0"
 thiserror = "2.0.18"
+
+[lints]
+workspace = true
 
 [profile.release]
 panic = "abort"

@@ -104,6 +104,10 @@ pub enum Syscall {
     /// The second argument is the maximum number of waiters to wake
     /// (`usize::MAX` means wake all).
     FutexWake = 15,
+    /// Spawn a new thread in the current process.
+    ///
+    /// The first argument is a pointer to the thread entry point.
+    ThreadSpawn = 16,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]

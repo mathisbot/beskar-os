@@ -29,8 +29,6 @@
 //!     allocator.deallocate(ptr, layout).unwrap();
 //! }
 //! ```
-#![warn(clippy::pedantic, clippy::nursery)]
-#![forbid(unsafe_op_in_unsafe_fn)]
 #![no_std]
 
 mod buddy;

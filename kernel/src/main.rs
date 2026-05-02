@@ -41,11 +41,13 @@ fn kmain() -> ! {
             .stack_heap(alloc::vec![0; 1024 * 128])
             .spawn();
 
-        if let Some(ramdisk) = kernel::boot::ramdisk() {
-            let ramfs = InMemoryFS::new(ramdisk).unwrap();
-            vfs().mount(PathBuf::new("/ramdisk"), Box::new(ramfs));
-            let ram_files = vfs().read_dir(Path::new("/ramdisk/")).unwrap();
-
+        if let Some(ramdisk) = kernel::boot::ramdisk()
+            && let Ok(ramfs) = InMemoryFS::new(ramdisk)
+            && vfs()
+                .mount(PathBuf::new("/ramdisk"), Box::new(ramfs))
+                .is_ok()
+            && let Ok(ram_files) = vfs().read_dir(Path::new("/ramdisk/"))
+        {
             for file in ram_files {
                 let full_path = PathBuf::new("/ramdisk").join(file.as_path().as_str());
                 kernel::info!(
@@ -62,6 +64,8 @@ fn kmain() -> ! {
                     .stack_heap(alloc::vec![0; 1024 * 16])
                     .spawn();
             }
+        } else {
+            kernel::warn!("No ramdisk found or failed to mount, skipping user processes");
         }
     });
 

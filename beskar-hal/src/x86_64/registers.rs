@@ -95,7 +95,8 @@ impl Cr3 {
     /// The value written must be a valid CR3 value.
     pub unsafe fn write(frame: Frame, flags: u16) {
         assert_eq!(frame.start_address().as_u64() & 0xFFF0_0000_0000_0FFF, 0);
-        let value = frame.start_address().as_u64() | u64::from(flags);
+        debug_assert_eq!(flags & !0xFFF, 0);
+        let value = frame.start_address().as_u64() | u64::from(flags & 0xFFF);
 
         unsafe {
             core::arch::asm!("mov cr3, {}", in(reg) value, options(nomem, nostack, preserves_flags));
@@ -160,7 +161,7 @@ impl Efer {
     #[must_use]
     #[inline]
     pub fn read() -> u64 {
-        Self::MSR.read()
+        unsafe { Self::MSR.read() }
     }
 
     #[inline]
@@ -235,7 +236,7 @@ impl Star {
     #[must_use]
     #[inline]
     pub fn read() -> StarSelectors {
-        let raw = Self::MSR.read();
+        let raw = unsafe { Self::MSR.read() };
         let sysret_base = u16::try_from(raw >> 48).unwrap();
         let syscall_base = u16::try_from((raw >> 32) & 0xFFFF).unwrap();
 
@@ -326,7 +327,7 @@ impl SFMask {
     #[must_use]
     #[inline]
     pub fn read() -> u64 {
-        Self::MSR.read()
+        unsafe { Self::MSR.read() }
     }
 
     #[inline]
@@ -353,7 +354,7 @@ pub struct Msr<const P: u32>;
 impl<const P: u32> Msr<P> {
     #[must_use]
     #[inline]
-    pub fn read(&self) -> u64 {
+    pub unsafe fn read(&self) -> u64 {
         let low: u32;
         let high: u32;
         unsafe {
@@ -453,7 +454,7 @@ impl GS {
     #[must_use]
     #[inline]
     pub fn read_base() -> VirtAddr {
-        let base = Self::MSR.read();
+        let base = unsafe { Self::MSR.read() };
         unsafe { VirtAddr::new_unchecked(base) }
     }
 
@@ -561,7 +562,7 @@ impl FS {
     #[must_use]
     #[inline]
     pub fn read_base() -> VirtAddr {
-        let base = Self::MSR.read();
+        let base = unsafe { Self::MSR.read() };
         unsafe { VirtAddr::new_unchecked(base) }
     }
 
