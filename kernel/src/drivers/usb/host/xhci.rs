@@ -66,6 +66,10 @@ pub struct Xhci {
     event_ring: Option<ring::EventRing>,
     /// Frame backing the Device Context Base Address Array (DCBAA)
     dcbaa_frame: Option<Frame<M4KiB>>,
+    /// Virtual mapping for the DCBAA page.
+    dcbaa_mapping: Option<PhysicalMapping<M4KiB>>,
+    /// Software view over the DCBAA hardware array.
+    dcbaa: Option<context::DeviceContextBaseAddressArray>,
     /// Physical mapping for the controller registers
     _physical_mapping: PhysicalMapping,
 }
@@ -114,6 +118,8 @@ impl Xhci {
             cmd_ring: None,
             event_ring: None,
             dcbaa_frame: None,
+            dcbaa_mapping: None,
+            dcbaa: None,
             _physical_mapping: physical_mapping,
         }
     }
@@ -137,16 +143,14 @@ impl Xhci {
         let cmd_ring_phys_addr = cmd_ring.phys_addr();
         self.cmd_ring = Some(cmd_ring);
 
-        // Set the Command Ring Control Register
-        // Bits 0-5 are reserved, bit 6 is the Command Ring Running bit (RCS)
+        // Set the Command Ring Control Register. Bit 0 is the producer cycle state;
+        // bits 63:6 hold the 64-byte-aligned command ring pointer.
         unsafe {
-            self.op
-                .cmd_ring()
-                .write(cmd_ring_phys_addr.as_u64() | (1 << 6));
+            self.op.cmd_ring().write(cmd_ring_phys_addr.as_u64() | 1);
         }
 
         // Initialize the Device Context Base Address Array
-        let dcbaa_size = usize::from(max_slots) * size_of::<u64>();
+        let dcbaa_size = (usize::from(max_slots) + 1) * size_of::<u64>();
         assert!(dcbaa_size <= usize::try_from(M4KiB::SIZE).unwrap());
         let dcbaa_frame = crate::mem::vmm::kernel::alloc_frame::<M4KiB>().unwrap();
         let flags = Flags::MMIO_SUITABLE | Flags::WRITABLE;
@@ -155,27 +159,28 @@ impl Xhci {
         let dcbaa_phys_addr = dcbaa_mapping.start_frame().start_address();
         let dcbaa_virt_addr = dcbaa_mapping.translate(dcbaa_phys_addr).unwrap();
 
-        // Create the DCBAA
-        let dcbaa_ptr = dcbaa_virt_addr.as_mut_ptr::<context::DeviceContextBaseAddressArray>();
-        unsafe {
-            let dbcaa_value = context::DeviceContextBaseAddressArray::new(
+        let dcbaa = unsafe {
+            context::DeviceContextBaseAddressArray::new(
                 core::slice::from_raw_parts_mut(
                     dcbaa_virt_addr.as_mut_ptr(),
                     usize::from(max_slots) + 1,
                 ),
                 usize::from(max_slots),
-            );
-            dcbaa_ptr.write(dbcaa_value);
-        }
+            )
+        };
 
         // Set the Device Context Base Address Array Pointer Register
         unsafe {
             self.op.dcbaap().write(dcbaa_phys_addr.as_u64());
         }
 
+        self.dcbaa = None;
+        self.dcbaa_mapping = None;
         if let Some(previous_frame) = self.dcbaa_frame.replace(dcbaa_frame) {
             crate::mem::vmm::kernel::free_frame(previous_frame);
         }
+        self.dcbaa_mapping = Some(dcbaa_mapping);
+        self.dcbaa = Some(dcbaa);
 
         // Initialize the Event Ring
         let event_ring = ring::EventRing::new(200);

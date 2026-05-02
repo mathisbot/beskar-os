@@ -1,10 +1,12 @@
 use crate::mem::vmm::phys_map::PhysicalMapping;
 use ::pci::{Bar, Device};
+use alloc::vec::Vec;
 use beskar_core::{
     arch::{VirtAddr, paging::M4KiB},
     drivers::{DriverError, DriverResult},
 };
 use beskar_hal::paging::page_table::Flags;
+use hyperdrive::locks::mcs::MUMcsLock;
 
 mod command;
 mod fis;
@@ -16,6 +18,11 @@ use registers::AhciRegisters;
 
 /// Timeout for controller operations (in iterations)
 const CONTROLLER_TIMEOUT: usize = 100_000_000;
+const GENERIC_HOST_CONTROL_LEN: usize = 0x100;
+const PORT_REG_OFFSET: usize = 0x100;
+const PORT_REG_SIZE: usize = 0x80;
+
+static AHCI: MUMcsLock<Ahci> = MUMcsLock::uninit();
 
 /// AHCI Global Host Control Register
 const GHC_OFFSET: u32 = 0x04;
@@ -39,13 +46,24 @@ pub fn init(ahci_controllers: &[Device]) -> DriverResult<()> {
 
     let ahci_paddr = bar.base_address();
     let flags = Flags::MMIO_SUITABLE;
-    let pmap =
-        PhysicalMapping::<M4KiB>::new(ahci_paddr, 256, flags).map_err(|_| DriverError::Unknown)?;
+
+    let port_count = {
+        let pmap = PhysicalMapping::<M4KiB>::new(ahci_paddr, GENERIC_HOST_CONTROL_LEN, flags)
+            .map_err(|_| DriverError::Unknown)?;
+        let ahci_base = pmap.translate(ahci_paddr).ok_or(DriverError::Unknown)?;
+        let regs = unsafe { AhciRegisters::from_base(ahci_base) };
+        usize::try_from(regs.capabilities().np() + 1).unwrap()
+    };
+
+    let required_len = PORT_REG_OFFSET + port_count * PORT_REG_SIZE;
+    let pmap = PhysicalMapping::<M4KiB>::new(ahci_paddr, required_len, flags)
+        .map_err(|_| DriverError::Unknown)?;
 
     let ahci_base = pmap.translate(ahci_paddr).ok_or(DriverError::Unknown)?;
 
     let mut ahci = Ahci::new(ahci_base, pmap);
     ahci.initialize()?;
+    AHCI.init(ahci);
 
     crate::info!("AHCI controller initialized successfully");
 
@@ -58,6 +76,7 @@ pub struct Ahci {
     pmap: PhysicalMapping,
     /// Number of ports supported by this controller
     port_count: u32,
+    ports: Vec<AhciPort>,
 }
 
 impl Ahci {
@@ -76,6 +95,7 @@ impl Ahci {
             base,
             pmap,
             port_count,
+            ports: Vec::new(),
         }
     }
 
@@ -108,7 +128,7 @@ impl Ahci {
     }
 
     /// Probe all AHCI ports and initialize any attached drives
-    fn probe_ports(&self) -> DriverResult<()> {
+    fn probe_ports(&mut self) -> DriverResult<()> {
         let regs = unsafe { AhciRegisters::from_base(self.base) };
         let ports_implemented = regs.ports_implemented();
 
@@ -120,12 +140,13 @@ impl Ahci {
 
             let port_offset = 0x100 + (u64::from(port_idx) * 0x80);
             let port_addr = self.base + port_offset;
-            let port = AhciPort::new(port_addr, port_idx);
+            let mut port = AhciPort::new(port_addr, port_idx);
 
             // Check if a device is present
             if port.is_device_present() {
                 port.initialize()?;
                 crate::debug!("AHCI port {} initialized with device", port_idx);
+                self.ports.push(port);
             }
         }
 

@@ -415,8 +415,11 @@ impl Mapper<M4KiB, Flags> for PageTable<'_> {
         let p1 = p2_entry.next_mut()?;
         let p1_entry = &mut p1[usize::from(page.p1_index())];
 
-        let frame =
-            Frame::containing_address(p1_entry.present_addr().ok_or(MappingError::NotMapped)?);
+        if p1_entry.is_null() {
+            return Err(MappingError::NotMapped);
+        }
+
+        let frame = Frame::containing_address(p1_entry.addr());
 
         p1_entry.set(PhysAddr::ZERO, Flags::EMPTY);
 
@@ -436,7 +439,7 @@ impl Mapper<M4KiB, Flags> for PageTable<'_> {
         let p1 = p2_entry.next_mut()?;
         let p1_entry = &mut p1[usize::from(page.p1_index())];
 
-        if !p1_entry.is_present() {
+        if p1_entry.is_null() {
             return Err(MappingError::NotMapped);
         }
 

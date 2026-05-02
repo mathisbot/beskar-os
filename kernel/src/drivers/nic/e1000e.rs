@@ -28,7 +28,10 @@ use beskar_core::{
     drivers::{DriverError, DriverResult},
 };
 use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
-use core::ptr::NonNull;
+use core::{
+    ptr::NonNull,
+    sync::atomic::{Ordering, fence},
+};
 use driver_shared::mmio::MmioRegister;
 use holonet::l2::ethernet::MacAddress;
 use hyperdrive::{locks::mcs::MUMcsLock, ptrs::volatile::ReadWrite};
@@ -279,6 +282,8 @@ impl Nic for E1000e<'_> {
             return None;
         }
 
+        fence(Ordering::Acquire);
+
         let packet_len = desc.packet_length() as usize;
         if packet_len == 0 || packet_len > 4096 {
             return None;
@@ -317,6 +322,7 @@ impl Nic for E1000e<'_> {
         // Prepare descriptor for transmission
         let desc = self.buffer_set.tx_desc_mut(tx_idx);
         desc.prepare_for_send(u16::try_from(frame.len()).unwrap());
+        fence(Ordering::Release);
 
         // Advance to next descriptor
         let next = (tx_idx + 1) % TX_BUFFERS;

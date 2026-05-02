@@ -23,7 +23,7 @@ impl DeviceContextBaseAddressArray {
     #[must_use]
     #[inline]
     pub unsafe fn new(entries: &'static mut [u64], max_slots: usize) -> Self {
-        assert!(entries.len() >= max_slots, "DCBAA too small");
+        assert!(entries.len() > max_slots, "DCBAA too small");
         // Zero out all entries
         entries.fill(0);
         Self { entries, max_slots }

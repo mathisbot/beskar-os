@@ -74,14 +74,18 @@ fn sc_exit(args: &Arguments) -> ! {
 #[must_use]
 /// Build page table flags from user-space protection flags constants.
 fn build_flags_from_us(raw: u64) -> Flags {
+    let readable = raw & beskar_core::syscall::consts::MFLAGS_READ != 0;
+    let writable = raw & beskar_core::syscall::consts::MFLAGS_WRITE != 0;
+    let executable = raw & beskar_core::syscall::consts::MFLAGS_EXECUTE != 0;
+
     let mut flags = Flags::USER_ACCESSIBLE;
-    if raw & beskar_core::syscall::consts::MFLAGS_READ != 0 {
+    if readable || writable || executable {
         flags |= Flags::PRESENT;
     }
-    if raw & beskar_core::syscall::consts::MFLAGS_WRITE != 0 {
+    if writable {
         flags |= Flags::WRITABLE;
     }
-    if raw & beskar_core::syscall::consts::MFLAGS_EXECUTE == 0 {
+    if !executable {
         flags |= Flags::NO_EXECUTE;
     }
     flags
@@ -125,8 +129,8 @@ fn sc_munmap(args: &Arguments) -> SyscallExitCode {
     let end = va + (size - 1);
 
     if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
-        && !size.is_multiple_of(M4KiB::SIZE)
-        && !probe(va, end)
+        || !size.is_multiple_of(M4KiB::SIZE)
+        || !probe(va, end)
     {
         return SyscallExitCode::Failure;
     }
@@ -157,8 +161,8 @@ fn sc_mprotect(args: &Arguments) -> SyscallExitCode {
     let end = va + (size - 1);
 
     if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
-        && !size.is_multiple_of(M4KiB::SIZE)
-        && !probe(va, end)
+        || !size.is_multiple_of(M4KiB::SIZE)
+        || !probe(va, end)
     {
         return SyscallExitCode::Failure;
     }

@@ -129,39 +129,49 @@ impl SubmissionQueue {
     }
 }
 
-struct CompletionQueue(Queue<CompletionEntry>);
+struct CompletionQueue {
+    queue: Queue<CompletionEntry>,
+    expected_phase: bool,
+}
 
 impl CompletionQueue {
     #[inline]
     pub fn new(doorbell: MmioRegister<ReadWrite, u32>) -> DriverResult<Self> {
-        Ok(Self(Queue::new(doorbell)?))
+        Ok(Self {
+            queue: Queue::new(doorbell)?,
+            expected_phase: true,
+        })
     }
 
     #[must_use]
     #[inline]
     pub const fn paddr(&self) -> PhysAddr {
-        self.0.frame.start_address()
+        self.queue.frame.start_address()
     }
 
     #[must_use]
     #[inline]
     pub const fn entries(&self) -> u16 {
-        self.0.size
+        self.queue.size
     }
 
     #[must_use]
     // TODO: Find some entry with some CommandIdentifier
     pub fn pop(&mut self) -> Option<CompletionEntry> {
-        let inner_queue = &mut self.0;
+        let inner_queue = &mut self.queue;
 
         let entry_ptr = unsafe { inner_queue.base.add(usize::from(inner_queue.head)) };
         let entry = unsafe { entry_ptr.read() };
 
-        if !entry.has_finished() {
+        if entry.phase() != self.expected_phase {
             return None;
         }
 
-        self.0.head = self.0.head.wrapping_add(1) % self.0.size;
+        let next_head = inner_queue.head.wrapping_add(1) % inner_queue.size;
+        inner_queue.head = next_head;
+        if next_head == 0 {
+            self.expected_phase = !self.expected_phase;
+        }
         self.flush();
 
         Some(entry)
@@ -169,7 +179,7 @@ impl CompletionQueue {
 
     /// Tell the controller that the entries have been read
     fn flush(&mut self) {
-        unsafe { self.0.doorbell.write(u32::from(self.0.head)) };
+        unsafe { self.queue.doorbell.write(u32::from(self.queue.head)) };
     }
 }
 
@@ -262,8 +272,14 @@ struct CompletionEntry {
 impl CompletionEntry {
     #[must_use]
     #[inline]
-    pub const fn has_finished(self) -> bool {
+    pub const fn phase(self) -> bool {
         self.status & 1 != 0
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn has_finished(self) -> bool {
+        self.phase()
     }
 
     #[must_use]
@@ -276,7 +292,6 @@ impl CompletionEntry {
     ///
     /// Panics if the command has not finished.
     pub const fn is_success(self) -> bool {
-        assert!(self.has_finished());
         self.status & (u16::MAX - 1) == 0
     }
 
