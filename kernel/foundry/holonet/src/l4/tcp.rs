@@ -1,5 +1,3 @@
-pub use core::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
-
 use crate::{
     NetworkError, NetworkResult,
     egress::EthernetIpv4Envelope,
@@ -96,20 +94,6 @@ impl Flags {
     pub const fn urg(&self) -> bool {
         (self.0 & Self::URG) != 0
     }
-}
-
-/// Borrowed TCP segment metadata and payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Segment<'a> {
-    pub source_addr: Ipv4Addr,
-    pub destination_addr: Ipv4Addr,
-    pub source_port: u16,
-    pub destination_port: u16,
-    pub sequence_number: u32,
-    pub acknowledgment_number: u32,
-    pub flags: Flags,
-    pub window_size: u16,
-    pub payload: &'a [u8],
 }
 
 /// A read/write wrapper around a TCP packet buffer.
@@ -607,7 +591,8 @@ mod test {
         let frame = IngressFrame::parse(&bytes).unwrap();
         match frame.payload {
             EthernetPayload::Ipv4(ipv4) => match ipv4.payload {
-                Ipv4Payload::Tcp { packet, repr } => {
+                Ipv4Payload::Tcp(packet) => {
+                    let repr = Repr::parse(&packet).unwrap();
                     assert_eq!(repr.src_port, 1234);
                     assert_eq!(repr.dst_port, 80);
                     assert_eq!(repr.seq_num, 10);

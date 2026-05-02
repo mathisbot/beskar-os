@@ -293,9 +293,10 @@ mod test {
 
         let ingress = IngressFrame::parse(&bytes).unwrap();
         match ingress.payload {
-            EthernetPayload::Arp { repr, .. } => {
+            EthernetPayload::Arp(packet) => {
+                let arp = Repr::parse(&packet).unwrap();
                 assert_eq!(
-                    repr,
+                    arp,
                     EthernetIpv4Frame::request(
                         MacAddress::new([0x10, 0x11, 0x12, 0x13, 0x14, 0x15]),
                         Ipv4Addr::new(192, 168, 0, 10),

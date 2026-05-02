@@ -18,16 +18,10 @@ pub struct IngressFrame<'a> {
 /// A decoded Ethernet payload.
 #[derive(Debug, Clone)]
 pub enum EthernetPayload<'a> {
-    Arp {
-        packet: arp::Packet<&'a [u8]>,
-        repr: arp::Repr,
-    },
+    Arp(arp::Packet<&'a [u8]>),
     Ipv4(Ipv4Packet<'a>),
     Ipv6(&'a [u8]),
-    Unsupported {
-        ethertype: u16,
-        payload: &'a [u8],
-    },
+    Unsupported { ethertype: u16, payload: &'a [u8] },
 }
 
 /// A decoded IPv4 packet and its transport payload classification.
@@ -40,22 +34,10 @@ pub struct Ipv4Packet<'a> {
 /// A decoded IPv4 transport payload.
 #[derive(Debug, Clone)]
 pub enum Ipv4Payload<'a> {
-    Icmp {
-        packet: icmp::Packet<&'a [u8]>,
-        repr: icmp::Repr,
-    },
-    Tcp {
-        packet: tcp::Packet<&'a [u8]>,
-        repr: tcp::Repr,
-    },
-    Udp {
-        packet: udp::Packet<&'a [u8]>,
-        repr: udp::Repr,
-    },
-    Unsupported {
-        protocol: u8,
-        payload: &'a [u8],
-    },
+    Icmp(icmp::Packet<&'a [u8]>),
+    Tcp(tcp::Packet<&'a [u8]>),
+    Udp(udp::Packet<&'a [u8]>),
+    Unsupported { protocol: u8, payload: &'a [u8] },
 }
 
 impl<'a> IngressFrame<'a> {
@@ -73,8 +55,7 @@ impl<'a> IngressFrame<'a> {
         let payload = match frame.ethertype() {
             Ok(EtherType::Arp) => {
                 let packet = arp::Packet::new(payload_bytes)?;
-                let repr = arp::Repr::parse(&packet)?;
-                EthernetPayload::Arp { packet, repr }
+                EthernetPayload::Arp(packet)
             }
             Ok(EtherType::IpV4) => EthernetPayload::Ipv4(Ipv4Packet::parse(payload_bytes)?),
             Ok(EtherType::IpV6) => EthernetPayload::Ipv6(payload_bytes),
@@ -105,18 +86,15 @@ impl<'a> Ipv4Packet<'a> {
         let payload = match packet.protocol() {
             Ok(ip::Protocol::Icmp) => {
                 let packet = icmp::Packet::new(payload_bytes)?;
-                let repr = icmp::Repr::parse(&packet)?;
-                Ipv4Payload::Icmp { packet, repr }
+                Ipv4Payload::Icmp(packet)
             }
             Ok(ip::Protocol::Tcp) => {
                 let packet = tcp::Packet::new(payload_bytes)?;
-                let repr = tcp::Repr::parse(&packet)?;
-                Ipv4Payload::Tcp { packet, repr }
+                Ipv4Payload::Tcp(packet)
             }
             Ok(ip::Protocol::Udp) => {
                 let packet = udp::Packet::new(payload_bytes)?;
-                let repr = udp::Repr::parse(&packet)?;
-                Ipv4Payload::Udp { packet, repr }
+                Ipv4Payload::Udp(packet)
             }
             Ok(ip::Protocol::Igmp) | Err(_) => Ipv4Payload::Unsupported {
                 protocol: protocol_raw,
@@ -156,7 +134,7 @@ mod test {
         let frame = IngressFrame::parse(&ETH_ARP_FRAME).unwrap();
 
         match frame.payload {
-            EthernetPayload::Arp { repr, .. } => match repr {
+            EthernetPayload::Arp(packet) => match arp::Repr::parse(&packet).unwrap() {
                 arp::Repr::EthernetIpv4 { operation, .. } => {
                     assert_eq!(operation, Operation::Request);
                 }
@@ -171,7 +149,8 @@ mod test {
 
         match frame.payload {
             EthernetPayload::Ipv4(ipv4) => match ipv4.payload {
-                Ipv4Payload::Udp { repr, .. } => {
+                Ipv4Payload::Udp(packet) => {
+                    let repr = udp::Repr::parse(&packet).unwrap();
                     assert_eq!(repr.src_port, 53);
                     assert_eq!(repr.dst_port, 0x1234);
                     assert_eq!(repr.payload_len, 0);
@@ -204,14 +183,15 @@ mod test {
 
         match frame.payload {
             EthernetPayload::Ipv4(ipv4) => match ipv4.payload {
-                Ipv4Payload::Udp { packet, .. } => {
+                Ipv4Payload::Udp(packet) => {
                     assert_eq!(packet.src_port(), Ok(53));
                     assert_eq!(packet.dst_port(), Ok(0x1234));
                 }
-                Ipv4Payload::Tcp { packet, repr } => {
+                Ipv4Payload::Tcp(packet) => {
+                    let repr = tcp::Repr::parse(&packet).unwrap();
                     assert_eq!(packet.window_size(), Ok(repr.window_size));
                 }
-                Ipv4Payload::Icmp { .. } | Ipv4Payload::Unsupported { .. } => {
+                Ipv4Payload::Icmp(_) | Ipv4Payload::Unsupported { .. } => {
                     panic!("expected UDP payload")
                 }
             },

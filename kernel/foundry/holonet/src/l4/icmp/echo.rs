@@ -81,10 +81,11 @@ pub fn parse_reply(
         return Ok(None);
     }
 
-    let Ipv4Payload::Icmp { packet, repr } = &ipv4.payload else {
+    let Ipv4Payload::Icmp(packet) = &ipv4.payload else {
         return Ok(None);
     };
 
+    let repr = super::Repr::parse(packet)?;
     if repr.msg_type != MessageType::EchoReply || repr.code != 0 {
         return Ok(None);
     }
@@ -140,7 +141,8 @@ mod test {
                 assert_eq!(ipv4.packet.src_addr(), Ok(LOCAL_IP));
                 assert_eq!(ipv4.packet.dst_addr(), Ok(REMOTE_IP));
                 match ipv4.payload {
-                    Ipv4Payload::Icmp { packet, repr } => {
+                    Ipv4Payload::Icmp(packet) => {
+                        let repr = crate::l4::icmp::Repr::parse(&packet).unwrap();
                         assert_eq!(repr.msg_type, MessageType::EchoRequest);
                         assert_eq!(packet.echo_identity(), Ok((0x1234, 7)));
                         assert_eq!(packet.payload(), Ok(&payload[..]));

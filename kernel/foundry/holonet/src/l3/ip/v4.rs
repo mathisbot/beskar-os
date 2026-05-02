@@ -6,7 +6,7 @@ use crate::{
         write_u8, write_u16, write_u32,
     },
 };
-pub use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+pub use core::net::Ipv4Addr;
 
 /// Range of bytes for the total length field.
 const TOTAL_LEN: usize = 2;

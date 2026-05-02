@@ -1,5 +1,3 @@
-pub use core::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
-
 use crate::{
     NetworkError, NetworkResult,
     egress::EthernetIpv4Envelope,
@@ -19,16 +17,6 @@ const LENGTH: usize = 4;
 const CHECKSUM: usize = 6;
 /// Length of the UDP header (fixed).
 pub const HEADER_LEN: usize = 8;
-
-/// Borrowed UDP datagram metadata and payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Datagram<'a> {
-    pub source_addr: Ipv4Addr,
-    pub destination_addr: Ipv4Addr,
-    pub source_port: u16,
-    pub destination_port: u16,
-    pub payload: &'a [u8],
-}
 
 /// A read/write wrapper around a UDP packet buffer.
 #[derive(Debug, Clone)]
