@@ -329,6 +329,7 @@ pub mod kernel {
 
 pub mod process_local {
     use super::*;
+    use beskar_core::arch::paging::Translator as _;
     use bootloader_api::KERNEL_AS_BASE;
 
     #[must_use]
@@ -437,7 +438,7 @@ pub mod process_local {
 
     #[must_use]
     #[inline]
-    pub fn probe(start: VirtAddr, end: VirtAddr) -> bool {
+    pub fn is_addr_owned(start: VirtAddr, end: VirtAddr) -> bool {
         process::current().address_space().is_addr_owned(start, end)
     }
 
@@ -537,5 +538,104 @@ pub mod process_local {
                 })
             })
         }
+    }
+
+    #[must_use]
+    #[inline]
+    fn checked_user_range(start: VirtAddr, len: usize) -> bool {
+        let len = u64::try_from(len).unwrap();
+        let Some(end) = VirtAddr::try_new(start.as_u64().saturating_add(len - 1)) else {
+            return false;
+        };
+        process::current().address_space().is_addr_owned(start, end)
+    }
+
+    fn probe_copy(
+        user_addr: VirtAddr,
+        len: usize,
+        required_flags: Flags,
+        mut copy_chunk: impl FnMut(VirtAddr, usize, usize),
+    ) -> Result<(), MappingError<M4KiB>> {
+        if !checked_user_range(user_addr, len) {
+            return Err(MappingError::NotMapped);
+        }
+
+        let mut current = user_addr;
+        unsafe {
+            with_current_pt(|pt| {
+                let mut checked = 0;
+
+                while checked < len {
+                    let offset = usize::from(current.page_offset());
+                    let chunk_len =
+                        (len - checked).min(usize::try_from(M4KiB::SIZE).unwrap() - offset);
+
+                    let valid = pt
+                        .translate_addr(current)
+                        .is_some_and(|(_, flags)| flags.contains(required_flags));
+                    if !valid {
+                        return Err(MappingError::NotMapped);
+                    }
+
+                    checked += chunk_len;
+                    current += u64::try_from(chunk_len).unwrap();
+                }
+
+                current = user_addr;
+                let mut copied = 0;
+
+                while copied < len {
+                    let offset = usize::from(current.page_offset());
+                    let chunk_len =
+                        (len - checked).min(usize::try_from(M4KiB::SIZE).unwrap() - offset);
+
+                    copy_chunk(current, copied, chunk_len);
+
+                    copied += chunk_len;
+                    current += u64::try_from(chunk_len).unwrap();
+                }
+
+                Ok(())
+            })
+        }
+    }
+
+    #[expect(dead_code, reason = "TODO")]
+    /// Copy bytes from the current process' user address space into a kernel buffer.
+    ///
+    /// The whole source range must be mapped, present, and user-accessible. The
+    /// current page table is held locked while the range is validated and copied.
+    pub fn probe_read(dst: &mut [u8], src: VirtAddr) -> Result<(), MappingError<M4KiB>> {
+        probe_copy(
+            src,
+            dst.len(),
+            Flags::PRESENT | Flags::USER_ACCESSIBLE,
+            |current, copied, chunk_len| {
+                let src = current.as_ptr::<u8>();
+                let dst = unsafe { dst.as_mut_ptr().add(copied) };
+                let count = chunk_len;
+                unsafe { core::ptr::copy_nonoverlapping(src, dst, count) };
+            },
+        )
+    }
+
+    #[expect(dead_code, reason = "TODO")]
+    /// Copy bytes from a kernel buffer into the current process' user address space.
+    ///
+    /// The whole destination range must be mapped, present, user-accessible, and
+    /// writable. The current page table is held locked while the range is
+    /// validated and copied.
+    pub fn probe_write(dst: VirtAddr, src: &[u8]) -> Result<(), MappingError<M4KiB>> {
+        probe_copy(
+            dst,
+            src.len(),
+            Flags::PRESENT | Flags::USER_ACCESSIBLE | Flags::WRITABLE,
+            |current, copied, chunk_len| {
+                let src = unsafe { src.as_ptr().add(copied) };
+                let dst = current.as_mut_ptr::<u8>();
+                let count = chunk_len;
+                unsafe { core::ptr::copy_nonoverlapping(src, dst, count) };
+            },
+        )
     }
 }

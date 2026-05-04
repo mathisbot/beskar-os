@@ -27,8 +27,8 @@ pub struct Arguments {
 /// and is located within its user-space address space.
 #[must_use]
 #[inline]
-pub fn probe(start: VirtAddr, end: VirtAddr) -> bool {
-    vmm::process_local::probe(start, end)
+pub fn is_addr_owned(start: VirtAddr, end: VirtAddr) -> bool {
+    vmm::process_local::is_addr_owned(start, end)
 }
 
 #[must_use]
@@ -130,7 +130,7 @@ fn sc_munmap(args: &Arguments) -> SyscallExitCode {
 
     if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
         || !size.is_multiple_of(M4KiB::SIZE)
-        || !probe(va, end)
+        || !is_addr_owned(va, end)
     {
         return SyscallExitCode::Failure;
     }
@@ -162,7 +162,7 @@ fn sc_mprotect(args: &Arguments) -> SyscallExitCode {
 
     if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
         || !size.is_multiple_of(M4KiB::SIZE)
-        || !probe(va, end)
+        || !is_addr_owned(va, end)
     {
         return SyscallExitCode::Failure;
     }
@@ -197,7 +197,7 @@ fn sc_read(args: &Arguments) -> i64 {
     let buffer_start = VirtAddr::try_new(args.two).unwrap_or_default();
     let buffer_len = args.three;
 
-    if !probe(buffer_start, buffer_start + buffer_len) {
+    if !is_addr_owned(buffer_start, buffer_start + buffer_len) {
         return -1;
     }
 
@@ -229,7 +229,7 @@ fn sc_write(args: &Arguments) -> i64 {
     let buffer_start = VirtAddr::try_new(args.two).unwrap_or_default();
     let buffer_len = args.three;
 
-    if !probe(buffer_start, buffer_start + buffer_len) {
+    if !is_addr_owned(buffer_start, buffer_start + buffer_len) {
         return -1;
     }
 
@@ -254,7 +254,7 @@ fn sc_open(args: &Arguments) -> i64 {
     let path_start = VirtAddr::try_new(args.one).unwrap_or_default();
     let path_len = args.two;
 
-    if !probe(path_start, path_start + path_len) {
+    if !is_addr_owned(path_start, path_start + path_len) {
         return Handle::INVALID.id();
     }
 
@@ -325,7 +325,7 @@ fn sc_futex_wait(args: &Arguments) -> u64 {
         return u64::from(FutexWaitResult::InvalidAddress);
     };
     let futex_end = futex_addr + (size - 1);
-    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !probe(futex_addr, futex_end) {
+    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !is_addr_owned(futex_addr, futex_end) {
         return u64::from(FutexWaitResult::InvalidAddress);
     }
 
@@ -353,7 +353,7 @@ fn sc_futex_wake(args: &Arguments) -> u64 {
         return 0;
     };
     let futex_end = futex_addr + (size - 1);
-    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !probe(futex_addr, futex_end) {
+    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !is_addr_owned(futex_addr, futex_end) {
         return 0;
     }
 
@@ -392,7 +392,7 @@ fn sc_surface_create(args: &Arguments) -> i64 {
     let user_buffer = VirtAddr::from_ptr(user_buffer_ptr);
     let buffer_size = u64::from(width) * u64::from(height) * 4;
     let buffer_end = user_buffer + buffer_size;
-    if !probe(user_buffer, buffer_end) {
+    if !is_addr_owned(user_buffer, buffer_end) {
         return -1;
     }
 
@@ -490,7 +490,7 @@ fn sc_query_config(args: &Arguments) -> SyscallExitCode {
 
     let start = VirtAddr::from_ptr(output_ptr);
     let end = start + output_size;
-    if !probe(start, end) {
+    if !is_addr_owned(start, end) {
         return SyscallExitCode::Failure;
     }
 
@@ -513,7 +513,7 @@ fn sc_thread_spawn(args: &Arguments) -> u64 {
     let entry_point = args.one;
 
     let entry_point = VirtAddr::try_new(entry_point).unwrap_or_default();
-    if !probe(entry_point, entry_point) {
+    if !is_addr_owned(entry_point, entry_point) {
         return 0;
     }
 
