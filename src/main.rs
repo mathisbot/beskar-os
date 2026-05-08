@@ -1,4 +1,4 @@
-//! Interactive build & developer tool for BeskarOS.
+//! `BeskarOS` command deck.
 
 mod app;
 mod config;
@@ -7,222 +7,50 @@ mod qemu;
 mod ui;
 
 use anyhow::Result;
-use app::{App, FormActivateResult, Screen};
-use clap::{Parser, Subcommand};
+use app::{Action, App};
 use config::{BuildConfig, QemuConfig};
-use pipeline::{DevOp, discover_userspace_apps};
-use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
-use ratatui::{Terminal, backend::CrosstermBackend};
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
-
-#[derive(Parser)]
-#[command(
-    name = "imdr",
-    about = "IMDR - Imperial Department of Military Research\nBeskarOS build & development tool.",
-    long_about = None,
-    version,
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Headless build: assemble a disk image with default configuration.
-    Build {
-        /// Output directory (default: `efi_disk`).
-        #[arg(short, long, default_value = "efi_disk")]
-        output: String,
-        /// Build in release mode.
-        #[arg(short, long)]
-        release: bool,
-        /// Userspace apps to include in the ramdisk (repeatable).
-        #[arg(short, long)]
-        app: Vec<String>,
+use ratatui::{
+    Terminal,
+    backend::CrosstermBackend,
+    crossterm::{
+        event::{self, Event},
+        execute,
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
-
-    /// Headless build + launch QEMU.
-    Qemu {
-        /// Output directory (default: `efi_disk`).
-        #[arg(short, long, default_value = "efi_disk")]
-        output: String,
-        /// Build in release mode.
-        #[arg(short, long)]
-        release: bool,
-        /// Number of CPU cores for QEMU.
-        #[arg(long, default_value_t = 4)]
-        cores: u32,
-        /// RAM in MiB for QEMU.
-        #[arg(long, default_value_t = 512)]
-        ram: u32,
-    },
-}
+};
+use std::{io, path::PathBuf, time::Duration};
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
-    let workspace_root = find_workspace_root();
+    let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let build = BuildConfig::new(pipeline::discover_userspace_apps(&workspace_root));
+    let qemu = QemuConfig::default();
+    let mut app = App::new(workspace_root, build, qemu);
 
-    match cli.command {
-        Some(Commands::Build {
-            output,
-            release,
-            app,
-        }) => run_headless_build(workspace_root, output, release, &app),
-        Some(Commands::Qemu {
-            output,
-            release,
-            cores,
-            ram,
-        }) => run_headless_qemu(&workspace_root, output, release, cores, ram),
-        None => run_tui(&workspace_root),
-    }
-}
-
-fn find_workspace_root() -> PathBuf {
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-}
-
-fn run_headless_build(
-    workspace_root: PathBuf,
-    output: String,
-    release: bool,
-    selected_apps: &[String],
-) -> Result<()> {
-    let available = discover_userspace_apps(&workspace_root);
-    let apps: Vec<(String, bool)> = available
-        .into_iter()
-        .map(|name| {
-            let sel = if selected_apps.is_empty() {
-                name == "bashkar"
-            } else {
-                selected_apps.contains(&name)
-            };
-            (name, sel)
-        })
-        .collect();
-
-    let config = BuildConfig {
-        output_dir: output,
-        profile: if release {
-            config::Profile::Release
-        } else {
-            config::Profile::Debug
-        },
-        userspace_apps: apps,
-    };
-
-    let (tx, rx) = std::sync::mpsc::channel();
-    let handle = pipeline::start_build(config, workspace_root, tx);
-
-    for msg in rx {
-        match msg {
-            pipeline::LogMsg::Line(s) => println!("{s}"),
-            pipeline::LogMsg::Done(ok) => {
-                let _ = handle.join();
-                if ok {
-                    println!("\nBuild complete.");
-                    return Ok(());
-                }
-                anyhow::bail!("Build failed.");
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn run_headless_qemu(
-    workspace_root: &Path,
-    output: String,
-    release: bool,
-    cores: u32,
-    ram: u32,
-) -> Result<()> {
-    run_headless_build(workspace_root.to_path_buf(), output.clone(), release, &[])?;
-
-    let qemu_cfg = QemuConfig {
-        cores,
-        ram_mib: ram,
-        ..Default::default()
-    };
-
-    println!("\n{}", qemu::command_preview(&qemu_cfg, &output));
-    println!("\nLaunching QEMU...");
-
-    let (tx, rx) = std::sync::mpsc::channel();
-    let handle = qemu::start_qemu(qemu_cfg, output, workspace_root, tx);
-
-    for msg in rx {
-        match msg {
-            pipeline::LogMsg::Line(s) => println!("{s}"),
-            pipeline::LogMsg::Done(_) => {
-                let _ = handle.join();
-                return Ok(());
-            }
-        }
-    }
-    Ok(())
-}
-
-fn run_tui(workspace_root: &Path) -> Result<()> {
-    let available_apps = discover_userspace_apps(workspace_root);
-    let build_cfg = BuildConfig::new(available_apps);
-    let qemu_cfg = QemuConfig::default();
-    let mut app = App::new(workspace_root.to_path_buf(), &build_cfg, &qemu_cfg);
-
-    enable_raw_mode()?;
-    let mut stdout = std::io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let mut stdout = io::stdout();
+    let mut restore = TerminalRestore::enter(&mut stdout)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = tui_loop(&mut terminal, &mut app, workspace_root);
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    let result = run_tui(&mut terminal, &mut app);
+    restore.leave(&mut terminal)?;
 
     result
 }
 
-fn tui_loop(
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    app: &mut App,
-    workspace_root: &Path,
-) -> Result<()> {
+fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     loop {
-        terminal.draw(|f| ui::render(f, app))?;
-        app.poll_logs();
+        terminal.draw(|frame| ui::render(frame, app))?;
 
-        if event::poll(core::time::Duration::from_millis(50))?
+        if let Some(action) = app.poll_task() {
+            dispatch_action(app, action);
+        }
+
+        if event::poll(Duration::from_millis(50))?
             && let Event::Key(key) = event::read()?
             && key.kind == event::KeyEventKind::Press
         {
-            let action = match &app.screen {
-                Screen::MainMenu => {
-                    handle_main_menu(app, key.code, key.modifiers);
-                    TuiAction::None
-                }
-                Screen::BuildDossier => handle_build_form(app, key.code, key.modifiers),
-                Screen::DevTools => handle_dev_tools(app, key.code, workspace_root),
-            };
-            match action {
-                TuiAction::Build => trigger_build(app, workspace_root),
-                TuiAction::LaunchQemu => launch_qemu_foreground(app, workspace_root, terminal)?,
-                TuiAction::None => {}
-            }
+            let action = app.handle_key(key.code, key.modifiers);
+            dispatch_action(app, action);
         }
 
         if app.should_quit {
@@ -233,179 +61,55 @@ fn tui_loop(
     Ok(())
 }
 
-enum TuiAction {
-    None,
-    Build,
-    LaunchQemu,
-}
-
-fn handle_main_menu(app: &mut App, code: KeyCode, _mods: KeyModifiers) {
-    match code {
-        KeyCode::Up | KeyCode::Char('k') => app.main_menu_up(),
-        KeyCode::Down | KeyCode::Char('j') => app.main_menu_down(),
-        KeyCode::Enter => app.main_menu_select(),
-        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-        _ => {}
-    }
-}
-
-fn handle_build_form(app: &mut App, code: KeyCode, mods: KeyModifiers) -> TuiAction {
+fn dispatch_action(app: &mut App, action: Action) {
     if app.is_running() {
-        match code {
-            KeyCode::Up if app.build_form.log_scroll != usize::MAX => {
-                app.build_form.log_scroll = app.build_form.log_scroll.saturating_sub(1);
-            }
-
-            KeyCode::Down => {
-                app.build_form.log_scroll = app
-                    .build_form
-                    .log_scroll
-                    .saturating_add(1)
-                    .min(app.log_lines.len());
-            }
-            _ => {}
-        }
-        return TuiAction::None;
+        return;
     }
 
-    let field = app.build_form.field_at(app.build_form.selected);
-
-    match code {
-        KeyCode::Tab | KeyCode::Down => {
-            if mods.contains(KeyModifiers::SHIFT) {
-                app.form_prev();
-            } else {
-                app.form_next();
-            }
+    match action {
+        Action::None => {}
+        Action::Build => start_build(app, false),
+        Action::BuildAndRun => start_build(app, true),
+        Action::RunQemu => {
+            let task =
+                qemu::start_qemu(&app.qemu, &app.build.output_dir, app.workspace_root.clone());
+            app.set_running(task, None);
         }
-        KeyCode::BackTab | KeyCode::Up => app.form_prev(),
-        KeyCode::Left => app.form_cycle_left(),
-        KeyCode::Right => app.form_cycle_right(),
-        KeyCode::Enter | KeyCode::Char(' ') if field.is_checkbox() => {
-            app.form_activate();
-        }
-        KeyCode::Enter if field.is_action() => {
-            let result = app.form_activate();
-            return match result {
-                FormActivateResult::TriggerBuild => TuiAction::Build,
-                FormActivateResult::TriggerQemu => TuiAction::LaunchQemu,
-                FormActivateResult::None => TuiAction::None,
-            };
-        }
-        KeyCode::Backspace if field.is_text() => app.form_backspace(),
-        KeyCode::Char(c) if field.is_text() => app.form_type_char(c),
-        KeyCode::Esc => {
-            app.screen = Screen::MainMenu;
-        }
-        _ => {}
     }
-
-    TuiAction::None
 }
 
-fn trigger_build(app: &mut App, workspace_root: &Path) {
-    let cfg = app.build_form.to_build_config();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let handle = pipeline::start_build(cfg, workspace_root.to_path_buf(), tx);
-    app.set_running(rx, handle);
+fn start_build(app: &mut App, run_afterwards: bool) {
+    let task = pipeline::start_build(app.build.clone(), app.workspace_root.clone());
+    let then = run_afterwards.then_some(Action::RunQemu);
+    app.set_running(task, then);
 }
 
-/// Suspends the TUI, runs QEMU with an inherited terminal, then restores the TUI.
-fn launch_qemu_foreground(
-    app: &mut App,
-    workspace_root: &Path,
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-) -> Result<()> {
-    let qcfg = app.build_form.to_qemu_config();
-    let output_dir = app.build_form.output_dir.clone();
-
-    // Hand the terminal over to QEMU.
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-
-    let args = qemu::build_args(&qcfg, &output_dir);
-    let flat_args: Vec<String> = args
-        .iter()
-        .flat_map(|a| a.splitn(2, ' ').map(str::to_owned).collect::<Vec<_>>())
-        .collect();
-
-    let status = Command::new("qemu-system-x86_64")
-        .args(&flat_args)
-        .current_dir(workspace_root)
-        .status();
-
-    // Restore TUI.
-    enable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        EnterAlternateScreen,
-        EnableMouseCapture
-    )?;
-    terminal.clear()?;
-
-    let ok = status.is_ok_and(|s| s.success());
-    let msg = if ok {
-        "  ✓ QEMU exited.".to_string()
-    } else {
-        "  QEMU exited with non-zero status.".to_string()
-    };
-    app.log_lines.push(msg);
-    app.last_op_success = Some(ok);
-
-    Ok(())
+struct TerminalRestore {
+    armed: bool,
 }
 
-fn handle_dev_tools(app: &mut App, code: KeyCode, workspace_root: &Path) -> TuiAction {
-    if app.pkg_field_focused {
-        match code {
-            KeyCode::Char(c) => app.dev_type_char(c),
-            KeyCode::Backspace => app.dev_backspace(),
-            KeyCode::Enter | KeyCode::Esc => app.pkg_field_focused = false,
-            _ => {}
-        }
-        return TuiAction::None;
+impl TerminalRestore {
+    fn enter(stdout: &mut io::Stdout) -> Result<Self> {
+        enable_raw_mode()?;
+        let restore = Self { armed: true };
+        execute!(stdout, EnterAlternateScreen)?;
+        Ok(restore)
     }
 
-    if app.is_running() {
-        match code {
-            KeyCode::Up if app.dev_form.log_scroll != usize::MAX => {
-                app.dev_form.log_scroll = app.dev_form.log_scroll.saturating_sub(1);
-            }
-            KeyCode::Down => {
-                app.dev_form.log_scroll = app
-                    .dev_form
-                    .log_scroll
-                    .saturating_add(1)
-                    .min(app.log_lines.len());
-            }
-            _ => {}
-        }
-        return TuiAction::None;
+    fn leave(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+        disable_raw_mode()?;
+        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+        terminal.show_cursor()?;
+        self.armed = false;
+        Ok(())
     }
+}
 
-    match code {
-        KeyCode::Up | KeyCode::Char('k') => app.dev_op_up(),
-        KeyCode::Down | KeyCode::Char('j') => app.dev_op_down(),
-        KeyCode::Char('p') => app.pkg_field_focused = true,
-        KeyCode::Enter => {
-            let op = DevOp::ALL[app.dev_form.op_selected % DevOp::ALL.len()].clone();
-            if op == pipeline::DevOp::LaunchQemu {
-                return TuiAction::LaunchQemu;
-            }
-            let pkg = app.dev_form.package.clone();
-            let (tx, rx) = std::sync::mpsc::channel();
-            let handle = pipeline::start_dev_op(op, pkg, workspace_root.to_path_buf(), tx);
-            app.set_running(rx, handle);
+impl Drop for TerminalRestore {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = disable_raw_mode();
+            let _ = execute!(io::stdout(), LeaveAlternateScreen);
         }
-        KeyCode::Esc | KeyCode::Char('q') => {
-            app.screen = Screen::MainMenu;
-        }
-        _ => {}
     }
-
-    TuiAction::None
 }

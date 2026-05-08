@@ -45,7 +45,6 @@ nursery = "warn"
 
 [dependencies]
 anyhow = "1.0.102"
-clap = { version = "4.6.0", features = ["derive"] }
 ratatui = "0.30.0"
 thiserror = "2.0.18"
 
