@@ -89,8 +89,8 @@ macro_rules! read_reg {
             }
 
             /// Get register value
-            const fn read(&self) -> u64 {
-                unsafe { self.vaddr.as_ptr::<u64>().read() }
+            fn read(&self) -> u64 {
+                unsafe { self.vaddr.as_ptr::<u64>().read_volatile() }
             }
         }
     };
@@ -101,9 +101,8 @@ macro_rules! read_write_reg {
         read_reg!($name { $($field_name : $field_type),* });
 
         impl $name {
-            /// Use only to write to the register
-            const fn as_mut(&mut self) -> &mut u64 {
-                unsafe { &mut *self.vaddr.as_mut_ptr::<u64>() }
+            fn write(&mut self, value: u64) {
+                unsafe { self.vaddr.as_mut_ptr::<u64>().write_volatile(value) };
             }
         }
     };
@@ -123,7 +122,7 @@ impl GeneralCapabilities {
         let physical_mapping =
             PhysicalMapping::<M4KiB>::new(paddr, core::mem::size_of::<u64>(), flags).unwrap();
         let vaddr = physical_mapping.translate(paddr).unwrap();
-        Self(unsafe { vaddr.as_ptr::<u64>().read() })
+        Self(unsafe { vaddr.as_ptr::<u64>().read_volatile() })
     }
 
     #[must_use]
@@ -167,34 +166,32 @@ read_write_reg!(GeneralConfiguration {});
 impl GeneralConfiguration {
     #[must_use]
     #[inline]
-    pub const fn get_enable_cnf(&self) -> bool {
+    pub fn get_enable_cnf(&self) -> bool {
         self.read() & 1 != 0
     }
 
     #[inline]
-    pub const fn set_enable_cnf(&mut self, enable: bool) {
-        let ptr = self.as_mut();
-        if enable {
-            *ptr |= 1;
-        } else {
-            *ptr &= !1;
-        }
+    pub fn set_enable_cnf(&mut self, enable: bool) {
+        let prev = self.read();
+        let new = if enable { prev | 1 } else { prev & !1 };
+        self.write(new);
     }
 
     #[must_use]
     #[inline]
-    pub const fn legacy_replacement(&self) -> bool {
+    pub fn legacy_replacement(&self) -> bool {
         (self.read() >> 1) & 1 == 1
     }
 
     #[inline]
-    pub const fn set_legacy_replacement(&mut self, enable: bool) {
-        let ptr = self.as_mut();
-        if enable {
-            *ptr |= 1 << 1;
+    pub fn set_legacy_replacement(&mut self, enable: bool) {
+        let prev = self.read();
+        let new = if enable {
+            prev | (1 << 1)
         } else {
-            *ptr &= !(1 << 1);
-        }
+            prev & !(1 << 1)
+        };
+        self.write(new);
     }
 
     #[expect(clippy::unused_self, reason = "Match other functions signature")]
@@ -211,7 +208,7 @@ impl GeneralInterruptStatus {
     /// # Safety
     ///
     /// The caller ensure the timer is valid.
-    pub const fn get_tn_int_status(&self, timer: u8) -> bool {
+    pub fn get_tn_int_status(&self, timer: u8) -> bool {
         assert!(timer < 32 && timer < self.nb_timers);
         self.read() & (1 << timer) != 0
     }
@@ -222,10 +219,9 @@ impl GeneralInterruptStatus {
     /// # Safety
     ///
     /// The caller ensure the timer is valid.
-    pub const unsafe fn clear_tn_int_status(&mut self, timer: u8) {
+    pub unsafe fn clear_tn_int_status(&mut self, timer: u8) {
         assert!(timer < 32 && timer < self.nb_timers);
-        let ptr = self.as_mut();
-        *ptr |= 1 << timer;
+        self.write(1 << timer);
     }
 
     #[inline]
@@ -239,7 +235,7 @@ read_reg!(MainCounterValue { count_cap: bool });
 impl MainCounterValue {
     #[must_use]
     #[inline]
-    pub const fn get_value(&self) -> u64 {
+    pub fn get_value(&self) -> u64 {
         assert!(self.count_cap, "HPET count size not capable");
         self.read()
     }
@@ -265,35 +261,37 @@ impl TimerConfigCap {
     /// Knowing how buggy hardware can be,
     /// I wouldn't be too surprised if there exists a PC with HPET claiming that input #31 is allowed,
     /// when there are only 24 I/O APIC inputs. Be aware of this when choosing interrupt routing for timers."
-    pub const fn int_route_cap(&self, irq: u8) -> bool {
+    pub fn int_route_cap(&self, irq: u8) -> bool {
         assert!(irq < 32);
         (self.read() >> 32) & (1 << irq) == 1
     }
 
     #[must_use]
     #[inline]
-    pub const fn fsb_int_map_cap(&self) -> bool {
+    pub fn fsb_int_map_cap(&self) -> bool {
         (self.read() >> 15) & 1 == 1
     }
 
     #[must_use]
     #[inline]
-    pub const fn get_fsb_int_map(&self) -> bool {
+    pub fn get_fsb_int_map(&self) -> bool {
         (self.read() >> 14) & 1 == 1
     }
 
     #[inline]
     pub fn set_fsb_int_map(&mut self, value: bool) {
-        if value {
+        let prev = self.read();
+        let new = if value {
             assert!(
                 self.fsb_int_map_cap(),
                 "HPET timer {} FSB interrupt mapping not capable",
                 self.timer
             );
-            *self.as_mut() |= 1 << 14;
+            prev | (1 << 14)
         } else {
-            *self.as_mut() &= !(1 << 14);
-        }
+            prev & !(1 << 14)
+        };
+        self.write(new);
     }
 
     #[must_use]
@@ -309,14 +307,15 @@ impl TimerConfigCap {
             "HPET timer {} FSB interrupt enable out of range",
             self.timer
         );
-        let ptr = self.as_mut();
-        *ptr &= !(0b1_1111 << 9); // Clear the field
-        *ptr |= u64::from(value) << 9; // Set the new value
+        let mut prev = self.read();
+        prev &= !(0b1_1111 << 9); // Clear the field
+        prev |= u64::from(value) << 9; // Set the new value
+        self.write(prev);
     }
 
     #[must_use]
     #[inline]
-    pub const fn get_mode_32_bits(&self) -> bool {
+    pub fn get_mode_32_bits(&self) -> bool {
         (self.read() >> 8) & 1 == 1
     }
 
@@ -324,40 +323,42 @@ impl TimerConfigCap {
 
     #[must_use]
     #[inline]
-    pub const fn size_cap(&self) -> bool {
+    pub fn size_cap(&self) -> bool {
         (self.read() >> 5) & 1 == 1
     }
 
     #[must_use]
     #[inline]
-    pub const fn periodic_cap(&self) -> bool {
+    pub fn periodic_cap(&self) -> bool {
         (self.read() >> 4) & 1 == 1
     }
 
     #[must_use]
     #[inline]
-    pub const fn get_periodic_mode(&self) -> bool {
+    pub fn get_periodic_mode(&self) -> bool {
         (self.read() >> 3) & 1 == 1
     }
 
     #[inline]
     pub fn set_periodic_mode(&mut self, value: bool) {
-        if value {
+        let prev = self.read();
+        let new = if value {
             assert!(
                 self.periodic_cap(),
                 "HPET timer {} not periodic capable",
                 self.timer
             );
-            *self.as_mut() |= 1 << 3;
+            prev | (1 << 3)
         } else {
-            *self.as_mut() &= !(1 << 3);
-        }
+            prev & !(1 << 3)
+        };
+        self.write(new);
     }
 
     #[must_use]
     #[inline]
     /// Is triggering interrupts enabled for this timer ?
-    pub const fn get_interrupts_trig(&self) -> bool {
+    pub fn get_interrupts_trig(&self) -> bool {
         (self.read() >> 2) & 1 == 1
     }
 
@@ -366,18 +367,19 @@ impl TimerConfigCap {
     ///
     /// Even if this bit is disabled, the timer will still set the corresponding bit
     /// in the General Interrupt Status register.
-    pub const fn set_interrupts_trig(&mut self, value: bool) {
-        let ptr = self.as_mut();
-        if value {
-            *ptr |= 1 << 2;
+    pub fn set_interrupts_trig(&mut self, value: bool) {
+        let prev = self.read();
+        let new = if value {
+            prev | (1 << 2)
         } else {
-            *ptr &= !(1 << 2);
-        }
+            prev & !(1 << 2)
+        };
+        self.write(new);
     }
 
     #[must_use]
     #[inline]
-    pub const fn get_int_type(&self) -> InterruptTriggerType {
+    pub fn get_int_type(&self) -> InterruptTriggerType {
         if (self.read() >> 1) & 1 == 1 {
             InterruptTriggerType::Level
         } else {
@@ -386,12 +388,13 @@ impl TimerConfigCap {
     }
 
     #[inline]
-    pub const fn set_int_type(&mut self, int_type: &InterruptTriggerType) {
-        let ptr = self.as_mut();
+    pub fn set_int_type(&mut self, int_type: &InterruptTriggerType) {
+        let mut prev = self.read();
         match int_type {
-            InterruptTriggerType::Edge => *ptr &= !(1 << 1),
-            InterruptTriggerType::Level => *ptr |= 1 << 1,
+            InterruptTriggerType::Edge => prev &= !(1 << 1),
+            InterruptTriggerType::Level => prev |= 1 << 1,
         }
+        self.write(prev);
     }
 
     fn validate(&self) {
@@ -417,7 +420,7 @@ read_write_reg!(TimerCompValue { count_cap: bool });
 
 impl TimerCompValue {
     #[must_use]
-    pub const fn get_value(&self) -> u64 {
+    pub fn get_value(&self) -> u64 {
         // FIXME: Handle 32-bit counter
         assert!(self.count_cap, "HPET count size not capable");
         self.read()
@@ -425,7 +428,7 @@ impl TimerCompValue {
 
     pub fn set_value(&mut self, value: u64) {
         assert!(self.count_cap, "HPET count size not capable");
-        *self.as_mut() = value;
+        self.write(value);
     }
 
     #[expect(clippy::unused_self, reason = "Match other functions signature")]
