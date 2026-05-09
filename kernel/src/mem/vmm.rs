@@ -587,7 +587,7 @@ pub mod process_local {
                 while copied < len {
                     let offset = usize::from(current.page_offset());
                     let chunk_len =
-                        (len - checked).min(usize::try_from(M4KiB::SIZE).unwrap() - offset);
+                        (len - copied).min(usize::try_from(M4KiB::SIZE).unwrap() - offset);
 
                     copy_chunk(current, copied, chunk_len);
 

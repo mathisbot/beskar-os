@@ -96,7 +96,7 @@ impl Xhci {
         let _ = (vaddr, cap); // We are about to unmap the memory, so it's best to shadow related variables
 
         // We can now map more memory to access the rest of the registers
-        let total_length = dboff + size_of::<u32>() * usize::from(max_slots); // DB registers are at the end of the memory
+        let total_length = dboff + size_of::<u32>() * (usize::from(max_slots) + 1); // DB registers are at the end of the memory
         let physical_mapping = PhysicalMapping::new(paddr, total_length, flags).unwrap();
 
         let reg_base_vaddr = physical_mapping.translate(paddr).unwrap();

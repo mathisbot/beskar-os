@@ -21,7 +21,7 @@ pub trait RenderBackend {
     unsafe fn bitblt(
         &mut self,
         src_pixels: *const u8,
-        src_stride: u16,
+        src_stride: u32,
         src_rect: Rect,
         dst_pos: Point,
     ) -> Result<(), RenderError>;

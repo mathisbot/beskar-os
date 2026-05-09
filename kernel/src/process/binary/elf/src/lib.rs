@@ -72,6 +72,9 @@
 
 #![no_std]
 
+#[cfg(test)]
+extern crate alloc;
+
 mod error;
 mod loader;
 pub mod mapper;

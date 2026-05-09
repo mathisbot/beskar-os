@@ -215,7 +215,10 @@ impl Vfs {
     /// Opens a file at the given path for the specified process, returning a handle.
     pub fn open(&self, pid: u64, path: Path) -> FileResult<Handle> {
         let handle = self.insert_handle(pid, path)?;
-        self.path_to_fs(path, |fs, rel_path| fs.open(rel_path))?;
+        if let Err(err) = self.path_to_fs(path, |fs, rel_path| fs.open(rel_path)) {
+            let _ = self.remove_handle(pid, handle);
+            return Err(err);
+        }
         Ok(handle)
     }
 

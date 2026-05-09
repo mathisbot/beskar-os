@@ -304,14 +304,16 @@ impl Surface {
     /// Get the stride in bytes for this surface
     #[must_use]
     #[inline]
-    pub const fn stride_bytes(&self) -> u16 {
-        self.width * (self.format.bytes_per_pixel() as u16)
+    pub fn stride_bytes(&self) -> u32 {
+        u32::from(self.width) * u32::from(self.format.bytes_per_pixel())
     }
 
     #[must_use]
     #[inline]
-    pub const fn size(&self) -> usize {
-        (self.width as usize) * (self.height as usize) * (self.format.bytes_per_pixel() as usize)
+    pub fn size(&self) -> usize {
+        usize::from(self.width)
+            * usize::from(self.height)
+            * usize::from(self.format.bytes_per_pixel())
     }
 }
 
