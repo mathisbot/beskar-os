@@ -155,7 +155,7 @@ struct AtomicState<R: RelaxStrategy = Spin> {
     /// Whether a writer has acquired the lock.
     writer: AtomicBool,
     /// Relax strategy.
-    _relax: PhantomData<R>,
+    _relax: PhantomData<fn() -> R>,
 }
 
 unsafe impl<R: RelaxStrategy> Send for AtomicState<R> {}

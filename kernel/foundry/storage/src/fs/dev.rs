@@ -23,35 +23,41 @@ impl DeviceFS {
         }
     }
 
-    #[inline]
     /// Adds a new device to the file system.
     pub fn add_device(
         &mut self,
         path: super::PathBuf,
         device: Box<dyn KernelDevice + Send + Sync>,
     ) {
-        self.devices.push(DeviceFile { path, device });
+        let dev = DeviceFile { path, device };
+        self.devices.push(dev);
     }
 
-    #[inline]
     /// Removes a device from the file system.
     pub fn remove_device(
         &mut self,
         path: super::Path,
     ) -> Option<Box<dyn KernelDevice + Send + Sync>> {
-        self.devices
+        let pos = self
+            .devices
             .iter()
-            .position(|device| device.path.as_path() == path)
-            .map(|pos| self.devices.remove(pos).device)
+            .position(|device| device.path.as_path() == path);
+        pos.map(|pos| self.devices.remove(pos).device)
+    }
+
+    #[must_use]
+    fn device(&mut self, path: super::Path) -> Option<&mut DeviceFile> {
+        self.devices
+            .iter_mut()
+            .find(|device| device.path.as_path() == path)
     }
 }
 
 impl FileSystem for DeviceFS {
     fn close(&mut self, path: super::Path) -> super::FileResult<()> {
-        for device in &mut self.devices {
-            if device.path.as_path() == path {
-                device.device.on_close();
-            }
+        let device = self.device(path);
+        if let Some(dev) = device {
+            dev.device.on_close();
         }
         Ok(())
     }
@@ -76,10 +82,9 @@ impl FileSystem for DeviceFS {
     }
 
     fn open(&mut self, path: super::Path) -> super::FileResult<()> {
-        for device in &mut self.devices {
-            if device.path.as_path() == path {
-                device.device.on_open();
-            }
+        let device = self.device(path);
+        if let Some(dev) = device {
+            dev.device.on_open();
         }
         Ok(())
     }
@@ -90,14 +95,13 @@ impl FileSystem for DeviceFS {
         buffer: &mut [u8],
         offset: usize,
     ) -> super::FileResult<usize> {
-        // Find the device associated with the given path.
-        for device in &mut self.devices {
-            if device.path.as_path() == path {
-                device.device.read(buffer, offset)?;
-                return Ok(buffer.len());
-            }
+        let device = self.device(path);
+        if let Some(dev) = device {
+            dev.device.read(buffer, offset)?;
+            Ok(buffer.len())
+        } else {
+            Err(super::FileError::NotFound)
         }
-        Err(super::FileError::NotFound)
     }
 
     fn write(
@@ -106,26 +110,25 @@ impl FileSystem for DeviceFS {
         buffer: &[u8],
         offset: usize,
     ) -> super::FileResult<usize> {
-        // Find the device associated with the given path.
-        for device in &mut self.devices {
-            if device.path.as_path() == path {
-                device.device.write(buffer, offset)?;
-                return Ok(buffer.len());
-            }
+        let device = self.device(path);
+        if let Some(dev) = device {
+            dev.device.write(buffer, offset)?;
+            Ok(buffer.len())
+        } else {
+            Err(super::FileError::NotFound)
         }
-        Err(super::FileError::NotFound)
     }
 
     fn metadata(&mut self, path: super::Path) -> super::FileResult<super::FileMetadata> {
-        for device in &mut self.devices {
-            if device.path.as_path() == path {
-                return Ok(super::FileMetadata {
-                    size: 0,
-                    file_type: super::FileType::File,
-                });
-            }
+        let device = self.device(path);
+        if device.is_some() {
+            Ok(super::FileMetadata {
+                size: 0,
+                file_type: super::FileType::File,
+            })
+        } else {
+            Err(super::FileError::NotFound)
         }
-        Err(super::FileError::NotFound)
     }
 
     fn read_dir(&mut self, path: super::Path) -> super::FileResult<Vec<super::PathBuf>> {

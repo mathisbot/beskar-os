@@ -110,7 +110,7 @@ pub struct McsLock<T: ?Sized, R: RelaxStrategy = Spin> {
     /// Tail of the queue.
     tail: AtomicPtr<McsNode>,
     /// Relax strategy.
-    _relax: PhantomData<R>,
+    _relax: PhantomData<fn() -> R>,
     /// Data protected by the lock.
     data: UnsafeCell<T>,
 }
