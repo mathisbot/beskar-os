@@ -321,7 +321,7 @@ beskar_hal::isr!(
 );
 
 extern "C" fn non_maskable_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
-    if crate::kernel_has_panicked() {
+    if crate::panic::kernel_has_panicked() {
         panic!("Another Core has panicked in a kernel thread");
     } else {
         panic!("EXCEPTION: NON MASKABLE INTERRUPT");
