@@ -87,6 +87,7 @@ impl FisH2D {
 
     /// Set LBA (48-bit)
     pub const fn set_lba(&mut self, lba: u64) {
+        self.device |= 1 << 6;
         self.lba0 = (lba & 0xFF) as u8;
         self.lba1 = ((lba >> 8) & 0xFF) as u8;
         self.lba2 = ((lba >> 16) & 0xFF) as u8;

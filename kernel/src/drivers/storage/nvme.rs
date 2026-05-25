@@ -5,34 +5,35 @@
 //! (NVMe over PCIe Transport Specification Revision 1.1).
 #![expect(clippy::too_long_first_doc_paragraph, reason = "Link references")]
 
-use crate::{
-    drivers::pci::MsiHelper,
-    locals,
-    mem::{vmm, vmm::phys_map::PhysicalMapping},
-};
+use super::super::DmaPage;
+use crate::{drivers::pci::MsiHelper, locals, mem::vmm::phys_map::PhysicalMapping};
 use ::pci::{Bar, Device, msix::MsiX};
+use alloc::vec::Vec;
 use beskar_core::{
     arch::{
         PhysAddr, VirtAddr,
-        paging::{M4KiB, MemSize, Page},
+        paging::{M4KiB, MemSize as _},
     },
     drivers::{DriverError, DriverResult},
+    storage::{BlockDevice, BlockDeviceError},
 };
 use beskar_hal::{paging::page_table::Flags, structures::InterruptStackFrame};
-use core::ptr::NonNull;
+use core::{num::NonZeroU8, ptr::NonNull};
 use driver_shared::mmio::MmioRegister;
 use hyperdrive::{
     locks::mcs::MUMcsLock,
     ptrs::volatile::{ReadOnly, ReadWrite, Volatile, WriteOnly},
 };
 use queue::admin::{AdminCompletionQueue, AdminSubmissionEntry, AdminSubmissionQueue};
-use queue::io::{IoCompletionQueue, IoSubmissionQueue};
+use queue::io::{IoCompletionQueue, IoSubmissionEntry, IoSubmissionQueue};
 
 mod queue;
 
 static NVME_CONTROLLER: MUMcsLock<NvmeControllers> = MUMcsLock::uninit();
 
 const MAX_QUEUES: usize = 3;
+const IDENTIFY_CONTROLLER_MDTS_OFFSET: usize = 77;
+const COMMAND_POLL_LIMIT: usize = 10_000_000;
 
 pub fn init(nvme: &[Device]) -> DriverResult<()> {
     if nvme.len() > 1 {
@@ -50,9 +51,70 @@ pub fn init(nvme: &[Device]) -> DriverResult<()> {
         controller.version()
     );
 
+    let namespaces = controller.discover_namespaces();
+    crate::debug!("NVMe controller found {} namespaces", namespaces.len());
+
     NVME_CONTROLLER.init(controller);
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NvmeNamespace {
+    id: u32,
+    block_size: usize,
+    block_count: u64,
+}
+
+struct NvmeDisk(NvmeNamespace);
+
+impl BlockDevice for NvmeDisk {
+    fn block_size(&self) -> usize {
+        self.0.block_size
+    }
+
+    fn block_count(&self) -> Option<u64> {
+        Some(self.0.block_count)
+    }
+
+    fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), BlockDeviceError> {
+        if !dst.len().is_multiple_of(self.0.block_size) {
+            return Err(BlockDeviceError::UnalignedAccess);
+        }
+
+        let blocks = u64::try_from(dst.len() / self.0.block_size).unwrap();
+        let offset = u64::try_from(offset).map_err(|_| BlockDeviceError::OutOfBounds)?;
+        if offset.saturating_add(blocks) > self.0.block_count {
+            return Err(BlockDeviceError::OutOfBounds);
+        }
+
+        with_nvme_controller(|controller| controller.read_namespace(self.0, offset, dst))
+            .ok_or(BlockDeviceError::Unsupported)?
+            .map_err(driver_error_to_block)
+    }
+
+    fn write(&mut self, src: &[u8], offset: usize) -> Result<(), BlockDeviceError> {
+        if !src.len().is_multiple_of(self.0.block_size) {
+            return Err(BlockDeviceError::UnalignedAccess);
+        }
+
+        let blocks = u64::try_from(src.len() / self.0.block_size).unwrap();
+        let offset = u64::try_from(offset).map_err(|_| BlockDeviceError::OutOfBounds)?;
+        if offset.saturating_add(blocks) > self.0.block_count {
+            return Err(BlockDeviceError::OutOfBounds);
+        }
+
+        with_nvme_controller(|controller| controller.write_namespace(self.0, offset, src))
+            .ok_or(BlockDeviceError::Unsupported)?
+            .map_err(driver_error_to_block)
+    }
+}
+
+const fn driver_error_to_block(error: DriverError) -> BlockDeviceError {
+    match error {
+        DriverError::Absent | DriverError::Invalid => BlockDeviceError::Unsupported,
+        DriverError::Unknown => BlockDeviceError::Io,
+    }
 }
 
 pub struct NvmeControllers {
@@ -132,9 +194,8 @@ impl NvmeControllers {
         })
     }
 
-    #[expect(clippy::too_many_lines)]
     pub fn init(&mut self) -> DriverResult<()> {
-        // --- Part One: Controller Bare Initialization ---
+        // Controller Bare Initialization
 
         self.cc().disable();
         while self.csts().ready() {
@@ -181,81 +242,36 @@ impl NvmeControllers {
             core::hint::spin_loop();
         }
 
-        // --- Part Two: Controller Identification ---
+        // Controller Identification
 
-        let identify_page = vmm::kernel::reserve_pages::<M4KiB>(1)
-            .map(|r| r.start())
-            .ok_or(DriverError::Unknown)?;
-        let identify_pages = Page::range_inclusive(identify_page, identify_page);
-
-        let Some(frame) = vmm::kernel::alloc_frame::<M4KiB>() else {
-            vmm::kernel::free_pages(identify_pages);
-            return Err(DriverError::Unknown);
-        };
-
-        if vmm::kernel::map_frame(
-            identify_page,
-            frame,
-            Flags::PRESENT | Flags::NO_EXECUTE | Flags::CACHE_DISABLED,
-        )
-        .is_err()
-        {
-            vmm::kernel::free_frame(frame);
-            vmm::kernel::free_pages(identify_pages);
-            return Err(DriverError::Unknown);
-        }
-
-        let identify_cmd = queue::admin::AdminSubmissionEntry::new_identify(
+        let identify_page = DmaPage::new(usize::try_from(M4KiB::SIZE).unwrap())?;
+        let identify_cmd = AdminSubmissionEntry::new_identify(
             queue::admin::IdentifyTarget::Controller,
-            frame,
+            identify_page.frame(),
         );
-        let identify_cmd_id = identify_cmd.command_id();
 
-        self.asq.push(&identify_cmd);
-
-        let identify_result = {
-            let ptr = identify_page
-                .start_address()
-                .as_ptr::<queue::admin::IdentifyController>();
-            // Wait for command completion
-            // TODO: On interrupt, dequeue the completion queue into another Rustier queue/tree
-            // intended to be browsed by command identifier
-            let res = loop {
-                if let Some(v) = self.acq.pop()
-                    && v.command_id() == identify_cmd_id
-                {
-                    break v;
-                }
-                core::hint::spin_loop();
-            };
-            if !res.is_success() {
-                crate::error!(
-                    "Identify Controller command failed: status={:04x}",
-                    res.status_code()
-                );
-                if let Ok(frame) = vmm::kernel::unmap_page(identify_page) {
-                    vmm::kernel::free_frame(frame);
-                }
-                vmm::kernel::free_pages(identify_pages);
-                return Err(DriverError::Unknown);
+        let identify_res = self.submit_synchronous_admin(&identify_cmd);
+        let maximum_data_transfer_size = match identify_res {
+            Ok(_) => unsafe {
+                identify_page
+                    .as_ptr::<u8>()
+                    .byte_add(IDENTIFY_CONTROLLER_MDTS_OFFSET)
+                    .read()
+            },
+            Err(err) => {
+                crate::error!("Identify Controller command failed");
+                return Err(err);
             }
-            unsafe { ptr.read() }
         };
 
-        if let Ok(frame) = vmm::kernel::unmap_page(identify_page) {
-            vmm::kernel::free_frame(frame);
-        }
-        vmm::kernel::free_pages(identify_pages);
+        self.max_transfer_sz = NonZeroU8::new(maximum_data_transfer_size).map_or(u64::MAX, |raw| {
+            let mps_min = u64::from(self.capabilities().mpsmin());
+            1_u64
+                .checked_shl(u32::from(raw.get()))
+                .map_or(u64::MAX, |factor| mps_min.saturating_mul(factor))
+        });
 
-        self.max_transfer_sz =
-            identify_result
-                .maximum_data_transfer_size()
-                .map_or(u64::MAX, |raw| {
-                    let mps_min = u64::from(self.capabilities().mpsmin());
-                    mps_min.saturating_mul(1 << raw.get())
-                });
-
-        // --- Part Three: I/O queues creation ---
+        // I/O queues creation
 
         let dstrd = self.capabilities().dstrd();
         let io_sq_doorbell = MmioRegister::new(
@@ -286,41 +302,15 @@ impl NvmeControllers {
         // Create IO Completion Queue (QID 1), interrupt enabled on vector 0
         let create_cq =
             AdminSubmissionEntry::new_create_io_cq(1, cq_entries, io_cq.paddr(), 0, true);
-        let create_cq_id = create_cq.command_id();
-        self.asq.push(&create_cq);
-        let res_cq = loop {
-            if let Some(v) = self.acq.pop()
-                && v.command_id() == create_cq_id
-            {
-                break v;
-            }
-            core::hint::spin_loop();
-        };
-        if !res_cq.is_success() {
-            crate::error!(
-                "Create IO CQ command failed: status={:04x}",
-                res_cq.status_code()
-            );
+        if self.submit_synchronous_admin(&create_cq).is_err() {
+            crate::error!("IO CQ command failed");
             return Err(DriverError::Unknown);
         }
 
         // Create IO Submission Queue (QID 1) targeting CQID 1, priority 0
         let create_sq = AdminSubmissionEntry::new_create_io_sq(1, sq_entries, io_sq.paddr(), 1, 0);
-        let create_sq_id = create_sq.command_id();
-        self.asq.push(&create_sq);
-        let res_sq = loop {
-            if let Some(v) = self.acq.pop()
-                && v.command_id() == create_sq_id
-            {
-                break v;
-            }
-            core::hint::spin_loop();
-        };
-        if !res_sq.is_success() {
-            crate::error!(
-                "Create IO SQ command failed: status={:04x}",
-                res_sq.status_code()
-            );
+        if self.submit_synchronous_admin(&create_sq).is_err() {
+            crate::error!("IO SQ command failed");
             return Err(DriverError::Unknown);
         }
 
@@ -345,6 +335,182 @@ impl NvmeControllers {
         }
     }
 
+    fn discover_namespaces(&mut self) -> Vec<NvmeNamespace> {
+        let mut namespaces = Vec::new();
+
+        let Ok(page) = DmaPage::new(usize::try_from(M4KiB::SIZE).unwrap()) else {
+            crate::warn!("Failed to allocate NVMe namespace list buffer");
+            return namespaces;
+        };
+
+        let identify_res = self.identify(queue::admin::IdentifyTarget::NamespaceList, &page);
+        if identify_res.is_ok() {
+            let ids = unsafe { core::slice::from_raw_parts(page.as_ptr::<u32>(), 1024) };
+            let namespace_ids: Vec<u32> = ids.iter().copied().take_while(|id| *id != 0).collect();
+
+            for nsid in namespace_ids {
+                match self.identify_namespace(nsid) {
+                    Ok(namespace) => {
+                        crate::debug!(
+                            "Registering NVMe namespace {} as block device ({} blocks, {} bytes/block)",
+                            namespace.id,
+                            namespace.block_count,
+                            namespace.block_size
+                        );
+                        namespaces.push(namespace);
+                    }
+                    Err(err) => {
+                        crate::warn!("Failed to identify NVMe namespace {}: {:?}", nsid, err);
+                    }
+                }
+            }
+        } else {
+            crate::warn!("Failed to identify NVMe namespace list");
+        }
+
+        namespaces
+    }
+
+    fn identify_namespace(&mut self, nsid: u32) -> DriverResult<NvmeNamespace> {
+        let page = DmaPage::new(usize::try_from(M4KiB::SIZE).unwrap())?;
+        self.identify(queue::admin::IdentifyTarget::Namespace(nsid), &page)?;
+
+        let data = page.as_bytes();
+        let block_count = u64::from_le_bytes(data[0..8].try_into().unwrap());
+        let flbas = data[26] & 0x0F;
+        let lbaf_offset = 128 + usize::from(flbas) * 4;
+        let lbads = data[lbaf_offset + 2];
+        let block_size = 1_usize
+            .checked_shl(u32::from(lbads))
+            .ok_or(DriverError::Invalid)?;
+
+        if block_count == 0 || block_size == 0 || block_size > usize::try_from(M4KiB::SIZE).unwrap()
+        {
+            return Err(DriverError::Invalid);
+        }
+
+        Ok(NvmeNamespace {
+            id: nsid,
+            block_size,
+            block_count,
+        })
+    }
+
+    fn identify(
+        &mut self,
+        target: queue::admin::IdentifyTarget,
+        page: &DmaPage,
+    ) -> DriverResult<()> {
+        let identify_cmd = queue::admin::AdminSubmissionEntry::new_identify(target, page.frame());
+        let res = self.submit_synchronous_admin(&identify_cmd);
+
+        if let Err(err) = res {
+            crate::error!("NVMe Identify command failed");
+            return Err(err);
+        }
+
+        Ok(())
+    }
+
+    fn read_namespace(
+        &mut self,
+        namespace: NvmeNamespace,
+        offset: u64,
+        dst: &mut [u8],
+    ) -> DriverResult<()> {
+        let mut offset = offset;
+        let max_blocks = usize::try_from(M4KiB::SIZE).unwrap() / namespace.block_size;
+        if max_blocks == 0 {
+            return Err(DriverError::Invalid);
+        }
+
+        for chunk in dst.chunks_mut(max_blocks * namespace.block_size) {
+            let page = DmaPage::new(usize::try_from(M4KiB::SIZE).unwrap())?;
+            let blocks = u16::try_from(chunk.len() / namespace.block_size)
+                .map_err(|_| DriverError::Invalid)?;
+            let command =
+                IoSubmissionEntry::new_read(namespace.id, offset, blocks, page.phys_addr());
+            let result = self.submit_synchronous_io(&command);
+            if result.is_ok() {
+                page.copy_to_slice(chunk);
+            }
+            result?;
+            offset += u64::from(blocks);
+        }
+
+        Ok(())
+    }
+
+    fn write_namespace(
+        &mut self,
+        namespace: NvmeNamespace,
+        offset: u64,
+        src: &[u8],
+    ) -> DriverResult<()> {
+        let mut offset = offset;
+        let max_blocks = usize::try_from(M4KiB::SIZE).unwrap() / namespace.block_size;
+        if max_blocks == 0 {
+            return Err(DriverError::Invalid);
+        }
+
+        for chunk in src.chunks(max_blocks * namespace.block_size) {
+            let page = DmaPage::new(usize::try_from(M4KiB::SIZE).unwrap())?;
+            page.copy_from_slice(chunk);
+
+            let blocks = u16::try_from(chunk.len() / namespace.block_size)
+                .map_err(|_| DriverError::Invalid)?;
+            let command =
+                IoSubmissionEntry::new_write(namespace.id, offset, blocks, page.phys_addr());
+            let result = self.submit_synchronous_io(&command);
+            result?;
+            offset += u64::from(blocks);
+        }
+
+        Ok(())
+    }
+
+    fn submit_synchronous_io(&mut self, command: &IoSubmissionEntry) -> DriverResult<()> {
+        let command_id = command.command_id();
+        let Some(sq) = self.io_sq.as_mut() else {
+            return Err(DriverError::Invalid);
+        };
+        sq.push(command);
+
+        let Some(cq) = self.io_cq.as_mut() else {
+            return Err(DriverError::Invalid);
+        };
+        let Some(res) = wait_for_completion(cq, command_id) else {
+            crate::warn!("NVMe I/O command {} timed out", command_id);
+            return Err(DriverError::Unknown);
+        };
+
+        if !res.is_success() {
+            crate::error!("NVMe I/O command failed: status={:04x}", res.status_code());
+            return Err(DriverError::Unknown);
+        }
+
+        Ok(())
+    }
+
+    fn submit_synchronous_admin(
+        &mut self,
+        command: &AdminSubmissionEntry,
+    ) -> Result<queue::admin::AdminCompletionEntry, DriverError> {
+        let command_id = command.command_id();
+        self.asq.push(command);
+
+        let Some(completion) = wait_for_completion(&mut self.acq, command_id) else {
+            crate::warn!("NVMe admin command {} timed out", command_id);
+            return Err(DriverError::Unknown);
+        };
+
+        if completion.is_success() {
+            Ok(completion)
+        } else {
+            Err(DriverError::Unknown)
+        }
+    }
+
     #[must_use]
     #[inline]
     pub const fn capabilities(&self) -> Capabilities {
@@ -354,13 +520,14 @@ impl NvmeControllers {
 
     #[must_use]
     #[inline]
-    pub const fn version(&self) -> Version {
-        unsafe {
+    pub fn version(&self) -> Version {
+        let raw = unsafe {
             self.registers_base
-                .as_mut_ptr::<Version>()
+                .as_ptr::<u32>()
                 .byte_add(0x08)
-                .read()
-        }
+                .read_volatile()
+        };
+        Version::from_raw(raw)
     }
 
     #[must_use]
@@ -416,6 +583,67 @@ impl NvmeControllers {
     }
 }
 
+trait CompletionQueueLike {
+    type Entry;
+
+    fn pop_completion(&mut self) -> Option<Self::Entry>;
+}
+
+trait CompletionEntryLike: Copy {
+    fn command_id(self) -> u16;
+}
+
+impl CompletionQueueLike for IoCompletionQueue {
+    type Entry = queue::io::IoCompletionEntry;
+
+    #[inline]
+    fn pop_completion(&mut self) -> Option<Self::Entry> {
+        self.pop()
+    }
+}
+
+impl CompletionEntryLike for queue::io::IoCompletionEntry {
+    #[inline]
+    fn command_id(self) -> u16 {
+        self.command_id()
+    }
+}
+
+impl CompletionQueueLike for AdminCompletionQueue {
+    type Entry = queue::admin::AdminCompletionEntry;
+
+    #[inline]
+    fn pop_completion(&mut self) -> Option<Self::Entry> {
+        self.pop()
+    }
+}
+
+impl CompletionEntryLike for queue::admin::AdminCompletionEntry {
+    #[inline]
+    fn command_id(self) -> u16 {
+        self.command_id()
+    }
+}
+
+fn wait_for_completion<Q>(queue: &mut Q, command_id: u16) -> Option<Q::Entry>
+where
+    Q: CompletionQueueLike,
+    Q::Entry: CompletionEntryLike,
+{
+    let mut remaining = COMMAND_POLL_LIMIT;
+    while remaining != 0 {
+        if let Some(v) = queue.pop_completion()
+            && v.command_id() == command_id
+        {
+            return Some(v);
+        }
+        remaining -= 1;
+        core::hint::spin_loop();
+    }
+
+    None
+}
+
 extern "C" fn nvme_interrupt_handler_inner(_stack_frame: &InterruptStackFrame) {
     crate::debug!("NVMe INTERRUPT on core {}", locals!().core_id());
     unsafe { locals!().lapic().force_lock() }.send_eoi();
@@ -433,6 +661,18 @@ pub struct Version {
 impl core::fmt::Display for Version {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "NVMe {}.{}.{}", self.major, self.minor, self.tertiary)
+    }
+}
+
+impl Version {
+    #[must_use]
+    #[inline]
+    const fn from_raw(raw: u32) -> Self {
+        Self {
+            tertiary: (raw & 0xFF) as u8,
+            minor: ((raw >> 8) & 0xFF) as u8,
+            major: (raw >> 16) as u16,
+        }
     }
 }
 

@@ -2,7 +2,11 @@
 //!
 //! Each port represents a single SATA device connection.
 
-use super::registers::{PortRegisters, SataDet};
+use super::{
+    super::super::DmaPage,
+    command::AhciCommand,
+    registers::{PortRegisters, SataDet},
+};
 use crate::mem::vmm;
 use beskar_core::{
     arch::{
@@ -11,7 +15,6 @@ use beskar_core::{
     },
     drivers::{DriverError, DriverResult},
 };
-use beskar_hal::paging::page_table::Flags;
 
 /// Timeout for port operations (in iterations)
 pub const PORT_TIMEOUT: usize = 1_000_000_000;
@@ -21,6 +24,30 @@ const PORT_CMD_FR: u32 = 1 << 14;
 const PORT_CMD_CR: u32 = 1 << 15;
 const COMMAND_LIST_LEN: usize = 1024;
 const RECEIVED_FIS_LEN: usize = 256;
+const COMMAND_TABLE_LEN: usize = 256;
+const COMMAND_SLOT: u32 = 1;
+const PORT_TFD_BSY: u32 = 1 << 7;
+const PORT_TFD_DRQ: u32 = 1 << 3;
+const PORT_TFD_ERR: u32 = 1 << 0;
+const PORT_TFD_DF: u32 = 1 << 5;
+const PORT_IS_TFES: u32 = 1 << 30;
+pub const ATA_SECTOR_SIZE: usize = 512;
+const MAX_SECTORS_PER_COMMAND: u16 = 8;
+const PRDT_OFFSET: usize = 128;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DataDirection {
+    DeviceToHost,
+    HostToDevice,
+}
+
+impl DataDirection {
+    #[must_use]
+    #[inline]
+    const fn is_write(self) -> bool {
+        matches!(self, Self::HostToDevice)
+    }
+}
 
 /// Represents a single AHCI port with an attached device
 pub struct AhciPort {
@@ -30,10 +57,9 @@ pub struct AhciPort {
 }
 
 struct PortResources {
-    command_list_page: Page<M4KiB>,
-    command_list_frame: Frame<M4KiB>,
-    received_fis_page: Page<M4KiB>,
-    received_fis_frame: Frame<M4KiB>,
+    command_list: DmaPage,
+    received_fis: DmaPage,
+    command_table: DmaPage,
 }
 
 impl AhciPort {
@@ -172,9 +198,9 @@ impl AhciPort {
     fn install_dma_buffers(&mut self) -> DriverResult<()> {
         let resources = PortResources::new()?;
         self.regs
-            .set_clb(resources.command_list_frame.start_address().as_u64());
+            .set_clb(resources.command_list.phys_addr().as_u64());
         self.regs
-            .set_fb(resources.received_fis_frame.start_address().as_u64());
+            .set_fb(resources.received_fis.phys_addr().as_u64());
         self.resources = Some(resources);
         Ok(())
     }
@@ -213,7 +239,7 @@ impl AhciPort {
     /// Check if port has errors
     pub fn is_error(&self) -> bool {
         let tfd = self.regs.tfd();
-        (tfd & 0xFF) != 0 // Status register, error bits
+        (tfd & (PORT_TFD_ERR | PORT_TFD_DF)) != 0
     }
 
     #[inline]
@@ -222,51 +248,251 @@ impl AhciPort {
         self.regs.set_sata_error(u32::MAX);
         self.regs.set_is(u32::MAX);
     }
+
+    pub fn identify(&mut self) -> DriverResult<IdentifyDevice> {
+        let mut data = [0_u8; ATA_SECTOR_SIZE];
+        self.read_command(&AhciCommand::identify_device(), &mut data)?;
+        Ok(IdentifyDevice::parse(&data))
+    }
+
+    pub fn read_sectors(&mut self, lba: u64, buffer: &mut [u8]) -> DriverResult<()> {
+        if !buffer.len().is_multiple_of(ATA_SECTOR_SIZE) {
+            return Err(DriverError::Invalid);
+        }
+
+        let mut current_lba = lba;
+        for chunk in buffer.chunks_mut(usize::from(MAX_SECTORS_PER_COMMAND) * ATA_SECTOR_SIZE) {
+            let sectors = u16::try_from(chunk.len() / ATA_SECTOR_SIZE).unwrap();
+            let command = AhciCommand::read_dma_ext(current_lba, sectors);
+            self.read_command(&command, chunk)?;
+            current_lba += u64::from(sectors);
+        }
+
+        Ok(())
+    }
+
+    pub fn write_sectors(&mut self, lba: u64, buffer: &[u8]) -> DriverResult<()> {
+        if !buffer.len().is_multiple_of(ATA_SECTOR_SIZE) {
+            return Err(DriverError::Invalid);
+        }
+
+        let mut current_lba = lba;
+        for chunk in buffer.chunks(usize::from(MAX_SECTORS_PER_COMMAND) * ATA_SECTOR_SIZE) {
+            let sectors = u16::try_from(chunk.len() / ATA_SECTOR_SIZE).unwrap();
+            let command = AhciCommand::write_dma_ext(current_lba, sectors);
+            self.write_command(&command, chunk)?;
+            current_lba += u64::from(sectors);
+        }
+
+        Ok(())
+    }
+
+    fn read_command(&mut self, command: &AhciCommand, buffer: &mut [u8]) -> DriverResult<()> {
+        let data = DmaPage::new(buffer.len())?;
+        let result =
+            self.submit_synchronous_data_command(command, &data, DataDirection::DeviceToHost);
+        if result.is_ok() {
+            data.copy_to_slice(buffer);
+        }
+        result
+    }
+
+    fn write_command(&mut self, command: &AhciCommand, buffer: &[u8]) -> DriverResult<()> {
+        let data = DmaPage::new(buffer.len())?;
+        data.copy_from_slice(buffer);
+        self.submit_synchronous_data_command(command, &data, DataDirection::HostToDevice)
+    }
+
+    fn submit_synchronous_data_command(
+        &mut self,
+        command: &AhciCommand,
+        data: &DmaPage,
+        direction: DataDirection,
+    ) -> DriverResult<()> {
+        if data.len() == 0 || data.len() > usize::try_from(M4KiB::SIZE).unwrap() {
+            return Err(DriverError::Invalid);
+        }
+
+        self.prepare_command(command, data, direction)?;
+        self.issue_command(COMMAND_SLOT);
+        self.wait_for_command_completion(COMMAND_SLOT)
+    }
+
+    fn prepare_command(
+        &mut self,
+        command: &AhciCommand,
+        data: &DmaPage,
+        direction: DataDirection,
+    ) -> DriverResult<()> {
+        self.wait_until_ready()?;
+        self.clear_errors();
+
+        let resources = self.resources.as_mut().ok_or(DriverError::Unknown)?;
+        resources.clear_command_buffers();
+        resources.write_command_header(direction);
+        resources.write_command_table(command, data);
+
+        Ok(())
+    }
+
+    #[inline]
+    fn issue_command(&self, slot: u32) {
+        self.regs.set_ci(slot);
+    }
+
+    fn wait_for_command_completion(&self, slot: u32) -> DriverResult<()> {
+        let mut timeout = PORT_TIMEOUT;
+        while self.regs.ci() & slot != 0 {
+            if self.has_task_file_error() {
+                crate::warn!("AHCI port {} task file error", self.port_id);
+                return Err(DriverError::Unknown);
+            }
+
+            timeout -= 1;
+            if timeout == 0 {
+                crate::warn!("AHCI port {} command timeout", self.port_id);
+                return Err(DriverError::Unknown);
+            }
+            core::hint::spin_loop();
+        }
+
+        if self.has_task_file_error() || self.is_error() {
+            crate::warn!("AHCI port {} command failed", self.port_id);
+            return Err(DriverError::Unknown);
+        }
+
+        Ok(())
+    }
+
+    fn wait_until_ready(&self) -> DriverResult<()> {
+        let mut timeout = PORT_TIMEOUT;
+        while self.regs.tfd() & (PORT_TFD_BSY | PORT_TFD_DRQ) != 0 {
+            timeout -= 1;
+            if timeout == 0 {
+                crate::warn!("AHCI port {} busy timeout", self.port_id);
+                return Err(DriverError::Unknown);
+            }
+            core::hint::spin_loop();
+        }
+
+        Ok(())
+    }
+
+    #[must_use]
+    #[inline]
+    fn has_task_file_error(&self) -> bool {
+        self.regs.is() & PORT_IS_TFES != 0
+    }
 }
 
 impl PortResources {
     fn new() -> DriverResult<Self> {
-        let (command_list_page, command_list_frame) = allocate_dma_page(COMMAND_LIST_LEN)?;
-        let (received_fis_page, received_fis_frame) = allocate_dma_page(RECEIVED_FIS_LEN)?;
+        let command_list = DmaPage::new(COMMAND_LIST_LEN)?;
+        let received_fis = DmaPage::new(RECEIVED_FIS_LEN)?;
+        let command_table = DmaPage::new(COMMAND_TABLE_LEN)?;
 
         Ok(Self {
-            command_list_page,
-            command_list_frame,
-            received_fis_page,
-            received_fis_frame,
+            command_list,
+            received_fis,
+            command_table,
         })
     }
-}
 
-impl Drop for PortResources {
-    fn drop(&mut self) {
-        free_dma_page(self.command_list_page, self.command_list_frame);
-        free_dma_page(self.received_fis_page, self.received_fis_frame);
+    const fn clear_command_buffers(&self) {
+        self.command_list.clear();
+        self.command_table.clear();
+    }
+
+    fn write_command_header(&self, direction: DataDirection) {
+        let fis_len = u8::try_from(size_of::<super::FisH2D>().div_ceil(4)).unwrap();
+        let flags = CommandHeader::flags(fis_len, direction.is_write());
+        let command_table_addr = self.command_table.phys_addr().as_u64();
+        let base = self.command_list.as_mut_ptr::<u8>();
+
+        unsafe {
+            write_volatile_u16(base, flags);
+            write_volatile_u16(base.byte_add(2), 1);
+            write_volatile_u32(base.byte_add(4), 0);
+            write_volatile_u32(
+                base.byte_add(8),
+                u32::try_from(command_table_addr & 0xFFFF_FFFF).unwrap(),
+            );
+            write_volatile_u32(
+                base.byte_add(12),
+                u32::try_from((command_table_addr >> 32) & 0xFFFF_FFFF).unwrap(),
+            );
+        }
+    }
+
+    fn write_command_table(&self, command: &AhciCommand, data: &DmaPage) {
+        let table = self.command_table.as_mut_ptr::<u8>();
+        let data_addr = data.phys_addr().as_u64();
+        let byte_count = u32::try_from(data.len()).unwrap() - 1;
+
+        unsafe {
+            write_volatile_bytes(
+                table,
+                core::ptr::from_ref(command.fis()).cast::<u8>(),
+                size_of::<super::FisH2D>(),
+            );
+
+            let prd = table.byte_add(PRDT_OFFSET);
+            write_volatile_u32(prd, u32::try_from(data_addr & 0xFFFF_FFFF).unwrap());
+            write_volatile_u32(
+                prd.byte_add(4),
+                u32::try_from((data_addr >> 32) & 0xFFFF_FFFF).unwrap(),
+            );
+            write_volatile_u32(prd.byte_add(8), 0);
+            write_volatile_u32(prd.byte_add(12), byte_count | (1 << 31));
+        }
     }
 }
 
-fn allocate_dma_page(length: usize) -> DriverResult<(Page<M4KiB>, Frame<M4KiB>)> {
-    debug_assert!(length <= usize::try_from(M4KiB::SIZE).unwrap());
+unsafe fn write_volatile_bytes(dst: *mut u8, src: *const u8, len: usize) {
+    for offset in 0..len {
+        unsafe { dst.add(offset).write_volatile(src.add(offset).read()) };
+    }
+}
 
-    let Some(page) = vmm::kernel::reserve_pages::<M4KiB>(1).map(|range| range.start()) else {
-        return Err(DriverError::Unknown);
-    };
-    let page_range = Page::range_inclusive(page, page);
+unsafe fn write_volatile_u16(dst: *mut u8, value: u16) {
+    unsafe { write_volatile_bytes(dst, value.to_le_bytes().as_ptr(), size_of::<u16>()) };
+}
 
-    let Some(frame) = vmm::kernel::alloc_frame::<M4KiB>() else {
-        vmm::kernel::free_pages(page_range);
-        return Err(DriverError::Unknown);
-    };
+unsafe fn write_volatile_u32(dst: *mut u8, value: u32) {
+    unsafe { write_volatile_bytes(dst, value.to_le_bytes().as_ptr(), size_of::<u32>()) };
+}
 
-    if vmm::kernel::map_frame(page, frame, Flags::MMIO_SUITABLE).is_err() {
-        vmm::kernel::free_frame(frame);
-        vmm::kernel::free_pages(page_range);
-        return Err(DriverError::Unknown);
+#[derive(Debug, Clone, Copy)]
+pub struct IdentifyDevice {
+    sector_count: u64,
+}
+
+impl IdentifyDevice {
+    #[must_use]
+    fn parse(data: &[u8; ATA_SECTOR_SIZE]) -> Self {
+        let word = |idx: usize| -> u16 {
+            let offset = idx * 2;
+            u16::from_le_bytes([data[offset], data[offset + 1]])
+        };
+
+        let lba48_supported = word(83) & (1 << 10) != 0;
+        let sector_count = if lba48_supported {
+            u64::from(word(100))
+                | (u64::from(word(101)) << 16)
+                | (u64::from(word(102)) << 32)
+                | (u64::from(word(103)) << 48)
+        } else {
+            u64::from(word(60)) | (u64::from(word(61)) << 16)
+        };
+
+        Self { sector_count }
     }
 
-    unsafe { core::ptr::write_bytes(page.start_address().as_mut_ptr::<u8>(), 0, length) };
-
-    Ok((page, frame))
+    #[must_use]
+    #[inline]
+    pub const fn sector_count(self) -> u64 {
+        self.sector_count
+    }
 }
 
 fn free_dma_page(page: Page<M4KiB>, fallback_frame: Frame<M4KiB>) {
@@ -297,6 +523,33 @@ pub struct CommandHeader {
 }
 
 impl CommandHeader {
+    #[must_use]
+    #[inline]
+    pub const fn new(fis_len: u8, write: bool, command_table_addr: u64) -> Self {
+        let mut header = Self {
+            cmd_fis_len_flags: 0,
+            prdt_len: 1,
+            prd_byte_count: 0,
+            ctba_low: 0,
+            ctba_high: 0,
+            _reserved: [0; 4],
+        };
+        header.set_fis_length(fis_len);
+        header.set_write(write);
+        header.set_ctba(command_table_addr);
+        header
+    }
+
+    #[must_use]
+    #[inline]
+    const fn flags(fis_len: u8, write: bool) -> u16 {
+        let mut flags = fis_len as u16;
+        if write {
+            flags |= 1 << 6;
+        }
+        flags
+    }
+
     #[must_use]
     #[inline]
     /// Get FIS length in DWORDs
@@ -370,6 +623,21 @@ pub struct PrdTableEntry {
 }
 
 impl PrdTableEntry {
+    #[must_use]
+    #[inline]
+    pub fn new(data_addr: u64, byte_count: usize) -> Self {
+        let mut entry = Self {
+            dba_low: 0,
+            dba_high: 0,
+            _reserved: 0,
+            dbc_ioc: 0,
+        };
+        entry.set_dba(data_addr);
+        entry.set_byte_count(u32::try_from(byte_count).unwrap() - 1);
+        entry.set_ioc(true);
+        entry
+    }
+
     #[must_use]
     #[inline]
     /// Get data buffer address (48-bit physical address)
