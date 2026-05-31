@@ -173,10 +173,14 @@ impl Scheduler {
                 let old_stack = Self::old_stack_pointer(&action, &mut old_thread);
                 let new_stack = thread.last_stack_ptr();
 
-                if let Some(rsp0) = thread.snapshot().kernel_stack_top()
-                    && let Some(tss) = unsafe { locals!().gdt().force_lock() }.tss_mut()
-                {
-                    tss.privilege_stack_table[0] = VirtAddr::from_ptr(rsp0.as_ptr());
+                if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
+                    let rsp0 = rsp0.as_ptr();
+                    if let Some(tss) = unsafe { locals!().gdt().force_lock() }.tss_mut() {
+                        tss.privilege_stack_table[0] = VirtAddr::from_ptr(rsp0);
+                    } else {
+                        beskar_core::debug_panic!("TSS not found when setting syscall stack");
+                    }
+                    locals!().set_syscall_stack(rsp0);
                 }
 
                 let cr3 = thread.process().address_space().cr3_raw();

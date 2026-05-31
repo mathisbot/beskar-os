@@ -19,10 +19,12 @@ struct SyscallRegisters {
     r10: u64,
     r8: u64,
     r9: u64,
-    /// Contains preivous value of RIP
+    /// Contains previous value of RIP
     rcx: u64,
     /// Contains previous value of RFLAGS
     r11: u64,
+    /// Contains previous value of RSP
+    rsp: u64,
 }
 
 #[unsafe(naked)]
@@ -33,6 +35,10 @@ struct SyscallRegisters {
 /// This function should not be called directly.
 unsafe extern "sysv64" fn syscall_handler_arch() {
     core::arch::naked_asm!(
+        "mov gs:[{scratch}], rsp", // Save RSP in GS
+        "mov rsp, gs:[{kernel_stack}]", // Swap stack
+        "push qword ptr gs:[{scratch}]", // Previous RSP
+        "sti",
         "push r11", // Previous RFLAGS
         "push rcx", // Previous RIP
         "push r9",
@@ -43,7 +49,7 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
         "push rdi",
         "push rax",
         "mov rdi, rsp", // Regs pointer
-        "call {}",
+        "call {handler}",
         "pop rax", // RAX now contains syscall exit code
         "pop rdi",
         "pop rsi",
@@ -53,38 +59,13 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
         "pop r9",
         "pop rcx", // RIP used by sysret
         "pop r11", // r11 contains previous RFLAGS
+        "cli",
+        "pop rsp", // Restore previous RSP
         "sysretq",
-        sym syscall_handler_impl,
+        scratch = const locals::CoreLocalsInfo::scratch_offset(),
+        kernel_stack = const locals::CoreLocalsInfo::syscall_stack_offset(),
+        handler = sym syscall_handler_inner,
     );
-}
-
-/// Handles stack switching and calling the actual syscall handler.
-///
-/// This function is called from the assembly stub above.
-extern "sysv64" fn syscall_handler_impl(regs: &mut SyscallRegisters) {
-    // Currently, we are on the user stack. It is undefined whether we are right where the
-    // assembly stub left us (because of the prologue), but the place we want to be is in the `regs` argument.
-
-    let kernel_stack = crate::process::scheduler::current_thread_snapshot()
-        .kernel_stack_top()
-        .unwrap();
-    unsafe {
-        // Note that pushing `ustack` and pushing the return address via `call`
-        // correctly keeps the 16-byte alignment of the stack.
-        core::arch::asm!(
-            "mov {ustack}, rsp", // Keep track of user stack (0)
-            "mov rsp, {}", // Switch to kernel stack
-            "sti",
-            "push {ustack}", // Keep track of user stack (1)
-            "call {}", // Perform the function call with `regs` in rdi
-            "cli",
-            "pop rsp", // Switch back to user stack
-            in(reg) kernel_stack.as_ptr(),
-            sym syscall_handler_inner,
-            in("rdi") regs,
-            ustack = out(reg) _,
-        );
-    }
 }
 
 /// Performs the standardization of arguments and call to the kernel syscall handler.
