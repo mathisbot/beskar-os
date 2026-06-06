@@ -1,8 +1,4 @@
 //! Hybrid heap allocator
-//!
-//! Combines slab and buddy allocators for optimal performance across different
-//! allocation sizes. Small allocations use the slab allocator for O(1) operations,
-//! while larger allocations use the buddy allocator for better memory efficiency.
 
 use core::alloc::Layout;
 use core::ptr::NonNull;

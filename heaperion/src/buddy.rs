@@ -1,8 +1,4 @@
 //! Buddy allocator implementation
-//!
-//! The buddy allocator splits memory into power-of-two sized blocks and manages them
-//! using a tree structure. This provides good performance with O(log(n)) allocation and
-//! deallocation, while minimizing external fragmentation.
 use crate::utils::{align_up, order_to_size, size_to_order};
 use crate::{HeapError, Result};
 use core::alloc::Layout;

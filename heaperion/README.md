@@ -2,37 +2,18 @@
 
 A high-performance, `no_std` heap allocator written in Rust.
 
-## Overview
+## Slab Allocator
 
-Heaperion is a robust and efficient memory allocator designed for embedded systems and bare-metal environments. It combines multiple allocation strategies to provide optimal performance across different allocation sizes and patterns.
+Optimized for small allocations, O(1) allocation and deallocation.
 
-## Features
+## Buddy Allocator
 
-- `no_std` compatible: Works in embedded and bare-metal environments
-- Hybrid allocation strategy: Combines slab and buddy allocators for optimal performance
-- Zero runtime overhead: All metadata stored inline with allocations
-- Minimal fragmentation: Intelligent allocation strategies minimize waste
+Optimized for larger allocations, O(log(c)) allocation and deallocation.
 
-## Architecture
-
-### Slab Allocator
-
-- Optimized for small allocations
-- O(1) allocation and deallocation
-- Pre-sized pools for common allocation sizes
-- Excellent cache locality
-
-### Buddy Allocator
-
-- Optimized for larger allocations
-- O(log(c)) allocation and deallocation
-- Power-of-two sized blocks
-- Automatic coalescing to reduce fragmentation
-
-### Hybrid Allocator
+## Hybrid Allocator
 
 Dispatch allocations to Slab or Buddy depending on the size.
 
-### GrowableHeap
+## GrowableHeap
 
 Wrapper around heaps that can grow at runtime.

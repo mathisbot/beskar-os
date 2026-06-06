@@ -1,8 +1,4 @@
 //! Slab allocator implementation
-//!
-//! The slab allocator is optimized for frequent allocations and deallocations of
-//! fixed-size objects. It maintains pools of pre-sized memory chunks, providing
-//! O(1) allocation and deallocation with excellent cache locality.
 
 use core::alloc::Layout;
 use core::ptr::NonNull;
