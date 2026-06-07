@@ -1,7 +1,4 @@
-use crate::{
-    locals,
-    syscall::{Arguments, syscall},
-};
+use crate::{locals, syscall::syscall};
 use beskar_core::syscall::{Syscall, SyscallExitCode, SyscallReturnValue};
 use beskar_hal::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors};
 
@@ -72,15 +69,7 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
 ///
 /// Called by the above function after stack switching
 extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
-    let args = Arguments {
-        one: regs.rdi,
-        two: regs.rsi,
-        three: regs.rdx,
-        four: regs.r10,
-        five: regs.r8,
-        six: regs.r9,
-    };
-
+    let args = Arguments::new(regs);
     let ssn = Syscall::try_from(regs.rax);
 
     let res = ssn.map_or(
@@ -107,4 +96,54 @@ pub fn init_syscalls() {
     unsafe { SFMask::write(Rflags::IF) };
 
     unsafe { Efer::insert_flags(Efer::SYSTEM_CALL_EXTENSIONS) };
+}
+
+pub struct Arguments<'a> {
+    regs: &'a SyscallRegisters,
+}
+
+impl<'a> Arguments<'a> {
+    #[must_use]
+    #[inline]
+    const fn new(regs: &'a SyscallRegisters) -> Self {
+        Arguments { regs }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn one(&self) -> u64 {
+        self.regs.rdi
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn two(&self) -> u64 {
+        self.regs.rsi
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn three(&self) -> u64 {
+        self.regs.rdx
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn four(&self) -> u64 {
+        self.regs.r10
+    }
+
+    #[must_use]
+    #[inline]
+    #[expect(dead_code, reason = "Currently unused")]
+    pub const fn five(&self) -> u64 {
+        self.regs.r8
+    }
+
+    #[must_use]
+    #[inline]
+    #[expect(dead_code, reason = "Currently unused")]
+    pub const fn six(&self) -> u64 {
+        self.regs.r9
+    }
 }
