@@ -51,6 +51,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::SurfacePresent => SyscallReturnValue::Code(sc_surface_present(args)),
         Syscall::QueryConfig => SyscallReturnValue::Code(sc_query_config(args)),
         Syscall::ThreadSpawn => SyscallReturnValue::ValueU(sc_thread_spawn(args)),
+        Syscall::PowerManagement => SyscallReturnValue::Code(sc_powermgt(args)),
     }
 }
 
@@ -535,4 +536,22 @@ fn sc_thread_spawn(args: &Arguments) -> u64 {
     scheduler::spawn_thread(thread);
 
     tid
+}
+
+fn sc_powermgt(args: &Arguments) -> SyscallExitCode {
+    use beskar_core::syscall::consts;
+
+    let action = args.one;
+
+    // FIXME: Find a way to safely expose power management syscalls
+    // without allowing arbitrary shutdowns/reboots from user-space.
+    match action {
+        // consts::POWERMGT_SHUTDOWN => {
+        //     unsafe { crate::power::shutdown() };
+        // }
+        // consts::POWERMGT_REBOOT => {
+        //     unsafe { crate::power::reboot() };
+        // }
+        _ => SyscallExitCode::Failure,
+    }
 }

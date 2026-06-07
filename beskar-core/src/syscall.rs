@@ -108,6 +108,10 @@ pub enum Syscall {
     ///
     /// The first argument is a pointer to the thread entry point.
     ThreadSpawn = 16,
+    /// Power management syscall.
+    ///
+    /// The first argument is the power management command to execute.
+    PowerManagement = 17,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
@@ -183,6 +187,11 @@ pub mod consts {
     pub const QUERY_FRAMEBUFFER: u64 = 0;
     /// Query type - dynamic keyboard wait handle.
     pub const QUERY_KEYBOARD_WAIT_HANDLE: u64 = 1;
+
+    /// Power management command - shutdown the system.
+    pub const POWERMGT_SHUTDOWN: u64 = 0;
+    /// Power management command - reboot the system.
+    pub const POWERMGT_REBOOT: u64 = 1;
 }
 
 #[cfg(test)]

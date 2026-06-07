@@ -11,6 +11,7 @@ pub use arch::{debug_break, debug_break_value};
 pub mod error;
 pub mod io;
 pub mod mem;
+pub mod power;
 pub mod prelude;
 pub mod rand;
 pub mod surface;
