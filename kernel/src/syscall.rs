@@ -493,6 +493,9 @@ fn sc_query_config(args: &Arguments) -> SyscallExitCode {
         beskar_core::syscall::consts::QUERY_KEYBOARD_WAIT_HANDLE => {
             fill(output_ptr, size, crate::drivers::keyboard::wait_handle)
         }
+        beskar_core::syscall::consts::QUERY_HIGH_PRES_TIMER => {
+            fill(output_ptr, size, || crate::time::timer_info().copied())
+        }
 
         _ => SyscallExitCode::Failure,
     }

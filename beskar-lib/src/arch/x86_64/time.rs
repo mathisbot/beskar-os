@@ -1,25 +1,22 @@
-use beskar_core::time::{Duration, MILLIS_PER_SEC};
-
 #[must_use]
 #[inline]
-pub fn read_tsc_fenced() -> u64 {
-    unsafe {
-        core::arch::x86_64::_mm_mfence();
-        let tsc = core::arch::x86_64::_rdtsc();
-        core::arch::x86_64::_mm_lfence();
-        tsc
+pub fn read_tsc_p() -> (u64, u32) {
+    cfg_select! {
+        target_arch = "x86_64" => {
+            let id = 0;
+            // let ts = unsafe { core::arch::x86_64::__rdtscp(&raw mut id) }; // TODO: Use RTSCP when available
+            unsafe { core::arch::x86_64::_mm_lfence() };
+            let ts = unsafe { core::arch::x86_64::_rdtsc() };
+            unsafe { core::arch::x86_64::_mm_lfence() };
+            (ts, id)
+        }
+        _ => unimplemented!()
     }
 }
 
-/// Returns the TSC frequency in Hz.
-pub fn get_tsc_frequency() -> crate::error::SyscallResult<u64> {
-    const MEASURE_TIME_MS: u64 = 100;
-    const QUANTUM_PER_SEC: u64 = MILLIS_PER_SEC / MEASURE_TIME_MS;
-
-    let start = read_tsc_fenced();
-    crate::thread::sleep(Duration::from_millis(MEASURE_TIME_MS))?;
-    let end = read_tsc_fenced();
-
-    let delta = end - start;
-    Ok(delta * QUANTUM_PER_SEC)
+#[must_use]
+#[inline]
+pub fn read_tsc() -> u64 {
+    let (ts, _id) = read_tsc_p();
+    ts
 }

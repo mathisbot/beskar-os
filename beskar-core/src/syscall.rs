@@ -187,6 +187,8 @@ pub mod consts {
     pub const QUERY_FRAMEBUFFER: u64 = 0;
     /// Query type - dynamic keyboard wait handle.
     pub const QUERY_KEYBOARD_WAIT_HANDLE: u64 = 1;
+    /// Query type - Counter information
+    pub const QUERY_HIGH_PRES_TIMER: u64 = 2;
 
     /// Power management command - shutdown the system.
     pub const POWERMGT_SHUTDOWN: u64 = 0;

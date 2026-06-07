@@ -70,7 +70,5 @@ pub fn __init() {
     call_once!({
         // Heap
         mem::init_heap();
-        // Time
-        time::init();
     });
 }

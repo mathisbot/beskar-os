@@ -1,5 +1,7 @@
 use core::{
-    fmt, ops,
+    fmt,
+    num::NonZeroU64,
+    ops,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -314,6 +316,17 @@ impl AtomicInstant {
         let prev_micros = self.micros.fetch_add(duration.total_micros(), order);
         Instant::from_micros(prev_micros)
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+/// Information about the high precision timer.
+pub struct TimerInfo {
+    /// The number of ticks per second of the timer.
+    ///
+    /// Set to `None` if no high-precision timer is available.
+    pub ticks_per_ms: Option<NonZeroU64>,
+    /// Whether the timer can be used directly from userspace.
+    pub fastpath: bool,
 }
 
 #[cfg(test)]

@@ -1,9 +1,13 @@
 use crate::drivers::{hpet, tsc};
+use beskar_core::time::TimerInfo;
 pub use beskar_core::time::{Duration, Instant};
 use core::sync::atomic::{AtomicBool, Ordering};
+use hyperdrive::once::Once;
 
 static HPET_AVAILABLE: AtomicBool = AtomicBool::new(false);
 static TSC_AVAILABLE: AtomicBool = AtomicBool::new(false);
+
+static TIMER_INFO: Once<TimerInfo> = Once::uninit();
 
 struct HpetClock;
 struct TscClock;
@@ -13,6 +17,12 @@ pub fn init() {
     HPET_AVAILABLE.store(hpet_res.is_ok(), Ordering::Relaxed);
     let tsc_res = crate::drivers::tsc::init();
     TSC_AVAILABLE.store(tsc_res.is_ok(), Ordering::Relaxed);
+
+    let timer_info = TimerInfo {
+        ticks_per_ms: ticks_per_ms().try_into().ok(),
+        fastpath: us_fastpath(),
+    };
+    TIMER_INFO.call_once(|| timer_info);
 }
 
 /// Waits for AT LEAST the given number of milliseconds.
@@ -39,6 +49,31 @@ pub fn now() -> Instant {
     } else {
         Instant::MAX
     }
+}
+
+#[must_use]
+#[inline]
+pub fn ticks_per_ms() -> u64 {
+    if TSC_AVAILABLE.load(Ordering::Acquire) {
+        TscClock.ticks_per_ms()
+    } else if HPET_AVAILABLE.load(Ordering::Acquire) {
+        HpetClock.ticks_per_ms()
+    } else {
+        0
+    }
+}
+
+#[must_use]
+#[inline]
+/// Whether there is a high-precision timer available from userspace.
+fn us_fastpath() -> bool {
+    cfg!(target_arch = "x86_64") && TSC_AVAILABLE.load(Ordering::Acquire)
+}
+
+#[must_use]
+#[inline]
+pub fn timer_info() -> Option<&'static TimerInfo> {
+    TIMER_INFO.get()
 }
 
 trait Clock {
