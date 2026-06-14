@@ -15,13 +15,14 @@ fn main(_start: &beskar_lib::ThreadStartBlock) {
     let argv = [ex_name.as_ptr()];
 
     doom::game::init();
-    doom::screen::init();
+    let mut ctx = doom::screen::init();
 
     unsafe { doom_init(1, argv.as_ptr(), 0b111) };
 
+    let mut keyboard = beskar_lib::io::keyboard::KeyboardReader::new().unwrap();
     loop {
-        doom::input::poll_inputs();
+        doom::input::poll_inputs(&mut keyboard);
         unsafe { doom_update() };
-        doom::screen::draw();
+        doom::screen::draw(&mut ctx);
     }
 }
