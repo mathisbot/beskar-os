@@ -147,6 +147,18 @@ impl Cr4 {
             core::arch::asm!("mov cr4, {}", in(reg) value, options(nomem, nostack, preserves_flags));
         }
     }
+
+    #[inline]
+    /// `ORs` the current value of CR4 with the provided flag(s).
+    ///
+    /// # Safety
+    ///
+    /// The value written must be a valid CR4 flag.
+    pub unsafe fn add(flag: u64) {
+        let mut value = Self::read();
+        value |= flag;
+        unsafe { Self::write(value) };
+    }
 }
 
 pub struct Efer;
@@ -552,6 +564,56 @@ impl GS {
     pub unsafe fn write_base(base: VirtAddr) {
         unsafe { Self::MSR.write(base.as_u64()) };
     }
+
+    #[inline]
+    pub unsafe fn swap() {
+        unsafe {
+            core::arch::asm!("swapgs", options(nomem, nostack, preserves_flags));
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn rdgsbase() -> VirtAddr {
+        let raw: u64;
+        unsafe {
+            core::arch::asm!(
+                "rdgsbase {}",
+                lateout(reg) raw,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+        unsafe { VirtAddr::new_unchecked(raw) }
+    }
+
+    #[inline]
+    pub unsafe fn wrgsbase(base: VirtAddr) {
+        unsafe {
+            core::arch::asm!(
+                "wrgsbase {}",
+                in(reg) base.as_u64(),
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    }
+}
+
+pub struct KernelGs;
+
+impl KernelGs {
+    const MSR: Msr<0xC000_0102> = Msr;
+
+    #[must_use]
+    #[inline]
+    pub fn read_base() -> VirtAddr {
+        let base = unsafe { Self::MSR.read() };
+        unsafe { VirtAddr::new_unchecked(base) }
+    }
+
+    #[inline]
+    pub unsafe fn write_base(base: VirtAddr) {
+        unsafe { Self::MSR.write(base.as_u64()) };
+    }
 }
 
 pub struct FS;
@@ -659,5 +721,30 @@ impl FS {
     #[inline]
     pub unsafe fn write_base(base: VirtAddr) {
         unsafe { Self::MSR.write(base.as_u64()) };
+    }
+
+    #[must_use]
+    #[inline]
+    pub unsafe fn rdfsbase() -> VirtAddr {
+        let raw: u64;
+        unsafe {
+            core::arch::asm!(
+                "rdfsbase {}",
+                lateout(reg) raw,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+        unsafe { VirtAddr::new_unchecked(raw) }
+    }
+
+    #[inline]
+    pub unsafe fn wrfsbase(base: VirtAddr) {
+        unsafe {
+            core::arch::asm!(
+                "wrfsbase {}",
+                in(reg) base.as_u64(),
+                options(nomem, nostack, preserves_flags)
+            );
+        }
     }
 }

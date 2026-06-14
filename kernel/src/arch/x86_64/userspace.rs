@@ -24,6 +24,7 @@ pub unsafe extern "C" fn enter_usermode(
         "pop r11",
         "mov rsp, rsi",
         "sub rsp, 8", // Align the stack to 8 mod 16
+        "swapgs",
         "sysretq",
     );
 }

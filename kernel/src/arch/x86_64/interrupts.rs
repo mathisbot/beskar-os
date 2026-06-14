@@ -206,6 +206,11 @@ panic_isr_with_errcode!(security_exception_handler);
 #[unsafe(naked)]
 unsafe extern "C" fn breakpoint_handler() {
     core::arch::naked_asm!(
+        "test byte ptr [rsp + 8], 3",
+        "jz 2f",
+        "swapgs",
+        "2:",
+
         // Save registers
         "push rax",
         "push rcx",
@@ -250,6 +255,10 @@ unsafe extern "C" fn breakpoint_handler() {
         "pop rcx",
         "pop rax",
 
+        "test byte ptr [rsp + 8], 3",
+        "jz 3f",
+        "swapgs",
+        "3:",
         "iretq",
 
         size = const size_of::<ThreadRegisters>(),

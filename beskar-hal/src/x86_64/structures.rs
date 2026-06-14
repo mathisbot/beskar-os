@@ -525,11 +525,10 @@ macro_rules! isr {
         pub extern "C" fn $name() {
             unsafe {
                 core::arch::naked_asm!(
-                    // swapgs on entry from ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 1f",
-                    // "swapgs",
-                    // "1:",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
 
                     "push rax",
                     "push rcx",
@@ -561,11 +560,10 @@ macro_rules! isr {
                     "pop rcx",
                     "pop rax",
 
-                    // swapgs on exit to ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 2f",
-                    // "swapgs",
-                    // "2:",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 3f",
+                    "swapgs",
+                    "3:",
                     "iretq",
 
                     isf_offset = const { 10 * ::core::mem::size_of::<u64>() } ,
@@ -581,11 +579,10 @@ macro_rules! isr {
         pub extern "C" fn $name() -> ! {
             unsafe {
                 core::arch::naked_asm!(
-                    // swapgs on entry from ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 1f",
-                    // "swapgs",
-                    // "1:",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
 
                     "push rax",
                     "push rcx",
@@ -620,11 +617,10 @@ macro_rules! isr {
         pub extern "C" fn $name() {
             unsafe {
                 core::arch::naked_asm!(
-                    // swapgs on entry from ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 1f",
-                    // "swapgs",
-                    // "1:",
+                    "test byte ptr [rsp + 16], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
 
                     "push rax",
                     "push rcx",
@@ -660,11 +656,10 @@ macro_rules! isr {
                     // Discard the error code the CPU pushed before the ISF.
                     "add rsp, 8",
 
-                    // swapgs on exit to ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 2f",
-                    // "swapgs",
-                    // "2:",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 3f",
+                    "swapgs",
+                    "3:",
                     "iretq",
 
                     isf_offset = const { 10 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
@@ -681,11 +676,10 @@ macro_rules! isr {
         pub extern "C" fn $name() -> ! {
             unsafe {
                 core::arch::naked_asm!(
-                    // swapgs on entry from ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 1f",
-                    // "swapgs",
-                    // "1:",
+                    "test byte ptr [rsp + 16], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
 
                     "push rax",
                     "push rcx",
@@ -722,6 +716,11 @@ macro_rules! isr {
         pub extern "C" fn $name() {
             unsafe {
                 core::arch::naked_asm!(
+                    "test byte ptr [rsp + 16], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
+
                     "push rax",
                     "push rcx",
                     "push rdx",
@@ -755,6 +754,10 @@ macro_rules! isr {
 
                     // Discard the error code the CPU pushed before the ISF.
                     "add rsp, 8",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 3f",
+                    "swapgs",
+                    "3:",
                     "iretq",
 
                     isf_offset = const { 10 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
@@ -771,6 +774,11 @@ macro_rules! isr {
         pub extern "C" fn $name() -> ! {
             unsafe {
                 core::arch::naked_asm!(
+                    "test byte ptr [rsp + 16], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
+
                     "push rax",
                     "push rcx",
                     "push rdx",

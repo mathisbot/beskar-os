@@ -15,6 +15,7 @@ pub fn init() {
     crate::debug!("CPU Vendor: {:?}", cpuid::get_cpu_vendor());
 
     prepare_sse();
+    prepare_fsgsbase();
 }
 
 fn prepare_sse() {
@@ -33,6 +34,17 @@ fn prepare_sse() {
     unsafe { Cr4::write(cr4) };
 
     unsafe { beskar_hal::instructions::fpu_init() };
+}
+
+fn prepare_fsgsbase() {
+    use beskar_hal::registers::Cr4;
+
+    // All modern CPUs should support it
+    assert!(
+        cpuid::check_feature(cpuid::CpuFeature::FSGSBASE),
+        "CPU does not support FSGSBASE"
+    );
+    unsafe { Cr4::add(Cr4::FSGSBASE) };
 }
 
 #[inline]

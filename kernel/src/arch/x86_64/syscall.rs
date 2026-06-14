@@ -32,6 +32,7 @@ struct SyscallRegisters {
 /// This function should not be called directly.
 unsafe extern "sysv64" fn syscall_handler_arch() {
     core::arch::naked_asm!(
+        "swapgs",
         "mov gs:[{scratch}], rsp", // Save RSP in GS
         "mov rsp, gs:[{kernel_stack}]", // Swap stack
         "push qword ptr gs:[{scratch}]", // Previous RSP
@@ -57,6 +58,7 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
         "pop rcx", // RIP used by sysret
         "pop r11", // r11 contains previous RFLAGS
         "cli",
+        "swapgs",
         "pop rsp", // Restore previous RSP
         "sysretq",
         scratch = const locals::CoreLocalsInfo::scratch_offset(),

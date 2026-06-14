@@ -115,6 +115,8 @@ pub struct Thread {
     stats: ThreadStats,
     /// FPU/SSE state for lazy context switching
     fpu_state: FpuState,
+    /// Userspace FS base
+    user_fs_base: VirtAddr,
 
     /// Link to the next thread in the queue.
     link: Link<Self>,
@@ -179,6 +181,7 @@ impl Thread {
             link: Link::new(),
             stats: ThreadStats::new(),
             fpu_state: FpuState::new(),
+            user_fs_base: VirtAddr::ZERO,
         }
     }
 
@@ -239,6 +242,7 @@ impl Thread {
             link: Link::new(),
             stats: ThreadStats::new(),
             fpu_state: FpuState::new(),
+            user_fs_base: VirtAddr::ZERO,
         }
     }
 
@@ -281,6 +285,7 @@ impl Thread {
             link: Link::new(),
             stats: ThreadStats::new(),
             fpu_state: FpuState::new(),
+            user_fs_base: VirtAddr::ZERO,
         }
     }
 
@@ -388,6 +393,17 @@ impl Thread {
     /// Returns a mutable reference to the thread's FPU state.
     pub const fn fpu_state_mut(&mut self) -> &mut FpuState {
         &mut self.fpu_state
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn user_fs_base(&self) -> VirtAddr {
+        self.user_fs_base
+    }
+
+    #[inline]
+    pub(super) const fn set_user_fs_base(&mut self, value: VirtAddr) {
+        self.user_fs_base = value;
     }
 
     #[must_use]
