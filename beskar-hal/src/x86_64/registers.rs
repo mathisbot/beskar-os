@@ -295,6 +295,7 @@ impl LStar {
 pub struct Rflags;
 
 impl Rflags {
+    pub const BRKI: u64 = 1 << 1;
     pub const ID: u64 = 1 << 21;
     pub const IF: u64 = 1 << 9;
     pub const IOPL_LOW: u64 = 1 << 12;
