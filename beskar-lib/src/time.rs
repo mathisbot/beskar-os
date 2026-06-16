@@ -37,6 +37,17 @@ pub fn now() -> Instant {
     Instant::from_millis(query_counter().expect("No timer available"))
 }
 
+#[must_use]
+#[inline]
+pub fn elapsed(since: Instant) -> Duration {
+    let now = now();
+    if now < since {
+        Duration::ZERO
+    } else {
+        now - since
+    }
+}
+
 fn timer_info() -> Option<&'static TimerInfo> {
     if let Some(info) = TIMER_INFO.get() {
         return Some(info);

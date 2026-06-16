@@ -50,12 +50,18 @@ fn legacy_reboot() {
     }
 }
 
+fn prepare_shutdown() {
+    // TODO: Whatever is needed to prepare the system for shutdown, like waiting for IO completion, ...
+}
+
 /// Triggers a system shutdown.
 ///
 /// # Safety
 ///
 /// The caller must ensure it is safe to shut down the system.
 pub unsafe fn shutdown() -> ! {
+    prepare_shutdown();
+
     acpi_shutdown();
 
     loop {
@@ -69,6 +75,8 @@ pub unsafe fn shutdown() -> ! {
 ///
 /// The caller must ensure it is safe to reboot the system.
 pub unsafe fn reboot() -> ! {
+    prepare_shutdown();
+
     acpi_reboot();
 
     legacy_reboot();
