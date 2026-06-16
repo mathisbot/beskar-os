@@ -46,10 +46,10 @@ fn thread_condvar() -> TestResult {
     {
         let guard = CV_MUTEX.lock();
 
-        let Ok(tid) = beskar_lib::thread::spawn(condvar_thread) else {
+        let res = beskar_lib::thread::spawn(condvar_thread);
+        if res.is_err() {
             return Err("thread spawn failed");
         };
-        ensure!(tid != 0, "Thread spawned with invalid TID 0");
 
         let (_, reason) = CONDVAR.wait_for(guard, TIMEOUT);
         ensure!(

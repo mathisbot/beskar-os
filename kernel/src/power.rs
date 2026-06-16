@@ -50,7 +50,7 @@ fn legacy_reboot() {
     }
 }
 
-fn prepare_shutdown() {
+const fn prepare_shutdown() {
     // TODO: Whatever is needed to prepare the system for shutdown, like waiting for IO completion, ...
 }
 
