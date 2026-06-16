@@ -8,16 +8,7 @@ static KERNEL_PANIC: Once<()> = Once::uninit();
 
 pub(crate) fn panic_entry(msg: &dyn Display) -> ! {
     beskar_hal::instructions::int_disable();
-
-    if scheduler::current_process().kind() == beskar_hal::process::Kind::Kernel {
-        kernel_panic(&msg);
-    } else if !kernel_has_panicked() {
-        user_panic(&msg)
-    }
-
-    loop {
-        crate::arch::halt();
-    }
+    kernel_panic(&msg);
 }
 
 pub fn user_panic(msg: &dyn Display) -> ! {
@@ -35,7 +26,7 @@ pub fn kernel_panic(msg: &dyn Display) -> ! {
         // NMI can be received at any time, including during logging
         // (resulting in a deadlock if the screen is locked).
         // TODO: BSOD
-        crate::error!("Kernel process panicked: {}", msg);
+        crate::error!("Kernel panic! {}", msg);
     });
 
     // TODO: Attempt a gracious shutdown/reboot

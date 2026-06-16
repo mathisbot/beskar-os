@@ -30,6 +30,13 @@ impl InterruptStackFrame {
 
     #[must_use]
     #[inline]
+    pub fn cs_ring(&self) -> Ring {
+        // Cannot panic
+        Ring::from_u8(u8::try_from(self.code_segment() & 0b11).unwrap())
+    }
+
+    #[must_use]
+    #[inline]
     pub const fn cpu_flags(&self) -> u64 {
         self.cpu_flags
     }
@@ -384,10 +391,10 @@ pub struct InterruptDescriptorTable {
     /// - A SETSSBY instruction encountered an invalid supervisor shadow stack token.
     /// - A missing ENDBRANCH instruction if indirect branch tracking is enabled.
     ///
-    /// The vector number of the `#CP` exception is 19.
+    /// The vector number of the `#CP` exception is 21.
     pub cp_protection_exception: IdtEntry,
 
-    /// Vectors 20 through 27 are reserved.
+    /// Vectors 22 through 27 are reserved.
     _reserved2: [IdtEntry; 6],
 
     /// The Hypervisor Injection Exception (`#HV`) is injected by a hypervisor

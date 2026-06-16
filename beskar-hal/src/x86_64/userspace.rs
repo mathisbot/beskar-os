@@ -26,14 +26,31 @@ impl Ring {
     #[must_use]
     #[inline]
     pub const fn from_u8(value: u8) -> Self {
-        assert!(value <= 3);
+        Self::try_from_u8(value).expect("Invalid ring value")
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn try_from_u8(value: u8) -> Option<Self> {
         match value {
-            0 => Self::Kernel,
-            1 => Self::Driver,
-            2 => Self::Hypervisor,
-            3 => Self::User,
-            _ => panic!("Invalid ring value"),
+            0 => Some(Self::Kernel),
+            1 => Some(Self::Driver),
+            2 => Some(Self::Hypervisor),
+            3 => Some(Self::User),
+            _ => None,
         }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_privileged(self) -> bool {
+        matches!(self, Self::Kernel | Self::Driver | Self::Hypervisor)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn is_user(self) -> bool {
+        matches!(self, Self::User)
     }
 }
 

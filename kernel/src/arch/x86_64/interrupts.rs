@@ -116,17 +116,25 @@ extern "C" fn page_fault_handler_inner(
     error_code: PageFaultErrorCode,
 ) {
     let faulting_address = Cr2::read();
-    let thread_id = crate::process::scheduler::current_thread_id();
 
-    crate::error!(
-        "EXCEPTION: PAGE FAULT (Accessed {:#x} - {:b}) at {:#x} in Thread {}",
-        faulting_address.as_u64(),
-        error_code,
-        stack_frame.instruction_pointer().as_u64(),
-        thread_id.as_u64()
-    );
-
-    panic!("Unrecoverable page fault");
+    if stack_frame.cs_ring().is_user() {
+        let thread_id = crate::process::scheduler::current_thread_id();
+        crate::panic::user_panic(&alloc::format!(
+            "Page Fault (Accessed {:#x} - {:b}) at {:#x} in Thread {}",
+            faulting_address.as_u64(),
+            error_code,
+            stack_frame.instruction_pointer().as_u64(),
+            thread_id.as_u64()
+        ));
+    } else {
+        crate::error!(
+            "EXCEPTION: PAGE FAULT (Accessed {:#x} - {:b}) at {:#x}",
+            faulting_address.as_u64(),
+            error_code,
+            stack_frame.instruction_pointer().as_u64(),
+        );
+        panic!("Unrecoverable page fault");
+    }
 }
 beskar_hal::isr!(
     page_fault_handler,
@@ -149,6 +157,28 @@ macro_rules! panic_isr {
         }
         beskar_hal::isr!($name, $name::__inner);
     };
+    ($name:ident user) => {
+        mod $name {
+            use super::*;
+            pub extern "C" fn __inner(stack_frame: &InterruptStackFrame) {
+                if stack_frame.cs_ring().is_user() {
+                    $crate::panic::user_panic(&concat!(
+                        "EXCEPTION: ",
+                        stringify!($name),
+                        " INTERRUPT"
+                    ));
+                } else {
+                    panic!(
+                        "EXCEPTION: {} INTERRUPT on core {}\n{:#?}",
+                        stringify!($name),
+                        crate::locals!().core_id(),
+                        stack_frame
+                    );
+                }
+            }
+        }
+        beskar_hal::isr!($name, $name::__inner);
+    };
 }
 
 macro_rules! panic_isr_with_errcode {
@@ -163,6 +193,29 @@ macro_rules! panic_isr_with_errcode {
                     crate::locals!().core_id(),
                     stack_frame
                 );
+            }
+        }
+        beskar_hal::isr!($name, $name::__inner, err_code);
+    };
+    ($name:ident user) => {
+        mod $name {
+            use super::*;
+            pub extern "C" fn __inner(stack_frame: &InterruptStackFrame, err_code: u64) {
+                if stack_frame.cs_ring().is_user() {
+                    $crate::panic::user_panic(&concat!(
+                        "EXCEPTION: ",
+                        stringify!($name),
+                        " INTERRUPT"
+                    ));
+                } else {
+                    panic!(
+                        "EXCEPTION: {} INTERRUPT {:#x} on core {}\n{:#?}",
+                        stringify!($name),
+                        err_code,
+                        crate::locals!().core_id(),
+                        stack_frame
+                    );
+                }
             }
         }
         beskar_hal::isr!($name, $name::__inner, err_code);
@@ -186,19 +239,19 @@ macro_rules! info_isr {
     };
 }
 
-panic_isr!(divide_error_handler);
+panic_isr!(divide_error_handler user);
 info_isr!(debug_handler);
-panic_isr!(overflow_handler);
-panic_isr!(bound_range_exceeded_handler);
-panic_isr!(invalid_opcode_handler);
-panic_isr_with_errcode!(invalid_tss_handler);
-panic_isr_with_errcode!(segment_not_present_handler);
-panic_isr_with_errcode!(stack_segment_fault_handler);
-panic_isr_with_errcode!(general_protection_fault_handler);
-panic_isr!(x87_floating_point_handler);
-panic_isr_with_errcode!(alignment_check_handler);
-panic_isr!(simd_floating_point_handler);
-panic_isr_with_errcode!(cp_protection_handler);
+panic_isr!(overflow_handler user);
+panic_isr!(bound_range_exceeded_handler user);
+panic_isr!(invalid_opcode_handler user);
+panic_isr_with_errcode!(invalid_tss_handler user);
+panic_isr_with_errcode!(segment_not_present_handler user);
+panic_isr_with_errcode!(stack_segment_fault_handler user);
+panic_isr_with_errcode!(general_protection_fault_handler user);
+panic_isr!(x87_floating_point_handler user);
+panic_isr_with_errcode!(alignment_check_handler user);
+panic_isr!(simd_floating_point_handler user);
+panic_isr_with_errcode!(cp_protection_handler user);
 panic_isr!(hv_injection_handler);
 panic_isr_with_errcode!(vmm_communication_handler);
 panic_isr_with_errcode!(security_exception_handler);

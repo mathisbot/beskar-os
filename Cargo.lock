@@ -320,7 +320,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "strsim",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -331,7 +331,7 @@ checksum = "ac3984ec7bd6cfa798e62b4a642426a5be0e68f9401cfc2a01e3fa9ea2fcdb8d"
 dependencies = [
  "darling_core",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -365,7 +365,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustc_version",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -678,7 +678,7 @@ dependencies = [
  "indoc",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -906,7 +906,7 @@ checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -936,7 +936,7 @@ checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -984,7 +984,7 @@ dependencies = [
  "by_address",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1051,7 +1051,7 @@ dependencies = [
  "pest_meta",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1104,7 +1104,7 @@ dependencies = [
  "phf_shared",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1141,7 +1141,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1170,7 +1170,7 @@ checksum = "7347867d0a7e1208d93b46767be83e2b8f978c3dad35f775ac8d8847551d6fe1"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1410,7 +1410,7 @@ checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1532,7 +1532,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1548,9 +1548,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.117"
+version = "2.0.118"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
+checksum = "1b9ae57f904213ebb649ce6895b8a66c66f0203b9319718f69a5612a065b1422"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1654,7 +1654,7 @@ checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1665,7 +1665,7 @@ checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1734,7 +1734,7 @@ checksum = "4687412b5ac74d245d5bfb1733ede50c31be19bf8a4b6a967a29b451bab49e67"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -1896,7 +1896,7 @@ dependencies = [
  "bumpalo",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
  "wasm-bindgen-shared",
 ]
 
@@ -2088,7 +2088,7 @@ dependencies = [
  "heck",
  "indexmap",
  "prettyplease",
- "syn 2.0.117",
+ "syn 2.0.118",
  "wasm-metadata",
  "wit-bindgen-core",
  "wit-component",
@@ -2104,7 +2104,7 @@ dependencies = [
  "prettyplease",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 2.0.118",
  "wit-bindgen-core",
  "wit-bindgen-rust",
 ]
