@@ -10,7 +10,7 @@ noto-sans-mono-bitmap = { version = "0.3.2", default-features = false, features 
     "size_20",
     "unicode_ranges_default",
 ] }
-num_enum = { version = "0.7.5", default-features = false }
+num_enum = { version = "0.7.6", default-features = false }
 thiserror = { workspace = true }
 
 [lints]

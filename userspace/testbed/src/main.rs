@@ -37,4 +37,6 @@ fn main(_start: &beskar_lib::ThreadStartBlock) {
     if failed != 0 {
         beskar_lib::exit(ExitCode::Failure);
     }
+
+    beskar_lib::power::shutdown();
 }

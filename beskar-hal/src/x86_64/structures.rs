@@ -30,6 +30,13 @@ impl InterruptStackFrame {
 
     #[must_use]
     #[inline]
+    pub fn cs_ring(&self) -> Ring {
+        // Cannot panic
+        Ring::from_u8(u8::try_from(self.code_segment() & 0b11).unwrap())
+    }
+
+    #[must_use]
+    #[inline]
     pub const fn cpu_flags(&self) -> u64 {
         self.cpu_flags
     }
@@ -384,10 +391,10 @@ pub struct InterruptDescriptorTable {
     /// - A SETSSBY instruction encountered an invalid supervisor shadow stack token.
     /// - A missing ENDBRANCH instruction if indirect branch tracking is enabled.
     ///
-    /// The vector number of the `#CP` exception is 19.
+    /// The vector number of the `#CP` exception is 21.
     pub cp_protection_exception: IdtEntry,
 
-    /// Vectors 20 through 27 are reserved.
+    /// Vectors 22 through 27 are reserved.
     _reserved2: [IdtEntry; 6],
 
     /// The Hypervisor Injection Exception (`#HV`) is injected by a hypervisor
@@ -525,11 +532,10 @@ macro_rules! isr {
         pub extern "C" fn $name() {
             unsafe {
                 core::arch::naked_asm!(
-                    // swapgs on entry from ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 1f",
-                    // "swapgs",
-                    // "1:",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
 
                     "push rax",
                     "push rcx",
@@ -561,11 +567,10 @@ macro_rules! isr {
                     "pop rcx",
                     "pop rax",
 
-                    // swapgs on exit to ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 2f",
-                    // "swapgs",
-                    // "2:",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 3f",
+                    "swapgs",
+                    "3:",
                     "iretq",
 
                     isf_offset = const { 10 * ::core::mem::size_of::<u64>() } ,
@@ -581,11 +586,10 @@ macro_rules! isr {
         pub extern "C" fn $name() -> ! {
             unsafe {
                 core::arch::naked_asm!(
-                    // swapgs on entry from ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 1f",
-                    // "swapgs",
-                    // "1:",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
 
                     "push rax",
                     "push rcx",
@@ -620,11 +624,10 @@ macro_rules! isr {
         pub extern "C" fn $name() {
             unsafe {
                 core::arch::naked_asm!(
-                    // swapgs on entry from ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 1f",
-                    // "swapgs",
-                    // "1:",
+                    "test byte ptr [rsp + 16], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
 
                     "push rax",
                     "push rcx",
@@ -660,11 +663,10 @@ macro_rules! isr {
                     // Discard the error code the CPU pushed before the ISF.
                     "add rsp, 8",
 
-                    // swapgs on exit to ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 2f",
-                    // "swapgs",
-                    // "2:",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 3f",
+                    "swapgs",
+                    "3:",
                     "iretq",
 
                     isf_offset = const { 10 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
@@ -681,11 +683,10 @@ macro_rules! isr {
         pub extern "C" fn $name() -> ! {
             unsafe {
                 core::arch::naked_asm!(
-                    // swapgs on entry from ring 3
-                    // "test byte ptr [rsp + 8], 3",
-                    // "jz 1f",
-                    // "swapgs",
-                    // "1:",
+                    "test byte ptr [rsp + 16], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
 
                     "push rax",
                     "push rcx",
@@ -722,6 +723,11 @@ macro_rules! isr {
         pub extern "C" fn $name() {
             unsafe {
                 core::arch::naked_asm!(
+                    "test byte ptr [rsp + 16], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
+
                     "push rax",
                     "push rcx",
                     "push rdx",
@@ -755,6 +761,10 @@ macro_rules! isr {
 
                     // Discard the error code the CPU pushed before the ISF.
                     "add rsp, 8",
+                    "test byte ptr [rsp + 8], 3",
+                    "jz 3f",
+                    "swapgs",
+                    "3:",
                     "iretq",
 
                     isf_offset = const { 10 * ::core::mem::size_of::<u64>() + ::core::mem::size_of::<u64>() } ,
@@ -771,6 +781,11 @@ macro_rules! isr {
         pub extern "C" fn $name() -> ! {
             unsafe {
                 core::arch::naked_asm!(
+                    "test byte ptr [rsp + 16], 3",
+                    "jz 2f",
+                    "swapgs",
+                    "2:",
+
                     "push rax",
                     "push rcx",
                     "push rdx",

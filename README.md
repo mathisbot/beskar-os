@@ -18,7 +18,7 @@ Throughout the development process, I always follow four objectives:
 3. Having it run on real, modern hardware
 4. Writing as many things as possible myself
 
-### Achievements
+### Milestones
 
 I have many milestones ideas for the OS:
 
@@ -40,21 +40,17 @@ You will find more information in their respective READMEs, especially in `kerne
 
 ## Usage
 
-As a user, you can easily use BeskarOS.
-However, keep in mind that it is currently in a very early stage where it is only possible to use a basic shell as well as play doom.
+As a user, it is easy to build and use the OS.
+Keep in mind that it is currently in a very early stage where it is only possible to use a basic shell as well as play doom.
 
-As a developper, you can also easily write programs running on BeskarOS.
+As a developper, it is easy to write programs running on BeskarOS.
 However, keep in mind that it is currently in a very early stage where only a few system calls and functionalities are supported.
-For example, usage of SIMD registers is currently a to-do.
+For example, usage of SIMD registers beyond XMM/FPU and SSE instructions is currently a to-do (e.g. AVX).
 
 ### Building
 
 The OS can be built using a convenient TUI tool: `cargo run [--release]`.
 The tool also features a button to launch QEMU immediately.
-
-For automation or scripts, the tool can also be used as a CLI: `cargo run [--release] -- help`.
-
-For development, the TUI tool provides a way to quickly build/test/run clippy for the OS as well as start QEMU with default parameters.
 
 ### Running on QEMU
 
@@ -89,7 +85,7 @@ If you are using `-accel whpx` and QEMU boots with a blank window right before c
 If you want to run the OS on a real baremetal machine, make sure that you have a proper x86_64 machine that supports UEFI 2 and has at least 64 MiB of RAM.
 Secure boot must be disabled.
 
-Copy the contents of the `efi_disk` folder to a FAT32 file system, on a GPT (or MBR) partition of a drive, and you're good to go!
+Copy the contents of the `efi_disk` folder to a FAT32 file system on a drive, and you're good to go!
 
 #### Warning
 
@@ -103,7 +99,7 @@ In any other cases, the kernel **SHOULD** print explicit information on the scre
 
 ### Writing you own program
 
-To run your own program on the OS, convert your code in `no_std` and import `beskar-lib`.
+To run your own program on the OS, make sure your code is `no_std` (but can use `alloc`) and import `beskar-lib`.
 Use the `entry_point!` macro to define the entry point.
 
 For more information, read the documentation of `beskar-lib` and read examples in `userspace/`.

@@ -1,3 +1,4 @@
+use crate::arch::syscall::Arguments;
 use crate::mem::vmm;
 use beskar_core::{
     arch::{
@@ -12,23 +13,12 @@ pub fn init() {
     crate::arch::syscall::init_syscalls();
 }
 
-#[derive(Debug, Copy, Clone)]
-#[expect(dead_code, reason = "Some fields may not be used yet")]
-pub struct Arguments {
-    pub one: u64,
-    pub two: u64,
-    pub three: u64,
-    pub four: u64,
-    pub five: u64,
-    pub six: u64,
-}
-
 /// Validate that a memory range is owned by the current process
 /// and is located within its user-space address space.
 #[must_use]
 #[inline]
-pub fn probe(start: VirtAddr, end: VirtAddr) -> bool {
-    vmm::process_local::probe(start, end)
+pub fn is_addr_owned(start: VirtAddr, end: VirtAddr) -> bool {
+    vmm::process_local::is_addr_owned(start, end)
 }
 
 #[must_use]
@@ -51,11 +41,12 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::SurfacePresent => SyscallReturnValue::Code(sc_surface_present(args)),
         Syscall::QueryConfig => SyscallReturnValue::Code(sc_query_config(args)),
         Syscall::ThreadSpawn => SyscallReturnValue::ValueU(sc_thread_spawn(args)),
+        Syscall::PowerManagement => SyscallReturnValue::Code(sc_powermgt(args)),
     }
 }
 
 fn sc_exit(args: &Arguments) -> ! {
-    let exit_code = args.one;
+    let exit_code = args.one();
 
     if cfg!(debug_assertions) {
         let exit_code = beskar_core::syscall::ExitCode::try_from(exit_code);
@@ -93,16 +84,16 @@ fn build_flags_from_us(raw: u64) -> Flags {
 
 #[must_use]
 fn sc_mmap(args: &Arguments) -> u64 {
-    let len = args.one;
+    let len = args.one();
     if len == 0 {
         return 0;
     }
-    let align = args.two;
+    let align = args.two();
     if !align.is_power_of_two() || align > M4KiB::SIZE {
         // TODO: Support larger alignments
         return 0;
     }
-    let flags_raw = args.three;
+    let flags_raw = args.three();
 
     let flags = build_flags_from_us(flags_raw);
 
@@ -116,8 +107,8 @@ fn sc_mmap(args: &Arguments) -> u64 {
 }
 
 fn sc_munmap(args: &Arguments) -> SyscallExitCode {
-    let ptr = args.one;
-    let size = args.two;
+    let ptr = args.one();
+    let size = args.two();
 
     if size == 0 {
         return SyscallExitCode::Success;
@@ -130,7 +121,7 @@ fn sc_munmap(args: &Arguments) -> SyscallExitCode {
 
     if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
         || !size.is_multiple_of(M4KiB::SIZE)
-        || !probe(va, end)
+        || !is_addr_owned(va, end)
     {
         return SyscallExitCode::Failure;
     }
@@ -147,9 +138,9 @@ fn sc_munmap(args: &Arguments) -> SyscallExitCode {
 
 #[must_use]
 fn sc_mprotect(args: &Arguments) -> SyscallExitCode {
-    let ptr = args.one;
-    let size = args.two;
-    let flags_raw = args.three;
+    let ptr = args.one();
+    let size = args.two();
+    let flags_raw = args.three();
 
     if size == 0 {
         return SyscallExitCode::Success;
@@ -162,7 +153,7 @@ fn sc_mprotect(args: &Arguments) -> SyscallExitCode {
 
     if !va.is_aligned(beskar_core::arch::Alignment::Align4K)
         || !size.is_multiple_of(M4KiB::SIZE)
-        || !probe(va, end)
+        || !is_addr_owned(va, end)
     {
         return SyscallExitCode::Failure;
     }
@@ -185,7 +176,7 @@ fn sc_mprotect(args: &Arguments) -> SyscallExitCode {
 #[must_use]
 fn sc_read(args: &Arguments) -> i64 {
     let file_handle = {
-        let raw = args.one.cast_signed();
+        let raw = args.one().cast_signed();
         if raw < 0 {
             return -1;
         }
@@ -194,10 +185,10 @@ fn sc_read(args: &Arguments) -> i64 {
         unsafe { ::storage::vfs::Handle::from_raw(raw) }
     };
 
-    let buffer_start = VirtAddr::try_new(args.two).unwrap_or_default();
-    let buffer_len = args.three;
+    let buffer_start = VirtAddr::try_new(args.two()).unwrap_or_default();
+    let buffer_len = args.three();
 
-    if !probe(buffer_start, buffer_start + buffer_len) {
+    if !is_addr_owned(buffer_start, buffer_start + buffer_len) {
         return -1;
     }
 
@@ -206,7 +197,7 @@ fn sc_read(args: &Arguments) -> i64 {
         core::slice::from_raw_parts_mut(buffer_start.as_mut_ptr(), buffer_len.try_into().unwrap())
     };
 
-    let file_offset = usize::try_from(args.four).unwrap();
+    let file_offset = usize::try_from(args.four()).unwrap();
 
     let pid = crate::process::scheduler::current_process().pid();
     let res = crate::storage::vfs().read(pid.as_u64(), file_handle, buffer, file_offset);
@@ -218,7 +209,7 @@ fn sc_read(args: &Arguments) -> i64 {
 #[must_use]
 fn sc_write(args: &Arguments) -> i64 {
     let file_handle = {
-        let raw = args.one.cast_signed();
+        let raw = args.one().cast_signed();
         if raw < 0 {
             return -1;
         }
@@ -226,10 +217,10 @@ fn sc_write(args: &Arguments) -> i64 {
         // and the given value is positive.
         unsafe { ::storage::vfs::Handle::from_raw(raw) }
     };
-    let buffer_start = VirtAddr::try_new(args.two).unwrap_or_default();
-    let buffer_len = args.three;
+    let buffer_start = VirtAddr::try_new(args.two()).unwrap_or_default();
+    let buffer_len = args.three();
 
-    if !probe(buffer_start, buffer_start + buffer_len) {
+    if !is_addr_owned(buffer_start, buffer_start + buffer_len) {
         return -1;
     }
 
@@ -238,7 +229,7 @@ fn sc_write(args: &Arguments) -> i64 {
         core::slice::from_raw_parts(buffer_start.as_ptr(), buffer_len.try_into().unwrap())
     };
 
-    let file_offset = usize::try_from(args.four).unwrap();
+    let file_offset = usize::try_from(args.four()).unwrap();
 
     let pid = crate::process::scheduler::current_process().pid();
     let res = crate::storage::vfs().write(pid.as_u64(), file_handle, buffer, file_offset);
@@ -251,10 +242,10 @@ fn sc_write(args: &Arguments) -> i64 {
 fn sc_open(args: &Arguments) -> i64 {
     use ::storage::{fs::Path, vfs::Handle};
 
-    let path_start = VirtAddr::try_new(args.one).unwrap_or_default();
-    let path_len = args.two;
+    let path_start = VirtAddr::try_new(args.one()).unwrap_or_default();
+    let path_len = args.two();
 
-    if !probe(path_start, path_start + path_len) {
+    if !is_addr_owned(path_start, path_start + path_len) {
         return Handle::INVALID.id();
     }
 
@@ -273,7 +264,7 @@ fn sc_open(args: &Arguments) -> i64 {
 #[must_use]
 fn sc_close(args: &Arguments) -> SyscallExitCode {
     let file_handle = {
-        let raw = args.one.cast_signed();
+        let raw = args.one().cast_signed();
         if raw < 0 {
             return SyscallExitCode::Failure;
         }
@@ -293,8 +284,8 @@ fn sc_close(args: &Arguments) -> SyscallExitCode {
 
 #[must_use]
 fn sc_wait_on_event(args: &Arguments) -> u64 {
-    let handle_raw = args.one;
-    let timeout_us_raw = args.two;
+    let handle_raw = args.one();
+    let timeout_us_raw = args.two();
 
     let handle = core::num::NonZeroU64::new(handle_raw)
         .map(|h| beskar_core::process::SleepHandle::from_raw(h.get()));
@@ -316,16 +307,16 @@ fn sc_futex_wait(args: &Arguments) -> u64 {
     use beskar_core::process::sync::FutexWaitResult;
     use core::sync::atomic::AtomicU64;
 
-    let ptr = args.one;
+    let ptr = args.one();
     let size = size_of::<u64>() as u64;
-    let expected = args.two;
-    let timeout_us = args.three;
+    let expected = args.two();
+    let timeout_us = args.three();
 
     let Some(futex_addr) = VirtAddr::try_new(ptr) else {
         return u64::from(FutexWaitResult::InvalidAddress);
     };
     let futex_end = futex_addr + (size - 1);
-    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !probe(futex_addr, futex_end) {
+    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !is_addr_owned(futex_addr, futex_end) {
         return u64::from(FutexWaitResult::InvalidAddress);
     }
 
@@ -345,15 +336,15 @@ fn sc_futex_wait(args: &Arguments) -> u64 {
 fn sc_futex_wake(args: &Arguments) -> u64 {
     use core::sync::atomic::AtomicU64;
 
-    let ptr = args.one;
+    let ptr = args.one();
     let size = size_of::<u64>() as u64;
-    let amount = args.two;
+    let amount = args.two();
 
     let Some(futex_addr) = VirtAddr::try_new(ptr) else {
         return 0;
     };
     let futex_end = futex_addr + (size - 1);
-    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !probe(futex_addr, futex_end) {
+    if !futex_addr.is_aligned(Alignment::of::<u64>()) || !is_addr_owned(futex_addr, futex_end) {
         return 0;
     }
 
@@ -379,11 +370,11 @@ fn sc_futex_wake(args: &Arguments) -> u64 {
     reason = "Arguments are passed as u64 but represent smaller types"
 )]
 fn sc_surface_create(args: &Arguments) -> i64 {
-    let width = (args.one >> 16) as u16;
-    let height = args.one as u16;
-    let x = (args.two >> 16) as u16;
-    let y = args.two as u16;
-    let user_buffer_ptr = args.three as *mut u8;
+    let width = (args.one() >> 16) as u16;
+    let height = args.one() as u16;
+    let x = (args.two() >> 16) as u16;
+    let y = args.two() as u16;
+    let user_buffer_ptr = args.three() as *mut u8;
 
     if width == 0 || height == 0 {
         return -1;
@@ -392,7 +383,7 @@ fn sc_surface_create(args: &Arguments) -> i64 {
     let user_buffer = VirtAddr::from_ptr(user_buffer_ptr);
     let buffer_size = u64::from(width) * u64::from(height) * 4;
     let buffer_end = user_buffer + buffer_size;
-    if !probe(user_buffer, buffer_end) {
+    if !is_addr_owned(user_buffer, buffer_end) {
         return -1;
     }
 
@@ -417,7 +408,7 @@ fn sc_surface_create(args: &Arguments) -> i64 {
     reason = "Arguments are passed as u64 but represent smaller types"
 )]
 fn sc_surface_destroy(args: &Arguments) -> SyscallExitCode {
-    let sid_raw = args.one as u32;
+    let sid_raw = args.one() as u32;
     let sid = beskar_core::video::SurfaceId(sid_raw);
 
     crate::video::with_compositor(|c| c.destroy_surface(sid));
@@ -430,12 +421,12 @@ fn sc_surface_destroy(args: &Arguments) -> SyscallExitCode {
     reason = "Arguments are passed as u64 but represent smaller types"
 )]
 fn sc_surface_dirty(args: &Arguments) -> SyscallExitCode {
-    let sid_raw = args.one as u32;
+    let sid_raw = args.one() as u32;
     let sid = beskar_core::video::SurfaceId(sid_raw);
-    let width = (args.two >> 16) as u16;
-    let height = args.two as u16;
-    let x = (args.three >> 16) as u16;
-    let y = args.three as u16;
+    let width = (args.two() >> 16) as u16;
+    let height = args.two() as u16;
+    let x = (args.three() >> 16) as u16;
+    let y = args.three() as u16;
 
     let rect = beskar_core::video::Rect::new(x, y, width, height);
 
@@ -455,7 +446,7 @@ fn sc_surface_dirty(args: &Arguments) -> SyscallExitCode {
     reason = "Arguments are passed as u64 but represent smaller types"
 )]
 fn sc_surface_present(args: &Arguments) -> SyscallExitCode {
-    let sid_raw = args.one as u32;
+    let sid_raw = args.one() as u32;
 
     // Render only this surface synchronously in the syscall context
     // where we can safely access the userspace buffer
@@ -484,13 +475,13 @@ fn sc_query_config(args: &Arguments) -> SyscallExitCode {
         }
     }
 
-    let query_type = args.one;
-    let output_ptr = args.two as *mut ();
-    let output_size = args.three;
+    let query_type = args.one();
+    let output_ptr = args.two() as *mut ();
+    let output_size = args.three();
 
     let start = VirtAddr::from_ptr(output_ptr);
     let end = start + output_size;
-    if !probe(start, end) {
+    if !is_addr_owned(start, end) {
         return SyscallExitCode::Failure;
     }
 
@@ -502,6 +493,9 @@ fn sc_query_config(args: &Arguments) -> SyscallExitCode {
         beskar_core::syscall::consts::QUERY_KEYBOARD_WAIT_HANDLE => {
             fill(output_ptr, size, crate::drivers::keyboard::wait_handle)
         }
+        beskar_core::syscall::consts::QUERY_HIGH_PRES_TIMER => {
+            fill(output_ptr, size, || crate::time::timer_info().copied())
+        }
 
         _ => SyscallExitCode::Failure,
     }
@@ -510,10 +504,10 @@ fn sc_query_config(args: &Arguments) -> SyscallExitCode {
 fn sc_thread_spawn(args: &Arguments) -> u64 {
     use crate::process::scheduler::{self, thread};
 
-    let entry_point = args.one;
+    let entry_point = args.one();
 
     let entry_point = VirtAddr::try_new(entry_point).unwrap_or_default();
-    if !probe(entry_point, entry_point) {
+    if !is_addr_owned(entry_point, entry_point) {
         return 0;
     }
 
@@ -535,4 +529,23 @@ fn sc_thread_spawn(args: &Arguments) -> u64 {
     scheduler::spawn_thread(thread);
 
     tid
+}
+
+const fn sc_powermgt(_args: &Arguments) -> SyscallExitCode {
+    // use beskar_core::syscall::consts;
+
+    // let action = args.one();
+
+    // FIXME: Find a way to safely expose power management syscalls
+    // without allowing arbitrary shutdowns/reboots from user-space.
+    // match action {
+    //     consts::POWERMGT_SHUTDOWN => {
+    //         unsafe { crate::power::shutdown() };
+    //     }
+    //     consts::POWERMGT_REBOOT => {
+    //         unsafe { crate::power::reboot() };
+    //     }
+    //     _ => SyscallExitCode::Failure,
+    // }
+    SyscallExitCode::Failure
 }

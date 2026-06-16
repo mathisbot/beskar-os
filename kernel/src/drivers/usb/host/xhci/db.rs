@@ -6,19 +6,19 @@ use hyperdrive::ptrs::volatile::WriteOnly;
 #[derive(Clone, Copy)]
 pub struct DoorbellRegisters {
     base: MmioRegister<WriteOnly, u32>,
-    max_ports: u8,
+    max_slots: u8,
 }
 
 impl DoorbellRegisters {
     #[must_use]
-    pub const fn new(base: VirtAddr, max_ports: u8) -> Self {
+    pub const fn new(base: VirtAddr, max_slots: u8) -> Self {
         let base = MmioRegister::new(NonNull::new(base.as_mut_ptr()).unwrap());
-        Self { base, max_ports }
+        Self { base, max_slots }
     }
 
     #[must_use]
     pub fn db_reg(&self, slot: u8) -> DoorbellRegister {
-        assert!(slot < self.max_ports);
+        assert!(slot <= self.max_slots);
         let port_reg_vaddr = unsafe { self.base.add(usize::from(slot)) };
         DoorbellRegister {
             base: port_reg_vaddr,

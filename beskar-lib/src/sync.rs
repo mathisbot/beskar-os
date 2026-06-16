@@ -60,21 +60,19 @@ impl Futex {
         Self::wait_on_address_for(value, expected, deadline - now)
     }
 
-    #[must_use]
     #[inline]
     /// Wake one waiter on this futex address.
-    pub fn wake_by_address_single(value: &AtomicU64) -> usize {
-        Self::wake_by_address_n(value, 1)
+    pub fn wake_by_address_single(value: &AtomicU64) -> bool {
+        let n = Self::wake_by_address_n(value, 1);
+        n >= 1
     }
 
-    #[must_use]
     #[inline]
     /// Wake all waiters on this futex address.
     pub fn wake_by_address_all(value: &AtomicU64) -> usize {
         Self::wake_by_address_n(value, usize::MAX)
     }
 
-    #[must_use]
     #[inline]
     /// Wake up to `count` waiters on this futex address.
     pub fn wake_by_address_n(value: &AtomicU64, count: usize) -> usize {
@@ -225,21 +223,18 @@ impl Condvar {
         }
     }
 
-    #[must_use]
     #[inline]
-    pub fn notify_one(&self) -> usize {
+    pub fn notify_one(&self) -> bool {
         self.sequence.fetch_add(1, Ordering::Release);
         Futex::wake_by_address_single(&self.sequence)
     }
 
-    #[must_use]
     #[inline]
     pub fn notify_all(&self) -> usize {
         self.sequence.fetch_add(1, Ordering::Release);
         Futex::wake_by_address_all(&self.sequence)
     }
 
-    #[must_use]
     #[inline]
     pub fn notify_n(&self, count: usize) -> usize {
         if count == 0 {

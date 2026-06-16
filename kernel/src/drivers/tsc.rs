@@ -14,17 +14,25 @@ static TSC_MHZ: AtomicU64 = AtomicU64::new(0);
 
 #[must_use]
 #[inline]
-fn read_tsc_fenced() -> u64 {
-    if cfg!(target_arch = "x86_64") {
-        unsafe {
-            core::arch::x86_64::_mm_mfence();
-            let tsc = core::arch::x86_64::_rdtsc();
-            core::arch::x86_64::_mm_lfence();
-            tsc
+fn read_tsc_p() -> (u64, u32) {
+    cfg_select! {
+        target_arch = "x86_64" => {
+            let id = 0;
+            // let ts = unsafe { core::arch::x86_64::__rdtscp(&raw mut id) }; // TODO: Use RTSCP when available
+            unsafe { core::arch::x86_64::_mm_lfence() };
+            let ts = unsafe { core::arch::x86_64::_rdtsc() };
+            unsafe { core::arch::x86_64::_mm_lfence() };
+            (ts, id)
         }
-    } else {
-        unimplemented!()
+        _ => unimplemented!()
     }
+}
+
+#[must_use]
+#[inline]
+fn read_tsc() -> u64 {
+    let (ts, _id) = read_tsc_p();
+    ts
 }
 
 #[must_use]
@@ -60,9 +68,9 @@ fn pit_period() -> f64 {
 fn calibrate_with_pit() -> bool {
     assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
 
-    let start = read_tsc_fenced();
+    let start = read_tsc();
     let elapsed = pit_period();
-    let end = read_tsc_fenced();
+    let end = read_tsc();
 
     let diff = u32::try_from(end - start).unwrap();
     // Round to the nearest 100MHz because of TSC limitations
@@ -103,7 +111,7 @@ fn calibrate_with_hpet() -> bool {
     assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
 
     let Some(diff) = crate::drivers::hpet::try_with_hpet(|hpet| {
-        let start = read_tsc_fenced();
+        let start = read_tsc();
 
         let hpet_end = hpet.main_counter_value().get_value()
             + u64::from(crate::drivers::hpet::ticks_per_ms().unwrap().get()) * CALIBRATION_TIME_MS;
@@ -111,7 +119,7 @@ fn calibrate_with_hpet() -> bool {
             core::hint::spin_loop();
         }
 
-        read_tsc_fenced() - start
+        read_tsc() - start
     }) else {
         return false;
     };
@@ -135,7 +143,12 @@ pub fn init() -> DriverResult<()> {
 
     if calibrate_with_rdtsc() || calibrate_with_hpet() || calibrate_with_pit() {
         crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
-        Ok(())
+        if crate::arch::cpuid::check_feature(crate::arch::cpuid::CpuFeature::INVARIANT_TSC) {
+            Ok(())
+        } else {
+            crate::warn!("TSC is not invariant, it is not reliable as a clock source.");
+            Err(DriverError::Invalid)
+        }
     } else {
         Err(DriverError::Unknown)
     }
@@ -144,7 +157,7 @@ pub fn init() -> DriverResult<()> {
 #[must_use]
 #[inline]
 pub fn main_counter_value() -> u64 {
-    read_tsc_fenced()
+    read_tsc()
 }
 
 #[must_use]

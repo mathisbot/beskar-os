@@ -17,7 +17,9 @@ impl MockBlockDevice {
 }
 
 impl BlockDevice for MockBlockDevice {
-    const BLOCK_SIZE: usize = 1;
+    fn block_size(&self) -> usize {
+        1
+    }
 
     fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), storage::BlockDeviceError> {
         if offset + dst.len() > self.data.len() {
@@ -49,16 +51,17 @@ struct MockFS<B: BlockDevice> {
 
 impl<B: BlockDevice> FileSystem for MockFS<B> {
     fn read(&mut self, path: Path, buffer: &mut [u8], offset: usize) -> FileResult<usize> {
+        let block_size = self.device.block_size();
         for file in &self.files {
             if file.name == path.as_str() {
                 let bytes_to_read =
                     core::cmp::min(buffer.len(), file.length.saturating_add(offset));
 
-                let offset_in_blocks = (file.start + offset) / B::BLOCK_SIZE;
-                let offset_in_block = (file.start + offset) % B::BLOCK_SIZE;
+                let offset_in_blocks = (file.start + offset) / block_size;
+                let offset_in_block = (file.start + offset) % block_size;
 
-                let block_count = (offset_in_block + bytes_to_read).div_ceil(B::BLOCK_SIZE);
-                let mut block_buffer = vec![0; block_count * B::BLOCK_SIZE];
+                let block_count = (offset_in_block + bytes_to_read).div_ceil(block_size);
+                let mut block_buffer = vec![0; block_count * block_size];
 
                 // Read the data from the block device.
                 self.device
@@ -76,16 +79,17 @@ impl<B: BlockDevice> FileSystem for MockFS<B> {
     }
 
     fn write(&mut self, path: Path, buffer: &[u8], offset: usize) -> FileResult<usize> {
+        let block_size = self.device.block_size();
         for file in &mut self.files {
             if file.name == path.as_str() {
                 let bytes_to_write =
                     core::cmp::min(buffer.len(), file.length.saturating_sub(offset));
 
-                let offset_in_blocks = (file.start + offset) / B::BLOCK_SIZE;
-                let offset_in_block = (file.start + offset) % B::BLOCK_SIZE;
+                let offset_in_blocks = (file.start + offset) / block_size;
+                let offset_in_block = (file.start + offset) % block_size;
 
-                let block_count = (offset_in_block + bytes_to_write).div_ceil(B::BLOCK_SIZE);
-                let mut block_buffer = vec![0; block_count * B::BLOCK_SIZE];
+                let block_count = (offset_in_block + bytes_to_write).div_ceil(block_size);
+                let mut block_buffer = vec![0; block_count * block_size];
 
                 block_buffer[offset_in_block..offset_in_block + bytes_to_write]
                     .copy_from_slice(&buffer[..bytes_to_write]);

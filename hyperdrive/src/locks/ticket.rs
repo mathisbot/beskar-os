@@ -39,7 +39,7 @@ pub struct TicketLock<T: ?Sized, R: RelaxStrategy = super::Spin> {
     /// The ticket number of the current thread holding the lock.
     now_serving: AtomicU32,
     /// The relax strategy to use when the lock is contended.
-    _relax: PhantomData<R>,
+    _relax: PhantomData<fn() -> R>,
     /// The inner data protected by the lock.
     data: UnsafeCell<T>,
 }

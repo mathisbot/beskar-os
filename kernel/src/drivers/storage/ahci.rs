@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use beskar_core::{
     arch::{VirtAddr, paging::M4KiB},
     drivers::{DriverError, DriverResult},
+    storage::{BlockDevice, BlockDeviceError},
 };
 use beskar_hal::paging::page_table::Flags;
 use hyperdrive::locks::mcs::MUMcsLock;
@@ -151,5 +152,59 @@ impl Ahci {
         }
 
         Ok(())
+    }
+}
+
+struct AhciDisk {
+    port: AhciPort,
+    sector_count: u64,
+}
+
+impl BlockDevice for AhciDisk {
+    fn block_size(&self) -> usize {
+        port::ATA_SECTOR_SIZE
+    }
+
+    fn block_count(&self) -> Option<u64> {
+        Some(self.sector_count)
+    }
+
+    fn read(&mut self, dst: &mut [u8], offset: usize) -> Result<(), BlockDeviceError> {
+        if !dst.len().is_multiple_of(port::ATA_SECTOR_SIZE) {
+            return Err(BlockDeviceError::UnalignedAccess);
+        }
+
+        let sector_count = u64::try_from(dst.len() / port::ATA_SECTOR_SIZE).unwrap();
+        let offset = u64::try_from(offset).map_err(|_| BlockDeviceError::OutOfBounds)?;
+        if offset.saturating_add(sector_count) > self.sector_count {
+            return Err(BlockDeviceError::OutOfBounds);
+        }
+
+        self.port
+            .read_sectors(offset, dst)
+            .map_err(driver_error_to_block)
+    }
+
+    fn write(&mut self, src: &[u8], offset: usize) -> Result<(), BlockDeviceError> {
+        if !src.len().is_multiple_of(port::ATA_SECTOR_SIZE) {
+            return Err(BlockDeviceError::UnalignedAccess);
+        }
+
+        let sector_count = u64::try_from(src.len() / port::ATA_SECTOR_SIZE).unwrap();
+        let offset = u64::try_from(offset).map_err(|_| BlockDeviceError::OutOfBounds)?;
+        if offset.saturating_add(sector_count) > self.sector_count {
+            return Err(BlockDeviceError::OutOfBounds);
+        }
+
+        self.port
+            .write_sectors(offset, src)
+            .map_err(driver_error_to_block)
+    }
+}
+
+const fn driver_error_to_block(error: DriverError) -> BlockDeviceError {
+    match error {
+        DriverError::Absent | DriverError::Invalid => BlockDeviceError::Unsupported,
+        DriverError::Unknown => BlockDeviceError::Io,
     }
 }

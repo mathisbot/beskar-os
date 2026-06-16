@@ -1,450 +1,567 @@
-//! IMDR application state and event-handling logic.
+//! One-screen TUI state and input behavior.
+
 use crate::{
-    config::{AccelBackend, BuildConfig, CpuType, DisplayBackend, Profile, QemuConfig},
-    pipeline::{DevOp, LogMsg},
+    config::{BuildConfig, QemuConfig},
+    pipeline::{Task, TaskEvent, TaskKind},
 };
-use std::{path::PathBuf, sync::mpsc::Receiver, thread::JoinHandle};
+use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+use std::path::PathBuf;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Screen {
-    MainMenu,
-    BuildDossier,
-    DevTools,
-}
-
-pub const MAIN_ITEMS: &[(&str, &str)] = &[
-    (
-        "Research Dossier: Build & Deployment",
-        "Configure and assemble a BeskarOS image. Optionally launch in QEMU.",
-    ),
-    (
-        "Development Tools",
-        "Fast iteration: build, lint, test, dependency audit.",
-    ),
-    ("Exit Terminal", "Terminate this session."),
+const MAX_LOG_LINES: usize = 20_000;
+const BASE_CONTROL_COUNT: usize = 5;
+const QEMU_CONTROLS: [Control; 17] = [
+    Control::Ovmf,
+    Control::Accel,
+    Control::Cpu,
+    Control::Machine,
+    Control::Smp,
+    Control::Memory,
+    Control::Nic,
+    Control::Nvme,
+    Control::Xhci,
+    Control::UsbKeyboard,
+    Control::VirtioVga,
+    Control::Display,
+    Control::NoReboot,
+    Control::NoShutdown,
+    Control::GdbStub,
+    Control::GdbWait,
+    Control::QemuDebugLog,
 ];
 
-pub struct RunningOp {
-    pub rx: Receiver<LogMsg>,
-    // TODO: Somehow join this handle?
-    pub _handle: JoinHandle<()>,
-}
-
-/// All mutable fields for the Build Dossier form.
-pub struct BuildForm {
-    pub output_dir: String,
-    pub profile_idx: usize,
-
-    pub apps: Vec<(String, bool)>,
-
-    pub ovmf: String,
-    pub cores: String,
-    pub ram: String,
-    pub cpu_idx: usize,
-    pub accel_idx: usize,
-    pub nic: bool,
-    pub nvme: bool,
-    pub xhci: bool,
-    pub virtio_vga: bool,
-    pub display_idx: usize,
-
-    pub selected: usize,
-    pub scroll: usize,
-    pub log_scroll: usize,
-}
-
-impl BuildForm {
-    pub fn new(build_cfg: &BuildConfig, qemu_cfg: &QemuConfig) -> Self {
-        let profile_idx = match build_cfg.profile {
-            Profile::Debug => 0,
-            Profile::Release => 1,
-        };
-        let cpu_idx = CpuType::ALL
-            .iter()
-            .position(|c| c == &qemu_cfg.cpu)
-            .unwrap_or(0);
-        let accel_idx = AccelBackend::ALL
-            .iter()
-            .position(|a| a == &qemu_cfg.accel)
-            .unwrap_or(0);
-        let display_idx = qemu_cfg.display.as_ref().map_or(0, |d| {
-            DisplayBackend::ALL
-                .iter()
-                .position(|x| x == d)
-                .map_or(0, |i| i + 1)
-        });
-
-        Self {
-            output_dir: build_cfg.output_dir.clone(),
-            profile_idx,
-            apps: build_cfg.userspace_apps.clone(),
-            ovmf: qemu_cfg.ovmf_path.clone(),
-            cores: qemu_cfg.cores.to_string(),
-            ram: qemu_cfg.ram_mib.to_string(),
-            cpu_idx,
-            accel_idx,
-            nic: qemu_cfg.nic,
-            nvme: qemu_cfg.nvme,
-            xhci: qemu_cfg.xhci,
-            virtio_vga: qemu_cfg.virtio_vga,
-            display_idx,
-            selected: 0,
-            scroll: 0,
-            log_scroll: 0,
-        }
-    }
-
-    /// Total navigable field count (including dynamic app entries).
-    pub const fn field_count(&self) -> usize {
-        14 + self.apps.len()
-    }
-
-    /// Returns which kind of field `idx` represents.
-    pub const fn field_at(&self, idx: usize) -> FormField {
-        let n = self.apps.len();
-        match idx {
-            0 => FormField::OutputDir,
-            1 => FormField::Profile,
-            i if i < 2 + n => FormField::App(i - 2),
-            i if i == 2 + n => FormField::Ovmf,
-            i if i == 3 + n => FormField::Cores,
-            i if i == 4 + n => FormField::Ram,
-            i if i == 5 + n => FormField::Cpu,
-            i if i == 6 + n => FormField::Accel,
-            i if i == 7 + n => FormField::Nic,
-            i if i == 8 + n => FormField::Nvme,
-            i if i == 9 + n => FormField::Xhci,
-            i if i == 10 + n => FormField::VirtioVga,
-            i if i == 11 + n => FormField::Display,
-            i if i == 12 + n => FormField::ActionBuild,
-            _ => FormField::ActionQemu,
-        }
-    }
-
-    /// Extracts a `BuildConfig` from the form state.
-    pub fn to_build_config(&self) -> BuildConfig {
-        BuildConfig {
-            output_dir: self.output_dir.clone(),
-            profile: if self.profile_idx == 0 {
-                Profile::Debug
-            } else {
-                Profile::Release
-            },
-            userspace_apps: self.apps.clone(),
-        }
-    }
-
-    /// Extracts a `QemuConfig` from the form state.
-    pub fn to_qemu_config(&self) -> QemuConfig {
-        let display = match self.display_idx {
-            0 => None,
-            1 => Some(DisplayBackend::Sdl),
-            _ => Some(DisplayBackend::Gtk),
-        };
-        QemuConfig {
-            ovmf_path: self.ovmf.clone(),
-            cores: self.cores.parse().unwrap_or(4),
-            ram_mib: self.ram.parse().unwrap_or(512),
-            cpu: CpuType::ALL[self.cpu_idx % CpuType::ALL.len()].clone(),
-            accel: AccelBackend::ALL[self.accel_idx % AccelBackend::ALL.len()].clone(),
-            nic: self.nic,
-            nvme: self.nvme,
-            xhci: self.xhci,
-            virtio_vga: self.virtio_vga,
-            display,
-        }
-    }
-}
-
-/// Semantic field type derived from field index.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FormField {
-    OutputDir,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Control {
+    Build,
+    BuildAndRun,
+    RunQemu,
     Profile,
-    App(usize),
+    OutputDir,
+    Ramdisk(usize),
     Ovmf,
-    Cores,
-    Ram,
-    Cpu,
     Accel,
+    Cpu,
+    Machine,
+    Smp,
+    Memory,
     Nic,
     Nvme,
     Xhci,
+    UsbKeyboard,
     VirtioVga,
     Display,
-    ActionBuild,
-    ActionQemu,
+    NoReboot,
+    NoShutdown,
+    GdbStub,
+    GdbWait,
+    QemuDebugLog,
 }
 
-impl FormField {
+impl Control {
     #[must_use]
     #[inline]
     pub const fn is_text(&self) -> bool {
-        matches!(self, Self::OutputDir | Self::Ovmf | Self::Cores | Self::Ram)
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn is_checkbox(&self) -> bool {
-        matches!(
-            self,
-            Self::App(_) | Self::Nic | Self::Nvme | Self::Xhci | Self::VirtioVga
-        )
-    }
-
-    #[must_use]
-    #[inline]
-    pub const fn is_action(&self) -> bool {
-        matches!(self, Self::ActionBuild | Self::ActionQemu)
+        matches!(self, Self::OutputDir | Self::Ovmf)
     }
 }
 
-pub struct DevForm {
-    pub package: String,
-    pub op_selected: usize,
-    pub log_scroll: usize,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    None,
+    Build,
+    BuildAndRun,
+    RunQemu,
 }
 
-impl Default for DevForm {
-    fn default() -> Self {
+pub struct RunningTask {
+    pub task: Task,
+    pub then: Option<Action>,
+}
+
+impl RunningTask {
+    #[must_use]
+    #[inline]
+    pub const fn new(task: Task, then: Option<Action>) -> Self {
+        Self { task, then }
+    }
+}
+
+pub struct Logs {
+    lines: Vec<String>,
+    top: usize,
+    view_height: usize,
+    follow: bool,
+    full_screen: bool,
+}
+
+impl Logs {
+    #[must_use]
+    #[inline]
+    pub const fn new() -> Self {
         Self {
-            package: "kernel".to_string(),
-            op_selected: 0,
-            log_scroll: 0,
+            lines: Vec::new(),
+            top: 0,
+            view_height: 1,
+            follow: true,
+            full_screen: false,
         }
     }
+
+    #[must_use]
+    #[inline]
+    pub fn lines(&self) -> &[String] {
+        &self.lines
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn len(&self) -> usize {
+        self.lines.len()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn top(&self) -> usize {
+        self.top
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn follow(&self) -> bool {
+        self.follow
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn full_screen(&self) -> bool {
+        self.full_screen
+    }
+
+    #[inline]
+    pub const fn close_full_screen(&mut self) {
+        self.full_screen = false;
+    }
+
+    #[inline]
+    pub const fn toggle_full_screen(&mut self) {
+        self.full_screen = !self.full_screen;
+    }
+
+    pub fn push(&mut self, line: String) {
+        self.lines.push(line);
+        if self.lines.len() > MAX_LOG_LINES {
+            let excess = self.lines.len() - MAX_LOG_LINES;
+            self.lines.drain(0..excess);
+        }
+        self.clamp();
+    }
+
+    pub fn set_view_height(&mut self, height: usize) {
+        self.view_height = height.max(1);
+        self.clamp();
+    }
+
+    pub fn scroll(&mut self, delta: isize) {
+        let max_scroll = self.max_scroll();
+        let current = if self.follow { max_scroll } else { self.top };
+        self.follow = false;
+        self.top = current.saturating_add_signed(delta).min(max_scroll);
+        if self.top == max_scroll && delta.is_positive() {
+            self.follow = true;
+        }
+    }
+
+    pub const fn scroll_top(&mut self) {
+        self.follow = false;
+        self.top = 0;
+    }
+
+    pub const fn scroll_tail(&mut self) {
+        self.follow = true;
+        self.top = self.max_scroll();
+    }
+
+    pub const fn toggle_follow(&mut self) {
+        self.follow = !self.follow;
+        if self.follow {
+            self.top = self.max_scroll();
+        }
+    }
+
+    fn clamp(&mut self) {
+        self.top = if self.follow {
+            self.max_scroll()
+        } else {
+            self.top.min(self.max_scroll())
+        };
+    }
+
+    #[must_use]
+    #[inline]
+    const fn max_scroll(&self) -> usize {
+        self.lines.len().saturating_sub(self.view_height)
+    }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct App {
-    pub screen: Screen,
-    pub main_sel: usize,
-
-    pub build_form: BuildForm,
-    pub dev_form: DevForm,
-    pub pkg_field_focused: bool,
-
-    pub log_lines: Vec<String>,
-    pub running: Option<RunningOp>,
-    pub last_op_success: Option<bool>,
-
+    pub workspace_root: PathBuf,
+    pub build: BuildConfig,
+    pub qemu: QemuConfig,
+    pub selected: usize,
+    pub editing: bool,
+    pub logs: Logs,
+    pub running: Option<RunningTask>,
+    pub last_result: Option<(TaskKind, bool)>,
     pub should_quit: bool,
 }
 
 impl App {
-    pub fn new(_workspace_root: PathBuf, build_cfg: &BuildConfig, qemu_cfg: &QemuConfig) -> Self {
-        let build_form = BuildForm::new(build_cfg, qemu_cfg);
+    #[must_use]
+    pub const fn new(workspace_root: PathBuf, build: BuildConfig, qemu: QemuConfig) -> Self {
         Self {
-            screen: Screen::MainMenu,
-            main_sel: 0,
-            build_form,
-            dev_form: DevForm::default(),
-            pkg_field_focused: false,
-            log_lines: Vec::new(),
+            workspace_root,
+            build,
+            qemu,
+            selected: 0,
+            editing: false,
+            logs: Logs::new(),
             running: None,
-            last_op_success: None,
+            last_result: None,
             should_quit: false,
         }
     }
 
-    /// Drains any pending log messages from the active operation.
-    pub fn poll_logs(&mut self) {
-        if let Some(op) = &self.running {
-            loop {
-                match op.rx.try_recv() {
-                    Ok(LogMsg::Line(s)) => {
-                        self.log_lines.push(s);
-                    }
-                    Ok(LogMsg::Done(ok)) => {
-                        self.last_op_success = Some(ok);
-                        self.running = None;
-                        break;
-                    }
-                    Err(_) => break,
-                }
+    #[must_use]
+    pub fn selected_control(&self) -> Control {
+        match self.selected {
+            0 => Control::Build,
+            1 => Control::BuildAndRun,
+            2 => Control::RunQemu,
+            3 => Control::Profile,
+            4 => Control::OutputDir,
+            index if index < BASE_CONTROL_COUNT + self.build.ramdisk.len() => {
+                Control::Ramdisk(index - BASE_CONTROL_COUNT)
             }
+            index => QEMU_CONTROLS
+                .get(index - BASE_CONTROL_COUNT - self.build.ramdisk.len())
+                .copied()
+                .unwrap_or(Control::Build),
         }
     }
 
+    #[must_use]
+    #[inline]
+    pub fn is_selected(&self, control: Control) -> bool {
+        self.selected_control() == control
+    }
+
+    #[must_use]
+    #[inline]
     pub const fn is_running(&self) -> bool {
         self.running.is_some()
     }
 
-    pub fn set_running(&mut self, rx: Receiver<LogMsg>, handle: std::thread::JoinHandle<()>) {
-        self.log_lines.clear();
-        self.last_op_success = None;
-        self.running = Some(RunningOp {
-            rx,
-            _handle: handle,
-        });
-        // Reset log scroll to bottom.
-        self.build_form.log_scroll = usize::MAX;
-        self.dev_form.log_scroll = usize::MAX;
-    }
-
-    pub const fn main_menu_up(&mut self) {
-        if self.main_sel > 0 {
-            self.main_sel -= 1;
+    pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Action {
+        if self.editing {
+            return self.handle_edit_key(code);
         }
-    }
 
-    pub const fn main_menu_down(&mut self) {
-        if self.main_sel + 1 < MAIN_ITEMS.len() {
-            self.main_sel += 1;
+        if self.logs.full_screen() {
+            return self.handle_log_key(code, modifiers);
         }
-    }
 
-    pub const fn main_menu_select(&mut self) {
-        match self.main_sel {
-            0 => self.screen = Screen::BuildDossier,
-            1 => self.screen = Screen::DevTools,
-            _ => self.should_quit = true,
-        }
-    }
-
-    pub const fn form_next(&mut self) {
-        let max = self.build_form.field_count().saturating_sub(1);
-        if self.build_form.selected < max {
-            self.build_form.selected += 1;
-        }
-    }
-
-    pub const fn form_prev(&mut self) {
-        if self.build_form.selected > 0 {
-            self.build_form.selected -= 1;
-        }
-    }
-
-    /// Handles Enter/Space on the focused build form field.
-    pub fn form_activate(&mut self) -> FormActivateResult {
-        let field = self.build_form.field_at(self.build_form.selected);
-        match field {
-            FormField::App(i) => {
-                if let Some((_, sel)) = self.build_form.apps.get_mut(i) {
-                    *sel = !*sel;
+        match code {
+            KeyCode::Char('q') | KeyCode::Esc => {
+                if !self.is_running() {
+                    self.should_quit = true;
                 }
-                FormActivateResult::None
+                Action::None
             }
-            FormField::Nic => {
-                self.build_form.nic = !self.build_form.nic;
-                FormActivateResult::None
+            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                if !self.is_running() {
+                    self.should_quit = true;
+                }
+                Action::None
             }
-            FormField::Nvme => {
-                self.build_form.nvme = !self.build_form.nvme;
-                FormActivateResult::None
+            KeyCode::Char('b') if !self.is_running() => Action::Build,
+            KeyCode::Char('r') if !self.is_running() => Action::RunQemu,
+            KeyCode::Char('B') if !self.is_running() => Action::BuildAndRun,
+            KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => {
+                self.select_previous();
+                Action::None
             }
-            FormField::Xhci => {
-                self.build_form.xhci = !self.build_form.xhci;
-                FormActivateResult::None
+            KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
+                self.select_next();
+                Action::None
             }
-            FormField::VirtioVga => {
-                self.build_form.virtio_vga = !self.build_form.virtio_vga;
-                FormActivateResult::None
+            KeyCode::Left | KeyCode::Char('-') => {
+                self.adjust_selected(-1);
+                Action::None
             }
-            FormField::ActionBuild => FormActivateResult::TriggerBuild,
-            FormField::ActionQemu => FormActivateResult::TriggerQemu,
-            _ => FormActivateResult::None,
+            KeyCode::Right | KeyCode::Char('+') => {
+                self.adjust_selected(1);
+                Action::None
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => self.activate_selected(),
+            KeyCode::Char('a') => {
+                self.set_all_ramdisk(true);
+                Action::None
+            }
+            KeyCode::Char('n') => {
+                self.set_all_ramdisk(false);
+                Action::None
+            }
+            KeyCode::PageUp | KeyCode::Char('[' | 'u') => {
+                self.logs.scroll(-10);
+                Action::None
+            }
+            KeyCode::PageDown | KeyCode::Char(']' | 'd') => {
+                self.logs.scroll(10);
+                Action::None
+            }
+            KeyCode::Home | KeyCode::Char('g') => {
+                self.logs.scroll_top();
+                Action::None
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                self.logs.scroll_tail();
+                Action::None
+            }
+            KeyCode::Char('f') => {
+                self.logs.toggle_follow();
+                Action::None
+            }
+            KeyCode::Char('l') => {
+                self.logs.toggle_full_screen();
+                Action::None
+            }
+            _ => Action::None,
         }
     }
 
-    /// Handles Left key on the focused build form field (cycle selector backwards).
-    pub const fn form_cycle_left(&mut self) {
-        let field = self.build_form.field_at(self.build_form.selected);
-        match field {
-            FormField::Profile => {
-                let n = Profile::ALL.len();
-                self.build_form.profile_idx = (self.build_form.profile_idx + n - 1) % n;
+    pub fn poll_task(&mut self) -> Option<Action> {
+        let running = self.running.as_ref()?;
+        let mut finished = None;
+
+        loop {
+            match running.task.rx.try_recv() {
+                Ok(TaskEvent::Line(line)) => self.logs.push(line),
+                Ok(TaskEvent::Finished { kind, success }) => {
+                    finished = Some((kind, success));
+                    break;
+                }
+                Err(_) => break,
             }
-            FormField::Cpu => {
-                let n = CpuType::ALL.len();
-                self.build_form.cpu_idx = (self.build_form.cpu_idx + n - 1) % n;
+        }
+
+        let (kind, success) = finished?;
+        let then = self.running.as_ref().and_then(|running| running.then);
+
+        if let Some(mut running) = self.running.take() {
+            running.task.join();
+        }
+
+        self.last_result = Some((kind, success));
+        self.logs.push(format!(
+            "{} {}",
+            kind.label(),
+            if success { "complete" } else { "failed" }
+        ));
+
+        if success {
+            return then;
+        }
+
+        None
+    }
+
+    pub fn set_running(&mut self, task: Task, then: Option<Action>) {
+        self.running = Some(RunningTask::new(task, then));
+        self.last_result = None;
+        self.logs.scroll_tail();
+    }
+
+    fn handle_log_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Action {
+        match code {
+            KeyCode::Char('q' | 'l') | KeyCode::Esc => {
+                self.logs.close_full_screen();
             }
-            FormField::Accel => {
-                let n = AccelBackend::ALL.len();
-                self.build_form.accel_idx = (self.build_form.accel_idx + n - 1) % n;
+            KeyCode::Char('c')
+                if modifiers.contains(KeyModifiers::CONTROL) && !self.is_running() =>
+            {
+                self.should_quit = true;
             }
-            FormField::Display => {
-                let n = DisplayBackend::ALL.len() + 1; // +1 for None
-                self.build_form.display_idx = (self.build_form.display_idx + n - 1) % n;
+            KeyCode::PageUp | KeyCode::Char('[' | 'u') => self.logs.scroll(-10),
+            KeyCode::PageDown | KeyCode::Char(']' | 'd') => self.logs.scroll(10),
+            KeyCode::Home | KeyCode::Char('g') => self.logs.scroll_top(),
+            KeyCode::End | KeyCode::Char('G') => self.logs.scroll_tail(),
+            KeyCode::Char('f') => self.logs.toggle_follow(),
+            _ => {}
+        }
+
+        Action::None
+    }
+
+    fn handle_edit_key(&mut self, code: KeyCode) -> Action {
+        match code {
+            KeyCode::Enter | KeyCode::Esc => {
+                self.editing = false;
+            }
+            KeyCode::Backspace => {
+                self.text_field_mut().pop();
+            }
+            KeyCode::Char(char) if !char.is_control() => {
+                self.text_field_mut().push(char);
             }
             _ => {}
         }
+        Action::None
     }
 
-    /// Handles Right key on the focused build form field (cycle selector forwards).
-    pub const fn form_cycle_right(&mut self) {
-        let field = self.build_form.field_at(self.build_form.selected);
-        match field {
-            FormField::Profile => {
-                self.build_form.profile_idx =
-                    (self.build_form.profile_idx + 1) % Profile::ALL.len();
+    fn activate_selected(&mut self) -> Action {
+        if self.is_running() {
+            return Action::None;
+        }
+
+        match self.selected_control() {
+            Control::Build => Action::Build,
+            Control::BuildAndRun => Action::BuildAndRun,
+            Control::RunQemu => Action::RunQemu,
+            control if control.is_text() => {
+                self.editing = true;
+                Action::None
             }
-            FormField::Cpu => {
-                self.build_form.cpu_idx = (self.build_form.cpu_idx + 1) % CpuType::ALL.len();
+            _ => {
+                self.adjust_selected(1);
+                Action::None
             }
-            FormField::Accel => {
-                self.build_form.accel_idx =
-                    (self.build_form.accel_idx + 1) % AccelBackend::ALL.len();
-            }
-            FormField::Display => {
-                self.build_form.display_idx =
-                    (self.build_form.display_idx + 1) % (DisplayBackend::ALL.len() + 1);
-            }
-            _ => {}
         }
     }
 
-    /// Handles character input on a focused text field.
-    pub fn form_type_char(&mut self, c: char) {
-        let field = self.build_form.field_at(self.build_form.selected);
-        let text = match field {
-            FormField::OutputDir => &mut self.build_form.output_dir,
-            FormField::Ovmf => &mut self.build_form.ovmf,
-            FormField::Cores => &mut self.build_form.cores,
-            FormField::Ram => &mut self.build_form.ram,
-            _ => return,
-        };
-        // Basic ASCII filter for numeric-only fields.
-        if matches!(field, FormField::Cores | FormField::Ram) && !c.is_ascii_digit() {
-            return;
+    #[inline]
+    const fn select_previous(&mut self) {
+        self.editing = false;
+        self.selected = self.selected.saturating_sub(1);
+    }
+
+    #[inline]
+    fn select_next(&mut self) {
+        self.editing = false;
+        let max = self.control_count().saturating_sub(1);
+        self.selected = (self.selected + 1).min(max);
+    }
+
+    fn adjust_selected(&mut self, direction: i32) {
+        match self.selected_control() {
+            Control::Profile => {
+                self.build.profile = if direction.is_negative() {
+                    self.build.profile.previous()
+                } else {
+                    self.build.profile.next()
+                };
+            }
+            Control::Ramdisk(index) => {
+                if let Some(entry) = self.build.ramdisk.get_mut(index) {
+                    entry.enabled = !entry.enabled;
+                }
+            }
+            Control::Accel => {
+                self.qemu.accel = if direction.is_negative() {
+                    self.qemu.accel.previous()
+                } else {
+                    self.qemu.accel.next()
+                };
+            }
+            Control::Cpu => {
+                self.qemu.cpu = if direction.is_negative() {
+                    self.qemu.cpu.previous()
+                } else {
+                    self.qemu.cpu.next()
+                };
+            }
+            Control::Machine => {
+                self.qemu.machine = if direction.is_negative() {
+                    self.qemu.machine.previous()
+                } else {
+                    self.qemu.machine.next()
+                };
+            }
+            Control::Smp => {
+                self.qemu.smp = step_u16(self.qemu.smp, direction, 1, 256);
+            }
+            Control::Memory => {
+                self.qemu.memory_mib = step_u32(self.qemu.memory_mib, direction * 64, 64, 262_144);
+            }
+            Control::Nic => self.qemu.nic = !self.qemu.nic,
+            Control::Nvme => self.qemu.nvme = !self.qemu.nvme,
+            Control::Xhci => self.qemu.xhci = !self.qemu.xhci,
+            Control::UsbKeyboard => self.qemu.usb_keyboard = !self.qemu.usb_keyboard,
+            Control::VirtioVga => self.qemu.virtio_vga = !self.qemu.virtio_vga,
+            Control::Display => {
+                self.qemu.display = if direction.is_negative() {
+                    self.qemu.display.previous()
+                } else {
+                    self.qemu.display.next()
+                };
+            }
+            Control::NoReboot => self.qemu.no_reboot = !self.qemu.no_reboot,
+            Control::NoShutdown => self.qemu.no_shutdown = !self.qemu.no_shutdown,
+            Control::GdbStub => {
+                self.qemu.gdb_stub = !self.qemu.gdb_stub;
+                if !self.qemu.gdb_stub {
+                    self.qemu.gdb_wait = false;
+                }
+            }
+            Control::GdbWait => {
+                self.qemu.gdb_wait = !self.qemu.gdb_wait;
+                if self.qemu.gdb_wait {
+                    self.qemu.gdb_stub = true;
+                }
+            }
+            Control::QemuDebugLog => self.qemu.qemu_debug_log = !self.qemu.qemu_debug_log,
+            Control::Build
+            | Control::BuildAndRun
+            | Control::RunQemu
+            | Control::OutputDir
+            | Control::Ovmf => {}
         }
-        text.push(c);
     }
 
-    pub fn form_backspace(&mut self) {
-        let field = self.build_form.field_at(self.build_form.selected);
-        let text = match field {
-            FormField::OutputDir => &mut self.build_form.output_dir,
-            FormField::Ovmf => &mut self.build_form.ovmf,
-            FormField::Cores => &mut self.build_form.cores,
-            FormField::Ram => &mut self.build_form.ram,
-            _ => return,
-        };
-        text.pop();
-    }
-
-    pub const fn dev_op_up(&mut self) {
-        if self.dev_form.op_selected > 0 {
-            self.dev_form.op_selected -= 1;
+    #[must_use]
+    #[inline]
+    fn text_field_mut(&mut self) -> &mut String {
+        match self.selected_control() {
+            Control::Ovmf => &mut self.qemu.ovmf_path,
+            _ => &mut self.build.output_dir,
         }
     }
 
-    pub const fn dev_op_down(&mut self) {
-        if self.dev_form.op_selected + 1 < DevOp::ALL.len() {
-            self.dev_form.op_selected += 1;
+    #[inline]
+    fn set_all_ramdisk(&mut self, enabled: bool) {
+        for entry in &mut self.build.ramdisk {
+            entry.enabled = enabled;
         }
-    }
-
-    pub fn dev_type_char(&mut self, c: char) {
-        self.dev_form.package.push(c);
-    }
-
-    pub fn dev_backspace(&mut self) {
-        self.dev_form.package.pop();
     }
 }
 
-pub enum FormActivateResult {
-    None,
-    TriggerBuild,
-    TriggerQemu,
+impl App {
+    #[must_use]
+    #[inline]
+    const fn control_count(&self) -> usize {
+        BASE_CONTROL_COUNT + self.build.ramdisk.len() + QEMU_CONTROLS.len()
+    }
+}
+
+#[must_use]
+#[inline]
+fn step_u16(value: u16, direction: i32, min: u16, max: u16) -> u16 {
+    let next = i32::from(value) + direction;
+    u16::try_from(next.clamp(i32::from(min), i32::from(max))).unwrap_or(min)
+}
+
+#[must_use]
+#[inline]
+fn step_u32(value: u32, delta: i32, min: u32, max: u32) -> u32 {
+    let next = i64::from(value) + i64::from(delta);
+    u32::try_from(next.clamp(i64::from(min), i64::from(max))).unwrap_or(min)
 }

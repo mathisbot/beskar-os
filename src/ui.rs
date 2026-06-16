@@ -1,528 +1,534 @@
-//! IMDR TUI rendering.
 use crate::{
-    app::{App, MAIN_ITEMS, Screen},
-    config::{AccelBackend, CpuType, DisplayBackend, Profile},
-    pipeline::DevOp,
+    app::{App, Control},
+    config::Profile,
+    qemu,
 };
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-fn s_normal() -> Style {
-    Style::default().fg(Color::Gray)
-}
-fn s_dim() -> Style {
-    Style::default().fg(Color::DarkGray)
-}
-fn s_selected() -> Style {
-    Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD)
-}
-fn s_section() -> Style {
-    Style::default()
-        .fg(Color::Yellow)
-        .add_modifier(Modifier::BOLD)
-}
-fn s_border() -> Style {
-    Style::default().fg(Color::DarkGray)
-}
-fn s_border_active() -> Style {
-    Style::default().fg(Color::Yellow)
-}
-fn s_ok() -> Style {
-    Style::default().fg(Color::Green)
-}
-fn s_err() -> Style {
-    Style::default().fg(Color::Red)
-}
-fn s_warn() -> Style {
-    Style::default().fg(Color::Yellow)
-}
-fn s_button_action(selected: bool) -> Style {
-    if selected {
-        Style::default()
-            .fg(Color::Black)
-            .bg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    }
-}
-
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame<'_>, app: &mut App) {
     let area = frame.area();
-    let [header_area, content_area, hint_area] = Layout::vertical([
-        Constraint::Length(4),
+    frame.render_widget(Block::default().style(style_canvas()), area);
+
+    let [header, body, footer] = Layout::vertical([
+        Constraint::Length(2),
         Constraint::Min(0),
-        Constraint::Length(1),
+        Constraint::Length(2),
     ])
     .areas(area);
 
-    render_header(frame, header_area);
+    if app.logs.full_screen() {
+        render_log_header(frame, header);
+        render_plain_log_view(frame, app, body);
+    } else {
+        render_header(frame, header);
+        render_body(frame, app, body);
+    }
+    render_footer(frame, app, footer);
+}
 
-    match app.screen {
-        Screen::MainMenu => {
-            render_main_menu(frame, app, content_area);
-            render_hint(
-                frame,
-                "  ↑ ↓  Navigate    Enter  Select    q  Quit",
-                hint_area,
-            );
-        }
-        Screen::BuildDossier => {
-            render_build_dossier(frame, app, content_area);
-            let hint = if app.is_running() {
-                "  Operation in progress…    q/Esc  to return after completion"
-            } else {
-                "  ↑ ↓ / Tab  Navigate    ← →  Cycle    Space / Enter  Toggle / Activate    Esc  Back"
-            };
-            render_hint(frame, hint, hint_area);
-        }
-        Screen::DevTools => {
-            render_dev_tools(frame, app, content_area);
-            let hint = if app.is_running() {
-                "  Operation in progress…"
-            } else if app.pkg_field_focused {
-                "  Type package name    Enter  Confirm    Esc  Cancel"
-            } else {
-                "  ↑ ↓  Navigate    Enter  Run    p  Edit Package    Esc  Back"
-            };
-            render_hint(frame, hint, hint_area);
+fn render_header(frame: &mut Frame<'_>, area: Rect) {
+    let header = Text::from(vec![
+        Line::from(vec![
+            Span::styled(" BESKAR-OS", style_title()),
+            Span::styled(" // foundry", style_accent()),
+        ]),
+        Line::from(Span::styled(" beskar systems standing by", style_dim())),
+    ]);
+    frame.render_widget(Paragraph::new(header), area);
+}
+
+fn render_body(frame: &mut Frame<'_>, app: &mut App, area: Rect) {
+    let [controls, logs] =
+        Layout::horizontal([Constraint::Percentage(42), Constraint::Percentage(58)]).areas(area);
+    let [build, qemu] =
+        Layout::vertical([Constraint::Percentage(38), Constraint::Percentage(62)]).areas(controls);
+
+    render_build_panel(frame, app, build);
+    render_qemu_panel(frame, app, qemu);
+    render_log_panel(frame, app, logs);
+}
+
+fn render_log_header(frame: &mut Frame<'_>, area: Rect) {
+    let header = Text::from(vec![
+        Line::from(vec![
+            Span::styled(" BESKAR-OS", style_title()),
+            Span::styled(" // log archive", style_accent()),
+        ]),
+        Line::from(Span::styled(" full log view", style_dim())),
+    ]);
+    frame.render_widget(Paragraph::new(header), area);
+}
+
+fn render_build_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    let mut lines = vec![
+        section("ACTIONS"),
+        action_line(app, Control::Build, "build image", "b"),
+        action_line(app, Control::BuildAndRun, "build + run", "B"),
+        action_line(app, Control::RunQemu, "run qemu", "r"),
+        blank(),
+        section("BUILD"),
+        enum_line(
+            app,
+            Control::Profile,
+            "profile",
+            match app.build.profile {
+                Profile::Debug => "debug",
+                Profile::Release => "release",
+            },
+        ),
+        text_line(
+            app,
+            Control::OutputDir,
+            "destination",
+            &app.build.output_dir,
+        ),
+        blank(),
+        section("RAMDISK"),
+    ];
+
+    if app.build.ramdisk.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  no userspace binaries discovered",
+            style_dim(),
+        )));
+    } else {
+        for (index, entry) in app.build.ramdisk.iter().enumerate() {
+            lines.push(toggle_line(
+                app,
+                Control::Ramdisk(index),
+                &entry.name,
+                entry.enabled,
+            ));
         }
     }
-}
 
-const BANNER: &str = concat!(
-    " ██╗██████╗ ███╗  ███╗█████╗\n",
-    " ██║██╔══██╗████╗████║██▄▄▀▀\n",
-    " ██║██████╔╝██╔███ ██║██║ ██╗\n",
-    " ╚═╝╚═════╝ ╚═╝    ╚═╝╚═╝ ╚═╝ ",
-);
-
-fn render_header(frame: &mut Frame, area: Rect) {
-    // Split horizontally: small ASCII branding left, classification info right.
-    let [left, right] =
-        Layout::horizontal([Constraint::Length(33), Constraint::Min(0)]).areas(area);
-
-    let banner = Paragraph::new(BANNER).style(s_section());
-    frame.render_widget(banner, left);
-
-    let info = Text::from(vec![
-        Line::from(vec![Span::styled(
-            "  Imperial Department of Military Research",
-            s_section(),
-        )]),
-        Line::from(vec![Span::styled(
-            "  ─────────────────────────────────────────",
-            s_dim(),
-        )]),
-        Line::from(vec![
-            Span::styled("  Classification  ", s_dim()),
-            Span::styled("RESTRICTED", s_err().add_modifier(Modifier::BOLD)),
-            Span::styled("  ·  BeskarOS Research Terminal", s_dim()),
-        ]),
-        Line::from(vec![Span::styled(
-            "  Access granted. Select research operation.",
-            s_dim(),
-        )]),
-    ]);
-    frame.render_widget(Paragraph::new(info), right);
-}
-
-fn render_hint(frame: &mut Frame, text: &str, area: Rect) {
-    let p = Paragraph::new(text).style(s_dim());
-    frame.render_widget(p, area);
-}
-
-fn render_main_menu(frame: &mut Frame, app: &App, area: Rect) {
-    let [list_area, desc_area] =
-        Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).areas(area);
-
-    // Build list items.
-    let items: Vec<ListItem> = MAIN_ITEMS
-        .iter()
-        .enumerate()
-        .map(|(i, (label, _))| {
-            let prefix = if i == app.main_sel { "  ▸ " } else { "    " };
-            let style = if i == app.main_sel {
-                s_selected()
-            } else {
-                s_normal()
-            };
-            ListItem::new(Line::from(vec![Span::styled(
-                format!("{prefix}{label}"),
-                style,
-            )]))
-        })
-        .collect();
-
-    let mut state = ListState::default();
-    state.select(Some(app.main_sel));
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(s_border())
-        .title(Span::styled(" Operations ", s_section()));
-
-    frame.render_stateful_widget(List::new(items).block(block), list_area, &mut state);
-
-    // Description of selected item.
-    let desc = MAIN_ITEMS.get(app.main_sel).map_or("", |(_, d)| *d);
-    let desc_block = Block::default()
-        .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
-        .border_style(s_border());
-    let desc_para = Paragraph::new(format!("  {desc}"))
-        .block(desc_block)
-        .style(s_dim())
-        .wrap(Wrap { trim: false });
-    frame.render_widget(desc_para, desc_area);
-}
-
-fn render_build_dossier(frame: &mut Frame, app: &App, area: Rect) {
-    let [form_area, log_area] =
-        Layout::horizontal([Constraint::Percentage(52), Constraint::Percentage(48)]).areas(area);
-
-    render_build_form(frame, app, form_area);
-    render_log_panel(
-        frame,
-        app,
-        log_area,
-        " Operation Log ",
-        app.build_form.log_scroll,
+    let block = deck_block(" image ", build_panel_active(app));
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .style(style_panel())
+            .block(block),
+        area,
     );
 }
 
-fn render_build_form(frame: &mut Frame, app: &App, area: Rect) {
-    let form = &app.build_form;
-    let selected = form.selected;
-    let n = form.apps.len();
-
-    // Helper closures.
-    let field_style = |idx: usize| -> Style {
-        if idx == selected {
-            s_selected()
-        } else {
-            s_normal()
-        }
-    };
-
-    let text_field = |label: &str, value: &str, idx: usize| -> Line<'static> {
-        let cursor = if idx == selected { "█" } else { " " };
-        let lbl = format!("  {label:<14}");
-        let val = format!(" {value}{cursor}");
-        Line::from(vec![
-            Span::styled(lbl, s_dim()),
-            Span::styled(format!("[{val:<22}]"), field_style(idx)),
-        ])
-    };
-
-    let selector_field =
-        |label: &str, options: &[&str], current: usize, idx: usize| -> Line<'static> {
-            let lbl = format!("  {label:<14}");
-            let parts: Vec<Span> = std::iter::once(Span::styled(lbl, s_dim()))
-                .chain(options.iter().enumerate().map(|(i, opt)| {
-                    let s = if i == current {
-                        if idx == selected {
-                            Style::default()
-                                .fg(Color::Black)
-                                .bg(Color::Cyan)
-                                .add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default()
-                                .fg(Color::Black)
-                                .bg(Color::Gray)
-                                .add_modifier(Modifier::BOLD)
-                        }
-                    } else {
-                        s_dim()
-                    };
-                    Span::styled(format!(" {opt} "), s)
-                }))
-                .collect();
-            Line::from(parts)
-        };
-
-    let checkbox = |label: &str, checked: bool, idx: usize| -> Line<'static> {
-        let mark = if checked {
-            Span::styled("[✓]", s_ok())
-        } else {
-            Span::styled("[ ]", s_dim())
-        };
-        let lbl = if idx == selected {
-            Span::styled(format!("  {label}"), s_selected())
-        } else {
-            Span::styled(format!("  {label}"), s_normal())
-        };
-        Line::from(vec![Span::raw("  "), mark, Span::raw(" "), lbl])
-    };
-
-    let section = |title: &str| -> Line<'static> {
-        Line::from(vec![Span::styled(format!("  ── {title} "), s_section())])
-    };
-
-    let spacer = || -> Line<'static> { Line::raw("") };
-
-    // Build lines.
-    let mut lines: Vec<Line> = vec![
-        spacer(),
-        section("Deployment"),
-        text_field("Output Dir", &form.output_dir, 0),
-        selector_field(
-            "Profile",
-            &Profile::ALL.iter().map(Profile::label).collect::<Vec<_>>(),
-            form.profile_idx,
-            1,
+fn render_qemu_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    let lines = vec![
+        section("FIRMWARE"),
+        text_line(app, Control::Ovmf, "ovmf", &app.qemu.ovmf_path),
+        blank(),
+        section("CPU"),
+        enum_line(app, Control::Accel, "accel", app.qemu.accel.as_arg()),
+        enum_line(app, Control::Cpu, "cpu", app.qemu.cpu.as_arg()),
+        enum_line(app, Control::Machine, "machine", app.qemu.machine.as_arg()),
+        number_line(app, Control::Smp, "smp", &app.qemu.smp.to_string()),
+        number_line(
+            app,
+            Control::Memory,
+            "memory",
+            &format!("{} MiB", app.qemu.memory_mib),
         ),
-        spacer(),
-        section("Ramdisk Payload"),
+        blank(),
+        section("DEVICES"),
+        toggle_line(app, Control::Nic, "e1000e nic", app.qemu.nic),
+        toggle_line(app, Control::Nvme, "nvme", app.qemu.nvme),
+        toggle_line(app, Control::Xhci, "xhci", app.qemu.xhci),
+        toggle_line(
+            app,
+            Control::UsbKeyboard,
+            "usb keyboard",
+            app.qemu.usb_keyboard,
+        ),
+        toggle_line(app, Control::VirtioVga, "virtio-vga", app.qemu.virtio_vga),
+        enum_line(app, Control::Display, "display", app.qemu.display.label()),
+        blank(),
+        section("DEBUG"),
+        toggle_line(app, Control::NoReboot, "no reboot", app.qemu.no_reboot),
+        toggle_line(
+            app,
+            Control::NoShutdown,
+            "no shutdown",
+            app.qemu.no_shutdown,
+        ),
+        toggle_line(app, Control::GdbStub, "gdb :1234", app.qemu.gdb_stub),
+        toggle_line(app, Control::GdbWait, "wait for gdb", app.qemu.gdb_wait),
+        toggle_line(
+            app,
+            Control::QemuDebugLog,
+            "qemu debug",
+            app.qemu.qemu_debug_log,
+        ),
+        blank(),
+        section("PREVIEW"),
+        Line::from(Span::styled(
+            qemu::command_preview(&app.qemu, &app.build.output_dir),
+            style_dim(),
+        )),
     ];
 
-    for (i, (app_name, sel)) in form.apps.iter().enumerate() {
-        let idx = 2 + i;
-        lines.push(checkbox(app_name, *sel, idx));
-    }
+    let block = deck_block(" qemu ", qemu_panel_active(app));
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .style(style_panel())
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
 
-    lines.push(spacer());
-    lines.push(section("QEMU Configuration"));
-    lines.push(text_field("OVMF", &form.ovmf, 2 + n));
-    lines.push(text_field("Cores", &form.cores, 3 + n));
-    lines.push(text_field("RAM (MiB)", &form.ram, 4 + n));
-    lines.push(selector_field(
-        "CPU",
-        &CpuType::ALL.iter().map(CpuType::as_str).collect::<Vec<_>>(),
-        form.cpu_idx,
-        5 + n,
-    ));
-    lines.push(selector_field(
-        "Accel",
-        &AccelBackend::ALL
-            .iter()
-            .map(AccelBackend::as_str)
-            .collect::<Vec<_>>(),
-        form.accel_idx,
-        6 + n,
-    ));
+fn render_log_panel(frame: &mut Frame<'_>, app: &mut App, area: Rect) {
+    let height = area.height.saturating_sub(2) as usize;
+    app.logs.set_view_height(height);
+    let scroll = app.logs.top();
 
-    lines.push(checkbox("NIC (e1000e)", form.nic, 7 + n));
-    lines.push(checkbox("NVMe", form.nvme, 8 + n));
-    lines.push(checkbox("XHCI controller", form.xhci, 9 + n));
-    lines.push(checkbox("virtio-vga", form.virtio_vga, 10 + n));
-
-    // Display is only meaningful with virtio-vga.
-    let display_opts = {
-        let mut opts = vec!["default"];
-        opts.extend(DisplayBackend::ALL.iter().map(DisplayBackend::as_str));
-        opts
-    };
-    let disp_style = if form.virtio_vga {
-        field_style(11 + n)
+    let title = if app.logs.follow() {
+        format!(" logs  {} lines  tail ", app.logs.len())
     } else {
-        s_dim()
-    };
-    let disp_line = {
-        let lbl = "  Display      ";
-        let parts: Vec<Span> = std::iter::once(Span::styled(lbl, s_dim()))
-            .chain(display_opts.iter().enumerate().map(|(i, opt)| {
-                let s = if i == form.display_idx {
-                    if 11 + n == selected {
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Gray)
-                            .add_modifier(Modifier::BOLD)
-                    }
-                } else {
-                    disp_style
-                };
-                Span::styled(format!(" {opt} "), s)
-            }))
-            .collect();
-        Line::from(parts)
-    };
-    lines.push(disp_line);
-
-    lines.push(spacer());
-
-    // Action buttons.
-    let build_sel = 12 + n == selected;
-    let qemu_sel = 13 + n == selected;
-    let disabled = app.is_running();
-
-    let build_label = if disabled { " BUILDING… " } else { " BUILD " };
-    let qemu_label = if disabled { " QEMU… " } else { " RUN QEMU " };
-
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled(build_label, s_button_action(!disabled && build_sel)),
-        Span::raw("   "),
-        Span::styled(qemu_label, s_button_action(!disabled && qemu_sel)),
-    ]));
-
-    // Status indicator from last run.
-    if !app.is_running()
-        && let Some(ok) = app.last_op_success
-    {
-        let (msg, style) = if ok {
-            ("  ✓ Operation completed successfully.", s_ok())
-        } else {
-            ("  ✗ Operation failed. Check the log.", s_err())
-        };
-        lines.push(spacer());
-        lines.push(Line::from(Span::styled(msg, style)));
-    }
-
-    // Scroll.
-    let inner_height = area.height.saturating_sub(2) as usize;
-    let scroll = {
-        let max_scroll = lines.len().saturating_sub(inner_height);
-        // Auto-scroll to bring selected field into view.
-        let approx_selected_y = selected + 8; // rough offset accounting for section headers
-        let scroll = if approx_selected_y > form.scroll + inner_height {
-            approx_selected_y.saturating_sub(inner_height)
-        } else {
-            form.scroll
-        };
-        scroll.min(max_scroll)
+        format!(" logs  {} lines  scroll:{} ", app.logs.len(), scroll)
     };
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(s_border_active())
-        .title(Span::styled(" Research Configuration ", s_section()));
+        .border_style(style_border())
+        .title(Span::styled(title, style_accent()));
 
-    let para = Paragraph::new(Text::from(lines))
-        .block(block)
-        .scroll((scroll as u16, 0));
-    frame.render_widget(para, area);
+    frame.render_widget(
+        Paragraph::new(log_text(app))
+            .style(style_panel())
+            .block(block)
+            .scroll((u16::try_from(scroll).unwrap_or(u16::MAX), 0)),
+        area,
+    );
 }
 
-fn render_log_panel(frame: &mut Frame, app: &App, area: Rect, title: &str, log_scroll: usize) {
-    let lines: Vec<Line> = app
-        .log_lines
-        .iter()
-        .map(|l| {
-            let style = if l.starts_with("[error]") || l.starts_with("[FAILED]") {
-                s_err()
-            } else if l.starts_with("  ✓") || l.contains("OK") {
-                s_ok()
-            } else if l.starts_with("»") {
-                Style::default().fg(Color::Cyan)
-            } else if l.starts_with("WARN") || l.starts_with("⚠") {
-                s_warn()
-            } else {
-                s_dim()
-            };
-            Line::from(Span::styled(l.clone(), style))
-        })
-        .collect();
+fn render_plain_log_view(frame: &mut Frame<'_>, app: &mut App, area: Rect) {
+    let height = area.height as usize;
+    app.logs.set_view_height(height);
+    let scroll = app.logs.top();
 
-    let total = lines.len();
-    let inner_h = area.height.saturating_sub(2) as usize;
+    frame.render_widget(
+        Paragraph::new(log_text(app))
+            .style(style_panel())
+            .scroll((u16::try_from(scroll).unwrap_or(u16::MAX), 0)),
+        area,
+    );
+}
 
-    let scroll = if log_scroll == usize::MAX || log_scroll >= total {
-        total.saturating_sub(inner_h)
-    } else {
-        log_scroll.min(total.saturating_sub(inner_h))
-    };
-
-    let status_suffix = if app.is_running() {
-        " running "
-    } else {
-        match app.last_op_success {
-            Some(true) => " done ✓ ",
-            Some(false) => " failed ✗ ",
-            None => " ready ",
+fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    let edit_hint = if app.editing {
+        "EDIT: type text, Enter/Esc commit"
+    } else if app.is_running() {
+        if app.logs.full_screen() {
+            "LOGS: [ ] or u d scroll | g top | G tail | f follow | l/Esc close"
+        } else {
+            "RUNNING: [ ] or u d scroll logs | g top | G tail | f follow | l full logs"
         }
-    };
-
-    let title_line = format!("{title}{status_suffix}");
-    let title_style = match app.last_op_success {
-        Some(true) if !app.is_running() => s_ok(),
-        Some(false) if !app.is_running() => s_err(),
-        _ => s_dim(),
-    };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(s_border())
-        .title(Span::styled(title_line, title_style));
-
-    let para = Paragraph::new(Text::from(lines))
-        .block(block)
-        .scroll((scroll as u16, 0));
-    frame.render_widget(para, area);
-}
-
-fn render_dev_tools(frame: &mut Frame, app: &App, area: Rect) {
-    let [left, right] =
-        Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(area);
-
-    render_dev_form(frame, app, left);
-    render_log_panel(frame, app, right, " Output ", app.dev_form.log_scroll);
-}
-
-fn render_dev_form(frame: &mut Frame, app: &App, area: Rect) {
-    let form = &app.dev_form;
-    let pkg_cursor = if app.pkg_field_focused { "█" } else { " " };
-    let pkg_style = if app.pkg_field_focused {
-        s_selected()
+    } else if app.logs.full_screen() {
+        "LOGS: [ ] or u d scroll | g top | G tail | f follow | l/Esc close | q close"
     } else {
-        s_normal()
+        "NAV: Up/Down select | Left/Right change | Enter/Space activate | [ ]/u d logs | l full logs | q quit"
     };
 
-    let mut lines: Vec<Line> = vec![
-        Line::raw(""),
-        Line::from(vec![Span::styled("  ── Package ", s_section())]),
-        Line::from(vec![
-            Span::styled("  Target       ", s_dim()),
-            Span::styled(
-                format!("[{:<21}]", format!("{}{}", form.package, pkg_cursor)),
-                pkg_style,
-            ),
-        ]),
-        Line::raw(""),
-        Line::from(vec![Span::styled("  ── Operations ", s_section())]),
-    ];
+    let footer = Text::from(vec![
+        Line::from(Span::styled(edit_hint, style_dim())),
+        selected_hint(app),
+    ]);
+    frame.render_widget(Paragraph::new(footer).style(style_canvas()), area);
+}
 
-    for (i, op) in DevOp::ALL.iter().enumerate() {
-        let sel = i == form.op_selected && !app.pkg_field_focused;
-        let prefix = if sel { "  ▸ " } else { "    " };
-        let style = if sel { s_selected() } else { s_normal() };
-        lines.push(Line::from(Span::styled(
-            format!("{prefix}{}", op.label()),
-            style,
-        )));
-    }
+fn log_text(app: &App) -> Text<'_> {
+    app.logs
+        .lines()
+        .iter()
+        .map(|line| Line::from(Span::styled(line.as_str(), log_style(line))))
+        .collect::<Vec<_>>()
+        .into()
+}
 
-    if app.is_running() {
-        lines.push(Line::raw(""));
-        lines.push(Line::from(Span::styled(
-            "  Running…",
-            Style::default().fg(Color::Cyan),
-        )));
-    } else if let Some(ok) = app.last_op_success {
-        lines.push(Line::raw(""));
-        let (msg, style) = if ok {
-            ("  ✓ Completed successfully.", s_ok())
-        } else {
-            ("  ✗ Operation failed.", s_err())
-        };
-        lines.push(Line::from(Span::styled(msg, style)));
-    }
+fn action_line(app: &App, control: Control, label: &str, key: &str) -> Line<'static> {
+    let selected = app.is_selected(control);
+    let marker = if selected { ">" } else { " " };
+    let status = if app.is_running() { "locked" } else { key };
+    Line::from(vec![
+        Span::styled(format!("{marker} "), style_marker(selected)),
+        Span::styled(format!("{label:<18}"), style_control(selected)),
+        Span::styled(format!(" {status:^6} "), style_pill(selected)),
+    ])
+}
 
-    let block = Block::default()
+fn text_line(app: &App, control: Control, label: &str, value: &str) -> Line<'static> {
+    let selected = app.is_selected(control);
+    let cursor = if selected && app.editing { "_" } else { "" };
+    Line::from(vec![
+        Span::styled(prefix(selected), style_marker(selected)),
+        Span::styled(format!("{label:<12}"), style_label()),
+        Span::styled(format!(" {value}{cursor}"), style_value(selected)),
+    ])
+}
+
+fn enum_line(app: &App, control: Control, label: &str, value: &str) -> Line<'static> {
+    let selected = app.is_selected(control);
+    Line::from(vec![
+        Span::styled(prefix(selected), style_marker(selected)),
+        Span::styled(format!("{label:<12}"), style_label()),
+        Span::styled(format!(" < {value} >"), style_value(selected)),
+    ])
+}
+
+fn number_line(app: &App, control: Control, label: &str, value: &str) -> Line<'static> {
+    let selected = app.is_selected(control);
+    Line::from(vec![
+        Span::styled(prefix(selected), style_marker(selected)),
+        Span::styled(format!("{label:<12}"), style_label()),
+        Span::styled(format!(" - {value} +"), style_value(selected)),
+    ])
+}
+
+fn toggle_line(app: &App, control: Control, label: &str, enabled: bool) -> Line<'static> {
+    let selected = app.is_selected(control);
+    let mark = if enabled { "[x]" } else { "[ ]" };
+    Line::from(vec![
+        Span::styled(prefix(selected), style_marker(selected)),
+        Span::styled(format!("{mark} "), style_pill(selected)),
+        Span::styled(label.to_string(), style_control(selected)),
+    ])
+}
+
+fn section(title: &'static str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("  -- ", style_rail()),
+        Span::styled(title, style_accent()),
+    ])
+}
+
+fn blank() -> Line<'static> {
+    Line::raw("")
+}
+
+const fn prefix(selected: bool) -> &'static str {
+    if selected { "> " } else { "  " }
+}
+
+fn build_panel_active(app: &App) -> bool {
+    matches!(
+        app.selected_control(),
+        Control::Build
+            | Control::BuildAndRun
+            | Control::RunQemu
+            | Control::Profile
+            | Control::OutputDir
+            | Control::Ramdisk(_)
+    )
+}
+
+fn qemu_panel_active(app: &App) -> bool {
+    matches!(
+        app.selected_control(),
+        Control::Ovmf
+            | Control::Accel
+            | Control::Cpu
+            | Control::Machine
+            | Control::Smp
+            | Control::Memory
+            | Control::Nic
+            | Control::Nvme
+            | Control::Xhci
+            | Control::UsbKeyboard
+            | Control::VirtioVga
+            | Control::Display
+            | Control::NoReboot
+            | Control::NoShutdown
+            | Control::GdbStub
+            | Control::GdbWait
+            | Control::QemuDebugLog
+    )
+}
+
+fn selected_hint(app: &App) -> Line<'static> {
+    let hint = match app.selected_control() {
+        Control::Build => "b/Enter builds the EFI tree and ramdisk",
+        Control::BuildAndRun => "B/Enter builds first, then starts QEMU automatically",
+        Control::RunQemu => "r/Enter starts QEMU with the current launch profile",
+        Control::Profile => "debug is faster; release matches optimized artifacts",
+        Control::OutputDir => "Enter edits the EFI destination directory",
+        Control::Ramdisk(_) => "Space toggles this userspace binary; a/n selects all/none",
+        Control::Ovmf => "Enter edits the OVMF firmware path",
+        Control::Accel => "kvm is fastest on Linux; tcg is the portable fallback",
+        Control::Cpu => "host exposes the real CPU; max is a broad emulated model",
+        Control::Machine => "q35 is the normal modern PCIe machine",
+        Control::Smp => "Left/Right changes virtual CPU count by one",
+        Control::Memory => "Left/Right changes guest memory in 64 MiB steps",
+        Control::Nic => "adds an e1000e NIC on user networking",
+        Control::Nvme => "adds a QEMU NVMe controller",
+        Control::Xhci => "adds an xHCI USB controller",
+        Control::UsbKeyboard => "adds a USB keyboard device",
+        Control::VirtioVga => "adds virtio-vga for a more flexible framebuffer",
+        Control::Display => "selects QEMU display backend; none is useful for serial-only runs",
+        Control::NoReboot => "keeps crashes visible instead of instantly rebooting",
+        Control::NoShutdown => "keeps QEMU open after guest shutdown",
+        Control::GdbStub => "opens the QEMU GDB stub on tcp::1234",
+        Control::GdbWait => "starts paused for debugger attach; enables GDB stub",
+        Control::QemuDebugLog => "enables QEMU interrupt/reset/guest-error diagnostics",
+    };
+
+    Line::from(vec![
+        Span::styled("focus ", style_faint()),
+        Span::styled(hint, style_plain_value()),
+    ])
+}
+
+fn deck_block(title: &'static str, active: bool) -> Block<'static> {
+    Block::default()
         .borders(Borders::ALL)
-        .border_style(s_border_active())
-        .title(Span::styled(" Development Tools ", s_section()));
+        .border_style(if active {
+            style_accent()
+        } else {
+            style_border()
+        })
+        .title(Span::styled(title, style_accent()))
+        .style(style_panel())
+}
 
-    frame.render_widget(Paragraph::new(Text::from(lines)).block(block), area);
+fn style_title() -> Style {
+    Style::default()
+        .fg(Color::Rgb(238, 240, 244))
+        .bg(Color::Rgb(7, 8, 11))
+        .add_modifier(Modifier::BOLD)
+}
+
+fn style_accent() -> Style {
+    Style::default()
+        .fg(Color::Rgb(205, 42, 52))
+        .bg(Color::Rgb(7, 8, 11))
+        .add_modifier(Modifier::BOLD)
+}
+
+fn style_dim() -> Style {
+    Style::default()
+        .fg(Color::Rgb(142, 148, 158))
+        .bg(Color::Rgb(7, 8, 11))
+}
+
+fn style_faint() -> Style {
+    Style::default()
+        .fg(Color::Rgb(74, 80, 90))
+        .bg(Color::Rgb(7, 8, 11))
+}
+
+fn style_border() -> Style {
+    Style::default()
+        .fg(Color::Rgb(54, 59, 68))
+        .bg(Color::Rgb(11, 13, 18))
+}
+
+fn style_label() -> Style {
+    Style::default()
+        .fg(Color::Rgb(95, 101, 112))
+        .bg(Color::Rgb(11, 13, 18))
+}
+
+fn style_marker(selected: bool) -> Style {
+    if selected {
+        Style::default()
+            .fg(Color::Rgb(230, 58, 70))
+            .bg(Color::Rgb(11, 13, 18))
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Rgb(49, 54, 62))
+            .bg(Color::Rgb(11, 13, 18))
+    }
+}
+
+fn style_control(selected: bool) -> Style {
+    if selected {
+        Style::default()
+            .fg(Color::Rgb(246, 247, 249))
+            .bg(Color::Rgb(11, 13, 18))
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Rgb(174, 180, 190))
+            .bg(Color::Rgb(11, 13, 18))
+    }
+}
+
+fn style_value(selected: bool) -> Style {
+    if selected {
+        Style::default()
+            .fg(Color::Rgb(252, 252, 252))
+            .bg(Color::Rgb(71, 18, 24))
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Rgb(226, 229, 234))
+            .bg(Color::Rgb(11, 13, 18))
+    }
+}
+
+fn style_plain_value() -> Style {
+    Style::default()
+        .fg(Color::Rgb(226, 229, 234))
+        .bg(Color::Rgb(7, 8, 11))
+}
+
+fn log_style(line: &str) -> Style {
+    if line.starts_with("[error]") || line.contains("failed") || line.contains("panic") {
+        Style::default()
+            .fg(Color::Rgb(230, 58, 70))
+            .bg(Color::Rgb(11, 13, 18))
+    } else if line.contains("complete") || line.starts_with("  ok") || line.starts_with("  ready") {
+        Style::default()
+            .fg(Color::Rgb(120, 206, 156))
+            .bg(Color::Rgb(11, 13, 18))
+    } else if line.starts_with('>') {
+        Style::default()
+            .fg(Color::Rgb(132, 188, 255))
+            .bg(Color::Rgb(11, 13, 18))
+            .add_modifier(Modifier::BOLD)
+    } else if line.contains("warning") || line.contains("WARN") {
+        Style::default()
+            .fg(Color::Rgb(229, 177, 83))
+            .bg(Color::Rgb(11, 13, 18))
+    } else {
+        Style::default()
+            .fg(Color::Rgb(156, 162, 172))
+            .bg(Color::Rgb(11, 13, 18))
+    }
+}
+
+fn style_canvas() -> Style {
+    Style::default()
+        .fg(Color::Rgb(226, 229, 234))
+        .bg(Color::Rgb(7, 8, 11))
+}
+
+fn style_panel() -> Style {
+    Style::default()
+        .fg(Color::Rgb(226, 229, 234))
+        .bg(Color::Rgb(11, 13, 18))
+}
+
+fn style_rail() -> Style {
+    Style::default()
+        .fg(Color::Rgb(92, 20, 28))
+        .bg(Color::Rgb(7, 8, 11))
+}
+
+fn style_pill(selected: bool) -> Style {
+    if selected {
+        Style::default()
+            .fg(Color::Rgb(252, 252, 252))
+            .bg(Color::Rgb(161, 29, 40))
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Rgb(150, 156, 166))
+            .bg(Color::Rgb(20, 23, 30))
+    }
 }

@@ -1,5 +1,4 @@
 use beskar_lib::io::keyboard::{KeyCode, KeyState, KeyboardReader};
-use hyperdrive::{locks::ticket::TicketLock, once::Once};
 
 #[link(name = "puredoom", kind = "static")]
 unsafe extern "C" {
@@ -169,13 +168,8 @@ impl From<KeyCode> for DoomKeyT {
 /// # Panics
 ///
 /// This function will panic if the keyboard reader cannot be initialized.
-pub fn poll_inputs() {
-    static KEYBOARD_READER: Once<TicketLock<KeyboardReader>> = Once::uninit();
-
-    KEYBOARD_READER.call_once(|| TicketLock::new(KeyboardReader::new().unwrap()));
-    let mut reader = KEYBOARD_READER.get().unwrap().lock();
-
-    while let Ok(Some(event)) = reader.next_event() {
+pub fn poll_inputs(keyboard: &mut KeyboardReader) {
+    while let Ok(Some(event)) = keyboard.next_event() {
         let doom_key = DoomKeyT::from(event.key());
         match event.pressed() {
             KeyState::Pressed => unsafe { doom_key_down(doom_key) },

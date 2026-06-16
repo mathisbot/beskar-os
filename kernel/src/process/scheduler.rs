@@ -7,7 +7,7 @@ use crate::locals;
 use ::wait::{WakeCause, WakeResult};
 use alloc::{boxed::Box, sync::Arc};
 use beskar_core::{arch::VirtAddr, process::SleepHandle};
-use beskar_hal::{instructions::without_interrupts, paging::page_table::Flags};
+use beskar_hal::{instructions::without_interrupts, paging::page_table::Flags, registers::FS};
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use hyperdrive::{call_once, locks::mcs::McsLock, once::Once, queues::mpsc::MpscQueue};
 use priority::ThreadQueue;
@@ -173,10 +173,18 @@ impl Scheduler {
                 let old_stack = Self::old_stack_pointer(&action, &mut old_thread);
                 let new_stack = thread.last_stack_ptr();
 
-                if let Some(rsp0) = thread.snapshot().kernel_stack_top()
-                    && let Some(tss) = unsafe { locals!().gdt().force_lock() }.tss_mut()
-                {
-                    tss.privilege_stack_table[0] = VirtAddr::from_ptr(rsp0.as_ptr());
+                // TLS
+                old_thread.set_user_fs_base(unsafe { FS::rdfsbase() });
+                unsafe { FS::wrfsbase(thread.user_fs_base()) };
+
+                if let Some(rsp0) = thread.snapshot().kernel_stack_top() {
+                    let rsp0 = rsp0.as_ptr();
+                    if let Some(tss) = unsafe { locals!().gdt().force_lock() }.tss_mut() {
+                        tss.privilege_stack_table[0] = VirtAddr::from_ptr(rsp0);
+                    } else {
+                        beskar_core::debug_panic!("TSS not found when setting syscall stack");
+                    }
+                    locals!().set_syscall_stack(rsp0);
                 }
 
                 let cr3 = thread.process().address_space().cr3_raw();

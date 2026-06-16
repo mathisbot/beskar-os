@@ -23,12 +23,10 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [x] GDT/TSS
         - [x] Interrupts
         - [x] Randomness
-        - [x] Systemcalls
+        - [x] Syscall/Sysret
 - Drivers
     - [ ] ACPI
         - [ ] DSDT (partial)
-            - [x] Minimal AML (`_S5`)
-            - [ ] Full AML
         - [ ] FADT (partial)
         - [x] HPET
         - [x] MADT
@@ -90,6 +88,8 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
         - [X] Thread parking
         - [X] Futexes
     - [X] User space
+      - [X] System calls
+      - [X] TLS
     - [X] Binary loading
         - [X] ELF
     - [ ] IPC

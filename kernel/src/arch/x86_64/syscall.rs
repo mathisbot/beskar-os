@@ -1,7 +1,4 @@
-use crate::{
-    locals,
-    syscall::{Arguments, syscall},
-};
+use crate::{locals, syscall::syscall};
 use beskar_core::syscall::{Syscall, SyscallExitCode, SyscallReturnValue};
 use beskar_hal::registers::{Efer, LStar, Rflags, SFMask, Star, StarSelectors};
 
@@ -19,10 +16,12 @@ struct SyscallRegisters {
     r10: u64,
     r8: u64,
     r9: u64,
-    /// Contains preivous value of RIP
+    /// Contains previous value of RIP
     rcx: u64,
     /// Contains previous value of RFLAGS
     r11: u64,
+    /// Contains previous value of RSP
+    rsp: u64,
 }
 
 #[unsafe(naked)]
@@ -33,6 +32,11 @@ struct SyscallRegisters {
 /// This function should not be called directly.
 unsafe extern "sysv64" fn syscall_handler_arch() {
     core::arch::naked_asm!(
+        "swapgs",
+        "mov gs:[{scratch}], rsp", // Save RSP in GS
+        "mov rsp, gs:[{kernel_stack}]", // Swap stack
+        "push qword ptr gs:[{scratch}]", // Previous RSP
+        "sti",
         "push r11", // Previous RFLAGS
         "push rcx", // Previous RIP
         "push r9",
@@ -43,7 +47,7 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
         "push rdi",
         "push rax",
         "mov rdi, rsp", // Regs pointer
-        "call {}",
+        "call {handler}",
         "pop rax", // RAX now contains syscall exit code
         "pop rdi",
         "pop rsi",
@@ -53,53 +57,21 @@ unsafe extern "sysv64" fn syscall_handler_arch() {
         "pop r9",
         "pop rcx", // RIP used by sysret
         "pop r11", // r11 contains previous RFLAGS
+        "cli",
+        "swapgs",
+        "pop rsp", // Restore previous RSP
         "sysretq",
-        sym syscall_handler_impl,
+        scratch = const locals::CoreLocalsInfo::scratch_offset(),
+        kernel_stack = const locals::CoreLocalsInfo::syscall_stack_offset(),
+        handler = sym syscall_handler_inner,
     );
-}
-
-/// Handles stack switching and calling the actual syscall handler.
-///
-/// This function is called from the assembly stub above.
-extern "sysv64" fn syscall_handler_impl(regs: &mut SyscallRegisters) {
-    // Currently, we are on the user stack. It is undefined whether we are right where the
-    // assembly stub left us (because of the prologue), but the place we want to be is in the `regs` argument.
-
-    let kernel_stack = crate::process::scheduler::current_thread_snapshot()
-        .kernel_stack_top()
-        .unwrap();
-    unsafe {
-        // Note that pushing `ustack` and pushing the return address via `call`
-        // correctly keeps the 16-byte alignment of the stack.
-        core::arch::asm!(
-            "mov {ustack}, rsp", // Keep track of user stack (0)
-            "mov rsp, {}", // Switch to kernel stack
-            "sti",
-            "push {ustack}", // Keep track of user stack (1)
-            "call {}", // Perform the function call with `regs` in rdi
-            "cli",
-            "pop rsp", // Switch back to user stack
-            in(reg) kernel_stack.as_ptr(),
-            sym syscall_handler_inner,
-            in("rdi") regs,
-            ustack = out(reg) _,
-        );
-    }
 }
 
 /// Performs the standardization of arguments and call to the kernel syscall handler.
 ///
 /// Called by the above function after stack switching
 extern "sysv64" fn syscall_handler_inner(regs: &mut SyscallRegisters) {
-    let args = Arguments {
-        one: regs.rdi,
-        two: regs.rsi,
-        three: regs.rdx,
-        four: regs.r10,
-        five: regs.r8,
-        six: regs.r9,
-    };
-
+    let args = Arguments::new(regs);
     let ssn = Syscall::try_from(regs.rax);
 
     let res = ssn.map_or(
@@ -126,4 +98,54 @@ pub fn init_syscalls() {
     unsafe { SFMask::write(Rflags::IF) };
 
     unsafe { Efer::insert_flags(Efer::SYSTEM_CALL_EXTENSIONS) };
+}
+
+pub struct Arguments<'a> {
+    regs: &'a SyscallRegisters,
+}
+
+impl<'a> Arguments<'a> {
+    #[must_use]
+    #[inline]
+    const fn new(regs: &'a SyscallRegisters) -> Self {
+        Arguments { regs }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn one(&self) -> u64 {
+        self.regs.rdi
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn two(&self) -> u64 {
+        self.regs.rsi
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn three(&self) -> u64 {
+        self.regs.rdx
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn four(&self) -> u64 {
+        self.regs.r10
+    }
+
+    #[must_use]
+    #[inline]
+    #[expect(dead_code, reason = "Currently unused")]
+    pub const fn five(&self) -> u64 {
+        self.regs.r8
+    }
+
+    #[must_use]
+    #[inline]
+    #[expect(dead_code, reason = "Currently unused")]
+    pub const fn six(&self) -> u64 {
+        self.regs.r9
+    }
 }

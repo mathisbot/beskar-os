@@ -33,6 +33,10 @@ pub struct CoreLocalsInfo {
     gdt: McsLock<super::gdt::Gdt>,
     interrupts: super::interrupts::Interrupts,
     lapic: MUMcsLock<super::apic::LocalApic>,
+    // Accessed directly from the syscall entry stub through GS-relative offsets.
+    syscall_stack: AtomicPtr<u8>,
+    // Per-core syscall scratch slot; only used while interrupts are disabled.
+    scratch: AtomicU64,
 }
 
 impl CoreLocalsInfo {
@@ -48,6 +52,8 @@ impl CoreLocalsInfo {
             gdt: McsLock::new(super::gdt::Gdt::uninit()),
             interrupts: super::interrupts::Interrupts::new(),
             lapic: MUMcsLock::uninit(),
+            syscall_stack: AtomicPtr::new(core::ptr::null_mut()),
+            scratch: AtomicU64::new(0),
         }
     }
 
@@ -109,6 +115,23 @@ impl CoreLocalsInfo {
     #[inline]
     pub const fn lapic(&self) -> &MUMcsLock<super::apic::LocalApic> {
         &self.lapic
+    }
+
+    #[inline]
+    pub fn set_syscall_stack(&self, value: *mut u8) {
+        self.syscall_stack.store(value, Ordering::Relaxed);
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn syscall_stack_offset() -> usize {
+        core::mem::offset_of!(Self, syscall_stack)
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn scratch_offset() -> usize {
+        core::mem::offset_of!(Self, scratch)
     }
 }
 

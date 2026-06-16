@@ -219,14 +219,13 @@ impl ElfLoader {
         // Copy file data
         if file_size > 0 {
             let offset = usize::try_from(ph.offset()).map_err(|_| ElfLoadError::InvalidSegment)?;
+            let file_size = usize::try_from(file_size).map_err(|_| ElfLoadError::InvalidSegment)?;
+            let end = offset
+                .checked_add(file_size)
+                .ok_or(ElfLoadError::Overflow)?;
             let file_data = elf
                 .input
-                .get(
-                    offset
-                        ..offset
-                            + usize::try_from(file_size)
-                                .map_err(|_| ElfLoadError::InvalidSegment)?,
-                )
+                .get(offset..end)
                 .ok_or(ElfLoadError::InvalidBinary)?;
 
             mapper
@@ -277,13 +276,12 @@ impl ElfLoader {
         }
 
         let offset = usize::try_from(ph.offset()).map_err(|_| ElfLoadError::InvalidSegment)?;
-        let file_data = input
-            .get(
-                offset
-                    ..offset
-                        + usize::try_from(file_size).map_err(|_| ElfLoadError::InvalidSegment)?,
-            )
-            .ok_or(ElfLoadError::InvalidBinary)?;
+        let file_size_usize =
+            usize::try_from(file_size).map_err(|_| ElfLoadError::InvalidSegment)?;
+        let end = offset
+            .checked_add(file_size_usize)
+            .ok_or(ElfLoadError::Overflow)?;
+        let file_data = input.get(offset..end).ok_or(ElfLoadError::InvalidBinary)?;
 
         let dest_offset = ph
             .virtual_addr()

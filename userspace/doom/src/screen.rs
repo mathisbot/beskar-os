@@ -1,6 +1,5 @@
 use beskar_core::video::PixelFormat;
 use beskar_lib::surface::Surface;
-use hyperdrive::locks::mcs::MUMcsLock;
 extern crate alloc;
 
 const SCREENWIDTH: u16 = 320;
@@ -8,13 +7,11 @@ const SCREENHEIGHT: u16 = 200;
 const CHANNELS: usize = 4; // RGBA/BGRA
 
 /// Global Doom surface context
-struct DoomContext {
+pub struct DoomContext {
     surface: Surface,
     format: PixelFormat,
     buffer: &'static mut [u8],
 }
-
-static DOOM_CONTEXT: MUMcsLock<Option<DoomContext>> = MUMcsLock::uninit();
 
 #[link(name = "puredoom", kind = "static")]
 unsafe extern "C" {
@@ -26,7 +23,7 @@ unsafe extern "C" {
 /// # Panics
 ///
 /// Panics if surface creation fails.
-pub fn init() {
+pub fn init() -> DoomContext {
     let size = u64::from(SCREENWIDTH) * u64::from(SCREENHEIGHT) * CHANNELS as u64;
 
     let buffer_ptr =
@@ -52,30 +49,26 @@ pub fn init() {
         .expect("Failed to query screen info")
         .pixel_format();
 
-    DOOM_CONTEXT.init(Some(DoomContext {
+    DoomContext {
         surface,
         format,
         buffer,
-    }));
+    }
 }
 
 /// Draw the Doom framebuffer to the screen
-pub fn draw() {
-    DOOM_CONTEXT.with_locked(|ctx| {
-        if let Some(ctx) = ctx {
-            // Get doom's framebuffer (RGBA format)
-            let doom_fb = unsafe { doom_get_framebuffer(CHANNELS as i32) };
+pub fn draw(ctx: &mut DoomContext) {
+    // Get doom's framebuffer (RGBA format)
+    let doom_fb = unsafe { doom_get_framebuffer(CHANNELS as i32) };
 
-            if !doom_fb.is_null() {
-                let pixel_count = (SCREENWIDTH as usize) * (SCREENHEIGHT as usize);
-                let src = unsafe { core::slice::from_raw_parts(doom_fb, pixel_count * CHANNELS) };
-                draw_raw(src, ctx.buffer, ctx.format);
-            }
+    if !doom_fb.is_null() {
+        let pixel_count = (SCREENWIDTH as usize) * (SCREENHEIGHT as usize);
+        let src = unsafe { core::slice::from_raw_parts(doom_fb, pixel_count * CHANNELS) };
+        draw_raw(src, ctx.buffer, ctx.format);
+    }
 
-            // Present the entire surface to the compositor
-            let _ = ctx.surface.present_all();
-        }
-    });
+    // Present the entire surface to the compositor
+    let _ = ctx.surface.present_all();
 }
 
 fn draw_raw(src: &[u8], dst: &mut [u8], format: PixelFormat) {

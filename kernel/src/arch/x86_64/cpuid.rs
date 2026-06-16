@@ -288,6 +288,15 @@ impl CpuFeature {
         bit: 17,
         name: "TCE",
     };
+
+    // XLEAF 7
+
+    pub const INVARIANT_TSC: Self = Self {
+        leaf: Leaf::new(0x8000_0007),
+        reg: CpuidReg::Edx,
+        bit: 8,
+        name: "Invariant TSC",
+    };
 }
 
 /// List of required features for the kernel to run

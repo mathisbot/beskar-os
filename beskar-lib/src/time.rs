@@ -1,35 +1,77 @@
-use beskar_core::time::MILLIS_PER_SEC;
+use crate::arch::time::read_tsc;
+use beskar_core::time::TimerInfo;
 pub use beskar_core::time::{Duration, Instant};
+use core::mem::MaybeUninit;
 use hyperdrive::once::Once;
 
-static STARTUP_TIME: Once<Instant> = Once::uninit();
+static TIMER_INFO: Once<TimerInfo> = Once::uninit();
 
 #[must_use]
 /// Reads the time in milliseconds since an arbitrary point in the past.
-fn read_time_raw() -> u64 {
-    cfg_select! {
-        target_arch = "x86_64" => {
-            static FREQ: Once<u64> = Once::uninit();
-            FREQ.call_once(|| crate::arch::time::get_tsc_frequency().unwrap());
+fn query_counter() -> Option<u64> {
+    let info = timer_info()?;
 
-            let freq = *FREQ.get().unwrap();
-            let tsc = crate::arch::time::read_tsc_fenced();
-            tsc * MILLIS_PER_SEC / freq
+    let raw = if info.fastpath {
+        cfg_select! {
+            target_arch = "x86_64" => {
+                read_tsc()
+            }
+            _ => unimplemented!()
         }
-        _ => {
-            unimplemented!("Time reading not implemented for this architecture");
-        }
-    }
-}
+    } else {
+        todo!("Timer syscall");
+    };
 
-/// Initializes the time module.
-pub(crate) fn init() {
-    STARTUP_TIME.call_once(|| Instant::from_millis(read_time_raw()));
+    let freq = info.ticks_per_ms?;
+    Some(raw / freq.get())
 }
 
 #[must_use]
 #[inline]
 /// Returns the current instant.
+///
+/// # Panics
+///
+/// This function panics if no high-precision timer is available.
 pub fn now() -> Instant {
-    Instant::from_millis(read_time_raw())
+    Instant::from_millis(query_counter().expect("No timer available"))
+}
+
+#[must_use]
+#[inline]
+pub fn elapsed(since: Instant) -> Duration {
+    let now = now();
+    if now < since {
+        Duration::ZERO
+    } else {
+        now - since
+    }
+}
+
+fn timer_info() -> Option<&'static TimerInfo> {
+    if let Some(info) = TIMER_INFO.get() {
+        return Some(info);
+    }
+
+    timer_info_init()
+}
+
+#[cold]
+fn timer_info_init() -> Option<&'static TimerInfo> {
+    let mut uninit = MaybeUninit::<TimerInfo>::uninit();
+
+    let res = crate::sys::sc_query_config(
+        beskar_core::syscall::consts::QUERY_HIGH_PRES_TIMER,
+        uninit.as_mut_ptr().cast(),
+        size_of::<TimerInfo>().try_into().unwrap(),
+    );
+
+    if res.is_success() {
+        TIMER_INFO.call_once(|| {
+            // SAFETY: The syscall initialized the value.
+            unsafe { uninit.assume_init() }
+        });
+    }
+
+    TIMER_INFO.get()
 }

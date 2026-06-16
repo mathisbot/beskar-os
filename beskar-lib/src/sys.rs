@@ -138,3 +138,9 @@ pub fn sc_thread_spawn(entry_point: extern "C" fn() -> !) -> u64 {
     let entry = entry_point as *const () as u64;
     syscalls::syscall_1(Syscall::ThreadSpawn, entry)
 }
+
+#[inline]
+pub fn sc_powermgt(cmd: u64) -> SyscallExitCode {
+    let res = syscalls::syscall_1(Syscall::PowerManagement, cmd);
+    SyscallExitCode::try_from(res).unwrap()
+}
