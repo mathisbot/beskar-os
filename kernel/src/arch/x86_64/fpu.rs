@@ -59,7 +59,10 @@ pub fn on_thread_switch(thread: &mut Thread) {
 
     if owner == tid {
         unsafe { thread.fpu_state_mut().save() };
-        core_locals.set_fpu_owner(tid);
+        // If a thread gets scheduled on core 0, uses the FPU,
+        // then gets scheduled on 1, uses the FPU then goes back to 0,
+        // the FPU would not get restored without this line.
+        core_locals.set_fpu_owner(0);
     }
 }
 
