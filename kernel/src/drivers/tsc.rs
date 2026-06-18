@@ -90,16 +90,16 @@ fn calibrate_with_pit() -> bool {
 fn calibrate_with_rdtsc() -> bool {
     assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
 
-    let highest_leaf = cpuid::get_highest_supported_leaf().as_u32();
-    if highest_leaf >= 0x15 {
-        let cpuid_res = cpuid::cpuid(cpuid::Leaf::new(0x15));
-        if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
-            let thc_hz =
-                u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);
-            TSC_MHZ.store(thc_hz / 1_000_000, Ordering::Relaxed);
-            return true;
-        }
+    let Some(cpuid_res) = cpuid::try_cpuid(cpuid::Leaf::new(0x15)) else {
+        return false;
+    };
+
+    if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
+        let thc_hz = u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);
+        TSC_MHZ.store(thc_hz / 1_000_000, Ordering::Relaxed);
+        return true;
     }
+
     false
 }
 
