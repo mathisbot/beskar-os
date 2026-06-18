@@ -80,7 +80,7 @@ pub unsafe fn fpu_init() {
 pub unsafe fn fpu_save(dst: &mut super::structures::SseSave) {
     unsafe {
         core::arch::asm!(
-            "fxsave [{}]",
+            "fxsave64 [{}]",
             in(reg) dst,
             options(nostack, preserves_flags)
         );
@@ -92,7 +92,7 @@ pub unsafe fn fpu_save(dst: &mut super::structures::SseSave) {
 pub unsafe fn fpu_restore(src: &super::structures::SseSave) {
     unsafe {
         core::arch::asm!(
-            "fxrstor [{}]",
+            "fxrstor64 [{}]",
             in(reg) src,
             options(readonly, nostack, preserves_flags)
         );
