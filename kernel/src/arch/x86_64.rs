@@ -1,6 +1,6 @@
 use beskar_hal::registers::XCr0;
 
-pub const XSAVE_AREA_MAX_SIZE: usize = size_of::<beskar_hal::structures::SseSave>();
+pub const XSAVE_AREA_MAX_SIZE: usize = size_of::<beskar_hal::structures::AvxSave>();
 
 pub mod ap;
 pub mod apic;

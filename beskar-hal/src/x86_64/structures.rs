@@ -1076,14 +1076,30 @@ impl TaskStateSegment {
 }
 
 #[derive(Debug, Clone)]
+#[repr(C, align(16))]
+/// Saved x87/SSE state.
+pub struct SseSave {
+    pub data: [u8; 160],
+    pub xmm: [[u8; size_of::<core::arch::x86_64::__m128>()]; 16],
+    _res: [[u8; size_of::<core::arch::x86_64::__m128>()]; 3],
+    pub available: [[u8; size_of::<core::arch::x86_64::__m128>()]; 3],
+}
+beskar_core::static_assert!(size_of::<SseSave>() == 512);
+
+#[derive(Debug, Clone)]
 #[repr(C, align(64))]
 /// Saved x87/SSE/AVX state.
-pub struct SseSave {
+pub struct AvxSave {
     data: [u8; 832],
 }
-beskar_core::static_assert!(size_of::<SseSave>() >= 832);
+beskar_core::static_assert!(size_of::<AvxSave>() >= 832);
 
 impl Default for SseSave {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Default for AvxSave {
     fn default() -> Self {
         Self::new()
     }
@@ -1092,6 +1108,20 @@ impl Default for SseSave {
 impl SseSave {
     #[must_use]
     #[inline]
+    pub const fn new() -> Self {
+        Self {
+            data: [0; _],
+            xmm: [[0; _]; _],
+            _res: [[0; _]; _],
+            available: [[0; _]; _],
+        }
+    }
+}
+
+impl AvxSave {
+    #[must_use]
+    #[inline]
+    /// Creates a new `AvxSave` with the default values for the legacy region, MXCSR, MXCSR_MASK and XSTATE_BV.
     pub const fn new() -> Self {
         let mut data = [0; 832];
 

@@ -1,9 +1,9 @@
 use crate::process::scheduler::thread::Thread;
-use beskar_hal::structures::SseSave;
+use beskar_hal::structures::AvxSave;
 
 #[derive(Debug, Clone)]
 pub struct FpuState {
-    state: SseSave,
+    state: AvxSave,
     mask: u64,
 }
 
@@ -12,7 +12,7 @@ impl FpuState {
     #[inline]
     pub const fn new(xcr0: u64) -> Self {
         Self {
-            state: SseSave::new(),
+            state: AvxSave::new(),
             mask: xcr0,
         }
     }

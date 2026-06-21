@@ -88,7 +88,7 @@ pub unsafe fn fpu_save(dst: &mut super::structures::SseSave) {
 }
 
 #[inline]
-pub unsafe fn xsave(dst: &mut super::structures::SseSave, mask: u64) {
+pub unsafe fn xsave(dst: &mut super::structures::AvxSave, mask: u64) {
     let low = u32::try_from(mask).unwrap();
     let high = u32::try_from(mask >> 32).unwrap();
     unsafe {
@@ -102,7 +102,7 @@ pub unsafe fn xsave(dst: &mut super::structures::SseSave, mask: u64) {
     }
 }
 #[inline]
-pub unsafe fn xsavec(dst: &mut super::structures::SseSave, mask: u64) {
+pub unsafe fn xsavec(dst: &mut super::structures::AvxSave, mask: u64) {
     let low = u32::try_from(mask).unwrap();
     let high = u32::try_from(mask >> 32).unwrap();
     unsafe {
@@ -129,7 +129,7 @@ pub unsafe fn fpu_restore(src: &super::structures::SseSave) {
 }
 
 #[inline]
-pub unsafe fn xrstor(src: &super::structures::SseSave, mask: u64) {
+pub unsafe fn xrstor(src: &super::structures::AvxSave, mask: u64) {
     let low = u32::try_from(mask).unwrap();
     let high = u32::try_from(mask >> 32).unwrap();
     unsafe {
