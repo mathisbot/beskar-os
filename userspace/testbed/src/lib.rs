@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+pub mod abi;
 pub mod core;
 pub mod io;
 pub mod mem;

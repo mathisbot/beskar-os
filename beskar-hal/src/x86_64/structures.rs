@@ -1076,15 +1076,12 @@ impl TaskStateSegment {
 }
 
 #[derive(Debug, Clone)]
-#[repr(C, align(16))]
-/// Saved SSE state
+#[repr(C, align(64))]
+/// Saved x87/SSE/AVX state.
 pub struct SseSave {
-    pub data: [u8; 160],
-    pub xmm: [[u8; size_of::<core::arch::x86_64::__m128>()]; 16],
-    _res: [[u8; size_of::<core::arch::x86_64::__m128>()]; 3],
-    pub available: [[u8; size_of::<core::arch::x86_64::__m128>()]; 3],
+    data: [u8; 832],
 }
-beskar_core::static_assert!(size_of::<SseSave>() == 512);
+beskar_core::static_assert!(size_of::<SseSave>() >= 832);
 
 impl Default for SseSave {
     fn default() -> Self {
@@ -1096,12 +1093,24 @@ impl SseSave {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
-        Self {
-            data: [0; 160],
-            xmm: [[0; _]; 16],
-            _res: [[0; _]; 3],
-            available: [[0; _]; 3],
-        }
+        let mut data = [0; 832];
+
+        // legacy region
+        data[0] = 0x7f;
+        data[1] = 0x03;
+        // MXCSR
+        data[24] = 0x80;
+        data[25] = 0x1f;
+
+        // MXCSR_MASK
+        data[28] = 0xff;
+        data[29] = 0xff;
+
+        // XSTATE_BV
+        // x87, SSE and AVX
+        data[512] = 0b111;
+
+        Self { data }
     }
 }
 

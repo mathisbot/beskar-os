@@ -4,22 +4,16 @@ use beskar_hal::structures::SseSave;
 #[derive(Debug, Clone)]
 pub struct FpuState {
     state: SseSave,
-    initialized: bool,
-}
-
-impl Default for FpuState {
-    fn default() -> Self {
-        Self::new()
-    }
+    mask: u64,
 }
 
 impl FpuState {
     #[must_use]
     #[inline]
-    pub const fn new() -> Self {
+    pub const fn new(xcr0: u64) -> Self {
         Self {
             state: SseSave::new(),
-            initialized: false,
+            mask: xcr0,
         }
     }
 
@@ -30,8 +24,7 @@ impl FpuState {
     ///
     /// The caller must ensure that the FPU is in a valid state.
     pub unsafe fn save(&mut self) {
-        unsafe { beskar_hal::instructions::fpu_save(&mut self.state) };
-        self.initialized = true;
+        unsafe { beskar_hal::instructions::xsavec(&mut self.state, self.mask) };
     }
 
     #[inline]
@@ -43,11 +36,7 @@ impl FpuState {
     ///
     /// The caller must ensure that the FPU can be safely restored or initialized.
     pub unsafe fn restore(&self) {
-        if self.initialized {
-            unsafe { beskar_hal::instructions::fpu_restore(&self.state) };
-        } else {
-            unsafe { beskar_hal::instructions::fpu_init() };
-        }
+        unsafe { beskar_hal::instructions::xrstor(&self.state, self.mask) };
     }
 }
 

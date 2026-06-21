@@ -180,7 +180,7 @@ impl Thread {
             last_stack_ptr: AtomicPtr::new(core::ptr::null_mut()),
             link: Link::new(),
             stats: ThreadStats::new(),
-            fpu_state: FpuState::new(),
+            fpu_state: FpuState::new(0),
             user_fs_base: VirtAddr::ZERO,
         }
     }
@@ -230,6 +230,8 @@ impl Thread {
         let stack_unused = Self::setup_stack(stack_ptr, stack.as_mut_slice(), start);
         stack_ptr = unsafe { stack_ptr.byte_add(stack_unused) }; // Move stack pointer to the end of the stack
 
+        let xcr0 = beskar_hal::registers::XCr0::read();
+
         Self {
             id: ThreadId::new(),
             root_proc,
@@ -241,7 +243,7 @@ impl Thread {
             last_stack_ptr: AtomicPtr::new(stack_ptr),
             link: Link::new(),
             stats: ThreadStats::new(),
-            fpu_state: FpuState::new(),
+            fpu_state: FpuState::new(xcr0),
             user_fs_base: VirtAddr::ZERO,
         }
     }
@@ -284,7 +286,7 @@ impl Thread {
             last_stack_ptr: AtomicPtr::new(core::ptr::null_mut()),
             link: Link::new(),
             stats: ThreadStats::new(),
-            fpu_state: FpuState::new(),
+            fpu_state: FpuState::new(0),
             user_fs_base: VirtAddr::ZERO,
         }
     }

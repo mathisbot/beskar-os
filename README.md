@@ -45,7 +45,6 @@ Keep in mind that it is currently in a very early stage where it is only possibl
 
 As a developper, it is easy to write programs running on BeskarOS.
 However, keep in mind that it is currently in a very early stage where only a few system calls and functionalities are supported.
-For example, usage of SIMD registers beyond XMM/FPU and SSE instructions is currently a to-do (e.g. AVX).
 
 ### Building
 

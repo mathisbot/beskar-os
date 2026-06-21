@@ -60,17 +60,42 @@ pub fn cpuid(leaf: Leaf) -> CpuidResult {
 }
 
 #[must_use]
+#[inline]
 /// Stabilized version of the `__cpuid` intrinsic.
 ///
 /// Returns `None` if the CPUID leaf is not supported.
 pub fn try_cpuid(leaf: Leaf) -> Option<CpuidResult> {
+    try_cpuid_count(leaf, 0)
+}
+
+#[must_use]
+#[inline]
+/// Stabilized version of the `__cpuid_count` intrinsic
+///
+/// # Panics
+///
+/// Panics if the CPUID leaf is not supported.
+/// Check `get_highest_supported_leaf` and `get_highest_supported_xleaf`
+/// to get the highest supported leaves.
+///
+/// Also consider using `try_cpuid_count`.
+pub fn cpuid_count(leaf: Leaf, subleaf: u32) -> CpuidResult {
+    try_cpuid_count(leaf, subleaf).expect("CPUID leaf not supported")
+}
+
+#[must_use]
+#[inline]
+/// Stabilized version of the `__cpuid_count` intrinsic.
+///
+/// Returns `None` if the CPUID leaf is not supported.
+pub fn try_cpuid_count(leaf: Leaf, subleaf: u32) -> Option<CpuidResult> {
     let leaf_supported = if leaf.is_extended() {
         leaf <= get_highest_supported_xleaf()
     } else {
         leaf <= get_highest_supported_leaf()
     };
     if leaf_supported {
-        Some(core::arch::x86_64::__cpuid(leaf.as_u32()))
+        Some(core::arch::x86_64::__cpuid_count(leaf.as_u32(), subleaf))
     } else {
         None
     }
@@ -284,12 +309,13 @@ impl CpuFeature {
     };
 
     // LEAF 13
-    pub const XSAVEC: Self = Self {
-        leaf: Leaf::new(13),
-        reg: CpuidReg::Eax,
-        bit: 1,
-        name: "XSAVEC",
-    };
+    // pub const XSAVEC: Self = Self {
+    //     leaf: Leaf::new(13),
+    //     subleaf: 1,
+    //     reg: CpuidReg::Eax,
+    //     bit: 1,
+    //     name: "XSAVEC",
+    // };
 
     // XLEAF 1
 

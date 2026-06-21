@@ -88,6 +88,35 @@ pub unsafe fn fpu_save(dst: &mut super::structures::SseSave) {
 }
 
 #[inline]
+pub unsafe fn xsave(dst: &mut super::structures::SseSave, mask: u64) {
+    let low = u32::try_from(mask).unwrap();
+    let high = u32::try_from(mask >> 32).unwrap();
+    unsafe {
+        core::arch::asm!(
+            "xsave64 [{}]",
+            in(reg) dst,
+            in("eax") low,
+            in("edx") high,
+            options(nostack, preserves_flags)
+        );
+    }
+}
+#[inline]
+pub unsafe fn xsavec(dst: &mut super::structures::SseSave, mask: u64) {
+    let low = u32::try_from(mask).unwrap();
+    let high = u32::try_from(mask >> 32).unwrap();
+    unsafe {
+        core::arch::asm!(
+            "xsavec64 [{}]",
+            in(reg) dst,
+            in("eax") low,
+            in("edx") high,
+            options(nostack, preserves_flags)
+        );
+    }
+}
+
+#[inline]
 /// Restore the FPU state
 pub unsafe fn fpu_restore(src: &super::structures::SseSave) {
     unsafe {
@@ -95,6 +124,21 @@ pub unsafe fn fpu_restore(src: &super::structures::SseSave) {
             "fxrstor64 [{}]",
             in(reg) src,
             options(readonly, nostack, preserves_flags)
+        );
+    }
+}
+
+#[inline]
+pub unsafe fn xrstor(src: &super::structures::SseSave, mask: u64) {
+    let low = u32::try_from(mask).unwrap();
+    let high = u32::try_from(mask >> 32).unwrap();
+    unsafe {
+        core::arch::asm!(
+            "xrstor64 [{}]",
+            in(reg) src,
+            in("eax") low,
+            in("edx") high,
+            options(nostack, preserves_flags)
         );
     }
 }

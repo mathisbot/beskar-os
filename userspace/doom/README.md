@@ -22,8 +22,6 @@ doom/
 
 If compilation fails or the program crashes, try using the commit hash [aa9510a](https://github.com/Daivuk/PureDOOM/commit/aa9510a97767a1383bfd7711106c4aeee48605fb).
 
-Finally, you will have to edit the root `build.rs`/`Cargo.toml` to add doom as a dependency and edit the ramdisk accordingly (temporary).
-
 ## Usage
 
 Default bindings are:

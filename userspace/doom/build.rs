@@ -27,13 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .flag("-fno-stack-protector")
         .flag("-fPIC")
         .flag("-w")
-        .flag("-march=x86-64-v2")
-        .flag("-mfpmath=sse")
-        .flag("-mno-avx")
-        .flag("-mno-avx2")
-        .flag("-mno-fma")
-        .flag("-mno-f16c")
-        .flag("-mno-mmx")
+        .flag("-march=x86-64-v3")
         // make signed integer overflow wrap instead of UB
         .flag("-fwrapv")
         .compile("puredoom");
