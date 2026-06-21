@@ -3,6 +3,7 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
+use beskar_core::process::perms::Permissions;
 use beskar_hal::process::Kind;
 use core::sync::atomic::{AtomicU64, Ordering};
 use hyperdrive::{once::Once, queues::mpmc::MpmcQueue};
@@ -25,6 +26,7 @@ pub fn init() {
             kind: Kind::Kernel,
             binary: None,
             surfaces: MpmcQueue::new(),
+            perms: Permissions::all(),
         })
     });
 
@@ -91,12 +93,13 @@ pub struct Process {
     binary: Option<PathBuf>,
     /// Surfaces allocated by this process (interior mutability for registration)
     surfaces: MpmcQueue<MAX_SURFACES_PER_PROCESS, crate::video::SurfaceGuard>,
+    perms: Permissions,
 }
 
 impl Process {
     #[must_use]
     #[inline]
-    pub fn new(name: &str, kind: Kind, binary: Option<PathBuf>) -> Self {
+    pub fn new(name: &str, kind: Kind, binary: Option<PathBuf>, perms: Permissions) -> Self {
         Self {
             name: String::from(name),
             pid: ProcessId::new(),
@@ -104,6 +107,7 @@ impl Process {
             kind,
             binary,
             surfaces: MpmcQueue::new(),
+            perms,
         }
     }
 
@@ -141,6 +145,12 @@ impl Process {
     pub fn register_surface(&self, guard: crate::video::SurfaceGuard) -> bool {
         let res = self.surfaces.try_push(guard);
         res.is_ok()
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn perms(&self) -> &Permissions {
+        &self.perms
     }
 }
 

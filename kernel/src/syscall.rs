@@ -531,21 +531,26 @@ fn sc_thread_spawn(args: &Arguments) -> u64 {
     tid
 }
 
-const fn sc_powermgt(_args: &Arguments) -> SyscallExitCode {
-    // use beskar_core::syscall::consts;
+fn sc_powermgt(args: &Arguments) -> SyscallExitCode {
+    use beskar_core::syscall::consts;
 
-    // let action = args.one();
+    let action = args.one();
 
-    // FIXME: Find a way to safely expose power management syscalls
-    // without allowing arbitrary shutdowns/reboots from user-space.
-    // match action {
-    //     consts::POWERMGT_SHUTDOWN => {
-    //         unsafe { crate::power::shutdown() };
-    //     }
-    //     consts::POWERMGT_REBOOT => {
-    //         unsafe { crate::power::reboot() };
-    //     }
-    //     _ => SyscallExitCode::Failure,
-    // }
-    SyscallExitCode::Failure
+    let can_manage_power = {
+        let process = crate::process::current();
+        process.perms().power_mgmt()
+    };
+    if !can_manage_power {
+        return SyscallExitCode::Failure;
+    }
+
+    match action {
+        consts::POWERMGT_SHUTDOWN => {
+            unsafe { crate::power::shutdown() };
+        }
+        consts::POWERMGT_REBOOT => {
+            unsafe { crate::power::reboot() };
+        }
+        _ => SyscallExitCode::Failure,
+    }
 }

@@ -6,6 +6,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 pub mod binary;
+pub mod perms;
 pub mod sync;
 
 /// Startup block passed to every userspace entry point in RDI.
