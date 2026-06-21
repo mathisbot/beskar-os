@@ -1,13 +1,15 @@
 use crate::sys::sc_powermgt;
 
 /// Shutdown the system.
-pub fn shutdown() -> ! {
+///
+/// This function only returns if the process does not have permission to shutdown the system.
+pub fn shutdown() {
     sc_powermgt(beskar_core::syscall::consts::POWERMGT_SHUTDOWN);
-    unreachable!();
 }
 
 /// Reboot the system.
-pub fn reboot() -> ! {
+///
+/// This function only returns if the process does not have permission to reboot the system.
+pub fn reboot() {
     sc_powermgt(beskar_core::syscall::consts::POWERMGT_REBOOT);
-    unreachable!();
 }

@@ -49,7 +49,7 @@ fn thread_condvar() -> TestResult {
         let res = beskar_lib::thread::spawn(condvar_thread);
         if res.is_err() {
             return Err("thread spawn failed");
-        };
+        }
 
         let (_, reason) = CONDVAR.wait_for(guard, TIMEOUT);
         ensure!(

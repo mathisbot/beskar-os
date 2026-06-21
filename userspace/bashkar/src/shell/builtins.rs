@@ -1,4 +1,4 @@
-use alloc::string::String;
+use alloc::string::{String, ToString as _};
 use core::fmt::Write as _;
 
 use beskar_core::video::PixelComponents;
@@ -51,6 +51,16 @@ pub static BUILTINS: &[Builtin] = &[
         name: "exit",
         summary: "Exit the shell",
         run: cmd_exit,
+    },
+    Builtin {
+        name: "shutdown",
+        summary: "Shutdown the system",
+        run: cmd_shutdown,
+    },
+    Builtin {
+        name: "reboot",
+        summary: "Reboot the system",
+        run: cmd_reboot,
     },
 ];
 
@@ -156,6 +166,18 @@ fn cmd_uptime(ctx: CmdCtx<'_>) -> CmdResult {
     Ok(())
 }
 
+#[inline]
 fn cmd_exit(_ctx: CmdCtx<'_>) -> CmdResult {
     beskar_lib::exit(beskar_lib::ExitCode::Success);
+}
+
+#[inline]
+fn cmd_shutdown(_ctx: CmdCtx<'_>) -> CmdResult {
+    beskar_lib::power::shutdown();
+    Err("This process does not have permission to shutdown the system".to_string())
+}
+
+fn cmd_reboot(_ctx: CmdCtx<'_>) -> CmdResult {
+    beskar_lib::power::shutdown();
+    Err("This process does not have permission to reboot the system".to_string())
 }

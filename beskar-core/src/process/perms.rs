@@ -26,6 +26,12 @@ impl Permissions {
 
     #[must_use]
     #[inline]
+    pub const fn none() -> Self {
+        Self { bitmap: 0 }
+    }
+
+    #[must_use]
+    #[inline]
     /// Creates a new `Permissions` with at most the permissions of `self` and `bitmap`.
     pub const fn inherit(&self, bitmap: Bitmap) -> Self {
         Self {
