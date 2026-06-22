@@ -1,7 +1,7 @@
 use crate::process::scheduler::thread::Thread;
 use beskar_hal::structures::AvxSave;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FpuState {
     state: AvxSave,
     mask: u64,

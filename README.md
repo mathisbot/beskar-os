@@ -138,7 +138,7 @@ After initialization, it starts a process to initialize drivers as well as a use
 
 ### Bashkar
 
-[Bashkar](userspace/bashkar/README.md) is a wanna-be shell. It shows the terrific BeskarOS banner.
+[Bashkar](userspace/bashkar/README.md) is a wanna-be shell.
 
 ![Bashkar](docs/images/bashkar.webp)
 

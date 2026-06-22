@@ -93,6 +93,7 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
       - [X] TLS
     - [X] Binary loading
         - [X] ELF
+    - [X] Permissions
     - [ ] IPC
         - [ ] Message Passing
         - [ ] Shared Memory
