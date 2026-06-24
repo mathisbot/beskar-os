@@ -6,7 +6,7 @@ pub struct Permissions {
 }
 
 impl Permissions {
-    const POWER_MGMT: Bitmap = 1 << 0;
+    pub const POWER_MGMT: Bitmap = 1 << 0;
 
     const ALL: Bitmap = 0x1;
 
@@ -33,18 +33,17 @@ impl Permissions {
     #[must_use]
     #[inline]
     /// Creates a new `Permissions` with at most the permissions of `self` and `bitmap`.
-    pub const fn inherit(&self, bitmap: Bitmap) -> Self {
+    pub const fn inherit(&self, wanted: &Self) -> Self {
         Self {
-            bitmap: self.bitmap & bitmap,
+            bitmap: self.bitmap & wanted.bitmap,
         }
     }
 
     #[must_use]
     #[inline]
-    /// Checks if the given permission bit is set in the permissions bitmap.
-    const fn has(&self, bit: Bitmap) -> bool {
-        debug_assert!(bit.count_ones() <= 1);
-        self.bitmap & bit != 0
+    /// Checks if the given permission(s) are set in the permissions bitmap.
+    const fn has(&self, bitmap: Bitmap) -> bool {
+        self.bitmap & bitmap == bitmap
     }
 
     #[must_use]
