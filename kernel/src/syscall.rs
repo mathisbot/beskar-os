@@ -503,16 +503,22 @@ fn sc_query_config(args: &Arguments) -> SyscallExitCode {
 
 fn sc_thread_spawn(args: &Arguments) -> u64 {
     use crate::process::scheduler::{self, thread};
+    use beskar_core::process::ThreadStartBlock;
 
     let entry_point = args.one();
 
     let entry_point = VirtAddr::try_new(entry_point).unwrap_or_default();
+    // Not technically necessary
     if !is_addr_owned(entry_point, entry_point) {
         return 0;
     }
 
+    // SAFETY: This is effectively a transmute of a function pointer to a usize
     let start_fn = unsafe {
-        core::mem::transmute::<*const (), extern "C" fn(usize) -> !>(thread::start_user_thread as _)
+        core::mem::transmute::<
+            extern "C" fn(extern "C" fn(*const ThreadStartBlock)) -> !,
+            extern "C" fn(usize) -> !,
+        >(thread::start_user_thread)
     };
     let thread = thread::Thread::builder_with_arg(
         scheduler::current_process(),
