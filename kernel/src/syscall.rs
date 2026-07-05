@@ -65,14 +65,11 @@ fn sc_exit(args: &Arguments) -> ! {
 #[must_use]
 /// Build page table flags from user-space protection flags constants.
 fn build_flags_from_us(raw: u64) -> Flags {
-    let readable = raw & beskar_core::syscall::consts::MFLAGS_READ != 0;
+    // let readable = raw & beskar_core::syscall::consts::MFLAGS_READ != 0;
     let writable = raw & beskar_core::syscall::consts::MFLAGS_WRITE != 0;
     let executable = raw & beskar_core::syscall::consts::MFLAGS_EXECUTE != 0;
 
-    let mut flags = Flags::USER_ACCESSIBLE;
-    if readable || writable || executable {
-        flags |= Flags::PRESENT;
-    }
+    let mut flags = Flags::USER_ACCESSIBLE | Flags::PRESENT;
     if writable {
         flags |= Flags::WRITABLE;
     }

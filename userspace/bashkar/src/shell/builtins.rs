@@ -178,6 +178,6 @@ fn cmd_shutdown(_ctx: CmdCtx<'_>) -> CmdResult {
 }
 
 fn cmd_reboot(_ctx: CmdCtx<'_>) -> CmdResult {
-    beskar_lib::power::shutdown();
+    beskar_lib::power::reboot();
     Err("This process does not have permission to reboot the system".to_string())
 }

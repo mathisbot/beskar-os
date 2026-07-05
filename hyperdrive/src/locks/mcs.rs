@@ -202,6 +202,7 @@ impl<T: ?Sized, R: RelaxStrategy> McsLock<T, R> {
             lock: self,
             node: ptr::from_ref(node),
             _phantom: PhantomData,
+            _data: PhantomData,
         }
     }
 
@@ -228,6 +229,7 @@ impl<T: ?Sized, R: RelaxStrategy> McsLock<T, R> {
             lock: self,
             node: ptr::from_ref(node),
             _phantom: PhantomData,
+            _data: PhantomData,
         })
     }
 
@@ -301,6 +303,7 @@ pub struct McsGuard<'node, 'lock, T: ?Sized, R: RelaxStrategy = Spin> {
     // Instead, we store a raw pointer and use PhantomData to keep lifetime
     // information ONLY for the lifetime of the guard.
     _phantom: PhantomData<&'node McsNode>,
+    _data: PhantomData<&'lock mut T>,
 }
 
 impl<T: ?Sized, R: RelaxStrategy> Deref for McsGuard<'_, '_, T, R> {

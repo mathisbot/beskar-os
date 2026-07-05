@@ -172,31 +172,36 @@ fn load_segments(klu: &mut KernelLoadingUtils, vao: u64) -> LoadedSegmentsInfo {
 }
 
 fn handle_segment_load(load_segment: ProgramHeader, klu: &mut KernelLoadingUtils, vao: u64) {
-    let phys_start = PhysAddr::new_truncate(core::ptr::from_ref::<u8>(&klu.kernel.input[0]) as u64)
-        + load_segment.offset();
-
-    let start_frame = Frame::<M4KiB>::containing_address(phys_start);
-    let end_frame = Frame::<M4KiB>::containing_address(phys_start + load_segment.file_size() - 1);
-
     let virt_start = VirtAddr::new_extend(vao + load_segment.virtual_addr());
-    let start_page = Page::<M4KiB>::containing_address(virt_start);
 
-    let mut segment_flags = Flags::PRESENT | Flags::GLOBAL;
-    if load_segment.flags().is_write() {
-        segment_flags = segment_flags.union(Flags::WRITABLE);
-    }
-    if !load_segment.flags().is_execute() {
-        segment_flags = segment_flags.union(Flags::NO_EXECUTE);
-    }
+    if load_segment.file_size() > 0 {
+        let start_page = Page::<M4KiB>::containing_address(virt_start);
 
-    for frame in Frame::range_inclusive(start_frame, end_frame) {
-        let page = start_page + (frame - start_frame);
+        let mut segment_flags = Flags::PRESENT | Flags::GLOBAL;
+        if load_segment.flags().is_write() {
+            segment_flags = segment_flags.union(Flags::WRITABLE);
+        }
+        if !load_segment.flags().is_execute() {
+            segment_flags = segment_flags.union(Flags::NO_EXECUTE);
+        }
 
-        unsafe {
-            klu.page_table
-                .map(page, frame, segment_flags, klu.frame_allocator)
-                .expect("Failed to map kernel ELF segment")
-                .ignore_flush();
+        let phys_start =
+            PhysAddr::new_truncate(core::ptr::from_ref::<u8>(&klu.kernel.input[0]) as u64)
+                + load_segment.offset();
+
+        let start_frame = Frame::<M4KiB>::containing_address(phys_start);
+        let end_frame =
+            Frame::<M4KiB>::containing_address(phys_start + load_segment.file_size() - 1);
+
+        for frame in Frame::range_inclusive(start_frame, end_frame) {
+            let page = start_page + (frame - start_frame);
+
+            unsafe {
+                klu.page_table
+                    .map(page, frame, segment_flags, klu.frame_allocator)
+                    .expect("Failed to map kernel ELF segment")
+                    .ignore_flush();
+            }
         }
     }
 
