@@ -2,7 +2,10 @@
 #![no_main]
 
 use beskar_core::time::Duration;
-use beskar_lib::{io::keyboard, time::now};
+use beskar_lib::{
+    io::keyboard,
+    time::{elapsed, now},
+};
 
 beskar_lib::entry_point!(main);
 
@@ -16,7 +19,7 @@ fn main(_start: &beskar_lib::ThreadStartBlock) {
         if let Some(event) = keyboard::poll_keyboard() {
             shell.handle_key(&event);
             last_input = now();
-        } else if now() - last_input >= IDLE_THRESHOLD {
+        } else if elapsed(last_input) >= IDLE_THRESHOLD {
             keyboard::wait_next_event();
         } else {
             core::hint::spin_loop();

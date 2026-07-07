@@ -141,8 +141,12 @@ impl AddAssign<Permission> for Permissions {
     }
 }
 
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+#[error("Invalid permissions bitmap")]
+pub struct InvalidBitmap;
+
 impl TryFrom<u64> for Permissions {
-    type Error = ();
+    type Error = InvalidBitmap;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         if let Ok(value) = Bitmap::try_from(value)
@@ -150,7 +154,7 @@ impl TryFrom<u64> for Permissions {
         {
             Ok(Self(value))
         } else {
-            Err(())
+            Err(InvalidBitmap)
         }
     }
 }

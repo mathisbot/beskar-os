@@ -39,6 +39,11 @@ pub fn now() -> Instant {
 
 #[must_use]
 #[inline]
+/// Returns the duration elapsed since the given instant.
+///
+/// # Panics
+///
+/// This function panics if no high-precision timer is available.
 pub fn elapsed(since: Instant) -> Duration {
     let now = now();
     if now < since {
