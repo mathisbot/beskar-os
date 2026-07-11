@@ -2,6 +2,7 @@ use crate::arch::syscalls;
 use beskar_core::{
     process::{SleepHandle, WaitResult, sync::FutexWaitResult},
     syscall::{ExitCode, Syscall, SyscallExitCode},
+    time::Instant,
 };
 
 #[inline]
@@ -141,4 +142,14 @@ pub fn sc_thread_spawn(entry_point: extern "C" fn() -> !) -> u64 {
 pub fn sc_powermgt(cmd: u64) -> SyscallExitCode {
     let res = syscalls::syscall_1(Syscall::PowerManagement, cmd);
     SyscallExitCode::try_from(res).unwrap()
+}
+
+#[inline]
+pub fn sc_precision_timer() -> Option<Instant> {
+    let raw = syscalls::syscall_0(Syscall::PrecisionTimer);
+    if raw == 0 {
+        None
+    } else {
+        Some(Instant::from_millis(raw))
+    }
 }

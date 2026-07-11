@@ -1242,7 +1242,7 @@ mod tests {
         let selector = gdt.append(GdtDescriptor::kernel_code_segment());
         gdt.append(GdtDescriptor::kernel_data_segment());
         assert_eq!(selector, 1 << 3);
-        assert!(gdt.len == 3);
+        assert_eq!(gdt.len, 3);
     }
 
     #[test]

@@ -42,6 +42,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::QueryConfig => SyscallReturnValue::Code(sc_query_config(args)),
         Syscall::ThreadSpawn => SyscallReturnValue::ValueU(sc_thread_spawn(args)),
         Syscall::PowerManagement => SyscallReturnValue::Code(sc_powermgt(args)),
+        Syscall::PrecisionTimer => SyscallReturnValue::ValueU(sc_precision_timer(args)),
     }
 }
 
@@ -559,4 +560,9 @@ fn sc_powermgt(args: &Arguments) -> SyscallExitCode {
         }
         _ => SyscallExitCode::Failure,
     }
+}
+
+fn sc_precision_timer(_args: &Arguments) -> u64 {
+    let raw = crate::time::now();
+    raw.total_millis()
 }

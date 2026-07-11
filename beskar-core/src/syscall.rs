@@ -109,6 +109,8 @@ pub enum Syscall {
     ///
     /// The first argument is the power management command to execute.
     PowerManagement = 17,
+    /// Query the high precision timer.
+    PrecisionTimer,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
