@@ -19,17 +19,16 @@
 //! surface.present_region(1, 1, 100, 0)?;
 //! ```
 
+use beskar_core::video::Pixel;
 use core::mem::MaybeUninit;
 
 use crate::error::{SurfaceError, SurfaceErrorKind};
-use beskar_core::video::{Pixel, SurfaceId};
 
 /// An offscreen rendering surface managed by the kernel compositor
 ///
 /// Surfaces hold a buffer of pixels and communicate with the kernel
 /// compositor to get rendered to the screen.
 pub struct Surface {
-    sid: SurfaceId,
     width: u16,
     height: u16,
 }
@@ -56,24 +55,12 @@ impl Surface {
             return Err(SurfaceError::new(SurfaceErrorKind::InvalidDimensions));
         }
 
-        let raw_sid = crate::sys::sc_surface_create(width, height, x, y, buffer as *const _);
-
-        let Ok(sid) = u32::try_from(raw_sid) else {
+        let res = crate::sys::sc_surface_create(width, height, x, y, buffer as *const _);
+        if !res.is_success() {
             return Err(SurfaceError::new(SurfaceErrorKind::SyscallFailed));
-        };
+        }
 
-        Ok(Self {
-            sid: SurfaceId(sid),
-            width,
-            height,
-        })
-    }
-
-    /// Get the surface ID
-    #[must_use]
-    #[inline]
-    pub const fn id(&self) -> SurfaceId {
-        self.sid
+        Ok(Self { width, height })
     }
 
     /// Get the surface width in pixels
@@ -101,7 +88,7 @@ impl Surface {
             return Err(SurfaceError::new(SurfaceErrorKind::InvalidDimensions));
         }
 
-        let code = crate::sys::sc_surface_dirty(self.sid, width, height, x, y);
+        let code = crate::sys::sc_surface_dirty(width, height, x, y);
 
         if code == beskar_core::syscall::SyscallExitCode::Success {
             Ok(())
@@ -127,8 +114,7 @@ impl Surface {
     ///
     /// Returns an error if the syscall fails.
     pub fn present_dirty(&self) -> Result<(), SurfaceError> {
-        let code = crate::sys::sc_surface_present(self.sid);
-
+        let code = crate::sys::sc_surface_present(false);
         if code == beskar_core::syscall::SyscallExitCode::Success {
             Ok(())
         } else {
@@ -160,14 +146,18 @@ impl Surface {
     ///
     /// Returns an error if the syscall fails.
     pub fn present_all(&self) -> Result<(), SurfaceError> {
-        self.mark_all_dirty()?;
-        self.present_dirty()
+        let code = crate::sys::sc_surface_present(true);
+        if code == beskar_core::syscall::SyscallExitCode::Success {
+            Ok(())
+        } else {
+            Err(SurfaceError::new(SurfaceErrorKind::SyscallFailed))
+        }
     }
 }
 
 impl Drop for Surface {
     fn drop(&mut self) {
-        let _ = crate::sys::sc_surface_destroy(self.sid);
+        let _ = crate::sys::sc_surface_destroy();
     }
 }
 

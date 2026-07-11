@@ -1,4 +1,7 @@
-use crate::mem::AddressSpace;
+use crate::{
+    mem::AddressSpace,
+    video::{AtomicOptionSurfaceGuard, SurfaceGuard},
+};
 use alloc::{
     string::{String, ToString},
     sync::Arc,
@@ -6,14 +9,12 @@ use alloc::{
 use beskar_core::process::perms::Permissions;
 use beskar_hal::process::Kind;
 use core::sync::atomic::{AtomicU64, Ordering};
-use hyperdrive::{once::Once, queues::mpmc::MpmcQueue};
+use hyperdrive::once::Once;
 use storage::fs::{Path, PathBuf};
 
 pub mod binary;
 pub mod scheduler;
 pub mod sync;
-
-const MAX_SURFACES_PER_PROCESS: usize = 2;
 
 pub fn init() {
     static KERNEL_PROCESS: Once<Arc<Process>> = Once::uninit();
@@ -25,7 +26,7 @@ pub fn init() {
             address_space: AddressSpace::new(),
             kind: Kind::Kernel,
             binary: None,
-            surfaces: MpmcQueue::new(),
+            surface: AtomicOptionSurfaceGuard::new(None),
             perms: Permissions::all(),
         })
     });
@@ -91,8 +92,7 @@ pub struct Process {
     address_space: AddressSpace,
     kind: Kind,
     binary: Option<PathBuf>,
-    /// Surfaces allocated by this process (interior mutability for registration)
-    surfaces: MpmcQueue<MAX_SURFACES_PER_PROCESS, crate::video::SurfaceGuard>,
+    surface: AtomicOptionSurfaceGuard,
     perms: Permissions,
 }
 
@@ -106,7 +106,7 @@ impl Process {
             address_space: AddressSpace::new(),
             kind,
             binary,
-            surfaces: MpmcQueue::new(),
+            surface: AtomicOptionSurfaceGuard::new(None),
             perms,
         }
     }
@@ -141,16 +141,47 @@ impl Process {
         self.binary.as_ref().map(PathBuf::as_path)
     }
 
-    /// Register a surface as belonging to this process
-    pub fn register_surface(&self, guard: crate::video::SurfaceGuard) -> bool {
-        let res = self.surfaces.try_push(guard);
-        res.is_ok()
-    }
-
     #[must_use]
     #[inline]
     pub const fn perms(&self) -> &Permissions {
         &self.perms
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn surface(&self) -> Option<beskar_core::video::SurfaceId> {
+        self.surface.load(Ordering::Acquire)
+    }
+
+    #[inline]
+    /// Register a surface as belonging to this process
+    /// if the process does not already have a surface registered.
+    ///
+    /// # Errors
+    ///
+    /// If the process already has a surface registered, returns the existing surface ID.
+    pub fn register_surface(
+        &self,
+        surface: beskar_core::video::SurfaceId,
+    ) -> Result<(), beskar_core::video::SurfaceId> {
+        let res = self.surface.compare_exchange(
+            None,
+            Some(surface),
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
+        match res {
+            Ok(_) => Ok(()),
+            Err(Some(existing)) => Err(existing),
+            Err(None) => unreachable!(),
+        }
+    }
+
+    #[inline]
+    /// Return the owned surface of the process, if any.
+    pub fn destroy_surface(&self) -> Option<SurfaceGuard> {
+        let sid = self.surface.swap(None, Ordering::Relaxed);
+        sid.map(SurfaceGuard)
     }
 }
 

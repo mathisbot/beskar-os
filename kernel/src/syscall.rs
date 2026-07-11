@@ -35,7 +35,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::WaitOnEvent => SyscallReturnValue::ValueU(sc_wait_on_event(args)),
         Syscall::FutexWait => SyscallReturnValue::ValueU(sc_futex_wait(args)),
         Syscall::FutexWake => SyscallReturnValue::ValueU(sc_futex_wake(args)),
-        Syscall::SurfaceCreate => SyscallReturnValue::ValueI(sc_surface_create(args)),
+        Syscall::SurfaceCreate => SyscallReturnValue::Code(sc_surface_create(args)),
         Syscall::SurfaceDestroy => SyscallReturnValue::Code(sc_surface_destroy(args)),
         Syscall::SurfaceDirty => SyscallReturnValue::Code(sc_surface_dirty(args)),
         Syscall::SurfacePresent => SyscallReturnValue::Code(sc_surface_present(args)),
@@ -366,7 +366,7 @@ fn sc_futex_wake(args: &Arguments) -> u64 {
     clippy::cast_possible_truncation,
     reason = "Arguments are passed as u64 but represent smaller types"
 )]
-fn sc_surface_create(args: &Arguments) -> i64 {
+fn sc_surface_create(args: &Arguments) -> SyscallExitCode {
     let width = (args.one() >> 16) as u16;
     let height = args.one() as u16;
     let x = (args.two() >> 16) as u16;
@@ -374,64 +374,42 @@ fn sc_surface_create(args: &Arguments) -> i64 {
     let user_buffer_ptr = args.three() as *mut u8;
 
     if width == 0 || height == 0 {
-        return -1;
+        return SyscallExitCode::Failure;
     }
 
     let user_buffer = VirtAddr::from_ptr(user_buffer_ptr);
     let buffer_size = u64::from(width) * u64::from(height) * 4;
     let buffer_end = user_buffer + buffer_size;
     if !is_addr_owned(user_buffer, buffer_end) {
-        return -1;
+        return SyscallExitCode::Failure;
     }
 
-    let res = crate::video::with_compositor(|c| {
-        let sid = unsafe { c.create_surface_with_buffer(x, y, width, height, user_buffer_ptr) };
-        (sid, crate::video::SurfaceGuard(sid))
+    let res = crate::video::with_compositor(|c| unsafe {
+        c.create_surface_with_buffer(x, y, width, height, user_buffer_ptr)
     });
 
-    if let Some((raw_sid, guard)) = res {
+    if let Some(sid) = res {
         // Register the surface with the current process for automatic cleanup
         let process = crate::process::current();
-        let registered = process.register_surface(guard);
-        crate::trace::set_screen_logging(false);
-        if registered { i64::from(raw_sid.0) } else { -1 }
-    } else {
-        -1
+        let registered = process.register_surface(sid);
+
+        if registered.is_ok() {
+            crate::trace::set_screen_logging(false);
+            return SyscallExitCode::Success;
+        }
+
+        let res = crate::video::with_compositor(|c| c.destroy_surface(sid));
+        debug_assert!(res.is_some());
     }
+
+    SyscallExitCode::Failure
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "Arguments are passed as u64 but represent smaller types"
-)]
-fn sc_surface_destroy(args: &Arguments) -> SyscallExitCode {
-    let sid_raw = args.one() as u32;
-    let sid = beskar_core::video::SurfaceId(sid_raw);
-
-    crate::video::with_compositor(|c| c.destroy_surface(sid));
-
-    SyscallExitCode::Success
-}
-
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "Arguments are passed as u64 but represent smaller types"
-)]
-fn sc_surface_dirty(args: &Arguments) -> SyscallExitCode {
-    let sid_raw = args.one() as u32;
-    let sid = beskar_core::video::SurfaceId(sid_raw);
-    let width = (args.two() >> 16) as u16;
-    let height = args.two() as u16;
-    let x = (args.three() >> 16) as u16;
-    let y = args.three() as u16;
-
-    let rect = beskar_core::video::Rect::new(x, y, width, height);
-
-    // Render only this surface synchronously in the syscall context
-    // where we can safely access the userspace buffer
-    let result = crate::video::with_compositor(|c| c.mark_surface_dirty(sid, rect).ok()).flatten();
-
-    if result.is_some() {
+#[expect(clippy::option_if_let_else, reason = "Readability")]
+fn sc_surface_destroy(_args: &Arguments) -> SyscallExitCode {
+    let res = crate::process::current().destroy_surface();
+    if let Some(sg) = res {
+        drop(sg);
         SyscallExitCode::Success
     } else {
         SyscallExitCode::Failure
@@ -442,14 +420,39 @@ fn sc_surface_dirty(args: &Arguments) -> SyscallExitCode {
     clippy::cast_possible_truncation,
     reason = "Arguments are passed as u64 but represent smaller types"
 )]
-fn sc_surface_present(args: &Arguments) -> SyscallExitCode {
-    let sid_raw = args.one() as u32;
+fn sc_surface_dirty(args: &Arguments) -> SyscallExitCode {
+    let width = (args.one() >> 16) as u16;
+    let height = args.one() as u16;
+    let x = (args.two() >> 16) as u16;
+    let y = args.two() as u16;
 
-    // Render only this surface synchronously in the syscall context
-    // where we can safely access the userspace buffer
+    let rect = beskar_core::video::Rect::new(x, y, width, height);
+
+    let Some(sid) = crate::process::current().surface() else {
+        return SyscallExitCode::Failure;
+    };
+
+    let result = crate::video::with_compositor(|c| c.mark_surface_dirty(sid, rect).ok()).flatten();
+
+    if result.is_some() {
+        SyscallExitCode::Success
+    } else {
+        SyscallExitCode::Failure
+    }
+}
+
+fn sc_surface_present(args: &Arguments) -> SyscallExitCode {
+    let present_all = (args.one() & 0b1) != 0;
+
+    let Some(sid) = crate::process::current().surface() else {
+        return SyscallExitCode::Failure;
+    };
+
     let result = crate::video::with_compositor(|c| {
-        c.render_surface_dirty(beskar_core::video::SurfaceId(sid_raw))
-            .ok()
+        if present_all {
+            c.mark_surface_all_dirty(sid).ok()?;
+        }
+        c.render_surface_dirty(sid).ok()
     })
     .flatten();
 
