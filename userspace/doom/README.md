@@ -17,10 +17,10 @@ doom/
         *.c
         doom1.wad
     src/
-        main.rs
+        *.rs
 ```
 
-If compilation fails or the program crashes, try using the commit hash [aa9510a](https://github.com/Daivuk/PureDOOM/commit/aa9510a97767a1383bfd7711106c4aeee48605fb).
+If compilation fails or the program crashes, try using the commit hash [355cfbd](https://github.com/Daivuk/PureDOOM/commit/355cfbd16fac119718879239336ee2ea408886bd).
 
 ## Usage
 
