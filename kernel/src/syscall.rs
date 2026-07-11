@@ -189,6 +189,9 @@ fn sc_read(args: &Arguments) -> i64 {
     if !is_addr_owned(buffer_start, buffer_start + buffer_len) {
         return -1;
     }
+    if !crate::process::current().perms().fs_read() {
+        return -1;
+    }
 
     // Safety: The buffer's range is owned by the curent process.
     let buffer = unsafe {
@@ -219,6 +222,9 @@ fn sc_write(args: &Arguments) -> i64 {
     let buffer_len = args.three();
 
     if !is_addr_owned(buffer_start, buffer_start + buffer_len) {
+        return -1;
+    }
+    if !crate::process::current().perms().fs_write() {
         return -1;
     }
 
@@ -384,6 +390,9 @@ fn sc_surface_create(args: &Arguments) -> SyscallExitCode {
     if !is_addr_owned(user_buffer, buffer_end) {
         return SyscallExitCode::Failure;
     }
+    if !crate::process::current().perms().create_surface() {
+        return SyscallExitCode::Failure;
+    }
 
     let res = crate::video::with_compositor(|c| unsafe {
         c.create_surface_with_buffer(x, y, width, height, user_buffer_ptr)
@@ -543,11 +552,7 @@ fn sc_powermgt(args: &Arguments) -> SyscallExitCode {
 
     let action = args.one();
 
-    let can_manage_power = {
-        let process = crate::process::current();
-        process.perms().power_mgmt()
-    };
-    if !can_manage_power {
+    if !crate::process::current().perms().power_mgmt() {
         return SyscallExitCode::Failure;
     }
 

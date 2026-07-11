@@ -9,18 +9,24 @@ pub struct Permission(Bitmap);
 impl Permission {
     /// Ability to manage power, e.g. shut down the system.
     pub const POWER_MGMT: Self = Self(1 << 0);
+    /// Ability to create a surface.
+    pub const CREATE_SURFACE: Self = Self(1 << 1);
     /// Ability to acces the Internet.
-    pub const NET_CLIENT: Self = Self(1 << 1);
+    pub const NET_CLIENT: Self = Self(1 << 2);
     /// Ability to run a network server.
-    pub const NET_SERVER: Self = Self(1 << 2);
+    pub const NET_SERVER: Self = Self(1 << 3);
+    /// Ability to read the file system.
+    pub const FS_READ: Self = Self(1 << 4);
+    /// Ability to write to the file system.
+    pub const FS_WRITE: Self = Self(1 << 5);
 }
 
 #[derive(Debug)]
 pub struct Permissions(Bitmap);
 
 impl Permissions {
-    const ALL: Bitmap = 0x7;
-    const US_ROOT: Bitmap = 0x7;
+    const ALL: Bitmap = 0x3F;
+    const US_ROOT: Bitmap = Self::ALL;
 
     #[must_use]
     #[inline]
@@ -68,6 +74,41 @@ impl Permissions {
     /// Checks if the `POWER_MGMT` permission is set in the permissions bitmap.
     pub const fn power_mgmt(&self) -> bool {
         self.has(Permission::POWER_MGMT)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Checks if the `CREATE_SURFACE` permission is set in the permissions bitmap.
+    pub const fn create_surface(&self) -> bool {
+        self.has(Permission::CREATE_SURFACE)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Checks if the `NET_CLIENT` permissions is set in the permissions bitmap.
+    pub const fn net_client(&self) -> bool {
+        self.has(Permission::NET_CLIENT)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Checks if the `NET_SERVER` permissions is set in the permissions bitmap.
+    pub const fn net_server(&self) -> bool {
+        self.has(Permission::NET_SERVER)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Checks if the `FS_READ` permissions is set in the permissions bitmap.
+    pub const fn fs_read(&self) -> bool {
+        self.has(Permission::FS_READ)
+    }
+
+    #[must_use]
+    #[inline]
+    /// Checks if the `FS_WRITE` permissions is set in the permissions bitmap.
+    pub const fn fs_write(&self) -> bool {
+        self.has(Permission::FS_WRITE)
     }
 }
 

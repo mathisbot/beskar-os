@@ -44,8 +44,8 @@ pedantic = "warn"
 nursery = "warn"
 
 [dependencies]
-anyhow = "1.0.102"
-ratatui = "0.30.0"
+anyhow = "1.0.103"
+ratatui = "0.30.2"
 thiserror = "2.0.18"
 
 [lints]
