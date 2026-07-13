@@ -568,6 +568,6 @@ fn sc_powermgt(args: &Arguments) -> SyscallExitCode {
 }
 
 fn sc_precision_timer(_args: &Arguments) -> u64 {
-    let raw = crate::time::now();
-    raw.total_millis()
+    let instant = crate::time::now();
+    instant.total_millis()
 }
