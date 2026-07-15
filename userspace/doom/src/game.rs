@@ -1,4 +1,5 @@
 use core::{
+    alloc::Layout,
     ffi::{CStr, c_char, c_void},
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -42,28 +43,43 @@ extern "C" fn print(s: *const c_char) {
     }
 }
 
+const MALLOC_ALIGN: usize = 16;
+
 extern "C" fn malloc(size: i32) -> *mut c_void {
     // `alloc` states the layout size must be non-zero.
-    if size == 0 {
-        return core::ptr::dangling_mut();
+    if size <= 0 {
+        return core::ptr::null_mut();
     }
 
+    let hdr_layout = Layout::new::<Layout>();
     let size = usize::try_from(size).unwrap();
-    let layout =
-        core::alloc::Layout::from_size_align(size, core::mem::align_of::<*const ()>()).unwrap();
+    let array_layout = Layout::from_size_align(size, MALLOC_ALIGN).unwrap();
+    let (layout, offset) = hdr_layout.extend(array_layout).unwrap();
 
     let ptr = unsafe { alloc::alloc::alloc(layout) };
+    if ptr.is_null() {
+        beskar_lib::println!("malloc failed: out of memory (requested {} bytes)", size);
+        return core::ptr::null_mut();
+    }
 
-    assert!(
-        !ptr.is_null(),
-        "malloc failed: out of memory (requested {size} bytes)",
-    );
-
-    ptr.cast()
+    let header_ptr = ptr.cast::<Layout>();
+    unsafe { header_ptr.write(layout) };
+    unsafe { header_ptr.byte_add(offset) }.cast()
 }
 
-const extern "C" fn free(_ptr: *mut c_void) {
-    // TODO: keep track of allocations to get the layout!
+extern "C" fn free(ptr: *mut c_void) {
+    if ptr.is_null() {
+        return;
+    }
+
+    let hdr_layout = Layout::new::<Layout>();
+    let array_layout = Layout::from_size_align(1, MALLOC_ALIGN).unwrap();
+    let (_, offset) = hdr_layout.extend(array_layout).unwrap();
+
+    let header_ptr = unsafe { ptr.cast::<Layout>().byte_sub(offset) };
+    let layout = unsafe { header_ptr.read() };
+
+    unsafe { alloc::alloc::dealloc(header_ptr.cast(), layout) };
 }
 
 extern "C" fn exit(code: i32) {
