@@ -2,6 +2,7 @@
 
 use crate::config::{BuildConfig, Profile};
 use std::{
+    ffi::OsStr,
     fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -9,6 +10,8 @@ use std::{
     sync::mpsc::{self, Receiver, Sender},
     thread::{self, JoinHandle},
 };
+
+const RUSTFLAGS: &str = "-C target-cpu=x86-64-v3";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskKind {
@@ -113,7 +116,7 @@ pub fn start_logged_process(
 
     let handle = thread::spawn(move || {
         let _ = tx.send(TaskEvent::Line(first_line));
-        let success = run_command(&program, &args, &workspace_root, &tx);
+        let success = run_command::<_, &str, &str>(&program, &args, &workspace_root, &tx, []);
         let _ = tx.send(TaskEvent::Finished { kind, success });
     });
 
@@ -189,7 +192,13 @@ fn cargo_step(
         args.push(flag.to_string());
     }
 
-    if run_command("cargo", &args, workspace_root, tx) {
+    if run_command(
+        "cargo",
+        &args,
+        workspace_root,
+        tx,
+        [("RUSTFLAGS", RUSTFLAGS)],
+    ) {
         let _ = tx.send(TaskEvent::Line(format!("  ok {label}")));
         true
     } else {
@@ -198,19 +207,26 @@ fn cargo_step(
     }
 }
 
-fn run_command(
+fn run_command<I, K, V>(
     program: &str,
     args: &[String],
     workspace_root: &Path,
     tx: &Sender<TaskEvent>,
-) -> bool {
+    envs: I,
+) -> bool
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
     let mut command = Command::new(program);
     command
         .args(args)
         .current_dir(workspace_root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("CARGO_TERM_COLOR", "never");
+        .env("CARGO_TERM_COLOR", "never")
+        .envs(envs);
 
     let mut child = match command.spawn() {
         Ok(child) => child,
