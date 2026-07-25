@@ -293,8 +293,8 @@ fn with_scheduler<R, F: FnOnce(&'static Scheduler) -> R>(f: F) -> R {
 }
 
 fn wake_blocked_threads() {
-    let now = crate::time::now();
-    for thread in wait::collect_timed_out(now) {
+    let now = crate::time::Instant::now();
+    for thread in wait::collect_timed_out(now.as_inner()) {
         enqueue_ready_thread(thread);
     }
 }

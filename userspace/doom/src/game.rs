@@ -1,8 +1,12 @@
+use beskar_lib::time::Instant;
 use core::{
     alloc::Layout,
     ffi::{CStr, c_char, c_void},
     sync::atomic::{AtomicUsize, Ordering},
 };
+use hyperdrive::once::Once;
+
+static STARTUP_TIME: Once<Instant> = Once::uninit();
 
 #[link(name = "puredoom", kind = "static")]
 unsafe extern "C" {
@@ -26,6 +30,7 @@ unsafe extern "C" {
 }
 
 pub fn init() {
+    STARTUP_TIME.call_once(Instant::now);
     unsafe { doom_set_print(print) };
     unsafe { doom_set_malloc(malloc, free) };
     unsafe { doom_set_file_io(open, close, read, write, seek, tell, eof) };
@@ -92,10 +97,15 @@ extern "C" fn exit(code: i32) {
 }
 
 extern "C" fn gettime(sec: *mut i32, usec: *mut i32) {
-    let now = beskar_lib::time::now();
+    let elapsed = STARTUP_TIME
+        .get()
+        .expect("Startup time uninitialized")
+        .elapsed();
     unsafe {
-        *sec = i32::try_from(now.secs()).unwrap();
-        *usec = i32::try_from(now.micros()).unwrap();
+        // Can overflow is the game runs for more than 68 years, which is unlikely.
+        *sec = i32::try_from(elapsed.as_secs()).unwrap();
+        // Cannot overflow
+        *usec = i32::try_from(elapsed.subsec_micros()).unwrap();
     }
 }
 

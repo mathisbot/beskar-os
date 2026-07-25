@@ -96,7 +96,9 @@ fn calibrate_with_rdtsc() -> bool {
 
     if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
         let thc_hz = u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);
-        TSC_MHZ.store(thc_hz / 1_000_000, Ordering::Relaxed);
+        let thc_mhz = thc_hz / 1_000_000;
+        debug_assert_ne!(thc_mhz, 0);
+        TSC_MHZ.store(thc_mhz, Ordering::Relaxed);
         return true;
     }
 
@@ -125,6 +127,9 @@ fn calibrate_with_hpet() -> bool {
     };
 
     let rate_mhz = diff * (MS_PER_S / CALIBRATION_TIME_MS) / HZ_PER_MHZ;
+    if rate_mhz == 0 {
+        return false;
+    }
     TSC_MHZ.store(rate_mhz, Ordering::Relaxed);
 
     true

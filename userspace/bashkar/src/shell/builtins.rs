@@ -1,10 +1,10 @@
-use alloc::string::{String, ToString as _};
-use core::fmt::Write as _;
-
-use beskar_core::video::PixelComponents;
-
 use crate::buffer::{Style, TermBuffer};
 use crate::theme;
+use alloc::string::{String, ToString as _};
+use beskar_core::video::PixelComponents;
+use beskar_lib::time::Instant;
+use core::fmt::Write as _;
+use hyperdrive::once::Once;
 
 /// Context passed to every builtin command.
 pub struct CmdCtx<'a> {
@@ -152,15 +152,21 @@ fn cmd_rand(ctx: CmdCtx<'_>) -> CmdResult {
 
 const HEX_CHARS: [u8; 16] = *b"0123456789ABCDEF";
 
-#[expect(clippy::unnecessary_wraps, clippy::needless_pass_by_value)]
+static START_TIME: Once<Instant> = Once::uninit();
+
+pub fn init_start_time() {
+    START_TIME.call_once(Instant::now);
+}
+
+#[expect(clippy::needless_pass_by_value)]
 fn cmd_uptime(ctx: CmdCtx<'_>) -> CmdResult {
-    let now = beskar_lib::time::now();
-    let secs = now.total_millis() / 1000;
-    let mins = secs / 60;
-    let hours = mins / 60;
+    let uptime = START_TIME
+        .get()
+        .ok_or_else(|| "Startup time uninitialized".to_string())?
+        .elapsed();
 
     let mut s = alloc::string::String::new();
-    let _ = write!(s, "{}h {:02}m {:02}s", hours, mins % 60, secs % 60);
+    let _ = write!(s, "{uptime:?}");
     ctx.buf.write_styled(&s, styled(theme::ACCENT_CYAN));
     ctx.buf.put_char('\n');
     Ok(())

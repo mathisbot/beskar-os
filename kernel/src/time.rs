@@ -1,8 +1,14 @@
 use crate::drivers::{hpet, tsc};
-use beskar_core::time::TimerInfo;
-pub use beskar_core::time::{Duration, Instant};
-use core::sync::atomic::{AtomicBool, Ordering};
+pub use beskar_core::time::Duration;
+use beskar_core::time::{TICKS_PER_MILLI, TimerInfo};
+use core::{
+    num::NonZeroU64,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use hyperdrive::once::Once;
+
+mod instant;
+pub use instant::Instant;
 
 static HPET_AVAILABLE: AtomicBool = AtomicBool::new(false);
 static TSC_AVAILABLE: AtomicBool = AtomicBool::new(false);
@@ -19,7 +25,7 @@ pub fn init() {
     TSC_AVAILABLE.store(tsc_res.is_ok(), Ordering::Relaxed);
 
     let timer_info = TimerInfo {
-        ticks_per_ms: ticks_per_ms().try_into().ok(),
+        ticks_per_ms: ticks_per_ms(),
         fastpath: us_fastpath(),
     };
     TIMER_INFO.call_once(|| timer_info);
@@ -36,30 +42,27 @@ pub fn wait(duration: Duration) {
     }
 }
 
-/// Returns the current instant (monotonic time).
-///
-/// If no high-precision timer is available, returns `Instant::MAX`.
 #[must_use]
 #[inline]
-pub fn now() -> Instant {
+pub fn now_raw() -> u64 {
     if TSC_AVAILABLE.load(Ordering::Acquire) {
-        TscClock.now()
+        tsc::main_counter_value()
     } else if HPET_AVAILABLE.load(Ordering::Acquire) {
-        HpetClock.now()
+        hpet::main_counter_value()
     } else {
-        Instant::MAX
+        0
     }
 }
 
 #[must_use]
 #[inline]
-pub fn ticks_per_ms() -> u64 {
+pub fn ticks_per_ms() -> Option<NonZeroU64> {
     if TSC_AVAILABLE.load(Ordering::Acquire) {
-        TscClock.ticks_per_ms()
+        Some(TscClock.ticks_per_ms())
     } else if HPET_AVAILABLE.load(Ordering::Acquire) {
-        HpetClock.ticks_per_ms()
+        Some(HpetClock.ticks_per_ms())
     } else {
-        0
+        None
     }
 }
 
@@ -78,12 +81,15 @@ pub fn timer_info() -> Option<&'static TimerInfo> {
 
 trait Clock {
     #[must_use]
-    fn now(&self) -> Instant;
+    fn now(&self) -> u64;
     #[must_use]
-    fn ticks_per_ms(&self) -> u64;
+    fn ticks_per_ms(&self) -> NonZeroU64;
     fn wait(&self, duration: Duration) {
-        let end = self.now() + duration;
-        while self.now() < end {
+        let start = unsafe { beskar_core::time::Instant::from_raw(self.now()) };
+        let end = start
+            .checked_add_duration(duration, self.ticks_per_ms().get() * TICKS_PER_MILLI)
+            .expect("Overflow when adding duration to instant");
+        while self.now() < end.to_raw() {
             core::hint::spin_loop();
         }
     }
@@ -91,24 +97,26 @@ trait Clock {
 
 impl Clock for HpetClock {
     #[inline]
-    fn now(&self) -> Instant {
-        Instant::from_millis(hpet::main_counter_value() / self.ticks_per_ms())
+    fn now(&self) -> u64 {
+        hpet::main_counter_value()
     }
 
     #[inline]
-    fn ticks_per_ms(&self) -> u64 {
-        u64::from(hpet::ticks_per_ms().unwrap().get())
+    fn ticks_per_ms(&self) -> NonZeroU64 {
+        let raw = u64::from(hpet::ticks_per_ms().unwrap().get());
+        unsafe { NonZeroU64::new_unchecked(raw) }
     }
 }
 
 impl Clock for TscClock {
     #[inline]
-    fn now(&self) -> Instant {
-        Instant::from_millis(tsc::main_counter_value() / self.ticks_per_ms())
+    fn now(&self) -> u64 {
+        tsc::main_counter_value()
     }
 
     #[inline]
-    fn ticks_per_ms(&self) -> u64 {
-        tsc::ticks_per_ms()
+    fn ticks_per_ms(&self) -> NonZeroU64 {
+        let raw = tsc::ticks_per_ms();
+        unsafe { NonZeroU64::new_unchecked(raw) }
     }
 }

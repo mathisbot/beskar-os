@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+#[expect(clippy::case_sensitive_file_extension_comparisons)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let srcd = PathBuf::from("DOOM");
     let mut c_files = Vec::new();

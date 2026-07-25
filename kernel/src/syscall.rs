@@ -299,8 +299,9 @@ fn sc_wait_on_event(args: &Arguments) -> u64 {
         return u64::from(beskar_core::process::WaitResult::Unknown);
     }
 
-    let deadline =
-        timeout_us.map(|us| crate::time::now() + crate::time::Duration::from_micros(us.get()));
+    let deadline = timeout_us
+        .map(|us| crate::time::Instant::now() + crate::time::Duration::from_micros(us.get()));
+    let deadline = deadline.map(crate::time::Instant::as_inner);
     let wake = crate::process::scheduler::wait(wait::WaitRequest::new(handle, deadline));
 
     u64::from(beskar_core::process::WaitResult::from(wake.cause()))
@@ -568,6 +569,5 @@ fn sc_powermgt(args: &Arguments) -> SyscallExitCode {
 }
 
 fn sc_precision_timer(_args: &Arguments) -> u64 {
-    let instant = crate::time::now();
-    instant.total_millis()
+    crate::time::now_raw()
 }

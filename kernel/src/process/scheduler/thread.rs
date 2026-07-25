@@ -83,7 +83,7 @@ impl ThreadStats {
     pub const fn new() -> Self {
         Self {
             cpu_time_ms: 0,
-            wake_time: beskar_core::time::Instant::ZERO,
+            wake_time: beskar_core::time::Instant::ORIGIN,
         }
     }
 }

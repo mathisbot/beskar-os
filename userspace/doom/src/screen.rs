@@ -18,6 +18,7 @@ unsafe extern "C" {
     unsafe fn doom_get_framebuffer(channel: i32) -> *const u8;
 }
 
+#[must_use]
 /// Initialize the screen framebuffer using the compositor Surface API
 ///
 /// # Panics
@@ -72,7 +73,7 @@ pub fn draw(ctx: &mut DoomContext) {
 }
 
 fn draw_raw(src: &[u8], dst: &mut [u8], format: PixelFormat) {
-    debug_assert!(src.len() == dst.len());
+    debug_assert_eq!(src.len(), dst.len());
     match format {
         PixelFormat::Argb8888 | PixelFormat::Xrgb8888 => {
             dst.copy_from_slice(src);
