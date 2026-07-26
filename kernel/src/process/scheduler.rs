@@ -316,6 +316,7 @@ extern "C" fn guard_thread() -> ! {
             drop(thread);
         }
         thread_yield();
+        crate::arch::halt();
     }
 }
 
