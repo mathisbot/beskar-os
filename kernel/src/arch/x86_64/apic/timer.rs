@@ -89,6 +89,8 @@ impl LapicTimer {
     ///
     /// The APIC timer rate in MHz is returned.
     fn calibrate_with_time(&mut self) -> Option<NonZeroU32> {
+        use crate::time::{now_raw, ticks_per_ms};
+
         const CALIBRATION_MS: u64 = 50;
         const DIVIDER: Divider = Divider::Two;
 
@@ -96,7 +98,13 @@ impl LapicTimer {
             divider: DIVIDER,
             duration: u32::MAX - 1,
         }));
-        crate::time::wait(beskar_core::time::Duration::from_millis(CALIBRATION_MS));
+
+        let start = now_raw();
+        let end = start + ticks_per_ms()?.get() * CALIBRATION_MS;
+        while now_raw() < end {
+            core::hint::spin_loop();
+        }
+
         let ticks_remaining = self.read_curr_count_reg();
 
         self.set(Mode::Inactive);

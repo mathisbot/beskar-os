@@ -1,4 +1,3 @@
-use crate::arch::time::read_tsc;
 use beskar_core::time::{Duration, Instant as InstantCore, TICKS_PER_MILLI, TimerInfo};
 use core::mem::MaybeUninit;
 use core::ops;
@@ -12,13 +11,12 @@ fn query_counter(info: &TimerInfo) -> Option<u64> {
     if info.fastpath {
         cfg_select! {
             target_arch = "x86_64" => {
-                Some(read_tsc())
+                return Some(crate::arch::time::read_tsc());
             }
-            _ => None
+            _ => {}
         }
-    } else {
-        crate::sys::sc_precision_timer()
     }
+    crate::sys::sc_precision_timer()
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

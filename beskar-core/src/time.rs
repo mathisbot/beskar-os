@@ -39,6 +39,7 @@ impl Instant {
     /// # Safety
     ///
     /// The caller must ensure that the provided `raw` value is a valid representation of an `Instant`.
+    /// In particular, the raw representation must follow the semantics of `Ord` and `Eq`.
     pub const unsafe fn from_raw(raw: u64) -> Self {
         Self { raw }
     }

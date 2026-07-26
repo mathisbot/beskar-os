@@ -147,8 +147,8 @@ pub fn init() -> DriverResult<()> {
     STARTUP_TIME.store(unsafe { core::arch::x86_64::_rdtsc() }, Ordering::Relaxed);
 
     if calibrate_with_rdtsc() || calibrate_with_hpet() || calibrate_with_pit() {
-        crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
         if crate::arch::cpuid::check_feature(crate::arch::cpuid::CpuFeature::INVARIANT_TSC) {
+            crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
             Ok(())
         } else {
             crate::warn!("TSC is not invariant, it is not reliable as a clock source.");
