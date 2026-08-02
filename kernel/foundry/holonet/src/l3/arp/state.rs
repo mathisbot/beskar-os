@@ -115,10 +115,8 @@ impl<const CAPACITY: usize, const BUCKETS: usize> Cache<CAPACITY, BUCKETS> {
 
     /// Resolve a mapping, touching it in the LRU if it is still valid.
     pub fn resolve(&mut self, protocol_addr: Ipv4Addr) -> Option<MacAddress> {
-        let expired = match self.entries.peek_entry(&protocol_addr) {
-            Some(entry) => self.is_expired(*entry.meta()),
-            None => return None,
-        };
+        let entry = self.entries.peek_entry(&protocol_addr)?;
+        let expired = self.is_expired(*entry.meta());
 
         if expired {
             let _ = self.entries.remove(&protocol_addr);
