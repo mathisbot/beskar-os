@@ -29,7 +29,11 @@ pub extern "C" fn init() -> ! {
 
     let _ = storage::init();
     let _ = usb::init();
-    let _ = nic::init();
+
+    if nic::init().is_ok() {
+        // The interface binds to the NIC, so it can only come up afterwards.
+        let _ = crate::network::init();
+    }
 
     unsafe { crate::process::scheduler::exit_current_thread() };
 }

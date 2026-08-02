@@ -42,6 +42,7 @@ pub fn syscall(syscall: Syscall, args: &Arguments) -> SyscallReturnValue {
         Syscall::QueryConfig => SyscallReturnValue::Code(sc_query_config(args)),
         Syscall::ThreadSpawn => SyscallReturnValue::ValueU(sc_thread_spawn(args)),
         Syscall::PowerManagement => SyscallReturnValue::Code(sc_powermgt(args)),
+        Syscall::Ping => SyscallReturnValue::ValueI(sc_ping(args)),
     }
 }
 
@@ -548,4 +549,29 @@ const fn sc_powermgt(_args: &Arguments) -> SyscallExitCode {
     //     _ => SyscallExitCode::Failure,
     // }
     SyscallExitCode::Failure
+}
+
+fn sc_ping(args: &Arguments) -> i64 {
+    use beskar_core::syscall::consts;
+    use holonet::{NetworkError, l3::ip::v4::Ipv4Addr};
+
+    let Ok(raw_addr) = u32::try_from(args.one()) else {
+        return consts::PING_INVALID;
+    };
+    let addr = Ipv4Addr::from_bits(raw_addr);
+
+    let timeout = match args.two() {
+        0 => crate::network::DEFAULT_ECHO_TIMEOUT,
+        millis => crate::time::Duration::from_millis(millis),
+    };
+
+    match crate::network::ping(addr, timeout) {
+        // The round trip cannot realistically overflow an i64 of microseconds,
+        // but a saturating conversion keeps a bogus clock from reporting an
+        // error code.
+        Ok(outcome) => i64::try_from(outcome.round_trip.total_micros()).unwrap_or(i64::MAX),
+        Err(NetworkError::Absent | NetworkError::Uninitialized) => consts::PING_NO_INTERFACE,
+        Err(NetworkError::Unreachable) => consts::PING_UNREACHABLE,
+        Err(_) => consts::PING_INVALID,
+    }
 }

@@ -144,3 +144,9 @@ pub fn sc_powermgt(cmd: u64) -> SyscallExitCode {
     let res = syscalls::syscall_1(Syscall::PowerManagement, cmd);
     SyscallExitCode::try_from(res).unwrap()
 }
+
+#[inline]
+pub fn sc_ping(addr_bits: u32, timeout_millis: u64) -> i64 {
+    let res = syscalls::syscall_2(Syscall::Ping, u64::from(addr_bits), timeout_millis);
+    res.cast_signed()
+}

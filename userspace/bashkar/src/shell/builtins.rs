@@ -48,6 +48,11 @@ pub static BUILTINS: &[Builtin] = &[
         run: cmd_uptime,
     },
     Builtin {
+        name: "ping",
+        summary: "Ping an IPv4 host (usage: ping <addr> [count])",
+        run: cmd_ping,
+    },
+    Builtin {
         name: "exit",
         summary: "Exit the shell",
         run: cmd_exit,
@@ -153,6 +158,75 @@ fn cmd_uptime(ctx: CmdCtx<'_>) -> CmdResult {
     let _ = write!(s, "{}h {:02}m {:02}s", hours, mins % 60, secs % 60);
     ctx.buf.write_styled(&s, styled(theme::ACCENT_CYAN));
     ctx.buf.put_char('\n');
+    Ok(())
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn cmd_ping(ctx: CmdCtx<'_>) -> CmdResult {
+    use beskar_lib::net::{Ipv4Addr, PingError, ping};
+
+    const DEFAULT_COUNT: usize = 4;
+    const MAX_COUNT: usize = 64;
+
+    let Some(target) = ctx.args.first() else {
+        return Err(String::from("usage: ping <addr> [count]"));
+    };
+
+    let addr = target
+        .parse::<Ipv4Addr>()
+        .map_err(|_| alloc::format!("invalid IPv4 address: {target}"))?;
+
+    let count = if let Some(arg) = ctx.args.get(1) {
+        arg.parse::<usize>()
+            .map_err(|_| String::from("expected a number"))?
+    } else {
+        DEFAULT_COUNT
+    };
+
+    if count == 0 || count > MAX_COUNT {
+        return Err(alloc::format!("count must be 1..={MAX_COUNT}"));
+    }
+
+    let mut line = String::new();
+    let _ = writeln!(line, "PING {addr}");
+    ctx.buf.write_styled(&line, styled(theme::FG_DIMMED));
+
+    let mut received = 0usize;
+
+    for sequence in 0..count {
+        line.clear();
+
+        match ping(addr, None) {
+            Ok(round_trip) => {
+                received += 1;
+                let _ = writeln!(
+                    line,
+                    "  reply from {addr}: seq={sequence} time={}.{:03}ms",
+                    round_trip.total_micros() / 1000,
+                    round_trip.total_micros() % 1000,
+                );
+                ctx.buf.write_styled(&line, styled(theme::ACCENT_CYAN));
+            }
+            // Nothing will start working mid-run if there is no interface at
+            // all, so that one aborts instead of repeating the same failure.
+            Err(PingError::NoInterface) => {
+                return Err(String::from("no network interface"));
+            }
+            Err(error) => {
+                let _ = writeln!(line, "  seq={sequence}: {error}");
+                ctx.buf.write_styled(&line, styled(theme::FG_DIMMED));
+            }
+        }
+    }
+
+    line.clear();
+    let _ = writeln!(
+        line,
+        "  {count} sent, {received} received, {} lost",
+        count - received
+    );
+    ctx.buf.write_styled(&line, styled(theme::FG_DIMMED));
+
     Ok(())
 }
 
