@@ -1,8 +1,8 @@
-use crate::sys;
-use beskar_core::{
-    process::sync::FutexWaitResult,
+use crate::{
+    sys,
     time::{Duration, Instant},
 };
+use beskar_core::process::sync::FutexWaitResult;
 use core::{
     cell::UnsafeCell,
     marker::PhantomData,
@@ -36,7 +36,7 @@ impl Futex {
             };
         }
 
-        let timeout_us = timeout.total_micros();
+        let timeout_us = u64::try_from(timeout.as_micros()).unwrap_or(u64::MAX);
         sys::sc_futex_wait(value.as_ptr(), expected, timeout_us)
     }
 
@@ -48,7 +48,7 @@ impl Futex {
         expected: u64,
         deadline: Instant,
     ) -> FutexWaitResult {
-        let now = crate::time::now();
+        let now = crate::time::Instant::now();
         if deadline <= now {
             return if value.load(Ordering::Acquire) == expected {
                 FutexWaitResult::TimedOut
@@ -259,7 +259,7 @@ impl Condvar {
         guard: MutexGuard<'a, T>,
         timeout: Duration,
     ) -> (MutexGuard<'a, T>, WaitTimeoutResult) {
-        let deadline = crate::time::now() + timeout;
+        let deadline = crate::time::Instant::now() + timeout;
         self.wait_until_inner(guard, Some(deadline))
     }
 

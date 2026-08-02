@@ -27,7 +27,8 @@ pub fn spawn(entry: extern "C" fn() -> !) -> SyscallResult<u64> {
 ///
 /// Returns an error if the syscall fails.
 pub fn sleep(duration: Duration) -> SyscallResult<()> {
-    let code = sys::sc_wait_on_event(SleepHandle::NONE, duration.total_micros());
+    let dur = u64::try_from(duration.as_micros()).unwrap_or(u64::MAX);
+    let code = sys::sc_wait_on_event(SleepHandle::NONE, dur);
     match code {
         WaitResult::Timeout => Ok(()),
         _ => Err(SyscallError::new(-1)),

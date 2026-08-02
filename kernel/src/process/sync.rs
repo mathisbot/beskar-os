@@ -1,8 +1,6 @@
+use crate::time::{Duration, Instant};
 use alloc::collections::BTreeMap;
-use beskar_core::{
-    process::{SleepHandle, sync::FutexWaitResult},
-    time::{Duration, Instant},
-};
+use beskar_core::process::{SleepHandle, sync::FutexWaitResult};
 use core::sync::atomic::{AtomicU64, Ordering};
 use hyperdrive::locks::mcs::MUMcsLock;
 
@@ -60,7 +58,7 @@ impl Futex {
         expected: u64,
         timeout: Duration,
     ) -> FutexWaitResult {
-        let deadline = crate::time::now() + timeout;
+        let deadline = Instant::now() + timeout;
         Self::wait_on_address_until(value, expected, Some(deadline))
     }
 
@@ -79,7 +77,7 @@ impl Futex {
         let handle = register_waiter(key);
 
         let wake = crate::process::scheduler::wait_if(
-            ::wait::WaitRequest::new(Some(handle), deadline.into()),
+            ::wait::WaitRequest::new(Some(handle), deadline.into().map(Instant::as_inner)),
             || value.load(Ordering::Acquire) == expected,
         );
 

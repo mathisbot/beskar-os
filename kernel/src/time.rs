@@ -1,16 +1,19 @@
 use crate::drivers::{hpet, tsc};
+pub use beskar_core::time::Duration;
 use beskar_core::time::TimerInfo;
-pub use beskar_core::time::{Duration, Instant};
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    num::NonZeroU64,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use hyperdrive::once::Once;
+
+mod instant;
+pub use instant::Instant;
 
 static HPET_AVAILABLE: AtomicBool = AtomicBool::new(false);
 static TSC_AVAILABLE: AtomicBool = AtomicBool::new(false);
 
 static TIMER_INFO: Once<TimerInfo> = Once::uninit();
-
-struct HpetClock;
-struct TscClock;
 
 pub fn init() {
     let hpet_res = crate::drivers::hpet::init();
@@ -19,45 +22,19 @@ pub fn init() {
     TSC_AVAILABLE.store(tsc_res.is_ok(), Ordering::Relaxed);
 
     let timer_info = TimerInfo {
-        ticks_per_ms: ticks_per_ms().try_into().ok(),
+        ticks_per_ms: ticks_per_ms(),
         fastpath: us_fastpath(),
     };
     TIMER_INFO.call_once(|| timer_info);
 }
 
-/// Waits for AT LEAST the given number of milliseconds.
-///
-/// The real amount of time waited is usually longer than the given duration.
-pub fn wait(duration: Duration) {
-    if TSC_AVAILABLE.load(Ordering::Acquire) {
-        TscClock.wait(duration);
-    } else if HPET_AVAILABLE.load(Ordering::Acquire) {
-        HpetClock.wait(duration);
-    }
-}
-
-/// Returns the current instant (monotonic time).
-///
-/// If no high-precision timer is available, returns `Instant::MAX`.
 #[must_use]
 #[inline]
-pub fn now() -> Instant {
+pub fn now_raw() -> u64 {
     if TSC_AVAILABLE.load(Ordering::Acquire) {
-        TscClock.now()
+        tsc::main_counter_value()
     } else if HPET_AVAILABLE.load(Ordering::Acquire) {
-        HpetClock.now()
-    } else {
-        Instant::MAX
-    }
-}
-
-#[must_use]
-#[inline]
-pub fn ticks_per_ms() -> u64 {
-    if TSC_AVAILABLE.load(Ordering::Acquire) {
-        TscClock.ticks_per_ms()
-    } else if HPET_AVAILABLE.load(Ordering::Acquire) {
-        HpetClock.ticks_per_ms()
+        hpet::main_counter_value()
     } else {
         0
     }
@@ -65,50 +42,30 @@ pub fn ticks_per_ms() -> u64 {
 
 #[must_use]
 #[inline]
+pub fn ticks_per_ms() -> Option<NonZeroU64> {
+    if TSC_AVAILABLE.load(Ordering::Acquire) {
+        let raw = tsc::ticks_per_ms();
+        NonZeroU64::new(raw)
+    } else if HPET_AVAILABLE.load(Ordering::Acquire) {
+        let raw = hpet::ticks_per_ms()?;
+        Some(NonZeroU64::from(raw))
+    } else {
+        None
+    }
+}
+
+#[must_use]
+#[inline]
 /// Whether there is a high-precision timer available from userspace.
 fn us_fastpath() -> bool {
-    cfg!(target_arch = "x86_64") && TSC_AVAILABLE.load(Ordering::Acquire)
+    cfg_select! {
+        target_arch = "x86_64" => TSC_AVAILABLE.load(Ordering::Acquire),
+        _ => false,
+    }
 }
 
 #[must_use]
 #[inline]
 pub fn timer_info() -> Option<&'static TimerInfo> {
     TIMER_INFO.get()
-}
-
-trait Clock {
-    #[must_use]
-    fn now(&self) -> Instant;
-    #[must_use]
-    fn ticks_per_ms(&self) -> u64;
-    fn wait(&self, duration: Duration) {
-        let end = self.now() + duration;
-        while self.now() < end {
-            core::hint::spin_loop();
-        }
-    }
-}
-
-impl Clock for HpetClock {
-    #[inline]
-    fn now(&self) -> Instant {
-        Instant::from_millis(hpet::main_counter_value() / self.ticks_per_ms())
-    }
-
-    #[inline]
-    fn ticks_per_ms(&self) -> u64 {
-        u64::from(hpet::ticks_per_ms().unwrap().get())
-    }
-}
-
-impl Clock for TscClock {
-    #[inline]
-    fn now(&self) -> Instant {
-        Instant::from_millis(tsc::main_counter_value() / self.ticks_per_ms())
-    }
-
-    #[inline]
-    fn ticks_per_ms(&self) -> u64 {
-        tsc::ticks_per_ms()
-    }
 }

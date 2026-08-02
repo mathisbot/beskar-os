@@ -2,7 +2,6 @@ use crate::arch::syscalls;
 use beskar_core::{
     process::{SleepHandle, WaitResult, sync::FutexWaitResult},
     syscall::{ExitCode, Syscall, SyscallExitCode},
-    video::SurfaceId,
 };
 
 #[inline]
@@ -88,33 +87,32 @@ pub fn sc_futex_wake(value: *const u64, wake_count: usize) -> usize {
     usize::try_from(res).unwrap_or(usize::MAX)
 }
 
-pub fn sc_surface_create(width: u16, height: u16, x: u16, y: u16, buffer: *const u8) -> i64 {
+pub fn sc_surface_create(
+    width: u16,
+    height: u16,
+    x: u16,
+    y: u16,
+    buffer: *const u8,
+) -> SyscallExitCode {
     let res = syscalls::syscall_3(
         Syscall::SurfaceCreate,
         (u64::from(width) << 16) | u64::from(height),
         (u64::from(x) << 16) | u64::from(y),
         buffer as u64,
     );
-    res.cast_signed()
-}
-
-#[inline]
-pub fn sc_surface_destroy(surface_id: SurfaceId) -> SyscallExitCode {
-    let res = syscalls::syscall_1(Syscall::SurfaceDestroy, u64::from(surface_id.0));
     SyscallExitCode::try_from(res).unwrap()
 }
 
 #[inline]
-pub fn sc_surface_dirty(
-    surface_id: SurfaceId,
-    width: u16,
-    height: u16,
-    x: u16,
-    y: u16,
-) -> SyscallExitCode {
-    let res = syscalls::syscall_3(
+pub fn sc_surface_destroy() -> SyscallExitCode {
+    let res = syscalls::syscall_0(Syscall::SurfaceDestroy);
+    SyscallExitCode::try_from(res).unwrap()
+}
+
+#[inline]
+pub fn sc_surface_dirty(width: u16, height: u16, x: u16, y: u16) -> SyscallExitCode {
+    let res = syscalls::syscall_2(
         Syscall::SurfaceDirty,
-        u64::from(surface_id.0),
         (u64::from(width) << 16) | u64::from(height),
         (u64::from(x) << 16) | u64::from(y),
     );
@@ -122,8 +120,8 @@ pub fn sc_surface_dirty(
 }
 
 #[inline]
-pub fn sc_surface_present(surface_id: SurfaceId) -> SyscallExitCode {
-    let res = syscalls::syscall_1(Syscall::SurfacePresent, u64::from(surface_id.0));
+pub fn sc_surface_present(all: bool) -> SyscallExitCode {
+    let res = syscalls::syscall_1(Syscall::SurfacePresent, u64::from(all));
     SyscallExitCode::try_from(res).unwrap()
 }
 
@@ -149,4 +147,7 @@ pub fn sc_powermgt(cmd: u64) -> SyscallExitCode {
 pub fn sc_ping(addr_bits: u32, timeout_millis: u64) -> i64 {
     let res = syscalls::syscall_2(Syscall::Ping, u64::from(addr_bits), timeout_millis);
     res.cast_signed()
+pub fn sc_precision_timer() -> Option<u64> {
+    let raw = syscalls::syscall_0(Syscall::PrecisionTimer);
+    if raw == 0 { None } else { Some(raw) }
 }

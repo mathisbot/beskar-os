@@ -162,7 +162,9 @@ impl FileSystem for InMemoryFS<'_> {
 
         let src = {
             let start_offset = file.offset + offset;
-            &self.raw[start_offset..start_offset + read_bytes]
+            self.raw
+                .get(start_offset..start_offset + read_bytes)
+                .ok_or(super::FileError::UnexpectedEof)?
         };
         let dst = &mut buffer[..read_bytes];
 

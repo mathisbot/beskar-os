@@ -6,7 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 beskar-core = { workspace = true }
-hashbrown = "0.17.0"
+hashbrown = "0.17.1"
 hyperdrive = { workspace = true }
 
 [lints]

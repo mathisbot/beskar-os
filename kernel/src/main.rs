@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use alloc::{boxed::Box, sync::Arc};
+use beskar_core::process::perms::Permissions;
 use hyperdrive::call_once;
 use kernel::{
     locals,
@@ -35,6 +36,7 @@ fn kmain() -> ! {
             "Drivers",
             beskar_hal::process::Kind::Driver,
             None,
+            Permissions::all(),
         ));
         Thread::builder(driver_proc, kernel::drivers::init)
             .priority(Priority::Normal)
@@ -58,6 +60,7 @@ fn kmain() -> ! {
                     "User",
                     beskar_hal::process::Kind::User,
                     Some(full_path),
+                    Permissions::us_root(),
                 ));
                 Thread::builder_with_arg(user_proc, start_user_process, 64 * 1024)
                     .priority(Priority::Realtime)

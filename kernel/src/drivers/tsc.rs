@@ -90,16 +90,18 @@ fn calibrate_with_pit() -> bool {
 fn calibrate_with_rdtsc() -> bool {
     assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
 
-    let highest_leaf = cpuid::get_highest_supported_leaf().as_u32();
-    if highest_leaf >= 0x15 {
-        let cpuid_res = cpuid::cpuid(cpuid::Leaf::new(0x15));
-        if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
-            let thc_hz =
-                u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);
-            TSC_MHZ.store(thc_hz / 1_000_000, Ordering::Relaxed);
-            return true;
-        }
+    let Some(cpuid_res) = cpuid::try_cpuid(cpuid::Leaf::new(0x15)) else {
+        return false;
+    };
+
+    if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
+        let thc_hz = u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);
+        let thc_mhz = thc_hz / 1_000_000;
+        debug_assert_ne!(thc_mhz, 0);
+        TSC_MHZ.store(thc_mhz, Ordering::Relaxed);
+        return true;
     }
+
     false
 }
 
@@ -125,6 +127,9 @@ fn calibrate_with_hpet() -> bool {
     };
 
     let rate_mhz = diff * (MS_PER_S / CALIBRATION_TIME_MS) / HZ_PER_MHZ;
+    if rate_mhz == 0 {
+        return false;
+    }
     TSC_MHZ.store(rate_mhz, Ordering::Relaxed);
 
     true
@@ -142,8 +147,8 @@ pub fn init() -> DriverResult<()> {
     STARTUP_TIME.store(unsafe { core::arch::x86_64::_rdtsc() }, Ordering::Relaxed);
 
     if calibrate_with_rdtsc() || calibrate_with_hpet() || calibrate_with_pit() {
-        crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
         if crate::arch::cpuid::check_feature(crate::arch::cpuid::CpuFeature::INVARIANT_TSC) {
+            crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
             Ok(())
         } else {
             crate::warn!("TSC is not invariant, it is not reliable as a clock source.");

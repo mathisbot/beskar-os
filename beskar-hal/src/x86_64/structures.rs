@@ -1077,16 +1077,84 @@ impl TaskStateSegment {
 
 #[derive(Debug, Clone)]
 #[repr(C, align(16))]
-/// Saved SSE state
+/// Saved x87/SSE state.
 pub struct SseSave {
-    pub data: [u8; 160],
+    pub fcw: u16,
+    pub fsw: u16,
+    pub ftw: u8,
+    _reserved1: u8,
+    pub fop: u16,
+    pub fpu_ip: u32,
+    pub fcs: u16,
+    _reserved2: u16,
+    pub fpu_dp: u32,
+    pub fds: u16,
+    _reserved3: u16,
+    pub mxcsr: u32,
+    pub mxcsr_mask: u32,
+    pub stmm: [[u8; 16]; 8],
     pub xmm: [[u8; size_of::<core::arch::x86_64::__m128>()]; 16],
     _res: [[u8; size_of::<core::arch::x86_64::__m128>()]; 3],
     pub available: [[u8; size_of::<core::arch::x86_64::__m128>()]; 3],
 }
 beskar_core::static_assert!(size_of::<SseSave>() == 512);
 
+#[derive(Clone)]
+#[repr(C, align(64))]
+/// Saved x87/SSE/AVX state.
+pub struct AvxSave {
+    pub legacy_region: SseSave,
+    pub xstate_bv: u64,
+    pub xcomp_bv: XCompBV,
+    _reserved: [u8; 48],
+    pub extended: AvxExtendedSave,
+}
+beskar_core::static_assert!(size_of::<AvxSave>() >= 832);
+
+impl AvxSave {
+    #[must_use]
+    #[inline]
+    pub const fn standard_extended(&self) -> Option<[[u8; 16]; 16]> {
+        if self.xcomp_bv.compact() {
+            None
+        } else {
+            Some(unsafe { self.extended.standard })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct XCompBV(pub u64);
+
+impl XCompBV {
+    const COMPACT: u64 = 1 << 63;
+
+    #[must_use]
+    #[inline]
+    pub const fn compact(&self) -> bool {
+        self.0 & Self::COMPACT != 0
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn standard_format(&self) -> u64 {
+        self.0 & !Self::COMPACT
+    }
+}
+
+#[derive(Clone, Copy)]
+#[repr(C, align(64))]
+pub union AvxExtendedSave {
+    standard: [[u8; 16]; 16],
+    compact: [[u8; 16]; 16],
+}
+
 impl Default for SseSave {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Default for AvxSave {
     fn default() -> Self {
         Self::new()
     }
@@ -1096,11 +1164,29 @@ impl SseSave {
     #[must_use]
     #[inline]
     pub const fn new() -> Self {
+        // SAFETY: All-zeroed `SseSave` is valid.
+        unsafe { core::mem::zeroed() }
+    }
+}
+
+impl AvxSave {
+    #[must_use]
+    #[inline]
+    /// Creates a new `AvxSave` with the default values for the legacy region, MXCSR, MXCSR_MASK and XSTATE_BV.
+    pub const fn new() -> Self {
+        let mut legacy_region = SseSave::new();
+        legacy_region.fcw = 0x37F;
+        legacy_region.mxcsr = 0x1F80;
+        legacy_region.mxcsr_mask = 0xFFFF;
+
         Self {
-            data: [0; 160],
-            xmm: [[0; _]; 16],
-            _res: [[0; _]; 3],
-            available: [[0; _]; 3],
+            legacy_region,
+            xstate_bv: 0b111, // x87, SSE and AVX
+            xcomp_bv: XCompBV(0),
+            _reserved: [0; 48],
+            extended: AvxExtendedSave {
+                standard: [[0; 16]; 16],
+            },
         }
     }
 }
@@ -1156,7 +1242,7 @@ mod tests {
         let selector = gdt.append(GdtDescriptor::kernel_code_segment());
         gdt.append(GdtDescriptor::kernel_data_segment());
         assert_eq!(selector, 1 << 3);
-        assert!(gdt.len == 3);
+        assert_eq!(gdt.len, 3);
     }
 
     #[test]

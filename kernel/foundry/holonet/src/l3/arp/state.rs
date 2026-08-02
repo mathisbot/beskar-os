@@ -118,7 +118,7 @@ impl<const CAPACITY: usize, const BUCKETS: usize> Cache<CAPACITY, BUCKETS> {
         let entry = self.entries.peek_entry(&protocol_addr)?;
         let expired = self.is_expired(*entry.meta());
 
-        if expired {
+        if self.is_expired(*entry.meta()) {
             let _ = self.entries.remove(&protocol_addr);
             return None;
         }

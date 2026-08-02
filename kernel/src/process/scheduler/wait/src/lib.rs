@@ -548,7 +548,7 @@ mod tests {
     fn timeout_marks_parking_then_finalize_requeues_timeout() {
         let mut db = WaitDb::<FakeThread>::new();
         let tid = 3_u64;
-        let deadline = Instant::from_micros(100);
+        let deadline = unsafe { Instant::from_raw(100) };
         let token = db.register_wait(tid, WaitRequest::until(deadline));
 
         let ready = db.collect_timed_out(deadline);

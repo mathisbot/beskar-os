@@ -124,6 +124,7 @@ impl Cr4 {
     pub const SMXE: u64 = 1 << 14;
     pub const FSGSBASE: u64 = 1 << 16;
     pub const PCIDE: u64 = 1 << 17;
+    pub const OSXSAVE: u64 = 1 << 18;
     pub const SMEP: u64 = 1 << 20;
     pub const SMAP: u64 = 1 << 21;
 
@@ -158,6 +159,46 @@ impl Cr4 {
         let mut value = Self::read();
         value |= flag;
         unsafe { Self::write(value) };
+    }
+}
+
+pub struct XCr0;
+
+impl XCr0 {
+    pub const X87: u64 = 1 << 0;
+    pub const SSE: u64 = 1 << 1;
+    pub const AVX: u64 = 1 << 2;
+    pub const MPX_BNDREGS: u64 = 1 << 3;
+    pub const MPX_BNDCSR: u64 = 1 << 4;
+    pub const AVX512_OPMASK: u64 = 1 << 5;
+    pub const AVX512_ZMM_HI256: u64 = 1 << 6;
+    pub const AVX512_ZMM_LO16: u64 = 1 << 7;
+    pub const PKRU: u64 = 1 << 9;
+
+    /// Mandatory x87 bit, with SSE and AVX bits.
+    pub const BASE_MASK: u64 = Self::X87 | Self::SSE | Self::AVX;
+
+    #[must_use]
+    #[inline]
+    pub fn read() -> u64 {
+        let low: u32;
+        let high: u32;
+        unsafe {
+            core::arch::asm!("xgetbv", in("ecx") 0, lateout("eax") low, lateout("edx") high, options(nomem, nostack, preserves_flags));
+        }
+        u64::from(low) | (u64::from(high) << 32)
+    }
+
+    #[inline]
+    /// # Safety
+    ///
+    /// The value written must be a valid XCR0 value.
+    pub unsafe fn write(value: u64) {
+        let low = u32::try_from(value & 0xFFFF_FFFF).unwrap();
+        let high = u32::try_from(value >> 32).unwrap();
+        unsafe {
+            core::arch::asm!("xsetbv", in("ecx") 0, in("eax") low, in("edx") high, options(nomem, nostack, preserves_flags));
+        }
     }
 }
 
