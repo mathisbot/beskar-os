@@ -16,17 +16,9 @@ pub unsafe extern "C" fn switch(old_stack: *mut *mut u8, new_stack: *const u8, c
     core::arch::naked_asm!(
         // Push the current context to the stack
         "pushfq",
-        "push rax",
-        "push rcx",
-        "push rdx",
         "push rbx",
         "push rbp",
-        "push rsi",
-        "push rdi",
-        "push r8",
-        "push r9",
-        "push r10",
-        "push r11",
+        "push rdi", // TODO: Don't save RDI
         "push r12",
         "push r13",
         "push r14",
@@ -50,17 +42,9 @@ pub unsafe extern "C" fn switch(old_stack: *mut *mut u8, new_stack: *const u8, c
         "pop r14",
         "pop r13",
         "pop r12",
-        "pop r11",
-        "pop r10",
-        "pop r9",
-        "pop r8",
         "pop rdi",
-        "pop rsi",
         "pop rbp",
         "pop rbx",
-        "pop rdx",
-        "pop rcx",
-        "pop rax",
         "popfq",
         // Finally, return to the new stack
         "sti",
@@ -77,17 +61,9 @@ pub struct ThreadRegisters {
     r14: u64,
     r13: u64,
     r12: u64,
-    r11: u64,
-    r10: u64,
-    r9: u64,
-    r8: u64,
     rdi: u64,
-    rsi: u64,
     rbp: u64,
     rbx: u64,
-    rdx: u64,
-    rcx: u64,
-    rax: u64,
     rflags: u64,
     rip: u64,
 }
@@ -95,29 +71,27 @@ pub struct ThreadRegisters {
 impl ThreadRegisters {
     #[must_use]
     #[inline]
-    pub fn new(entry: extern "C" fn(usize) -> !, arg0: usize, rbp: *mut u8) -> Self {
+    pub fn new(entry: extern "C" fn(usize) -> !, arg0: usize) -> Self {
         let rip = u64::try_from(entry as usize).unwrap();
         let rdi = u64::try_from(arg0).unwrap();
-        let rbp = u64::try_from(rbp as usize).unwrap();
         let rflags = Rflags::IF;
         Self {
             r15: 0,
             r14: 0,
             r13: 0,
             r12: 0,
-            r11: 0,
-            r10: 0,
-            r9: 0,
-            r8: 0,
             rdi,
-            rsi: 0,
-            rbp,
+            rbp: 0,
             rbx: 0,
-            rdx: 0,
-            rcx: 0,
-            rax: 0,
             rflags,
             rip,
         }
+    }
+
+    #[must_use]
+    #[inline]
+    pub const fn as_raw(&self) -> &[u8; size_of::<Self>()] {
+        let ptr = core::ptr::from_ref(self).cast();
+        unsafe { &*ptr }
     }
 }
