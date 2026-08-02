@@ -30,6 +30,7 @@ impl RandomGenerator {
         Ok(Self { rng })
     }
 
+    #[inline]
     /// Fills the provided buffer with random bytes.
     ///
     /// # Errors
@@ -70,5 +71,62 @@ impl RandomGenerator {
         let mut bytes = [0u8; 8];
         self.fill_bytes(&mut bytes)?;
         Ok(u64::from_le_bytes(bytes))
+    }
+}
+
+/// A wrapper around the UEFI RNG protocol that provides random number generation functionality,
+/// but ignores any errors that may occur during random number generation.
+pub struct BestEffortRandomGenerator {
+    rng: Option<RandomGenerator>,
+}
+
+impl Default for BestEffortRandomGenerator {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BestEffortRandomGenerator {
+    #[must_use]
+    /// Creates a new `BestEffortRandomGenerator` by acquiring the UEFI RNG protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RNG protocol is not available.
+    pub fn new() -> Self {
+        let rng = RandomGenerator::new().ok();
+        Self { rng }
+    }
+
+    /// Fills the provided buffer with random bytes, ignoring any errors.
+    pub fn fill_bytes(&mut self, buffer: &mut [u8]) {
+        if let Some(rng) = &mut self.rng {
+            let _ = rng.fill_bytes(buffer);
+        }
+    }
+
+    #[must_use]
+    /// Generate a random `u16` value, returning 0 if random number generation fails.
+    pub fn next_u16(&mut self) -> u16 {
+        let mut bytes = [0u8; 2];
+        self.fill_bytes(&mut bytes);
+        u16::from_le_bytes(bytes)
+    }
+
+    #[must_use]
+    /// Generate a random `u32` value, returning 0 if random number generation fails.
+    pub fn next_u32(&mut self) -> u32 {
+        let mut bytes = [0u8; 4];
+        self.fill_bytes(&mut bytes);
+        u32::from_le_bytes(bytes)
+    }
+
+    #[must_use]
+    /// Generate a random `u64` value, returning 0 if random number generation fails.
+    pub fn next_u64(&mut self) -> u64 {
+        let mut bytes = [0u8; 8];
+        self.fill_bytes(&mut bytes);
+        u64::from_le_bytes(bytes)
     }
 }

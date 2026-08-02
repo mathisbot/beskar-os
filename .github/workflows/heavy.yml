@@ -2,7 +2,7 @@ name: BeskarOS heavy CI
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["dev","main"]
 
 env:
   CARGO_TERM_COLOR: always
