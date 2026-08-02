@@ -75,7 +75,7 @@ impl<M: PhysicalMapper<M2MiB>> PciExpressHandler<M> {
             };
             let paddr = Self::build_paddr(cs.offset(), reg);
             let vaddr = pmap.translate(paddr)?;
-            let value = unsafe { vaddr.as_ptr::<u32>().read() };
+            let value = unsafe { vaddr.as_ptr::<u32>().read_volatile() };
 
             if value & 0xFFFF == u32::from(u16::MAX) {
                 return None;

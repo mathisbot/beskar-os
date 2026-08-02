@@ -18,8 +18,9 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
             - [X] IOAPIC
         - [X] CPUID
         - SIMD
-            - [ ] AVX
             - [X] FPU/SSE
+            - [X] AVX
+            - [ ] AVX512
         - [x] GDT/TSS
         - [x] Interrupts
         - [x] Randomness
@@ -92,6 +93,7 @@ I am not planning on writing a Linux-like kernel, as I am mainly focusing on lea
       - [X] TLS
     - [X] Binary loading
         - [X] ELF
+    - [X] Permissions
     - [ ] IPC
         - [ ] Message Passing
         - [ ] Shared Memory

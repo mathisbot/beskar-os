@@ -9,7 +9,7 @@ beskar-core = { workspace = true }
 beskar-hal = { workspace = true }
 bootloader-api = { workspace = true }
 hyperdrive = { workspace = true }
-uefi = { version = "0.37.0", default-features = false }
+uefi = { version = "0.39.0", default-features = false }
 xmas-elf = "0.10.0"
 
 [lints]

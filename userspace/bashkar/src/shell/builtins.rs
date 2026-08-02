@@ -1,10 +1,10 @@
-use alloc::string::String;
-use core::fmt::Write as _;
-
-use beskar_core::video::PixelComponents;
-
 use crate::buffer::{Style, TermBuffer};
 use crate::theme;
+use alloc::string::{String, ToString as _};
+use beskar_core::video::PixelComponents;
+use beskar_lib::time::Instant;
+use core::fmt::Write as _;
+use hyperdrive::once::Once;
 
 /// Context passed to every builtin command.
 pub struct CmdCtx<'a> {
@@ -51,6 +51,16 @@ pub static BUILTINS: &[Builtin] = &[
         name: "exit",
         summary: "Exit the shell",
         run: cmd_exit,
+    },
+    Builtin {
+        name: "shutdown",
+        summary: "Shutdown the system",
+        run: cmd_shutdown,
+    },
+    Builtin {
+        name: "reboot",
+        summary: "Reboot the system",
+        run: cmd_reboot,
     },
 ];
 
@@ -142,20 +152,38 @@ fn cmd_rand(ctx: CmdCtx<'_>) -> CmdResult {
 
 const HEX_CHARS: [u8; 16] = *b"0123456789ABCDEF";
 
-#[expect(clippy::unnecessary_wraps, clippy::needless_pass_by_value)]
+static START_TIME: Once<Instant> = Once::uninit();
+
+pub fn init_start_time() {
+    START_TIME.call_once(Instant::now);
+}
+
+#[expect(clippy::needless_pass_by_value)]
 fn cmd_uptime(ctx: CmdCtx<'_>) -> CmdResult {
-    let now = beskar_lib::time::now();
-    let secs = now.total_millis() / 1000;
-    let mins = secs / 60;
-    let hours = mins / 60;
+    let uptime = START_TIME
+        .get()
+        .ok_or_else(|| "Startup time uninitialized".to_string())?
+        .elapsed();
 
     let mut s = alloc::string::String::new();
-    let _ = write!(s, "{}h {:02}m {:02}s", hours, mins % 60, secs % 60);
+    let _ = write!(s, "{uptime:?}");
     ctx.buf.write_styled(&s, styled(theme::ACCENT_CYAN));
     ctx.buf.put_char('\n');
     Ok(())
 }
 
+#[inline]
 fn cmd_exit(_ctx: CmdCtx<'_>) -> CmdResult {
     beskar_lib::exit(beskar_lib::ExitCode::Success);
+}
+
+#[inline]
+fn cmd_shutdown(_ctx: CmdCtx<'_>) -> CmdResult {
+    beskar_lib::power::shutdown();
+    Err("This process does not have permission to shutdown the system".to_string())
+}
+
+fn cmd_reboot(_ctx: CmdCtx<'_>) -> CmdResult {
+    beskar_lib::power::reboot();
+    Err("This process does not have permission to reboot the system".to_string())
 }

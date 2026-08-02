@@ -7,6 +7,7 @@ use testbed::core::TestCase;
 beskar_lib::entry_point!(main);
 
 const TESTS: &[TestCase] = &[
+    TestCase::new("abi", testbed::abi::test_abi),
     TestCase::new("file-io", testbed::io::file::test_file_io),
     TestCase::new("memory-api", testbed::mem::test_memory_api),
     TestCase::new("sync-api", testbed::sync::test_sync_api),

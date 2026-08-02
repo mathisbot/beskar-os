@@ -83,7 +83,7 @@ impl ThreadStats {
     pub const fn new() -> Self {
         Self {
             cpu_time_ms: 0,
-            wake_time: beskar_core::time::Instant::ZERO,
+            wake_time: beskar_core::time::Instant::ORIGIN,
         }
     }
 }
@@ -180,7 +180,7 @@ impl Thread {
             last_stack_ptr: AtomicPtr::new(core::ptr::null_mut()),
             link: Link::new(),
             stats: ThreadStats::new(),
-            fpu_state: FpuState::new(),
+            fpu_state: FpuState::new(0),
             user_fs_base: VirtAddr::ZERO,
         }
     }
@@ -225,10 +225,10 @@ impl Thread {
         mut stack: ThreadStack,
         start: ThreadStart,
     ) -> Self {
-        let mut stack_ptr = stack.base_ptr();
+        let stack_unused = Self::setup_stack(stack.as_mut_slice(), start);
+        let stack_ptr = unsafe { stack.base_ptr().byte_add(stack_unused) }; // Move stack pointer to the end of the stack
 
-        let stack_unused = Self::setup_stack(stack_ptr, stack.as_mut_slice(), start);
-        stack_ptr = unsafe { stack_ptr.byte_add(stack_unused) }; // Move stack pointer to the end of the stack
+        let xcr0 = beskar_hal::registers::XCr0::read();
 
         Self {
             id: ThreadId::new(),
@@ -241,13 +241,13 @@ impl Thread {
             last_stack_ptr: AtomicPtr::new(stack_ptr),
             link: Link::new(),
             stats: ThreadStats::new(),
-            fpu_state: FpuState::new(),
+            fpu_state: FpuState::new(xcr0),
             user_fs_base: VirtAddr::ZERO,
         }
     }
 
     /// Setup the stack and move stack pointer to the end of the stack.
-    fn setup_stack(stack_ptr: *mut u8, stack: &mut [u8], start: ThreadStart) -> usize {
+    fn setup_stack(stack: &mut [u8], start: ThreadStart) -> usize {
         // Can be used to detect stack overflow
         #[cfg(debug_assertions)]
         stack.fill(STACK_DEBUG_INSTR);
@@ -259,12 +259,9 @@ impl Thread {
         );
 
         // Push the thread registers
-        let thread_regs = ThreadRegisters::new(start.entry, start.arg, stack_ptr);
-        let thread_regs_bytes = unsafe {
-            core::mem::transmute::<ThreadRegisters, [u8; size_of::<ThreadRegisters>()]>(thread_regs)
-        };
+        let thread_regs = ThreadRegisters::new(start.entry, start.arg);
         stack[stack_bottom - size_of::<ThreadRegisters>()..stack_bottom]
-            .copy_from_slice(&thread_regs_bytes);
+            .copy_from_slice(thread_regs.as_raw());
         stack_bottom -= size_of::<ThreadRegisters>();
 
         debug_assert!(stack_bottom >= MINIMUM_LEFTOVER_STACK);
@@ -284,7 +281,7 @@ impl Thread {
             last_stack_ptr: AtomicPtr::new(core::ptr::null_mut()),
             link: Link::new(),
             stats: ThreadStats::new(),
-            fpu_state: FpuState::new(),
+            fpu_state: FpuState::new(0),
             user_fs_base: VirtAddr::ZERO,
         }
     }

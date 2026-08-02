@@ -1,5 +1,20 @@
 use beskar_core::syscall::Syscall;
 
+pub fn syscall_0(syscall: Syscall) -> u64 {
+    let res_code: u64;
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            in("rax") u64::from(syscall),
+            lateout("rax") res_code,
+            lateout("rcx") _,
+            lateout("r11") _,
+            options(nostack, preserves_flags)
+        );
+    }
+    res_code
+}
+
 pub fn syscall_1(syscall: Syscall, arg1: u64) -> u64 {
     let res_code: u64;
     unsafe {

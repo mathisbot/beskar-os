@@ -1,7 +1,12 @@
+use beskar_lib::time::Instant;
 use core::{
+    alloc::Layout,
     ffi::{CStr, c_char, c_void},
     sync::atomic::{AtomicUsize, Ordering},
 };
+use hyperdrive::once::Once;
+
+static STARTUP_TIME: Once<Instant> = Once::uninit();
 
 #[link(name = "puredoom", kind = "static")]
 unsafe extern "C" {
@@ -25,6 +30,7 @@ unsafe extern "C" {
 }
 
 pub fn init() {
+    STARTUP_TIME.call_once(Instant::now);
     unsafe { doom_set_print(print) };
     unsafe { doom_set_malloc(malloc, free) };
     unsafe { doom_set_file_io(open, close, read, write, seek, tell, eof) };
@@ -42,28 +48,43 @@ extern "C" fn print(s: *const c_char) {
     }
 }
 
+const MALLOC_ALIGN: usize = 16;
+
 extern "C" fn malloc(size: i32) -> *mut c_void {
     // `alloc` states the layout size must be non-zero.
-    if size == 0 {
-        return core::ptr::dangling_mut();
+    if size <= 0 {
+        return core::ptr::null_mut();
     }
 
+    let hdr_layout = Layout::new::<Layout>();
     let size = usize::try_from(size).unwrap();
-    let layout =
-        core::alloc::Layout::from_size_align(size, core::mem::align_of::<*const ()>()).unwrap();
+    let array_layout = Layout::from_size_align(size, MALLOC_ALIGN).unwrap();
+    let (layout, offset) = hdr_layout.extend(array_layout).unwrap();
 
     let ptr = unsafe { alloc::alloc::alloc(layout) };
+    if ptr.is_null() {
+        beskar_lib::println!("malloc failed: out of memory (requested {} bytes)", size);
+        return core::ptr::null_mut();
+    }
 
-    assert!(
-        !ptr.is_null(),
-        "malloc failed: out of memory (requested {size} bytes)",
-    );
-
-    ptr.cast()
+    let header_ptr = ptr.cast::<Layout>();
+    unsafe { header_ptr.write(layout) };
+    unsafe { header_ptr.byte_add(offset) }.cast()
 }
 
-const extern "C" fn free(_ptr: *mut c_void) {
-    // TODO: keep track of allocations to get the layout!
+extern "C" fn free(ptr: *mut c_void) {
+    if ptr.is_null() {
+        return;
+    }
+
+    let hdr_layout = Layout::new::<Layout>();
+    let array_layout = Layout::from_size_align(1, MALLOC_ALIGN).unwrap();
+    let (_, offset) = hdr_layout.extend(array_layout).unwrap();
+
+    let header_ptr = unsafe { ptr.cast::<Layout>().byte_sub(offset) };
+    let layout = unsafe { header_ptr.read() };
+
+    unsafe { alloc::alloc::dealloc(header_ptr.cast(), layout) };
 }
 
 extern "C" fn exit(code: i32) {
@@ -76,10 +97,15 @@ extern "C" fn exit(code: i32) {
 }
 
 extern "C" fn gettime(sec: *mut i32, usec: *mut i32) {
-    let now = beskar_lib::time::now();
+    let elapsed = STARTUP_TIME
+        .get()
+        .expect("Startup time uninitialized")
+        .elapsed();
     unsafe {
-        *sec = i32::try_from(now.secs()).unwrap();
-        *usec = i32::try_from(now.micros()).unwrap();
+        // Can overflow is the game runs for more than 68 years, which is unlikely.
+        *sec = i32::try_from(elapsed.as_secs()).unwrap();
+        // Cannot overflow
+        *usec = i32::try_from(elapsed.subsec_micros()).unwrap();
     }
 }
 

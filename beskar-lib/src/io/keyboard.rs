@@ -74,7 +74,8 @@ pub fn wait_next_event() -> WaitResult {
 /// Returns the wake reason as reported by the kernel.
 pub fn wait_next_event_timeout(timeout: beskar_core::time::Duration) -> WaitResult {
     let sh = cached_handle();
-    crate::sys::sc_wait_on_event(sh, timeout.total_micros())
+    let micros = u64::try_from(timeout.as_micros()).unwrap_or(u64::MAX);
+    crate::sys::sc_wait_on_event(sh, micros)
 }
 
 #[must_use]

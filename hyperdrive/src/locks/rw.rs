@@ -90,19 +90,26 @@ impl<T: ?Sized, R: RelaxStrategy> RwLock<T, R> {
     #[must_use]
     pub fn read(&self) -> ReadGuard<'_, T, R> {
         self.state.read_lock();
-        ReadGuard { lock: self }
+        ReadGuard {
+            lock: self,
+            _phantom: PhantomData,
+        }
     }
 
     #[must_use]
     pub fn write(&self) -> WriteGuard<'_, T, R> {
         self.state.write_lock();
-        WriteGuard { lock: self }
+        WriteGuard {
+            lock: self,
+            _phantom: PhantomData,
+        }
     }
 }
 
 /// A guard that allows read-only access to the data.
 pub struct ReadGuard<'a, T: ?Sized, R: RelaxStrategy> {
     lock: &'a RwLock<T, R>,
+    _phantom: PhantomData<&'a T>,
 }
 
 impl<T: ?Sized, R: RelaxStrategy> core::ops::Deref for ReadGuard<'_, T, R> {
@@ -125,6 +132,7 @@ unsafe impl<T: ?Sized + Sync, R: RelaxStrategy> Sync for ReadGuard<'_, T, R> {}
 /// A guard that allows mutable access to the data.
 pub struct WriteGuard<'a, T: ?Sized, R: RelaxStrategy> {
     lock: &'a RwLock<T, R>,
+    _phantom: PhantomData<&'a mut T>,
 }
 
 impl<T: ?Sized, R: RelaxStrategy> core::ops::Deref for WriteGuard<'_, T, R> {

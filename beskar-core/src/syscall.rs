@@ -79,18 +79,15 @@ pub enum Syscall {
     /// The third argument is a pointer to the buffer.
     SurfaceCreate = 10,
     /// Destroy a surface.
-    ///
-    /// The first argument is the surface ID.
     SurfaceDestroy = 11,
     /// Mark a region of a surface as dirty (needs to be redrawn).
     ///
-    /// The first argument is the surface ID.
-    /// The second argument is the dimensions of the surface (u32 ; width << 16 | height).
-    /// The third argument is the x and y position on the surface (u32 ; x << 16 | y).
+    /// The first argument is the dimensions of the region (u32 ; width << 16 | height).
+    /// The second argument is the x and y position on the region (u32 ; x << 16 | y).
     SurfaceDirty = 12,
     /// Present dirty regions of a surface to the screen.
     ///
-    /// The first argument is the surface ID.
+    /// The first argument is a boolean to set in order to render the whole surface.
     SurfacePresent = 13,
     /// Wait on a futex word while it remains equal to an expected value.
     ///
@@ -112,6 +109,8 @@ pub enum Syscall {
     ///
     /// The first argument is the power management command to execute.
     PowerManagement = 17,
+    /// Query the high precision timer.
+    PrecisionTimer,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]

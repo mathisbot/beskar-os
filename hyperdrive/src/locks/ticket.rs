@@ -82,7 +82,10 @@ impl<T: ?Sized, R: RelaxStrategy> TicketLock<T, R> {
             R::relax();
         }
 
-        TicketGuard { lock: self }
+        TicketGuard {
+            lock: self,
+            _phantom: PhantomData,
+        }
     }
 
     #[must_use]
@@ -101,6 +104,7 @@ impl<T: ?Sized, R: RelaxStrategy> TicketLock<T, R> {
 /// RAII guard for the ticket lock.
 pub struct TicketGuard<'l, T: ?Sized, R: RelaxStrategy> {
     lock: &'l TicketLock<T, R>,
+    _phantom: PhantomData<&'l mut T>,
 }
 
 impl<T: ?Sized, R: RelaxStrategy> Drop for TicketGuard<'_, T, R> {

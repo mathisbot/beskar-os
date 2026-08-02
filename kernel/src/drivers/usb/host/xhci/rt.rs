@@ -15,7 +15,7 @@ impl RuntimeRegisters {
     #[inline]
     pub const fn new(base: VirtAddr) -> Self {
         let base = MmioRegister::new(NonNull::new(base.as_mut_ptr()).unwrap());
-        let ir_base = unsafe { base.add(0x20) }.cast();
+        let ir_base = unsafe { base.byte_add(0x20) }.cast();
         Self {
             microframe_idx: base.lower_access(),
             ir_base,
@@ -96,9 +96,7 @@ impl InterruptRegisters {
     #[inline]
     pub fn new(base: MmioRegister<ReadWrite, InterruptRegisterSetSnapshot>, index: u8) -> Self {
         Self {
-            base: unsafe {
-                base.add(usize::from(index) * size_of::<InterruptRegisterSetSnapshot>())
-            },
+            base: unsafe { base.add(usize::from(index)) },
         }
     }
 

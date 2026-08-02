@@ -18,8 +18,8 @@ fn thread_spawn() -> TestResult {
     };
     ensure!(tid != 0, "Thread spawned with invalid TID 0");
 
-    let start = beskar_lib::time::now();
-    while !THREAD_RAN.load(Ordering::SeqCst) && beskar_lib::time::elapsed(start) < TIMEOUT {
+    let start = beskar_lib::time::Instant::now();
+    while !THREAD_RAN.load(Ordering::SeqCst) && start.elapsed() < TIMEOUT {
         // TODO: Yield
         core::hint::spin_loop();
     }
@@ -49,7 +49,7 @@ fn thread_condvar() -> TestResult {
         let res = beskar_lib::thread::spawn(condvar_thread);
         if res.is_err() {
             return Err("thread spawn failed");
-        };
+        }
 
         let (_, reason) = CONDVAR.wait_for(guard, TIMEOUT);
         ensure!(

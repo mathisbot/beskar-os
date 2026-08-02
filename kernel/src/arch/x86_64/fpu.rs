@@ -1,25 +1,19 @@
 use crate::process::scheduler::thread::Thread;
-use beskar_hal::structures::SseSave;
+use beskar_hal::structures::AvxSave;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FpuState {
-    state: SseSave,
-    initialized: bool,
-}
-
-impl Default for FpuState {
-    fn default() -> Self {
-        Self::new()
-    }
+    state: AvxSave,
+    mask: u64,
 }
 
 impl FpuState {
     #[must_use]
     #[inline]
-    pub const fn new() -> Self {
+    pub const fn new(xcr0: u64) -> Self {
         Self {
-            state: SseSave::new(),
-            initialized: false,
+            state: AvxSave::new(),
+            mask: xcr0,
         }
     }
 
@@ -30,8 +24,7 @@ impl FpuState {
     ///
     /// The caller must ensure that the FPU is in a valid state.
     pub unsafe fn save(&mut self) {
-        unsafe { beskar_hal::instructions::fpu_save(&mut self.state) };
-        self.initialized = true;
+        unsafe { beskar_hal::instructions::xsavec(&mut self.state, self.mask) };
     }
 
     #[inline]
@@ -43,11 +36,7 @@ impl FpuState {
     ///
     /// The caller must ensure that the FPU can be safely restored or initialized.
     pub unsafe fn restore(&self) {
-        if self.initialized {
-            unsafe { beskar_hal::instructions::fpu_restore(&self.state) };
-        } else {
-            unsafe { beskar_hal::instructions::fpu_init() };
-        }
+        unsafe { beskar_hal::instructions::xrstor(&self.state, self.mask) };
     }
 }
 
@@ -59,7 +48,10 @@ pub fn on_thread_switch(thread: &mut Thread) {
 
     if owner == tid {
         unsafe { thread.fpu_state_mut().save() };
-        core_locals.set_fpu_owner(tid);
+        // If a thread gets scheduled on core 0, uses the FPU,
+        // then gets scheduled on 1, uses the FPU then goes back to 0,
+        // the FPU would not get restored without this line.
+        core_locals.set_fpu_owner(0);
     }
 }
 
