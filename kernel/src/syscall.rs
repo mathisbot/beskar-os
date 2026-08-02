@@ -591,7 +591,7 @@ fn sc_ping(args: &Arguments) -> i64 {
         // The round trip cannot realistically overflow an i64 of microseconds,
         // but a saturating conversion keeps a bogus clock from reporting an
         // error code.
-        Ok(outcome) => i64::try_from(outcome.round_trip.total_micros()).unwrap_or(i64::MAX),
+        Ok(outcome) => i64::try_from(outcome.round_trip.as_micros()).unwrap_or(i64::MAX),
         Err(NetworkError::Absent | NetworkError::Uninitialized) => consts::PING_NO_INTERFACE,
         Err(NetworkError::Unreachable) => consts::PING_UNREACHABLE,
         Err(_) => consts::PING_INVALID,

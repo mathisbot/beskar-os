@@ -218,8 +218,8 @@ fn cmd_ping(ctx: CmdCtx<'_>) -> CmdResult {
                 let _ = writeln!(
                     line,
                     "  reply from {addr}: seq={sequence} time={}.{:03}ms",
-                    round_trip.total_micros() / 1000,
-                    round_trip.total_micros() % 1000,
+                    round_trip.as_micros() / 1000,
+                    round_trip.as_micros() % 1000,
                 );
                 ctx.buf.write_styled(&line, styled(theme::ACCENT_CYAN));
             }

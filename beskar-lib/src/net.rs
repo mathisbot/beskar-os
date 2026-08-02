@@ -37,7 +37,9 @@ impl core::fmt::Display for PingError {
 ///
 /// See [`PingError`].
 pub fn ping(addr: Ipv4Addr, timeout: Option<Duration>) -> Result<Duration, PingError> {
-    let timeout_millis = timeout.map_or(0, |timeout| timeout.total_millis());
+    let timeout_millis = timeout.map_or(0, |timeout| {
+        u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX)
+    });
 
     match sc_ping(addr.to_bits(), timeout_millis) {
         micros if micros >= 0 => Ok(Duration::from_micros(micros.cast_unsigned())),

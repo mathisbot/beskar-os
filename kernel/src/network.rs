@@ -10,7 +10,7 @@
 //! transport driven from here is ICMP echo.
 
 use crate::drivers::nic;
-use crate::time::{self, Duration, Instant};
+use crate::time::{Duration, Instant};
 use holonet::{
     NetworkError, NetworkResult, Nic,
     egress::{DEFAULT_IPV4_TTL, EthernetIpv4Envelope},
@@ -33,8 +33,11 @@ const FRAME_BUFFER_LEN: usize = ethernet::HEADER_LEN + 1500;
 const ARP_CACHE_CAPACITY: usize = 16;
 /// Number of hash buckets backing the ARP cache.
 const ARP_CACHE_BUCKETS: usize = 8;
-/// Lifetime of an ARP cache entry.
-const ARP_CACHE_TTL: Duration = Duration::from_secs(60);
+/// Lifetime of an ARP cache entry, in milliseconds.
+///
+/// The unit is milliseconds because that is the tick the cache clock is
+/// advanced in by `refresh_arp_clock`.
+const ARP_CACHE_TTL_MS: u64 = 60 * 1_000;
 
 /// How long a single ARP request waits for its reply.
 const ARP_REPLY_TIMEOUT: Duration = Duration::from_millis(500);
@@ -42,7 +45,7 @@ const ARP_REPLY_TIMEOUT: Duration = Duration::from_millis(500);
 const ARP_ATTEMPTS: u8 = 3;
 
 /// Default time an echo request waits for its reply.
-pub const DEFAULT_ECHO_TIMEOUT: Duration = Duration::from_millis(1_000);
+pub const DEFAULT_ECHO_TIMEOUT: Duration = Duration::from_secs(1);
 /// Number of payload bytes carried by an echo request.
 const ECHO_PAYLOAD_LEN: usize = 32;
 
@@ -125,14 +128,14 @@ pub struct Interface {
 impl Interface {
     fn new(mac: MacAddress, route: Ipv4Route) -> NetworkResult<Self> {
         // The cache clock is driven in milliseconds by `refresh_arp_clock`.
-        let arp = arp_state::Cache::new(ARP_CACHE_TTL.total_millis())?;
+        let arp = arp_state::Cache::new(ARP_CACHE_TTL_MS)?;
         let mac_bytes = mac.as_bytes();
 
         Ok(Self {
             mac,
             route,
             arp,
-            arp_clock: time::now(),
+            arp_clock: Instant::now(),
             // The identifier only has to tell this interface's requests apart
             // from those of other hosts sharing the reply path.
             identifier: u16::from_be_bytes([mac_bytes[4], mac_bytes[5]]),
@@ -163,8 +166,8 @@ impl Interface {
     /// Returns `Invalid` if the ARP cache cannot be rebuilt.
     pub fn set_route(&mut self, route: Ipv4Route) -> NetworkResult<()> {
         self.route = route;
-        self.arp = arp_state::Cache::new(ARP_CACHE_TTL.total_millis())?;
-        self.arp_clock = time::now();
+        self.arp = arp_state::Cache::new(ARP_CACHE_TTL_MS)?;
+        self.arp_clock = Instant::now();
 
         Ok(())
     }
@@ -174,8 +177,8 @@ impl Interface {
     /// The cache expires entries in ticks supplied by its owner; this converts
     /// elapsed real time into those ticks and purges whatever went stale.
     fn refresh_arp_clock(&mut self) {
-        let now = time::now();
-        let elapsed = (now - self.arp_clock).total_millis();
+        let now = Instant::now();
+        let elapsed = u64::try_from((now - self.arp_clock).as_millis()).unwrap_or(u64::MAX);
 
         // Below a millisecond there is nothing to advance, and moving the
         // instant anyway would round the remainder away on every poll.
@@ -377,7 +380,7 @@ impl Interface {
                 }
             }
 
-            if time::now() >= deadline {
+            if Instant::now() >= deadline {
                 return None;
             }
 
@@ -401,7 +404,7 @@ impl Interface {
             request.emit(&mut self.tx[..len])?;
             nic.send_frame(&self.tx[..len])?;
 
-            let deadline = time::now() + ARP_REPLY_TIMEOUT;
+            let deadline = Instant::now() + ARP_REPLY_TIMEOUT;
             let _ = self.poll_until(
                 nic,
                 deadline,
@@ -455,7 +458,7 @@ impl Interface {
             sequence,
             &payload,
         )?;
-        let sent_at = time::now();
+        let sent_at = Instant::now();
 
         let received = self.poll_until(nic, sent_at + timeout, |received| {
             matches!(
@@ -471,7 +474,7 @@ impl Interface {
         match received {
             Some(Received::Echo { source_addr, .. }) => Ok(EchoOutcome {
                 source_addr,
-                round_trip: time::now() - sent_at,
+                round_trip: Instant::now() - sent_at,
                 sequence,
             }),
             _ => Err(NetworkError::Unreachable),
