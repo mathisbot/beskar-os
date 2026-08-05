@@ -16,8 +16,6 @@ __startup:
     mov es, ax
     mov ss, ax
 
-    xor sp, sp
-
     mov edi, [trampoline.page_table]
     mov cr3, edi
 
@@ -41,14 +39,15 @@ __startup:
     mov ebx, cr0
     or ebx, 1 << 31  | 1 ; Set paging and write protection
     mov cr0, ebx
-    
+
     ; Far jump to long mode
     jmp gdt.kernel_code:long_mode_ap
 
 [BITS 64]
+DEFAULT ABS
+
 long_mode_ap:
-    ; Zero out rcx
-    xor rcx, rcx
+    xor rsp, rsp
 
     ; Load stack end
     mov rdi, [trampoline.stack_end_ptr]
@@ -59,23 +58,13 @@ long_mode_ap:
 wait_for_stack:
     pause
 stack_lookup:
-    ; If stack is zero, stack is owned by another AP
-    ; We need the stack address into rax for cmpxchg
-    ; so we perform the first check without atomicity
-    mov rax, [rdi]
-    cmp rax, rcx ; (rcx = 0)
+    ; Try to atomically acquire the stack
+    xchg [rdi], rsp
+    test rsp, rsp
     je wait_for_stack
 
-    ; If it looks like the stack is available, try to acquire it:
-    ; Atomically compare rax with [rdi] (rax = previous [rdi] != 0).
-    ; If equal (i.e. [rdi] is still non-null), load rcx (0) in [rdi] and set ZF.
-    ; Otherwise, load [rdi] (0) in rax and clear ZF (we spin again!).
-    lock cmpxchg [rdi], rcx
-    jne wait_for_stack
+    ; Past this point, the stack is ours
 
-    ; Past this point, the stack is ours and its address is in rax
-
-    mov rsp, rax
     jmp [trampoline.ap_entry]
 
 section .data

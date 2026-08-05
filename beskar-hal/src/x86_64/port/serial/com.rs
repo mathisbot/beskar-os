@@ -56,7 +56,7 @@ impl SerialCom {
 impl core::fmt::Write for SerialCom {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for byte in s.bytes() {
-            self.0.send(byte);
+            self.0.send_byte(byte);
         }
         Ok(())
     }

@@ -1,21 +1,4 @@
 //! Kernel logging subsystem
-//!
-//! Provides logging to:
-//! - Serial port (debug builds only, immediate output)
-//! - Screen (via compositor surface, damage-tracked)
-//!
-//! # Architecture
-//!
-//! The screen logger is a CLIENT of the compositor, not a driver.
-//! - ScreenWriter writes pixels to its surface buffer
-//! - Marks the surface dirty after each write
-//! - Does NOT trigger rendering directly
-//! - Compositor decides when to render based on policy
-//!
-//! This decoupling is critical for:
-//! - Performance: batch multiple log messages into one render
-//! - Safety: avoid rendering in interrupt context
-//! - Flexibility: logging works regardless of render policy
 
 use beskar_core::{
     arch::paging::M4KiB,

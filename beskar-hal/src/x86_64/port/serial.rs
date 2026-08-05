@@ -25,8 +25,19 @@ pub struct SerialPort<A: Access> {
 impl<A: Access> SerialPort<A> {
     /// Indicates that data is available to read from the serial port
     const LINE_STATUS_DATA_READY: u8 = 1 << 0;
+    // /// Indicates that an overrun error has occurred (data was lost)
+    // const LINE_STATUS_OVERRUN: u8 = 1 << 1;
+    // /// Indicates that a parity error has occurred
+    // const LINE_STATUS_PARITY_ERROR: u8 = 1 << 2;
+    // /// Indicates that a framing error has occurred (invalid stop bit)
+    // const LINE_STATUS_FRAMING_ERROR: u8 = 1 << 3;
+    // /// Indicates that a break interrupt has occurred (line held low for too long)
+    // const LINE_STATUS_BREAK_INTERRUPT: u8 = 1 << 4;
     /// Indicates that the transmitter holding register is empty and ready for new data
     const LINE_STATUS_THR_EMPTY: u8 = 1 << 5;
+    // /// Indicates that the transmitter is empty
+    // const LINE_STATUS_TRANSMITTER_EMPTY: u8 = 1 << 6;
+
     const SPIN_LIMIT: usize = 10_000;
 
     #[must_use]
