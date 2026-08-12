@@ -59,29 +59,6 @@ impl LapicTimer {
         }
     }
 
-    /// Calibrate the timer using information from CPUID (Intel only).
-    ///
-    /// Returns the APIC timer rate in MHz.
-    ///
-    /// - For processors with onboard APIC and CPUID leaf 0x15: uses core crystal clock
-    /// - For processors without onboard APIC and CPUID leaf 0x16: uses processor base frequency
-    fn calibrate_with_cpuid() -> Option<NonZeroU32> {
-        use crate::arch::cpuid;
-
-        let onboard = cpuid::check_feature(cpuid::CpuFeature::APIC_ONBOARD);
-        let hsl = cpuid::get_highest_supported_leaf().as_u32();
-
-        if onboard && hsl >= 0x15 {
-            let core_crystal = cpuid::cpuid(cpuid::Leaf::new(0x15)).ecx;
-            NonZeroU32::new(core_crystal / 1_000_000)
-        } else if !onboard && hsl >= 0x16 {
-            // Frequency is already given is MHz
-            NonZeroU32::new(cpuid::cpuid(cpuid::Leaf::new(0x16)).ecx & 0xFFFF)
-        } else {
-            None
-        }
-    }
-
     /// Calibrate the APIC timer by measuring elapsed ticks over a known time period.
     ///
     /// This method is used as a fallback when CPUID-based calibration is not available.
@@ -94,13 +71,15 @@ impl LapicTimer {
         const CALIBRATION_MS: u64 = 50;
         const DIVIDER: Divider = Divider::Two;
 
+        let tick_duration = ticks_per_ms()?.get() * CALIBRATION_MS;
+
         self.set(Mode::OneShot(ModeConfiguration {
             divider: DIVIDER,
             duration: u32::MAX - 1,
         }));
 
         let start = now_raw();
-        let end = start + ticks_per_ms()?.get() * CALIBRATION_MS;
+        let end = start + tick_duration;
         while now_raw() < end {
             core::hint::spin_loop();
         }
@@ -131,19 +110,13 @@ impl LapicTimer {
     }
 
     pub fn calibrate(&mut self) {
-        if let Some(rate_mhz) = Self::calibrate_with_cpuid() {
-            self.configuration.rate_mhz = rate_mhz.get();
-        } else if let Some(rate_mhz) = self.calibrate_with_time() {
-            self.configuration.rate_mhz = rate_mhz.get();
-        } else {
+        let Some(rate_mhz) = self.calibrate_with_time() else {
             crate::warn!("LAPIC timer calibration failed");
             return;
-        }
+        };
 
-        crate::debug!(
-            "LAPIC timer calibrated at {} MHz",
-            self.configuration.rate_mhz
-        );
+        self.configuration.rate_mhz = rate_mhz.get();
+        crate::debug!("LAPIC timer calibrated at {} MHz", rate_mhz.get());
     }
 
     /// Set the timer to a specific mode.

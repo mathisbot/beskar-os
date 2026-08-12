@@ -10,7 +10,7 @@ beskar-lib = { workspace = true }
 hyperdrive = { workspace = true }
 
 [build-dependencies]
-cc = "1.4.0"
+cc = "1.4.2"
 
 [lints]
 workspace = true

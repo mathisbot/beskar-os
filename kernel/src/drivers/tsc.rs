@@ -3,9 +3,6 @@ use beskar_core::drivers::{DriverError, DriverResult};
 use beskar_hal::port::{Port, ReadWrite, WriteOnly};
 use core::sync::atomic::{AtomicU64, Ordering};
 
-/// The TSC value at startup, when the TSC has been calibrated.
-static STARTUP_TIME: AtomicU64 = AtomicU64::new(0);
-
 /// The TSC frequency in MHz
 ///
 /// The reason we are limiting to MHz is that the TSC
@@ -87,22 +84,22 @@ fn calibrate_with_pit() -> bool {
 }
 
 /// Calibrate using CPUID, Intel only.
-fn calibrate_with_rdtsc() -> bool {
+fn calibrate_with_cpuid() -> bool {
     assert_eq!(TSC_MHZ.load(Ordering::Relaxed), 0);
 
     let Some(cpuid_res) = cpuid::try_cpuid(cpuid::Leaf::new(0x15)) else {
         return false;
     };
-
-    if cpuid_res.eax != 0 && cpuid_res.ebx != 0 && cpuid_res.ecx != 0 {
-        let thc_hz = u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);
-        let thc_mhz = thc_hz / 1_000_000;
-        debug_assert_ne!(thc_mhz, 0);
-        TSC_MHZ.store(thc_mhz, Ordering::Relaxed);
-        return true;
+    if cpuid_res.eax == 0 || cpuid_res.ebx == 0 || cpuid_res.ecx == 0 {
+        return false;
     }
 
-    false
+    let thc_hz = u64::from(cpuid_res.ecx) * u64::from(cpuid_res.ebx) / u64::from(cpuid_res.eax);
+    let thc_mhz = thc_hz / 1_000_000;
+    debug_assert_ne!(thc_mhz, 0);
+    TSC_MHZ.store(thc_mhz, Ordering::Relaxed);
+
+    true
 }
 
 fn calibrate_with_hpet() -> bool {
@@ -144,9 +141,7 @@ pub fn init() -> DriverResult<()> {
         return Err(DriverError::Absent);
     }
 
-    STARTUP_TIME.store(unsafe { core::arch::x86_64::_rdtsc() }, Ordering::Relaxed);
-
-    if calibrate_with_rdtsc() || calibrate_with_hpet() || calibrate_with_pit() {
+    if calibrate_with_cpuid() || calibrate_with_hpet() || calibrate_with_pit() {
         if crate::arch::cpuid::check_feature(crate::arch::cpuid::CpuFeature::INVARIANT_TSC) {
             crate::debug!("TSC calibration: {} MHz", TSC_MHZ.load(Ordering::Relaxed));
             Ok(())

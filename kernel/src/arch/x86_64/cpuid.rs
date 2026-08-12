@@ -30,13 +30,6 @@ impl Leaf {
     }
 }
 
-impl From<Leaf> for u32 {
-    #[inline]
-    fn from(leaf: Leaf) -> Self {
-        leaf.as_u32()
-    }
-}
-
 impl From<u32> for Leaf {
     #[inline]
     fn from(leaf: u32) -> Self {
@@ -51,8 +44,7 @@ impl From<u32> for Leaf {
 /// # Panics
 ///
 /// Panics if the CPUID leaf is not supported.
-/// Check `get_highest_supported_leaf` and `get_highest_supported_xleaf`
-/// to get the highest supported leaves.
+/// Check `leaf_is_supported`.
 ///
 /// Also consider using `try_cpuid`.
 pub fn cpuid(leaf: Leaf) -> CpuidResult {
@@ -75,8 +67,7 @@ pub fn try_cpuid(leaf: Leaf) -> Option<CpuidResult> {
 /// # Panics
 ///
 /// Panics if the CPUID leaf is not supported.
-/// Check `get_highest_supported_leaf` and `get_highest_supported_xleaf`
-/// to get the highest supported leaves.
+/// Check `leaf_is_supported`.
 ///
 /// Also consider using `try_cpuid_count`.
 pub fn cpuid_count(leaf: Leaf, subleaf: u32) -> CpuidResult {
@@ -89,12 +80,7 @@ pub fn cpuid_count(leaf: Leaf, subleaf: u32) -> CpuidResult {
 ///
 /// Returns `None` if the CPUID leaf is not supported.
 pub fn try_cpuid_count(leaf: Leaf, subleaf: u32) -> Option<CpuidResult> {
-    let leaf_supported = if leaf.is_extended() {
-        leaf <= get_highest_supported_xleaf()
-    } else {
-        leaf <= get_highest_supported_leaf()
-    };
-    if leaf_supported {
+    if leaf_is_supported(leaf) {
         Some(core::arch::x86_64::__cpuid_count(leaf.as_u32(), subleaf))
     } else {
         None
@@ -448,15 +434,12 @@ pub fn check_feature(feature: CpuFeature) -> bool {
 
 #[must_use]
 #[inline]
-/// Get the highest supported leaf
-pub fn get_highest_supported_leaf() -> Leaf {
-    Leaf::new(CPUID_MAX_LEAF.load(Ordering::Acquire))
-}
-
-#[must_use]
-#[inline]
-/// Get the highest supported extended leaf
-/// (EAX >= `0x8000_0000`)
-pub fn get_highest_supported_xleaf() -> Leaf {
-    Leaf::new(EXTENDED_MAX_LEAF.load(Ordering::Acquire))
+/// Check if a leaf is supported
+pub fn leaf_is_supported(leaf: Leaf) -> bool {
+    let sup = if leaf.is_extended() {
+        EXTENDED_MAX_LEAF.load(Ordering::Relaxed)
+    } else {
+        CPUID_MAX_LEAF.load(Ordering::Relaxed)
+    };
+    leaf <= Leaf::new(sup)
 }
