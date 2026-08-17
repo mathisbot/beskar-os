@@ -144,6 +144,12 @@ pub fn sc_powermgt(cmd: u64) -> SyscallExitCode {
 }
 
 #[inline]
+pub fn sc_ping(addr_bits: u32, timeout_millis: u64) -> i64 {
+    let res = syscalls::syscall_2(Syscall::Ping, u64::from(addr_bits), timeout_millis);
+    res.cast_signed()
+}
+
+#[inline]
 pub fn sc_precision_timer() -> Option<u64> {
     let raw = syscalls::syscall_0(Syscall::PrecisionTimer);
     if raw == 0 { None } else { Some(raw) }

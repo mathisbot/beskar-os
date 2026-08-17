@@ -149,7 +149,7 @@ impl Scheduler {
 
                 let queue = QUEUE.get()?;
                 let Some(mut candidate) = queue.pop_best() else {
-                    debug_assert_eq!(thread.priority(), Priority::Idle);
+                    debug_assert!(thread.priority() == Priority::Idle);
                     return None;
                 };
 
@@ -312,7 +312,7 @@ fn enqueue_ready_thread(mut thread: Box<Thread>) {
 extern "C" fn guard_thread() -> ! {
     loop {
         while let Some(thread) = FINISHED.get().unwrap().dequeue() {
-            debug_assert_eq!(thread.state(), thread::ThreadState::Exiting);
+            debug_assert!(thread.state() == thread::ThreadState::Exiting);
             drop(thread);
         }
         thread_yield();

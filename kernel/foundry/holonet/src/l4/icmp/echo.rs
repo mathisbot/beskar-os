@@ -42,13 +42,11 @@ pub fn request_frame_len(payload_len: usize) -> NetworkResult<usize> {
         .ok_or(NetworkError::Oversized)
 }
 
-/// Emit an ICMP echo request inside an Ethernet + IPv4 frame.
-///
-/// `destination_hardware_addr` is the resolved next-hop Ethernet address.
-#[allow(clippy::too_many_arguments)]
-pub fn emit_request(
+/// Emit an ICMP echo message of `msg_type` inside an Ethernet + IPv4 frame.
+fn emit(
     mut envelope: EthernetIpv4Envelope,
     buffer: &mut [u8],
+    msg_type: MessageType,
     identifier: u16,
     sequence: u16,
     payload: &[u8],
@@ -60,12 +58,54 @@ pub fn emit_request(
     envelope.payload_len = payload_len;
     envelope.emit_with(buffer, |payload_buffer| {
         let mut packet = Packet::new(payload_buffer)?;
-        packet.set_msg_type(MessageType::EchoRequest)?;
+        packet.set_msg_type(msg_type)?;
         packet.set_code(0)?;
         packet.set_echo_identity(identifier, sequence)?;
         packet.payload_mut()?.copy_from_slice(payload);
         packet.fill_checksum()
     })
+}
+
+/// Emit an ICMP echo request inside an Ethernet + IPv4 frame.
+///
+/// `envelope.destination_hardware_addr` is the resolved next-hop Ethernet
+/// address, and `envelope.payload_len` is set from `payload`.
+pub fn emit_request(
+    envelope: EthernetIpv4Envelope,
+    buffer: &mut [u8],
+    identifier: u16,
+    sequence: u16,
+    payload: &[u8],
+) -> NetworkResult<usize> {
+    emit(
+        envelope,
+        buffer,
+        MessageType::EchoRequest,
+        identifier,
+        sequence,
+        payload,
+    )
+}
+
+/// Emit an ICMP echo reply inside an Ethernet + IPv4 frame.
+///
+/// The identifier, sequence number and payload are the ones taken from the
+/// request being answered; the envelope addresses it back to its sender.
+pub fn emit_reply(
+    envelope: EthernetIpv4Envelope,
+    buffer: &mut [u8],
+    identifier: u16,
+    sequence: u16,
+    payload: &[u8],
+) -> NetworkResult<usize> {
+    emit(
+        envelope,
+        buffer,
+        MessageType::EchoReply,
+        identifier,
+        sequence,
+        payload,
+    )
 }
 
 /// Recognize an ICMP echo reply addressed to `local_addr`.
@@ -152,6 +192,64 @@ mod test {
             }
             _ => panic!("expected IPv4 frame"),
         }
+    }
+
+    #[test]
+    fn test_emitted_echo_reply_is_parsed_back() {
+        // An emitted reply has to be exactly what `parse_reply` recognizes, as
+        // that is what the peer's stack does with it.
+        let payload = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        let mut bytes = [0u8; request_header_len() + 8];
+
+        let envelope = EthernetIpv4Envelope {
+            source_hardware_addr: LOCAL_MAC,
+            destination_hardware_addr: PEER_MAC,
+            source_addr: LOCAL_IP,
+            destination_addr: REMOTE_IP,
+            protocol: ip::Protocol::Icmp,
+            payload_len: 0, // set by the echo emitter
+            ttl: 64,
+            flags: ipv4::Flags::new(true, false),
+        };
+
+        let len = emit_reply(envelope, &mut bytes, 0xABCD, 9, &payload).unwrap();
+        assert_eq!(len, bytes.len());
+
+        let frame = IngressFrame::parse(&bytes).unwrap();
+
+        // `parse_reply` filters on the receiver's own address, which is the
+        // destination of the reply we just built.
+        assert_eq!(
+            parse_reply(REMOTE_IP, &frame).unwrap(),
+            Some(EchoReply {
+                source_addr: LOCAL_IP,
+                identifier: 0xABCD,
+                sequence: 9,
+                payload_len: payload.len(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_emitted_echo_request_is_not_mistaken_for_a_reply() {
+        let payload = [0xAA; 4];
+        let mut bytes = [0u8; request_header_len() + 4];
+
+        let envelope = EthernetIpv4Envelope {
+            source_hardware_addr: LOCAL_MAC,
+            destination_hardware_addr: PEER_MAC,
+            source_addr: LOCAL_IP,
+            destination_addr: REMOTE_IP,
+            protocol: ip::Protocol::Icmp,
+            payload_len: 0,
+            ttl: 64,
+            flags: ipv4::Flags::new(true, false),
+        };
+
+        emit_request(envelope, &mut bytes, 0x1111, 1, &payload).unwrap();
+
+        let frame = IngressFrame::parse(&bytes).unwrap();
+        assert_eq!(parse_reply(REMOTE_IP, &frame).unwrap(), None);
     }
 
     #[test]

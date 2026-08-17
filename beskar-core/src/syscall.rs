@@ -109,6 +109,16 @@ pub enum Syscall {
     ///
     /// The first argument is the power management command to execute.
     PowerManagement = 17,
+    /// Send one ICMP echo request and wait for its reply.
+    ///
+    /// The first argument is the destination IPv4 address, as the bit pattern
+    /// of its octets (`Ipv4Addr::to_bits`).
+    /// The second argument is the reply timeout in milliseconds (0 selects the
+    /// kernel default).
+    ///
+    /// Returns the round-trip time in microseconds, or one of the negative
+    /// `PING_*` constants on failure.
+    Ping = 18,
     /// Query the high precision timer.
     PrecisionTimer,
 }
@@ -193,6 +203,13 @@ pub mod consts {
     pub const POWERMGT_SHUTDOWN: u64 = 0;
     /// Power management command - reboot the system.
     pub const POWERMGT_REBOOT: u64 = 1;
+
+    /// Ping failure - no network interface is up.
+    pub const PING_NO_INTERFACE: i64 = -1;
+    /// Ping failure - the destination has no route, or did not answer in time.
+    pub const PING_UNREACHABLE: i64 = -2;
+    /// Ping failure - the arguments were malformed.
+    pub const PING_INVALID: i64 = -3;
 }
 
 #[cfg(test)]
